@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -330,11 +330,99 @@ function cleanStaleStaging() {
   }
 }
 
+/** Every file under `root`, as POSIX-style paths relative to `root`. */
+function listFilesRecursive(root) {
+  const out = []
+
+  const walk = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name)
+
+      if (entry.isDirectory()) {
+        walk(abs)
+      } else if (entry.isFile()) {
+        out.push(path.relative(root, abs).split(path.sep).join('/'))
+      }
+    }
+  }
+
+  walk(root)
+
+  return out
+}
+
+/** Removes now-empty directories under (and including) `root`, deepest first. */
+function removeEmptyDirsRecursive(root) {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+
+    const abs = path.join(root, entry.name)
+
+    removeEmptyDirsRecursive(abs)
+
+    if (readdirSync(abs).length === 0) {
+      rmSync(abs, { force: true, recursive: true })
+    }
+  }
+}
+
+/**
+ * Copies every file from `srcRoot` into `destRoot` (overwriting in place,
+ * creating `destRoot` if needed), then deletes anything under `destRoot`
+ * with no counterpart in `srcRoot`. Never renames or removes `destRoot`
+ * itself — see stageAndSwap's docstring for why that matters here.
+ */
+function syncDirectoryInPlace(srcRoot, destRoot) {
+  const srcFiles = listFilesRecursive(srcRoot)
+
+  for (const relPath of srcFiles) {
+    const destAbs = path.join(destRoot, relPath)
+
+    mkdirSync(path.dirname(destAbs), { recursive: true })
+    copyFileSync(path.join(srcRoot, relPath), destAbs)
+  }
+
+  if (!existsSync(destRoot)) {
+    return
+  }
+
+  const srcSet = new Set(srcFiles)
+
+  for (const relPath of listFilesRecursive(destRoot)) {
+    if (!srcSet.has(relPath)) {
+      rmSync(path.join(destRoot, relPath), { force: true })
+    }
+  }
+
+  removeEmptyDirsRecursive(destRoot)
+}
+
 /**
  * Writes every file to a fresh temp directory, lint-fixes and writes the
- * manifest there, and only replaces src/upstream/ once all of that has
- * succeeded. A failed run leaves src/upstream/ untouched and cleans up its
- * own staging directory.
+ * manifest there, and only touches src/upstream/ once all of that has
+ * succeeded.
+ *
+ * The swap is an in-place per-file copy, never a directory rename or a
+ * delete-then-recreate. Both of those were tried and both fail on this
+ * machine: with Metro running (this project's normal dev state, not an edge
+ * case — Metro watches the whole tree including src/upstream), Metro's file
+ * watcher holds handles that block renaming *or* removing the src/upstream
+ * directory entry itself, even though individual files inside it can still
+ * be freely overwritten. Verified directly: with Metro running,
+ * `renameSync('src/upstream', anything)` fails EPERM as the very FIRST step,
+ * before anything is deleted or moved — so even a rename-current-dir-aside
+ * swap can't get past that first rename. `writeFileSync` on a file already
+ * inside src/upstream, by contrast, succeeds immediately. So this never
+ * touches the directory's own identity: it overwrites each allow-listed
+ * file's content in place and removes any file the new allow-list no longer
+ * produces. Every failure mode that can throw for a *content* reason (a
+ * patch assertion, a lint error, an unresolved import) already happened
+ * earlier, entirely inside the isolated staging directory, before this
+ * function is even called — this loop is pure file I/O with nothing left to
+ * validate, so the only way it can leave src/upstream in a mixed old/new
+ * state is a mid-loop crash (process killed, disk full), not a bad sync.
  */
 function stageAndSwap(contents, commit) {
   const stagingRoot = mkdtempSync(path.join(REPO_ROOT, STAGING_PREFIX))
@@ -349,12 +437,27 @@ function stageAndSwap(contents, commit) {
 
     lintFixDest(stagingRoot)
     writeManifest(stagingRoot, commit, [...contents.keys()])
-
-    rmSync(DEST_ROOT, { force: true, recursive: true })
-    renameSync(stagingRoot, DEST_ROOT)
   } catch (error) {
     rmSync(stagingRoot, { force: true, recursive: true })
     fail(`staging failed, src/upstream left untouched: ${error instanceof Error ? error.message : error}`)
+  }
+
+  try {
+    syncDirectoryInPlace(stagingRoot, DEST_ROOT)
+  } catch (error) {
+    // Unlike the staging failures above, a throw here means the per-file
+    // copy loop was interrupted partway — src/upstream may now hold a mix of
+    // old and new file contents, not the untouched guarantee the staging
+    // phase gives. Said plainly, not papered over: re-run the sync (safe —
+    // it's idempotent) to finish the copy, or `git checkout src/upstream` to
+    // revert to the last committed state.
+    fail(
+      `copying synced files into src/upstream failed partway through — it may now hold a mix of ` +
+        `old and new files; re-run this script (safe, idempotent) or "git checkout src/upstream" ` +
+        `to revert: ${error instanceof Error ? error.message : error}`
+    )
+  } finally {
+    rmSync(stagingRoot, { force: true, recursive: true })
   }
 }
 

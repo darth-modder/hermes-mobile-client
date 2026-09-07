@@ -255,3 +255,43 @@ All eight are documented, scoped, and consistent with `AGENTS.md`. Two I checked
    delta capture like the one above so the criterion keeps its teeth under future refactors. Not
    gating — the criterion itself is verified — but the committed regression test is weaker than the
    milestone text implies.
+
+### 2026-09-07 — Sonnet: replaced the fixture (carry-over fix, done alongside M06)
+
+Same discipline as before: throwaway `hermes serve --host 127.0.0.1`, a locally-generated
+`HERMES_DASHBOARD_SESSION_TOKEN` (scratch file outside the repo, never logged/committed), a
+`prompt.submit` asking for a long story, server + token torn down immediately after capture. This
+run: **2019** `message.delta` events, **11** `reasoning.delta` events, a **16,330-char** final reply
+— an order of magnitude past even Opus's own 338-delta/2526-char re-verification capture.
+
+Also strengthened `session-stream-e2e.test.ts` itself, not just the fixture size, per Opus's own
+framing of *why* the old one was weak: a bigger fixture alone doesn't prove coalescing/ordering if
+the only assertion is against the FINAL text, because `message.complete` legitimately carries its
+own authoritative final text that overwrites whatever was streamed (`completeAssistantMessage` in
+message-stream.ts) — so a reducer that ignored every `message.delta` and only read
+`message.complete.text` would still pass a final-text-only check, no matter how large the fixture
+is. Added a new first assertion that checks the LIVE text assembled from `message.delta` events
+alone, replayed only up to (not including) `message.complete`, against an independent ground truth:
+the fixture's own ordered concatenation of every delta's raw payload text, computed at capture time
+from the raw event log — not derived from the reducer under test. This is the assertion that
+actually exercises coalescing and ordering across all 2019 deltas; the final-text assertion (kept,
+now also checking `.length` explicitly) is what the milestone text originally asked for.
+
+**Traded off:** the original fixture's stray `session.reclaimed` broadcast (for an unrelated,
+already-dead session from a prior run on the same throwaway server) is gone — this fresh capture
+happened not to have one, the same way Opus's own re-verification capture didn't. Per Opus's note in
+this file, that stray event was "genuinely useful test material" for decision D2's rebind-not-drop
+behavior. That coverage isn't lost, though: `session-reclaimed.test.ts`'s 7 dedicated cases (listed
+above, pinned by Opus's own re-verification) test exactly that behavior directly and don't depend on
+capture luck. The dropped test in this file (`ignores the unrelated session.reclaimed broadcast for
+a session it never saw`) is removed rather than kept pointed at an event that no longer exists in
+the fixture.
+
+```
+$ npx vitest run src/gateway/session-stream-e2e.test.ts
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+```
+
+`npm run check` — exit 0, 15 files / 105 tests (104 → 105: the new pre-complete-text assertion is
+its own `it()`, not folded into the existing one). `npx prettier --check .` — exit 0.

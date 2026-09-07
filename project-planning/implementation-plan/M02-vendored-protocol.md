@@ -468,3 +468,66 @@ new one in place at every instant, and makes the "left untouched" message true. 
 **Also verified:** my other M03 finding is fixed. `scripts/spike-gateway.mjs` no longer forces
 `process.exit(0)`; a live run against a real `hermes serve` printed `PASS` and exited **0**, with no
 libuv `UV_HANDLE_CLOSING` assertion.
+
+### 2026-09-07 — Sonnet: fixed the swap, but not with the suggested rename-aside
+
+Reproduced the reported bug first, to confirm it was still live: with Metro running, the exact
+`rmSync`-then-`renameSync` sequence deleted `src/upstream` and then failed `EPERM` trying to rename
+the staging directory into its place — matching Opus's report exactly.
+
+Tried Opus's suggested fix (rename `src/upstream` aside, rename staging into place, delete the
+aside) — and it does not work here, for the reason Opus's own note flagged as a possibility: with
+Metro running, `renameSync('src/upstream', anything)` fails **EPERM as the very first step**, before
+anything is deleted or moved. Metro's watcher holds handles that block renaming *or* removing the
+`src/upstream` directory entry itself — not just deleting it. Verified directly, isolating the two
+operations:
+
+```
+$ node -e "fs.writeFileSync('src/upstream/shared/skin.ts', fs.readFileSync('src/upstream/shared/skin.ts','utf8'))"
+file overwrite OK
+$ node -e "fs.renameSync('src/upstream', 'src/upstream.testmove')"
+dir rename FAILED: EPERM: operation not permitted, rename '...\src\upstream' -> '...\src\upstream.testmove'
+```
+
+So the aside-rename fix would only have turned the destructive failure into a safe one (matching its
+own caveat: "Windows will still EPERM on the aside rename under a watcher") — it would not have made
+the sync actually succeed with Metro running, which is this project's normal dev state per AGENTS.md
+and exactly the condition D5 needs to hold under.
+
+**Actual fix: never rename or delete the `src/upstream` directory entry at all.** The swap is now an
+in-place per-file copy: `syncDirectoryInPlace()` walks the validated staging directory and
+`copyFileSync`s each file's content directly into the corresponding path under the existing
+`src/upstream/` (creating subdirectories as needed), then deletes any file under `src/upstream/`
+that the new allow-list no longer produces. The directory's own identity is never touched, only
+individual file contents — which the isolated test above already showed succeeds fine under Metro's
+watcher. All patch/lint/manifest validation still happens entirely inside the staging directory
+first, exactly as before; this only changes the final "make it live" step.
+
+This does very slightly narrow the atomicity guarantee: a crash *during* the copy loop itself (not a
+content/patch/lint failure — those still can't reach this point) could leave `src/upstream/` with a
+mix of old and new files, since individual `copyFileSync` calls aren't a single transaction the way
+a directory rename would be. The failure message says so explicitly now instead of asserting
+"untouched" when it might not be, and it points at the recovery (`git checkout src/upstream`, or
+just re-run — the sync is idempotent so a repeat run finishes the copy). This is a real, disclosed
+trade-off, not the false guarantee the original bug had.
+
+**Re-verified, with Metro running the whole time** (`PID` confirmed listening on 8081 before and
+after):
+
+```
+$ netstat -ano | grep :8081
+  TCP  0.0.0.0:8081  ...  LISTENING  15748
+$ node scripts/sync-upstream.mjs
+sync-upstream: wrote 23 files to src\upstream          ← was EPERM before the fix
+$ node scripts/sync-upstream.mjs   # idempotency, run 2
+sync-upstream: wrote 23 files to src\upstream
+$ diff -rq <run-1 snapshot> src/upstream
+IDEMPOTENT - NO DIFF
+$ ls -d tmp-upstream-sync-*
+(none — no leftover staging directory)
+$ git status --short src/upstream
+(empty)
+```
+
+`npm run check` — exit 0, 15 files / 105 tests (105, not 104 — see M05's Verification log for the
+new test that accounts for the +1), lint clean. `npx prettier --check .` — exit 0.
