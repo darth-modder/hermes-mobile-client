@@ -22,6 +22,12 @@ const config: ExpoConfig = {
     'expo-secure-store',
     'expo-web-browser',
     [
+      'expo-camera',
+      {
+        cameraPermission: 'Hermes uses the camera to scan a connection QR code.'
+      }
+    ],
+    [
       'expo-splash-screen',
       {
         image: './assets/images/splash-icon.png',

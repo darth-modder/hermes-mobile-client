@@ -13,6 +13,10 @@ export class HttpError extends Error {
 
 export interface HttpRequestOptions {
   body?: unknown
+  /** 'include' sends/stores cookies — required for the password-login flow's
+   *  session cookies (M04). Omitted by default so token-mode callers (M03)
+   *  are unaffected. */
+  credentials?: 'include' | 'omit' | 'same-origin'
   headers?: Record<string, string>
   method?: string
   /** Backend-connection scoping — appended as ?profile=. */
@@ -55,6 +59,7 @@ export async function httpRequest<T>(baseUrl: string, path: string, options: Htt
   try {
     const response = await fetch(url.toString(), {
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      ...(options.credentials ? { credentials: options.credentials } : {}),
       headers: {
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),

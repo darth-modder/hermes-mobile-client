@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "expo": "~57.0.20",
+    "expo-camera": "~57.0.4",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
     "expo-linking": "~57.0.9",
