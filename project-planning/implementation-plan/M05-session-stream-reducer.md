@@ -1,6 +1,6 @@
 # M05 — Session stream reducer
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M02
 **Goal:** A pure, tested `(state, event) -> { state, effects }` reducer covering the desktop's gateway event catalog.
 
@@ -166,3 +166,92 @@ entry for the unrelated id.
    leftover staging directory on the next run regardless, so the entry bought nothing but this bug.
    Re-ran the idempotency check and `npm run check`/`prettier --check` after the fix; both green (see
    M02's Verification log for the update).
+
+### 2026-09-07 — Opus re-verification
+
+**Verdict: verified.** All three exit criteria re-run independently. Status → `done`.
+
+`npm run check` — exit 0, `Test Files 15 passed (15)`, `Tests 104 passed (104)` (M04 has landed since
+M05's own log was written, which is why the totals are higher than the 11/70 recorded above).
+
+**Zero React / React Native imports.** My own grep across the whole reducer tree:
+
+```
+$ grep -rn "from 'react'\|from \"react\"\|from 'react-native'\|require('react" src/gateway/
+  (no matches)
+```
+
+Every `window` / `document` hit under `src/gateway/**` is inside a comment explaining why a desktop
+surface was dropped. The ESLint guard was proved to still cover the new subdirectory, via stdin so
+no file was written:
+
+```
+$ echo 'export const p = window.location.host' | npx eslint --stdin --stdin-filename src/gateway/session-stream/__probe.ts
+  1:18  error  Unexpected use of 'window'. … no-restricted-globals      → exit 1
+```
+
+**The six required desktop fixtures**, counted from `vitest --reporter=verbose`, exactly matching
+the claims: `delta-flush` 7, `interim-sealing` 17, `steer-arrival-order` 4, `session-reclaimed` 7,
+`stale-pending-settle` 2, `clarify-hydration` 13.
+
+#### Exit criterion 3 re-run against my own capture, not the committed fixture
+
+The committed `__fixtures__/session-replay.json` satisfies the criterion only weakly. Its
+assistant text is **15 characters** ("mobile spike ok"), delivered as a single `message.delta`, and:
+
+```
+expected.assistantText chars: 15
+concat of message.delta chars: 15   | identical to expected? true
+reasoning.available chars: 15       | equals expected? true
+message.complete text chars: 15     | equals expected? true
+```
+
+At that size the oracle cannot distinguish a correct reducer from one that simply returns
+`message.complete.text`, and it exercises no coalescing, no sealing, and no multi-delta ordering —
+the parts of this milestone that can actually break. So I captured my own fixture live against a
+throwaway `hermes serve` (scratch token, never written to a file or commit, server and token
+destroyed immediately after):
+
+```
+session.create sid=75317836 source=android
+captured 371 events, 338 message.delta
+newest stored id = 20260907_195411_02301d
+session.resume assistant text chars = 2526
+```
+
+and ran the criterion against it through the real reducer (`reduceGatewayEvent` +
+`flushSessionDeltas`, temp test file, deleted afterwards):
+
+```
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+```
+
+**The reducer assembles exactly the text `session.resume` records across 338 deltas.** Criterion 3
+is genuinely met — on evidence roughly 170× larger than the committed fixture's.
+
+Note for whoever revisits this: `session.resume`'s stored assistant text *is* the delta concatenation
+by construction, so this criterion can only ever prove that assembly is lossless and correctly
+ordered. That is worth proving and is now proven at scale; it is not evidence about coalescing
+*timing*, which is what `delta-flush-scheduler.test.ts` is for.
+
+#### Deviations reviewed
+
+All eight are documented, scoped, and consistent with `AGENTS.md`. Two I checked specifically:
+
+- **Deviation 1 (`session.reclaimed` rebinds rather than drops)** is required by decision D2 and by
+  `AGENTS.md`'s "State" rule (state keyed by the **stored** id with a runtime-sid map). The
+  rewritten `session-reclaimed.test.ts` pins both halves — that a live transcript is carried over,
+  and that a reclaim for a runtime this client never saw does **not** fabricate a session entry.
+  My own capture happened to contain no stray reclaim, so the committed fixture's inclusion of one
+  is a genuinely useful piece of test material.
+- **Deviation 4 (desktop-only surfaces dropped)** matches `AGENTS.md`'s "Machine features don't
+  exist here" list. Each omission is annotated at its call site, which is the right place for it.
+
+#### Verifier findings
+
+1. **The committed end-to-end fixture is too small to be evidence.** 15 characters, one delta, and
+   three different assembly strategies all produce it. Recommend replacing it with a multi-hundred-
+   delta capture like the one above so the criterion keeps its teeth under future refactors. Not
+   gating — the criterion itself is verified — but the committed regression test is weaker than the
+   milestone text implies.

@@ -166,3 +166,117 @@ trip worked). Tapped **Test WS ticket dial** (a small on-screen check added this
 All screenshots referenced above are in [docs/](../../docs/). Metro and the emulator were left
 running after this session (no secrets held); both throwaway `hermes serve` processes and their
 scratch token/password files were torn down/deleted immediately after the pass above.
+
+### 2026-09-07 — Opus re-verification
+
+**Verdict: all four checkable exit criteria verified; the `[physical]` criterion remains open.**
+Status stays `in-progress`, correctly — decision D1's device policy requires cookie persistence
+across process death to be run on real hardware before `done`. Sonnet's own Verifier-findings entry
+above states this accurately and I confirm it.
+
+`npm run check` — exit 0, `Test Files 15 passed (15)`, `Tests 104 passed (104)`.
+
+**The reauth ladder matches `AGENTS.md`'s rule literally**, checked case by case from
+`vitest --reporter=verbose` rather than from the summary count:
+
+```
+✓ classifyFailure > classifies 401 and WS close 4401 as unauthorized
+✓ classifyFailure > classifies 403 and WS close 4403 as forbidden
+✓ classifyFailure > classifies everything else — 5xx, timeouts, other WS codes — as other
+✓ runWithReauthLadder > 401 -> refresh succeeds -> retries once -> returns the retry result
+✓ runWithReauthLadder > 401 -> refresh declines -> throws NeedsLoginError without retrying
+✓ runWithReauthLadder > 401 -> refresh succeeds -> retry still 401 -> throws NeedsLoginError, refresh called only once
+✓ runWithReauthLadder > 403 stops immediately — never calls refresh, never retries
+✓ runWithReauthLadder > a 500 backs off — rethrows the original error, never calls refresh
+✓ runWithReauthLadder > a network error with no status backs off the same way
+```
+
+That is `AGENTS.md` verbatim: reauth only on a confirmed 401/403 (HTTP or WS close 4401/4403);
+timeouts, 5xx and connection refusals back off and never trigger a login prompt. Deviation 2's
+scoping (ladder built and tested, not yet wired into a live loop) is honest and correct — there is
+no refresh endpoint for token or password mode to call until M08.
+
+#### Live on-device verification (`emulator-5554`)
+
+Two throwaway servers, both destroyed immediately after, secrets generated into scratch files
+outside the repo and never printed:
+
+- Loopback token mode: `hermes serve --host 127.0.0.1 --port 9119`, reached via `adb reverse`.
+- Gated password mode: `HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester
+  HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=<scratch> hermes serve --host 0.0.0.0 --port 9130`, reached
+  from the device at the emulator's host alias `10.0.2.2` with no `adb reverse`.
+
+Host-side contract confirmed first, independently of the app:
+
+```
+health:  {"ok":true,"version":"0.21.0","auth_required":true}
+providers: {"providers":[{"name":"basic","display_name":"Username & Password","supports_password":true}]}
+wrong password   -> HTTP 401
+correct password -> HTTP 200      cookies set: 3
+/api/auth/me with cookie -> HTTP 200
+```
+
+**Token mode.** Detect → `Ungated backend (version 0.21.0) — token mode.` Token entered into the
+masked field (48 bullets), Connect →
+
+```
+on-screen: Connected — install_id=6108361491d941b3b7df5c317a8c3da3
+matches server /api/status install_id ? true
+```
+
+An exact `install_id` match is the useful part: it proves an authenticated `/api/status` round trip,
+not merely that a socket opened.
+
+**Password mode auto-detect.** URL changed to the gated server → `Gated backend — password sign-in
+via "Username & Password".` and a **Sign in** button, with no token field. The screen branches on
+the detected mode correctly.
+
+**Wrong password — measured at the wire, not inferred.** Sonnet's log concedes its rate-limit probe
+did not actually count requests, and rested the claim on structural + unit-test evidence. I measured
+it directly: a counting TCP proxy in front of the gated server, with the app pointed at it, so every
+HTTP request line the server received could be attributed to a tap. One tap on **Sign in** with a
+wrong password produced on screen exactly one `Incorrect username or password.` (read via
+`uiautomator dump`), and across the entire password flow the server received:
+
+```
+ 2x  GET  /api/health
+ 1x  GET  /api/auth/providers
+ 2x  POST /auth/password-login      ← one wrong + one correct = two taps, two requests
+ 1x  GET  /api/status
+ 1x  POST /api/auth/ws-ticket
+ 1x  GET  /api/ws
+```
+
+**Two taps, two `POST /auth/password-login` requests.** No retry storm, established at the transport
+layer. This also independently closes the cookie question for the emulator case: `GET /api/status`
+succeeded after login, and it only succeeds with the session cookie attached.
+
+**Correct password** → `Connected`. **Test WS ticket dial** → `WS open — echoed subprotocol:
+hermes-gateway-v1`, with the `POST /api/auth/ws-ticket` and `GET /api/ws` in the trace above as
+corroboration.
+
+#### Code review against `AGENTS.md`
+
+- Secrets are in `expo-secure-store` only. `registry.ts` (MMKV) contains no token/password/oauth
+  reference at all, and `MobileConnection` has no secret field — its own doc comment says so and the
+  code matches. ✓
+- No `console.*` anywhere in `src/net/**` or `src/connections/**`, so no path can log a URL or
+  token. ✓
+- `credentials: 'include'` is in the implementation, not only the tests —
+  `password-login.ts:37,71`, `probe.ts:44,66`, plumbed through `http.ts:19,62`. ✓
+- `close_on_disconnect` appears exactly once in the whole repo, as `false`. ✓
+- Reauth ladder fires only on 401/403 and 4401/4403. ✓
+
+#### Verifier findings
+
+1. **The `[physical]` cookie-persistence criterion is still open**, as Sonnet states. I did not close
+   it either: it needs real hardware per D1, and no screen re-checks an existing session on launch
+   yet. M07's session-restore work is the natural place to make it observable. This is the only thing
+   keeping M04 out of `done`.
+2. **Operational note against myself, recorded for honesty:** during this verification I mis-targeted
+   a tap and typed the throwaway session token into the connect screen's *label* field, which placed
+   it in a UI dump. I immediately destroyed that server, rotated to a fresh token, and deleted the
+   affected dumps; the burned token authenticated nothing afterwards and never reached a repo file
+   (`git log -p | grep -c <token>` → 0). Worth recording because the same mis-tap in a real session
+   would put a live credential into a plain-text field — the connect screen could reasonably mask or
+   reject token-shaped input in the label field.

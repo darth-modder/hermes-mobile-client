@@ -397,3 +397,74 @@ IDEMPOTENT - NO DIFF
 combined output, captured in the same session). Full detail of how this was diagnosed (the red herring
 of "maybe upstream's own formatting changed" ruled out first) is in M05's Verification log, item 3
 under "two bugs found and fixed by writing these tests."
+
+### 2026-09-07 — Opus re-verification of the D5 follow-up (`f66af6b`)
+
+M02's own exit criteria still hold (idempotency re-run below), so the status stays `done`. But
+**decision D5 part 1 is only half delivered**, and the half that is missing fails destructively.
+
+**What works.** The script now reads every allow-listed file from the upstream git object, never the
+working tree — `readUpstreamFile()` shells out to `git -C $HERMES_AGENT_ROOT show <commit>:<src>`
+(line 292) with `commit` from `rev-parse HEAD` (line 402). `assertUpstreamAllowListedPathsClean()`
+refuses to run when an allow-listed path is dirty upstream. Both verified against a scratch fake
+upstream repo (the real checkout was never written to):
+
+```
+CONTROL (clean fake root)                  → exit 0, wrote 23 files
+TEST A  (dirty allow-listed path)          → exit 1
+  sync-upstream: …fake2 has uncommitted changes under allow-listed paths — commit or stash them there first:
+  apps/shared/src/websocket-url.ts
+  src/upstream files after refusal: 24     ← untouched
+TEST B  (committed break of a patch target)→ exit 1
+  sync-upstream: patch target found 1x, expected 2x in shared/json-rpc-gateway.ts: …
+  src/upstream files: before=24 after=24   ← untouched
+```
+
+So for **patch** failures the D5 safety property genuinely holds, which is the case that motivated
+it. Idempotency also still holds: two consecutive runs produced `NO DIFF`, and
+`git status --short src/upstream` was empty afterwards, so the script still reproduces the committed
+bytes exactly.
+
+**What is broken.** The final swap is not atomic and its failure message is false:
+
+```
+353:    rmSync(DEST_ROOT, { force: true, recursive: true })
+354:    renameSync(stagingRoot, DEST_ROOT)
+355:  } catch (error) {
+356:    rmSync(stagingRoot, { force: true, recursive: true })
+357:    fail(`staging failed, src/upstream left untouched: ${…}`)
+```
+
+`src/upstream` is deleted on line 353 *before* the rename is attempted. On Windows a directory that
+was just removed stays in a pending-delete state while any process still holds a handle inside it,
+so the rename fails with `EPERM` — and the catch block then reports "**src/upstream left
+untouched**" when it has in fact just been destroyed. Reproduced twice with Metro running (the
+normal dev state, and exactly what was left running at the end of the M04 session):
+
+```
+sync-upstream: staging failed, src/upstream left untouched: EPERM: operation not permitted,
+  rename 'D:\…\tmp-upstream-sync-tV8zoO' -> 'D:\…\src\upstream'
+
+$ git status --short src/upstream
+ D src/upstream/UPSTREAM.json
+ D src/upstream/lib/chat-messages/hydration.ts
+ … 24 files deleted, 0 remaining
+```
+
+Stopping Metro and re-running succeeded immediately (`wrote 23 files`, exit 0, clean `git status`),
+which isolates the cause to a file watcher holding handles — not to anything about upstream.
+
+This is a regression in kind, not just in degree: before D5 the failure was destructive but the
+message was silent; now it is destructive *and* asserts the opposite. Recovery is still
+`git checkout src/upstream`, and `git status` always reveals it, so the blast radius is bounded.
+
+**Fix for Sonnet** (more than one line, so not applied here): never delete the destination before the
+swap. Rename the existing directory aside first, then rename staging into place, then delete the old
+one — `src/upstream` → `src/upstream.old-<rand>`, `staging` → `src/upstream`, `rm -rf
+src/upstream.old-<rand>`, with the aside restored on failure. That leaves either the old tree or the
+new one in place at every instant, and makes the "left untouched" message true. Windows will still
+`EPERM` on the *aside* rename under a watcher, but that failure happens before anything is destroyed.
+
+**Also verified:** my other M03 finding is fixed. `scripts/spike-gateway.mjs` no longer forces
+`process.exit(0)`; a live run against a real `hermes serve` printed `PASS` and exited **0**, with no
+libuv `UV_HANDLE_CLOSING` assertion.
