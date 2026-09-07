@@ -1,0 +1,29 @@
+{
+  "commit": "089bb32886c8c18f7fa20182c7bf8826d6935ac5",
+  "files": [
+    "lib/chat-messages/hydration.ts",
+    "lib/chat-messages/parts.ts",
+    "lib/chat-messages/reconciliation.ts",
+    "lib/chat-messages/tool-parts.ts",
+    "lib/chat-messages/types.ts",
+    "lib/embedded-images.ts",
+    "lib/error-surface.ts",
+    "lib/gateway-events.ts",
+    "lib/generated-images.ts",
+    "lib/keyed-timeouts.ts",
+    "lib/reconnect-backoff.ts",
+    "lib/text.ts",
+    "lib/todos.ts",
+    "lib/with-timeout.ts",
+    "shared/backend-scope.ts",
+    "shared/cron-trigger-controller.ts",
+    "shared/json-rpc-gateway-replay.test.ts",
+    "shared/json-rpc-gateway.ts",
+    "shared/skill-scaffold.ts",
+    "shared/skin.ts",
+    "shared/websocket-url.ts",
+    "types/hermes.ts"
+  ],
+  "repo": "https://github.com/NousResearch/hermes-agent.git",
+  "syncedAt": "2026-09-06T10:15:23Z"
+}

@@ -1,0 +1,336 @@
+#!/usr/bin/env node
+/**
+ * Vendors a fixed allow-list of files from the hermes-agent monorepo into
+ * src/upstream/, rewriting `@/...` imports to relative paths and applying a
+ * small set of programmatic patches (each asserted against the original text
+ * so an upstream shape change fails loudly instead of silently drifting).
+ *
+ * Usage: node scripts/sync-upstream.mjs
+ * Env:   HERMES_AGENT_ROOT (default ../hermes-agent, relative to repo root)
+ *
+ * Idempotent: running this twice in a row against an unchanged upstream
+ * checkout must produce no git diff. UPSTREAM.json's `syncedAt` is therefore
+ * the upstream COMMIT's date, not wall-clock time.
+ */
+
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = path.resolve(__dirname, '..')
+const UPSTREAM_ROOT = path.resolve(REPO_ROOT, process.env.HERMES_AGENT_ROOT || '../hermes-agent')
+const DEST_ROOT = path.join(REPO_ROOT, 'src', 'upstream')
+
+/**
+ * Every file this project borrows from hermes-agent. `dest` is relative to
+ * src/upstream/. Add a file here (never hand-edit inside src/upstream/) when
+ * another vendored file needs it.
+ */
+const ALLOW_LIST = [
+  { dest: 'shared/json-rpc-gateway.ts', src: 'apps/shared/src/json-rpc-gateway.ts' },
+  { dest: 'shared/websocket-url.ts', src: 'apps/shared/src/websocket-url.ts' },
+  { dest: 'shared/skin.ts', src: 'apps/shared/src/skin.ts' },
+  { dest: 'shared/backend-scope.ts', src: 'apps/shared/src/backend-scope.ts' },
+  { dest: 'shared/cron-trigger-controller.ts', src: 'apps/shared/src/cron-trigger-controller.ts' },
+  // Not in the original M02 allow-list: chat-messages/hydration.ts imports
+  // `skillInvocationText` from the `@hermes/shared` workspace package. This
+  // one function is pure/dependency-free, so it's vendored whole rather than
+  // hand-rolled — see the patch on hydration.ts below, which points its
+  // import at this file instead of the (unvendored) `@hermes/shared` package.
+  { dest: 'shared/skill-scaffold.ts', src: 'apps/shared/src/skill-scaffold.ts' },
+  { dest: 'shared/json-rpc-gateway-replay.test.ts', src: 'apps/shared/src/json-rpc-gateway-replay.test.ts' },
+  { dest: 'types/hermes.ts', src: 'apps/desktop/src/types/hermes.ts' },
+  { dest: 'lib/chat-messages/types.ts', src: 'apps/desktop/src/lib/chat-messages/types.ts' },
+  { dest: 'lib/chat-messages/parts.ts', src: 'apps/desktop/src/lib/chat-messages/parts.ts' },
+  { dest: 'lib/chat-messages/tool-parts.ts', src: 'apps/desktop/src/lib/chat-messages/tool-parts.ts' },
+  { dest: 'lib/chat-messages/reconciliation.ts', src: 'apps/desktop/src/lib/chat-messages/reconciliation.ts' },
+  { dest: 'lib/chat-messages/hydration.ts', src: 'apps/desktop/src/lib/chat-messages/hydration.ts' },
+  { dest: 'lib/gateway-events.ts', src: 'apps/desktop/src/lib/gateway-events.ts' },
+  { dest: 'lib/reconnect-backoff.ts', src: 'apps/desktop/src/lib/reconnect-backoff.ts' },
+  { dest: 'lib/with-timeout.ts', src: 'apps/desktop/src/lib/with-timeout.ts' },
+  { dest: 'lib/keyed-timeouts.ts', src: 'apps/desktop/src/lib/keyed-timeouts.ts' },
+  { dest: 'lib/text.ts', src: 'apps/desktop/src/lib/text.ts' },
+  { dest: 'lib/todos.ts', src: 'apps/desktop/src/lib/todos.ts' },
+  { dest: 'lib/error-surface.ts', src: 'apps/desktop/src/lib/error-surface.ts' },
+  { dest: 'lib/embedded-images.ts', src: 'apps/desktop/src/lib/embedded-images.ts' },
+  { dest: 'lib/generated-images.ts', src: 'apps/desktop/src/lib/generated-images.ts' }
+]
+
+function fail(message) {
+  console.error(`sync-upstream: ${message}`)
+  process.exit(1)
+}
+
+/** Replace every occurrence of `find` (must occur exactly `count` times) with `replace`. */
+function patch(content, { count = 1, description, file, find, replace }) {
+  const occurrences = content.split(find).length - 1
+
+  if (occurrences !== count) {
+    fail(
+      `patch target ${occurrences === 0 ? 'not found' : `found ${occurrences}x, expected ${count}x`} in ${file}: ${description}\n` +
+        `--- expected to find ---\n${find}\n--- end ---`
+    )
+  }
+
+  return content.split(find).join(replace)
+}
+
+/**
+ * Per-destination-path patches, applied before the generic `@/` alias
+ * rewrite below. Each entry replaces an import (or, for json-rpc-gateway.ts,
+ * adds replay-truncation handling) that would otherwise pull in a package or
+ * browser global this project doesn't vendor.
+ */
+const PATCHES = {
+  'lib/chat-messages/hydration.ts': [
+    {
+      description: "skillInvocationText import from the '@hermes/shared' workspace package -> vendored copy",
+      find: "import { skillInvocationText } from '@hermes/shared'",
+      replace: "import { skillInvocationText } from '../../shared/skill-scaffold'"
+    }
+  ],
+  'lib/chat-messages/parts.ts': [
+    {
+      description: "media helpers import from '@/lib/media' -> the app's own src/lib/media.ts (not vendored)",
+      find: "import { mediaDisplayLabel, mediaMarkdownHref } from '@/lib/media'",
+      replace: "import { mediaDisplayLabel, mediaMarkdownHref } from '../../../lib/media'"
+    }
+  ],
+  'lib/chat-messages/types.ts': [
+    {
+      description:
+        'type-only @assistant-ui/react import + @hermes/shared BillingBlock import -> local structural types',
+      find: "import type { ThreadMessageLike } from '@assistant-ui/react'\nimport { type BillingBlock } from '@hermes/shared'",
+      replace: [
+        '/**',
+        " * Local structural stand-in for assistant-ui/react's ThreadMessageLike. This client",
+        " * doesn't use assistant-ui's runtime, only the message-part shape this",
+        ' * reducer was written against — narrowed to the part kinds it actually',
+        ' * branches on (text, reasoning, tool-call). assistant-ui’s other part kinds',
+        ' * (image, file, source, data, generative-ui, audio) are never constructed or',
+        ' * matched anywhere in this file or tool-parts.ts.',
+        ' */',
+        'type ThreadMessageLike = {',
+        '  readonly content: readonly (',
+        "    | { readonly type: 'text'; readonly text: string }",
+        "    | { readonly type: 'reasoning'; readonly text: string }",
+        '    | {',
+        "        readonly type: 'tool-call'",
+        '        readonly toolCallId?: string',
+        '        readonly toolName: string',
+        '        readonly args?: Record<string, unknown>',
+        '        readonly argsText?: string',
+        '        readonly result?: unknown',
+        '        readonly isError?: boolean',
+        '      }',
+        '  )[]',
+        '}',
+        '',
+        "/** Local stand-in for @hermes/shared's BillingBlock (mirrors apps/shared/src/billing-types.ts upstream). */",
+        'interface BillingBlock {',
+        '  provider: string',
+        '  provider_label: string',
+        '  model: string',
+        '  billing_url: string | null',
+        '  is_nous: boolean',
+        '  message: string',
+        '}'
+      ].join('\n')
+    }
+  ],
+  'lib/gateway-events.ts': [
+    {
+      description: "StatusbarMenuItem type import from '@/app/shell/statusbar-controls' -> inline local type",
+      find: "import type { StatusbarMenuItem } from '@/app/shell/statusbar-controls'",
+      replace: [
+        "/** Local stand-in for the desktop's StatusbarMenuItem — only the fields this module constructs. */",
+        'interface StatusbarMenuItem {',
+        '  className?: string',
+        '  disabled?: boolean',
+        '  id: string',
+        '  label: string',
+        '}'
+      ].join('\n')
+    }
+  ],
+  'shared/json-rpc-gateway.ts': [
+    {
+      count: 2,
+      description: "DOMException isn't available on every JS engine (Hermes) -> a plain Error named 'AbortError'",
+      find: "new DOMException('Aborted', 'AbortError')",
+      replace: "Object.assign(new Error('Aborted'), { name: 'AbortError' })"
+    },
+    {
+      description: 'declare the synthetic replay.truncated event type in the GatewayEventName union',
+      find: "  | 'error'\n  | 'skin.changed'\n  | (string & {})",
+      replace: "  | 'error'\n  | 'skin.changed'\n  | 'replay.truncated'\n  | (string & {})"
+    },
+    {
+      description: 'track which session_id each in-flight session.events.since call belongs to',
+      find:
+        '      for (const result of results) {\n' +
+        "        if (result.status !== 'fulfilled' || !Array.isArray(result.value?.events)) {\n" +
+        '          continue\n' +
+        '        }',
+      replace:
+        '      for (const [replayIndex, result] of results.entries()) {\n' +
+        "        if (result.status !== 'fulfilled' || !Array.isArray(result.value?.events)) {\n" +
+        '          continue\n' +
+        '        }\n' +
+        '\n' +
+        '        const [replaySid] = entries[replayIndex]'
+    },
+    {
+      description: 'emit a synthetic replay.truncated event when session.events.since reports truncated: true',
+      find:
+        '        for (const event of result.value.events) {\n' +
+        '          if (!event?.type) {\n' +
+        '            continue\n' +
+        '          }\n' +
+        '\n' +
+        '          this.dispatchIfNewer(event as GatewayEvent)\n' +
+        '        }\n' +
+        '      }',
+      replace:
+        '        for (const event of result.value.events) {\n' +
+        '          if (!event?.type) {\n' +
+        '            continue\n' +
+        '          }\n' +
+        '\n' +
+        '          this.dispatchIfNewer(event as GatewayEvent)\n' +
+        '        }\n' +
+        '\n' +
+        '        if ((result.value as { truncated?: unknown }).truncated === true) {\n' +
+        '          const latestSeq = (result.value as { latest_seq?: unknown }).latest_seq\n' +
+        '\n' +
+        '          this.dispatchEvent({\n' +
+        "            type: 'replay.truncated',\n" +
+        '            session_id: replaySid,\n' +
+        "            payload: { session_id: replaySid, latest_seq: typeof latestSeq === 'number' ? latestSeq : undefined }\n" +
+        '          })\n' +
+        '        }\n' +
+        '      }'
+    }
+  ],
+  'shared/websocket-url.ts': [
+    {
+      description:
+        'never read window.location — React Native defines a global `window` without `.location`, and vendored code must not touch browser globals at all; callers in this project always pass explicit host/protocol',
+      find:
+        'function readWindowLocation(): { host: string; protocol: string } {\n' +
+        "  if (typeof window === 'undefined') {\n" +
+        "    return { host: '', protocol: 'http:' }\n" +
+        '  }\n' +
+        '\n' +
+        '  return { host: window.location.host, protocol: window.location.protocol }\n' +
+        '}',
+      replace:
+        'function readWindowLocation(): { host: string; protocol: string } {\n' +
+        '  // Never touch `window` here (React Native defines a global `window` without\n' +
+        '  // `.location`, and vendored code must not touch browser globals at all).\n' +
+        '  // Callers in this project always pass explicit host/protocol.\n' +
+        "  return { host: '', protocol: 'http:' }\n" +
+        '}'
+    }
+  ]
+}
+
+/** Rewrite `from '@/foo/bar'` to a relative import pointing at src/upstream/foo/bar. */
+function rewriteAtAliasImports(content, destAbsPath) {
+  return content.replace(/from '@\/([^']+)'/g, (match, sub) => {
+    const targetAbs = path.join(DEST_ROOT, sub)
+    let rel = path.relative(path.dirname(destAbsPath), targetAbs).split(path.sep).join('/')
+
+    if (!rel.startsWith('.')) {
+      rel = `./${rel}`
+    }
+
+    return `from '${rel}'`
+  })
+}
+
+function assertNoRemainingAliasOrWorkspaceImports(content, file) {
+  const badImport = content.match(/from '(@\/[^']+|@hermes\/[^']+|@assistant-ui\/[^']+)'/)
+
+  if (badImport) {
+    fail(`${file}: unresolved import ${badImport[1]} survived patching — add a patch or extend the allow-list`)
+  }
+}
+
+function syncFiles() {
+  rmSync(DEST_ROOT, { force: true, recursive: true })
+
+  const written = []
+
+  for (const { dest, src } of ALLOW_LIST) {
+    const srcAbs = path.join(UPSTREAM_ROOT, src)
+
+    if (!existsSync(srcAbs)) {
+      fail(`missing upstream file (looked at ${srcAbs}) for allow-list entry: ${src}`)
+    }
+
+    let content = readFileSync(srcAbs, 'utf8')
+
+    for (const p of PATCHES[dest] ?? []) {
+      content = patch(content, { ...p, file: dest })
+    }
+
+    const destAbs = path.join(DEST_ROOT, dest)
+
+    content = rewriteAtAliasImports(content, destAbs)
+    assertNoRemainingAliasOrWorkspaceImports(content, dest)
+
+    mkdirSync(path.dirname(destAbs), { recursive: true })
+    writeFileSync(destAbs, content)
+    written.push(dest)
+  }
+
+  return written
+}
+
+/**
+ * The rewritten import order rarely matches this project's perfectionist/sort-imports
+ * rule (upstream groups imports differently, and alias rewriting changes each
+ * import's depth). Auto-fixing here — deterministic for unchanged input, so it
+ * doesn't break idempotency — keeps `src/upstream/**` lint-clean without a
+ * bespoke reorder patch per file.
+ */
+function lintFixDest() {
+  const eslintBin = path.join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
+  const prettierBin = path.join(REPO_ROOT, 'node_modules', 'prettier', 'bin', 'prettier.cjs')
+
+  execFileSync(process.execPath, [eslintBin, '--fix', DEST_ROOT], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync(process.execPath, [prettierBin, '--write', DEST_ROOT], { cwd: REPO_ROOT, stdio: 'inherit' })
+}
+
+function writeManifest(files) {
+  const commit = execFileSync('git', ['-C', UPSTREAM_ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  // The upstream COMMIT's date, not wall-clock time — keeps re-running this
+  // script against an unchanged checkout byte-for-byte idempotent.
+  const syncedAt = execFileSync('git', ['-C', UPSTREAM_ROOT, 'log', '-1', '--format=%cI'], {
+    encoding: 'utf8'
+  }).trim()
+  let repo = 'hermes-agent'
+
+  try {
+    repo = execFileSync('git', ['-C', UPSTREAM_ROOT, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim()
+  } catch {
+    // No 'origin' remote configured on this checkout; fall back to the default name.
+  }
+
+  const manifest = { commit, files: [...files].sort(), repo, syncedAt }
+
+  writeFileSync(path.join(DEST_ROOT, 'UPSTREAM.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+if (!existsSync(UPSTREAM_ROOT)) {
+  fail(`HERMES_AGENT_ROOT not found: ${UPSTREAM_ROOT}`)
+}
+
+const files = syncFiles()
+
+lintFixDest()
+writeManifest(files)
+console.log(`sync-upstream: wrote ${files.length} files to ${path.relative(REPO_ROOT, DEST_ROOT)}`)
