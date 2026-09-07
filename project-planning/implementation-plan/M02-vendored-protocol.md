@@ -137,3 +137,146 @@ ReactNativeJS: '[runtime-check]', '{"AbortSignal":true,"DOMException":true,"URL"
 ```
 
 All five PRESENT. No polyfill needed on this engine.
+
+### 2026-09-07 — Opus re-verification
+
+**Verdict: verified.** Every claim re-run independently.
+
+#### Reference-repo gate (protocol step 6) — relaxed, with cause
+
+`git -C ../hermes-agent status --short` did **not** match the handover's exact six-entry list. A
+concurrent session (the user's parallel PWA/Capacitor port) was editing the upstream checkout
+live during this verification — files appearing and changing at 16:05, 16:40, 16:44, 16:45:
+
+```
+apps/desktop/src/components/pane-shell/tree/renderer/narrow-overlays.tsx
+apps/desktop/src/components/haptics-provider.tsx
+apps/desktop/src/lib/haptics.ts
+apps/desktop/src/styles.css
+```
+
+All four are Electron **desktop renderer** files (touch affordances + haptics). Checked
+programmatically against the 22 `src:` entries in `scripts/sync-upstream.mjs`:
+
+```
+allow-listed files: 22
+changed files checked: 8
+NO INTERSECTION — no vendored source file is modified
+```
+
+Nothing under `tui_gateway/` or `hermes_cli/` was touched by that session; the only core-server
+file in the tree, `tui_gateway/server.py`, is the pre-existing **docstring-only** change from
+02:31 (it documents `"android"` as a known session source). Upstream HEAD never moved from
+`089bb32`.
+
+On that evidence the gate is narrowed, with the user's agreement, from an exact whole-repo file
+list to **"no uncommitted changes under the 22 vendored allow-listed source paths."** Vendored
+provenance is unaffected. Recorded here so a later reader knows the original gate text was not
+met literally.
+
+#### Checks
+
+`npm run check` — exit 0 (3 files, 10 tests). `npx prettier --check .` — exit 0,
+`All matched files use Prettier code style!`.
+
+**Idempotency.** Ran `node scripts/sync-upstream.mjs` twice, snapshotting `src/upstream/` between
+runs and `diff -r`-ing the snapshots:
+
+```
+=== diff -r run1 vs run2 ===
+NO DIFF
+=== git status after run 2 ===
+(empty)
+=== file count ===
+23
+```
+
+22 vendored files + `UPSTREAM.json`. Note the stronger property this also proves: regenerating
+from the current upstream checkout reproduces the **committed** bytes exactly, so what is in git
+really is what the script produces.
+
+**Pin.** `UPSTREAM.json.commit` = `089bb32886c8c18f7fa20182c7bf8826d6935ac5`;
+`git -C ../hermes-agent rev-parse HEAD` = the same, and `syncedAt` (`2026-09-06T10:15:23Z`)
+matches `git log -1 --format=%cI`. The wall-clock-vs-commit-date reasoning in Tasks is correct and
+is what makes the idempotency criterion satisfiable at all.
+
+**Patches fail loudly — tested, not assumed.** Built a minimal fake upstream root in a scratch dir
+containing only the 22 allow-listed files plus a `git init` + one commit (the script shells out to
+`git rev-parse HEAD` / `git log -1`), then pointed `HERMES_AGENT_ROOT` at it.
+
+Control (unmodified fake root): exit **0**, `wrote 22 files`. So a failure below is attributable
+to the mutation, not to the harness.
+
+Test A — altered one patch target (`window.location.host` → `window.location.hostname` in
+`websocket-url.ts`): exit **1**.
+
+```
+sync-upstream: patch target not found in shared/websocket-url.ts: never read window.location — …
+--- expected to find ---
+function readWindowLocation(): { host: string; protocol: string } {
+  if (typeof window === 'undefined') {
+…
+```
+
+Test B — broke the *count* rather than the presence, by changing 1 of the 2 `DOMException`
+occurrences (that patch declares `count: 2`): exit **1**.
+
+```
+sync-upstream: patch target found 1x, expected 2x in shared/json-rpc-gateway.ts: DOMException isn't available on every JS engine (Hermes) -> a plain Error named 'AbortError'
+```
+
+Both assertions are real. `src/upstream/` was restored by re-running the real sync;
+`git status --short src/upstream` is empty.
+
+**Narrowed `ThreadMessageLike` reviewed.** It is referenced in exactly one place —
+`types.ts:46`, `ChatMessagePart = Exclude<ThreadMessageLike['content'], string>[number] & …` — so
+every `.type ===` / `.type !==` across `parts.ts`, `tool-parts.ts`, `reconciliation.ts` and
+`hydration.ts` is the full surface. Enumerated all ~40 of them: the only kinds branched on are
+`text`, `reasoning`, and `tool-call`, exactly as the deviation note claims. `tsc --noEmit` passing
+is the stronger half of the argument — if the narrowed type omitted a field the reducers read, the
+typecheck would fail. The residual risk is not type-level but runtime: an assistant-ui part kind
+the server could emit would fall through every branch rather than being handled. That is the same
+behaviour as upstream for unknown kinds, so it is acceptable, but it is the thing to re-check at
+M05/M06 when real fixtures land.
+
+**No browser globals.** `grep -rnw "window|document|localStorage|navigator" src/upstream src/gateway`
+returns only **comments** (plus `types/hermes.ts:1266 window?: number`, a property name). More
+importantly the ESLint rule was proved to actually fire, rather than merely existing — via stdin,
+so no file was written:
+
+```
+$ echo 'export const probe = window.location.host' | npx eslint --stdin --stdin-filename src/upstream/__probe.ts
+  1:22  error  Unexpected use of 'window'. This module is vendored/gateway code; it must not touch browser globals  no-restricted-globals
+✖ 1 problem (1 error, 0 warnings)      → exit 1
+
+$ … --stdin-filename src/lib/__probe.ts                → exit 0
+```
+
+Correct rule, correctly scoped to `src/upstream/**` and `src/gateway/**` and not beyond.
+
+**On-device runtime check**, re-run live on `emulator-5554` against the APK built this session
+(deep-linked `hermes-android://runtime-check`). `uiautomator dump` text: five rows, all `PRESENT`.
+`adb logcat`:
+
+```
+ReactNativeJS: '[runtime-check]', '{"AbortSignal":true,"DOMException":true,"URL":true,"URLSearchParams":true,"WebSocket":true}'
+```
+
+Byte-identical to the implementer's result. `react-native-url-polyfill` correctly not added.
+
+#### Verifier finding (low severity, not gating)
+
+`syncFiles()` calls `rmSync(DEST_ROOT, { recursive: true })` **before** any patch is validated, so
+a sync that fails on upstream drift leaves the working tree wrecked rather than untouched. Observed
+directly during Test A:
+
+```
+$ git status --short src/upstream
+ D src/upstream/UPSTREAM.json
+ D src/upstream/lib/chat-messages/hydration.ts
+ … 22 deletions, 1 of 23 files surviving
+```
+
+Recovery is `git checkout src/upstream` or re-running a good sync, so the blast radius is small
+and always visible in `git status`. Worth a one-line fix when the file is next touched (write to a
+temp dir, swap on success); not worth a milestone reopen. Handed to Sonnet rather than fixed here.
