@@ -20,6 +20,12 @@ expo-env.d.ts
 .env
 .env.*
 
+# AI-tooling skill packs (per-developer, re-fetchable; decision D4)
+.agents/
+.claude/
+.zcode/
+skills-lock.json
+
 # tooling
 .DS_Store
 npm-debug.*

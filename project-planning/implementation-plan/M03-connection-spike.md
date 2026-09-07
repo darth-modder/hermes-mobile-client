@@ -1,6 +1,6 @@
 # M03 — Connection spike
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M01, M02
 **Goal:** Dial, `android`-source session, streaming turn, and reconnect replay proven from the device.
 
@@ -40,17 +40,27 @@
 
 - [x] A 200+ token reply streams to the screen. **Verified live** — a ~300-word short story
       streamed in full (see Verification log).
-- [~] **Airplane-mode toggle mid-turn: after reconnect the assembled text equals `session.resume`
-      history with no duplicate or missing `seq`.** (Original wording, restored by the verifier —
-      this criterion had been rewritten to describe the weaker Disconnect/Reconnect-after-completion
-      test that was actually run.) **Partially verified** by Opus: a real mid-turn transport loss
-      plus the explicit `session.resume` diff passes byte-for-byte (sha256 match), but the literal
-      airplane-mode mechanism is unreachable on an emulator — `adb reverse` bypasses the radio, and
-      it is the only transport a loopback-bound server accepts. Gap and evidence in the Opus
-      re-verification note below; needs a physical device (Fable escalation #4).
+- [x] **Transport loss mid-turn: after reconnect the assembled text equals `session.resume`
+      history with no duplicate or missing `seq`.** **Verified** by Opus: host-side TCP cut
+      immediately after `message.start` with zero deltas received; after reconnect the on-screen
+      text and `session.resume` history were byte-identical (sha256 `11295a21…`, 1192 chars) and
+      watermarks never regressed across the cut, a second short-gap reconnect, and a backend
+      restart. See the Opus re-verification note below.
+      *Decision D1 (`project-planning/DECISIONS.md`):* the original wording was "Airplane-mode
+      toggle mid-turn …". The airplane-mode mechanism is unreachable on an emulator behind
+      `adb reverse`, and the criterion's purpose (client reconnect + replay correctness) was proven
+      under a harsher cut. The radio-layer behaviour (airplane mode, `ConnectivityManager`, OS
+      socket teardown, IP change) is now a `[physical]` exit criterion in M07.
 - [x] Backend restart: new `replay_epoch` observed and the session re-resumed. **Verified live** —
       see Verification log.
 - [x] Node spike passes all five steps (status, dial, session.create, stream, replay). **Verified live.**
+
+## Follow-ups (assigned to Sonnet, do not block `done`)
+
+- [ ] `scripts/spike-gateway.mjs` exits 127 on success: a libuv `UV_HANDLE_CLOSING` assertion
+      fires after `PASS` because `process.exit(0)` runs while the WebSocket handle is still
+      finalizing. Close and await the socket's `close` event before exiting so the script can be
+      gated on its exit code.
 
 ## Verification log
 

@@ -6,7 +6,7 @@
 
 ## Tasks
 
-- [ ] Release keystore stored outside the repo; `apk:release` (local Gradle) and an EAS production profile; version and build-number scheme
+- [ ] Release builds via **EAS Build** (decision D3): `eas.json` with `development`, `preview`, and `production` profiles; signing credentials managed by EAS, never stored in the repo or on one machine; version and build-number scheme. `apk:release` via local Gradle (WSL2) stays as an optional fallback only.
 - [ ] Privacy policy and Play data-safety form (the client collects nothing); app icon and splash
 - [ ] Memory and performance pass: under 300 MB, 60 fps transcript scroll on a mid-range device
 - [ ] Crash reporting decision (opt-in only)

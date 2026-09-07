@@ -34,6 +34,19 @@
 - `scripts/sync-upstream.mjs`, `src/upstream/**` (22 files), `src/upstream/UPSTREAM.json`,
   `src/polyfills.ts` (+ `src/polyfills.test.ts`), `src/lib/media.ts`, `app/runtime-check.tsx`.
 
+## Follow-ups (assigned to Sonnet, decision D5; do not change `done`)
+
+- [ ] `scripts/sync-upstream.mjs` reads allow-listed files from the upstream **git object**
+      (`git -C $HERMES_AGENT_ROOT show HEAD:<path>`), never from the working tree, so uncommitted
+      edits in a shared checkout can never leak into `src/upstream/`. `UPSTREAM.json.commit` is
+      the `HEAD` those objects came from.
+- [ ] The script stages output and validates every patch into a temporary directory first, and
+      replaces `src/upstream/` only after all patches succeed. Today it `rmSync`s the directory
+      before validating, so a failed run leaves 22 files deleted (recovery: `git checkout src/upstream`).
+- [ ] The script refuses to run if `git -C $HERMES_AGENT_ROOT status --short` lists any
+      allow-listed path (someone is mid-edit on a file we vendor), printing the offending paths.
+- [ ] Re-run the idempotency check and `npm run check`; append the output to the Verification log.
+
 ## Deviations from the literal spec (and why)
 
 The original patch list (5 items) and allow-list didn't anticipate everything a faithful port

@@ -26,7 +26,7 @@ file (upstream `hermes_cli/web_server_dashboard.py`). Those routes sit behind th
 
 ## Exit criteria
 
-- Screen off 30 minutes; an approval arrives as a push; tapping opens the card and responding succeeds.
+- `[physical]` Screen off 30 minutes; an approval arrives as a push; tapping opens the card and responding succeeds (decision D1: doze and FCM delivery are not faithfully emulated).
 - No push is sent while the app is foregrounded.
 - Dictation inserts transcribed text into the composer.
 - A reply is spoken via TTS.

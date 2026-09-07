@@ -25,7 +25,8 @@ the phone does the same with a tiny native module.
 
 ## Exit criteria
 
-- Portal login completes via Custom Tabs on a real device.
+- `[physical]` Portal login completes via Custom Tabs on a real device (decision D1: whether the
+  device browser redirects to `http://127.0.0.1:<port>` is OEM-dependent).
 - Access-token expiry triggers a silent refresh.
 - Refresh-token expiry produces exactly one "sign in again" prompt.
 - Logout clears every SecureStore entry for the connection.

@@ -17,6 +17,15 @@ code only**. Never edit it from this project. Anything the app needs from the se
 either already exist upstream or ship from this repo as a user-installed plugin
 (`server-plugin/`).
 
+Other sessions may legitimately be working in that checkout. Vendoring therefore reads from git
+objects (`git show HEAD:<path>`), never the working tree, and the verification gate is: upstream
+`HEAD` equals `src/upstream/UPSTREAM.json.commit`, and `git -C ../hermes-agent status --short`
+lists nothing under an allow-listed path (decision D5). Working-tree noise elsewhere is out of
+scope.
+
+Rule changes live in `project-planning/DECISIONS.md`. An exit criterion is never rewritten in
+place to match a result; a reword needs a D-entry and keeps the original wording visible.
+
 ## Vendored code (`src/upstream/`)
 
 `scripts/sync-upstream.mjs` owns every file under `src/upstream/`. Never hand-edit them; add a

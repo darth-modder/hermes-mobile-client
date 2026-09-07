@@ -21,7 +21,9 @@
 ## Exit criteria
 
 - Password login over LAN to `hermes serve --host 0.0.0.0` with the basic-auth provider succeeds.
-- Cookies survive app kill and relaunch (`GET /api/auth/me` still 200).
+- `[physical]` Cookies survive app kill and relaunch (`GET /api/auth/me` still 200). Emulator
+  evidence is welcome but does not close this one (decision D1): cookie-jar persistence across
+  process death differs across OEM WebView builds.
 - WS dials with the ticket subprotocol and the server echoes `hermes-gateway-v1`.
 - Wrong password produces one error and no retry storm.
 - Token mode still works via `adb reverse`.
