@@ -367,3 +367,33 @@ baseline from before this session, which is expected to move when upstream does.
 
 **`npm run check`** — exit 0, 3 files / 10 tests, lint clean. Re-run once more after the
 `spike-gateway.mjs` fix below; still green.
+
+### 2026-09-07 — Sonnet: `.gitignore` regression found and fixed during M05
+
+While working M05, `npx prettier --check .` flagged two `src/upstream/**` files as unformatted right
+after a fresh `sync-upstream.mjs` run — meaning `lintFixDest()`'s own `prettier --write` step wasn't
+actually taking effect. Root cause: the earlier M02/M03 follow-up commit had added
+`tmp-upstream-sync-*/` to `.gitignore` as a "just in case" safety net for the staging directory.
+Prettier 3.x respects `.gitignore` by default, so every `prettier --write <stagingRoot>` call was
+silently a no-op — the staged files kept whatever formatting the raw upstream source happened to have
+(mostly harmless, since upstream is usually already prettier-clean, but not guaranteed, and the
+idempotency check couldn't have caught it either, since "no diff between two runs" holds regardless of
+whether formatting is applied at all).
+
+Fixed by removing the `.gitignore` entry (`cleanStaleStaging()` already sweeps a crashed run's leftover
+staging directory on the very next run, so the entry was pure downside once this was found). Re-ran the
+idempotency check and `npm run check` after the fix:
+
+```
+=== run 1 ===
+sync-upstream: wrote 23 files to src\upstream
+=== run 2 ===
+sync-upstream: wrote 23 files to src\upstream
+=== diff -rq run1 vs run2 ===
+IDEMPOTENT - NO DIFF
+```
+
+`npm run check` and `npx prettier --check .` both exit 0 (see M05's own Verification log for the full
+combined output, captured in the same session). Full detail of how this was diagnosed (the red herring
+of "maybe upstream's own formatting changed" ruled out first) is in M05's Verification log, item 3
+under "two bugs found and fixed by writing these tests."

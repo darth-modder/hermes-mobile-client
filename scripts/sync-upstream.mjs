@@ -43,6 +43,10 @@ const ALLOW_LIST = [
   { dest: 'shared/skill-scaffold.ts', src: 'apps/shared/src/skill-scaffold.ts' },
   { dest: 'shared/json-rpc-gateway-replay.test.ts', src: 'apps/shared/src/json-rpc-gateway-replay.test.ts' },
   { dest: 'types/hermes.ts', src: 'apps/desktop/src/types/hermes.ts' },
+  // Not in the original M02 allow-list: M05 needs the barrel other files
+  // import from upstream as `@/lib/chat-messages` rather than reaching into
+  // each submodule directly. Pure re-exports, no @/ imports of its own.
+  { dest: 'lib/chat-messages/index.ts', src: 'apps/desktop/src/lib/chat-messages/index.ts' },
   { dest: 'lib/chat-messages/types.ts', src: 'apps/desktop/src/lib/chat-messages/types.ts' },
   { dest: 'lib/chat-messages/parts.ts', src: 'apps/desktop/src/lib/chat-messages/parts.ts' },
   { dest: 'lib/chat-messages/tool-parts.ts', src: 'apps/desktop/src/lib/chat-messages/tool-parts.ts' },

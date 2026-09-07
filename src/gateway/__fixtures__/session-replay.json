@@ -1,0 +1,274 @@
+{
+  "description": "Captured live from a real hermes serve (M05 follow-up capture, redacted) — session.create source=android, prompt.submit, message stream through message.complete, plus trailing session.info/session.title/sessions.changed. One unrelated session.reclaimed broadcast (a different, already-dead session from a prior run) is preserved verbatim to prove the reducer ignores events for sessions it does not know.",
+  "events": [
+    {
+      "payload": {
+        "skin": "<redacted skin>",
+        "change_events": true,
+        "heartbeat": true,
+        "replay_epoch": "redacted-epoch"
+      },
+      "session_id": "",
+      "type": "gateway.ready"
+    },
+    {
+      "payload": {
+        "model": "mimo-v2.5",
+        "provider": "opencode-go",
+        "reasoning_effort": "medium",
+        "service_tier": "",
+        "fast": false,
+        "yolo": false,
+        "approval_mode": "smart",
+        "tools": "<redacted toolset>",
+        "skills": "<redacted skills>",
+        "cwd": "<redacted cwd>",
+        "branch": "",
+        "project": null,
+        "terminal_backend": "local",
+        "personality": "",
+        "running": true,
+        "turn_started_at": 1788788263.9530656,
+        "title": "",
+        "stored_session_id": "20260907_183743_042b36",
+        "desktop_contract": 6,
+        "version": "0.21.0",
+        "release_date": "2026.8.31",
+        "update_behind": 374,
+        "update_command": "hermes update",
+        "usage": {
+          "model": "mimo-v2.5",
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "prompt": 0,
+          "completion": 0,
+          "total": 0,
+          "calls": 0,
+          "compressions": 0,
+          "active_subagents": 0
+        },
+        "profile_name": "default",
+        "mcp_servers": [],
+        "system_prompt": "<redacted system prompt>"
+      },
+      "session_id": "268253e9",
+      "type": "session.info"
+    },
+    {
+      "payload": {},
+      "session_id": "268253e9",
+      "type": "message.start"
+    },
+    {
+      "payload": {
+        "text": "(´･_･`) brainstorming..."
+      },
+      "session_id": "268253e9",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {},
+      "session_id": "",
+      "type": "sessions.changed"
+    },
+    {
+      "payload": {
+        "session_id": "20260907_183743_042b36",
+        "title": "Reply with exactly: mobile spike ok #2"
+      },
+      "session_id": "268253e9",
+      "type": "session.title"
+    },
+    {
+      "payload": {},
+      "session_id": "",
+      "type": "sessions.changed"
+    },
+    {
+      "payload": {
+        "session_id": "4e9dd6d2",
+        "stored_session_id": "20260907_183715_7724e9",
+        "reason": "ws_orphan_reap"
+      },
+      "session_id": "",
+      "type": "session.reclaimed"
+    },
+    {
+      "payload": {},
+      "session_id": "",
+      "type": "sessions.changed"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "268253e9",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": "The user is asking"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " me to reply with exactly \""
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": "mobile spike ok\"."
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " This is a simple request to"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " reply"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " with a specific"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": " text"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": "."
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.delta"
+    },
+    {
+      "payload": {
+        "text": "mobile spike ok"
+      },
+      "session_id": "268253e9",
+      "type": "message.delta"
+    },
+    {
+      "payload": {
+        "text": ""
+      },
+      "session_id": "268253e9",
+      "type": "thinking.delta"
+    },
+    {
+      "payload": {
+        "text": "mobile spike ok"
+      },
+      "session_id": "268253e9",
+      "type": "reasoning.available"
+    },
+    {
+      "payload": {
+        "text": "mobile spike ok",
+        "usage": {
+          "model": "mimo-v2.5",
+          "input": 9,
+          "output": 32,
+          "reasoning": 0,
+          "prompt": 13001,
+          "completion": 32,
+          "total": 13033,
+          "calls": 1,
+          "context_used": 13001,
+          "context_max": 1000000,
+          "context_percent": 1,
+          "compressions": 0,
+          "cache_hit_pct": 100,
+          "avg_latency_s": 8.7,
+          "avg_tps": 3.7,
+          "active_subagents": 0
+        },
+        "status": "complete",
+        "reasoning": "The user is asking me to reply with exactly \"mobile spike ok\". This is a simple request to reply with a specific text."
+      },
+      "session_id": "268253e9",
+      "type": "message.complete"
+    },
+    {
+      "payload": {
+        "model": "mimo-v2.5",
+        "provider": "opencode-go",
+        "reasoning_effort": "medium",
+        "service_tier": "",
+        "fast": false,
+        "yolo": false,
+        "approval_mode": "smart",
+        "tools": "<redacted toolset>",
+        "skills": "<redacted skills>",
+        "cwd": "<redacted cwd>",
+        "branch": "",
+        "project": null,
+        "terminal_backend": "local",
+        "personality": "",
+        "running": false,
+        "turn_started_at": null,
+        "title": "Reply with exactly: mobile spike ok #2",
+        "stored_session_id": "20260907_183743_042b36",
+        "desktop_contract": 6,
+        "version": "0.21.0",
+        "release_date": "2026.8.31",
+        "update_behind": 374,
+        "update_command": "hermes update",
+        "usage": {
+          "model": "mimo-v2.5",
+          "input": 9,
+          "output": 32,
+          "reasoning": 0,
+          "prompt": 13001,
+          "completion": 32,
+          "total": 13033,
+          "calls": 1,
+          "context_used": 13001,
+          "context_max": 1000000,
+          "context_percent": 1,
+          "compressions": 0,
+          "cache_hit_pct": 100,
+          "avg_latency_s": 8.7,
+          "avg_tps": 3.7,
+          "active_subagents": 0
+        },
+        "profile_name": "default",
+        "mcp_servers": [],
+        "system_prompt": "<redacted system prompt>"
+      },
+      "session_id": "268253e9",
+      "type": "session.info"
+    },
+    {
+      "payload": {},
+      "session_id": "",
+      "type": "sessions.changed"
+    }
+  ],
+  "expected": {
+    "assistantText": "mobile spike ok",
+    "userText": "Reply with exactly: mobile spike ok",
+    "storedSessionId": "20260907_183743_042b36"
+  }
+}
