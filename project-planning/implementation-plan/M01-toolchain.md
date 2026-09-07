@@ -186,3 +186,85 @@ Running 21 checks on your project...
   version banner reading `exposdk:57.0.0`. Screenshot: [docs/m01.png](../../docs/m01.png).
 
 Server version: n/a (no backend involved in this milestone).
+
+### 2026-09-07 — Opus re-verification
+
+**Verdict: verified.** Every exit criterion re-run independently; no pasted output from the
+implementer was accepted. Device: `emulator-5554` (the pre-existing `hermes-test` AVD).
+
+`npm run check` — exit 0:
+
+```
+> hermes-android@1.0.0 typecheck
+> tsc -p . --noEmit
+> hermes-android@1.0.0 test
+> vitest run
+ RUN  v4.1.10 D:/Stuff/Code/git/hermes-android
+ Test Files  3 passed (3)
+      Tests  10 passed (10)
+   Duration  1.02s
+> hermes-android@1.0.0 lint
+> eslint .
+```
+
+`npx expo-doctor` — exit 0:
+
+```
+Running 21 checks on your project...
+21/21 checks passed. No issues detected!
+```
+
+`npx expo prebuild --platform android --clean` — exit 0 (`android/` wiped and regenerated;
+`android/local.properties` rewritten with `sdk.dir=/home/you/Android/Sdk` for the WSL build):
+
+```
+- Clearing android
+✔ Cleared android code
+- Creating native directory (./android)
+✔ Created native directory
+- Updating package.json
+✔ Updated package.json | no changes
+- Running prebuild
+✔ Finished prebuild
+```
+
+WSL2 Gradle build, from the freshly-regenerated `android/` tree
+(`wsl.exe -d Ubuntu-26.04 -- bash <script>`, JDK 21 + Linux SDK, `MSYS2_ARG_CONV_EXCL="*"`):
+
+```
+BUILD SUCCESSFUL in 19m 57s
+666 actionable tasks: 666 executed
+```
+
+`android/app/build/outputs/apk/debug/app-debug.apk` — 247,781,081 bytes. The 19m57s (vs the
+implementer's 32m32s) is the same 666 tasks against a now-warm `~/.gradle` cache; the
+`/mnt/d` hard-link → "Doing a slower copy instead" fallbacks recur exactly as documented, which
+independently confirms the Blocker section's diagnosis of why the build is slow.
+
+`adb install -r …/app-debug.apk` → `Success`. `adb devices` → `emulator-5554	device`.
+
+App launched and bundle loaded through the dev-client
+(`am start -a android.intent.action.VIEW -d 'hermes-android://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'`,
+with `adb reverse tcp:8081 tcp:8081`). The dev menu's first-run card was dismissed; it showed
+`Runtime version: exposdk:57.0.0`. The app's own screen then rendered. Read back with
+`adb shell uiautomator dump` rather than judged by eye:
+
+```
+text="Hermes"
+text="Thin client scaffold — M01"
+```
+
+That is exactly `app/index.tsx`, and the screenshot is pixel-equivalent to
+[docs/m01.png](../../docs/m01.png) (only the clock and the idle-vs-active dev-menu FAB tint
+differ). Exit criterion 1 verified.
+
+Notes, none of them blocking:
+
+- The `babel-preset-expo` fix holds: `"babel-preset-expo": "~57.0.10"` is in `devDependencies`,
+  and a Metro bundle was actually produced and executed on-device this session, which is the only
+  thing that proves it (as this file already warns, `npm run check` cannot).
+- `docs/m01.png` does not itself show the `exposdk:57.0.0` banner — that banner is on the dev-menu
+  screen, not the app screen. The Verification log's phrasing conflates the two. The claim is
+  still substantiated; I saw the banner on the dev menu this session.
+- The build is reproducible only through WSL2. I did not attempt to fix the Windows AF_UNIX
+  failure, per instruction. Build-path choice remains **Fable escalation #1**.
