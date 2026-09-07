@@ -36,16 +36,16 @@
 
 ## Follow-ups (assigned to Sonnet, decision D5; do not change `done`)
 
-- [ ] `scripts/sync-upstream.mjs` reads allow-listed files from the upstream **git object**
+- [x] `scripts/sync-upstream.mjs` reads allow-listed files from the upstream **git object**
       (`git -C $HERMES_AGENT_ROOT show HEAD:<path>`), never from the working tree, so uncommitted
       edits in a shared checkout can never leak into `src/upstream/`. `UPSTREAM.json.commit` is
       the `HEAD` those objects came from.
-- [ ] The script stages output and validates every patch into a temporary directory first, and
+- [x] The script stages output and validates every patch into a temporary directory first, and
       replaces `src/upstream/` only after all patches succeed. Today it `rmSync`s the directory
       before validating, so a failed run leaves 22 files deleted (recovery: `git checkout src/upstream`).
-- [ ] The script refuses to run if `git -C $HERMES_AGENT_ROOT status --short` lists any
+- [x] The script refuses to run if `git -C $HERMES_AGENT_ROOT status --short` lists any
       allow-listed path (someone is mid-edit on a file we vendor), printing the offending paths.
-- [ ] Re-run the idempotency check and `npm run check`; append the output to the Verification log.
+- [x] Re-run the idempotency check and `npm run check`; append the output to the Verification log.
 
 ## Deviations from the literal spec (and why)
 
@@ -293,3 +293,77 @@ $ git status --short src/upstream
 Recovery is `git checkout src/upstream` or re-running a good sync, so the blast radius is small
 and always visible in `git status`. Worth a one-line fix when the file is next touched (write to a
 temp dir, swap on success); not worth a milestone reopen. Handed to Sonnet rather than fixed here.
+
+### 2026-09-07 — Sonnet: M02/M03 follow-ups (git-object reads, staged swap, dirty-upstream gate)
+
+**`scripts/sync-upstream.mjs` changes.** All four follow-up boxes above.
+
+- Every allow-listed file is now read via `git -C $HERMES_AGENT_ROOT show <HEAD>:<path>`
+  (`readUpstreamFile`), never `readFileSync` from the working tree. `readFileSync` no longer
+  appears in the script.
+- Before touching anything, `assertUpstreamAllowListedPathsClean()` runs
+  `git -C $HERMES_AGENT_ROOT status --short` and fails loudly (printing the offending paths) if
+  any changed path — including the "old -> new" form of a rename — matches an allow-listed `src`.
+- All patch/import-alias validation now happens in memory (`buildContents()`) before any file is
+  written anywhere. Writing only starts in `stageAndSwap()`: every file goes into a fresh
+  `mkdtempSync` staging directory (`tmp-upstream-sync-*`, sibling of `src/`, gitignored as a
+  belt-and-suspenders), `eslint --fix` + `prettier --write` run there, `UPSTREAM.json` is written
+  there, and only if all of that succeeds does the script `rmSync` the real `src/upstream/` and
+  `renameSync` the staging directory into its place. Any failure during staging is caught, the
+  staging directory is removed, and `src/upstream/` — untouched this whole time — is reported as
+  left alone. A stale staging directory from a crashed prior run is swept at the top of every run.
+
+**Verified, not just written** (fake upstream root built in the scratchpad — a `git init` with one
+commit per allow-listed file, `git remote add origin` — so `HERMES_AGENT_ROOT` could point
+somewhere disposable; `../hermes-agent` itself was never modified, consistent with AGENTS.md):
+
+1. **Control** (unmodified fake root): exit **0**, wrote 22 files.
+2. **Dirty allow-listed path**: appended an uncommitted line to the fake root's `apps/shared/src/skin.ts`.
+   Exit **1**: `... has uncommitted changes under allow-listed paths — commit or stash them there first: apps/shared/src/skin.ts`.
+3. **Broken patch target** (same mutation Opus used in M02's own re-verification — `window.location.host` -> `.hostname`
+   in `websocket-url.ts`): exit **1**, real `src/upstream/` (23 files, snapshotted first) byte-for-byte
+   unchanged afterward (`diff -rq` — no diff), no leftover `tmp-upstream-sync-*` directory. This is
+   the failure mode that previously deleted 22 files.
+4. **Failure during staging itself**, not just during patch-building: put a genuine JS syntax error
+   into a file with no patches (`lib/text.ts`), so it survives to the `eslint --fix` step in the
+   staging directory. `eslint` reported the parse error, `execFileSync` threw, and the script
+   printed `staging failed, src/upstream left untouched: Command failed: ... eslint.js --fix
+   ...\tmp-upstream-sync-MA9t9A` — exit **1**, real `src/upstream/` still byte-for-byte unchanged,
+   and the staging directory was removed (not left behind).
+
+**Idempotency, re-run against the real `../hermes-agent`** (`HERMES_AGENT_ROOT` unset, default):
+
+```
+=== git -C ../hermes-agent status --short ===
+?? .zcode/
+=== run 1 ===
+sync-upstream: wrote 22 files to src\upstream
+=== run 2 ===
+sync-upstream: wrote 22 files to src\upstream
+=== diff -rq run1 vs run2 ===
+NO DIFF
+=== git status --short src/upstream ===
+ M src/upstream/UPSTREAM.json
+ M src/upstream/shared/json-rpc-gateway-replay.test.ts
+ M src/upstream/shared/websocket-url.ts
+=== git diff --stat src/upstream ===
+ src/upstream/UPSTREAM.json                         |  4 ++--
+ .../shared/json-rpc-gateway-replay.test.ts         | 25 ++++------------------
+ src/upstream/shared/websocket-url.ts               |  4 +++-
+ 3 files changed, 9 insertions(+), 24 deletions(-)
+```
+
+The three-file diff against the previously-committed `src/upstream/` is real upstream drift, not a
+bug: `../hermes-agent` HEAD moved from `089bb32886c8c18f7fa20182c7bf8826d6935ac5` (M02's pin) to
+`b973068c60ae92c1928041cb6a8e53a80bcf9c4c` between then and now (another session's commits — `.zcode/`
+is the only uncommitted entry, and it isn't allow-listed). The old script read the working tree
+directly, so it happened to reproduce the same bytes regardless of `HEAD`; the fixed script reads
+the git object at `HEAD`, which is the whole point of this follow-up, so re-running it now correctly
+picks up the two files upstream actually changed (a wrapped union type in `websocket-url.ts`, and
+several object literals in the replay test that now fit `prettier`'s 120-col width on one line) plus
+the new `commit`/`syncedAt` in the manifest. `git diff --stat` **between the two runs** (the actual
+idempotency criterion) is empty, as shown above; this three-file diff is against the git-committed
+baseline from before this session, which is expected to move when upstream does.
+
+**`npm run check`** — exit 0, 3 files / 10 tests, lint clean. Re-run once more after the
+`spike-gateway.mjs` fix below; still green.

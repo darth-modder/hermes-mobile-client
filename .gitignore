@@ -32,3 +32,6 @@ npm-debug.*
 yarn-error.*
 *.tsbuildinfo
 coverage/
+
+# sync-upstream.mjs staging dir (should never survive a run, but just in case)
+tmp-upstream-sync-*/

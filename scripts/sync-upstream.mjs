@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,6 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
 const UPSTREAM_ROOT = path.resolve(REPO_ROOT, process.env.HERMES_AGENT_ROOT || '../hermes-agent')
 const DEST_ROOT = path.join(REPO_ROOT, 'src', 'upstream')
+const STAGING_PREFIX = 'tmp-upstream-sync-'
 
 /**
  * Every file this project borrows from hermes-agent. `dest` is relative to
@@ -259,19 +260,48 @@ function assertNoRemainingAliasOrWorkspaceImports(content, file) {
   }
 }
 
-function syncFiles() {
-  rmSync(DEST_ROOT, { force: true, recursive: true })
+/**
+ * Refuses to run if the upstream checkout has uncommitted changes under any
+ * allow-listed path — someone else may be mid-edit on a file we vendor, and
+ * we only ever read from the committed git object, never the working tree.
+ */
+function assertUpstreamAllowListedPathsClean() {
+  const statusOut = execFileSync('git', ['-C', UPSTREAM_ROOT, 'status', '--short'], { encoding: 'utf8' })
+  const allowSet = new Set(ALLOW_LIST.map(({ src }) => src))
+  const offending = statusOut
+    .split('\n')
+    .filter(Boolean)
+    .map(line => line.slice(3).trim())
+    .filter(changedPath => changedPath.split(' -> ').some(part => allowSet.has(part)))
 
-  const written = []
+  if (offending.length > 0) {
+    fail(
+      `${UPSTREAM_ROOT} has uncommitted changes under allow-listed paths — commit or stash them there first:\n` +
+        offending.join('\n')
+    )
+  }
+}
+
+/** Reads an allow-listed file from the upstream git object at `commit`, never from the working tree. */
+function readUpstreamFile(commit, src) {
+  try {
+    return execFileSync('git', ['-C', UPSTREAM_ROOT, 'show', `${commit}:${src}`], { encoding: 'utf8' })
+  } catch {
+    fail(`missing upstream file at ${commit}:${src} for allow-list entry: ${src}`)
+  }
+}
+
+/**
+ * Builds the fully patched, alias-rewritten content for every allow-listed
+ * file, entirely in memory. Every patch/import assertion (and therefore every
+ * possible failure) happens here, before anything touches disk — so a failure
+ * can never leave a half-written src/upstream/ behind.
+ */
+function buildContents(commit) {
+  const contents = new Map()
 
   for (const { dest, src } of ALLOW_LIST) {
-    const srcAbs = path.join(UPSTREAM_ROOT, src)
-
-    if (!existsSync(srcAbs)) {
-      fail(`missing upstream file (looked at ${srcAbs}) for allow-list entry: ${src}`)
-    }
-
-    let content = readFileSync(srcAbs, 'utf8')
+    let content = readUpstreamFile(commit, src)
 
     for (const p of PATCHES[dest] ?? []) {
       content = patch(content, { ...p, file: dest })
@@ -281,13 +311,47 @@ function syncFiles() {
 
     content = rewriteAtAliasImports(content, destAbs)
     assertNoRemainingAliasOrWorkspaceImports(content, dest)
-
-    mkdirSync(path.dirname(destAbs), { recursive: true })
-    writeFileSync(destAbs, content)
-    written.push(dest)
+    contents.set(dest, content)
   }
 
-  return written
+  return contents
+}
+
+/** Removes any staging directory left behind by a prior run that crashed mid-swap. */
+function cleanStaleStaging() {
+  for (const entry of readdirSync(REPO_ROOT, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith(STAGING_PREFIX)) {
+      rmSync(path.join(REPO_ROOT, entry.name), { force: true, recursive: true })
+    }
+  }
+}
+
+/**
+ * Writes every file to a fresh temp directory, lint-fixes and writes the
+ * manifest there, and only replaces src/upstream/ once all of that has
+ * succeeded. A failed run leaves src/upstream/ untouched and cleans up its
+ * own staging directory.
+ */
+function stageAndSwap(contents, commit) {
+  const stagingRoot = mkdtempSync(path.join(REPO_ROOT, STAGING_PREFIX))
+
+  try {
+    for (const [dest, content] of contents) {
+      const destAbs = path.join(stagingRoot, dest)
+
+      mkdirSync(path.dirname(destAbs), { recursive: true })
+      writeFileSync(destAbs, content)
+    }
+
+    lintFixDest(stagingRoot)
+    writeManifest(stagingRoot, commit, [...contents.keys()])
+
+    rmSync(DEST_ROOT, { force: true, recursive: true })
+    renameSync(stagingRoot, DEST_ROOT)
+  } catch (error) {
+    rmSync(stagingRoot, { force: true, recursive: true })
+    fail(`staging failed, src/upstream left untouched: ${error instanceof Error ? error.message : error}`)
+  }
 }
 
 /**
@@ -297,19 +361,18 @@ function syncFiles() {
  * doesn't break idempotency — keeps `src/upstream/**` lint-clean without a
  * bespoke reorder patch per file.
  */
-function lintFixDest() {
+function lintFixDest(targetRoot) {
   const eslintBin = path.join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
   const prettierBin = path.join(REPO_ROOT, 'node_modules', 'prettier', 'bin', 'prettier.cjs')
 
-  execFileSync(process.execPath, [eslintBin, '--fix', DEST_ROOT], { cwd: REPO_ROOT, stdio: 'inherit' })
-  execFileSync(process.execPath, [prettierBin, '--write', DEST_ROOT], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync(process.execPath, [eslintBin, '--fix', targetRoot], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync(process.execPath, [prettierBin, '--write', targetRoot], { cwd: REPO_ROOT, stdio: 'inherit' })
 }
 
-function writeManifest(files) {
-  const commit = execFileSync('git', ['-C', UPSTREAM_ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+function writeManifest(targetRoot, commit, files) {
   // The upstream COMMIT's date, not wall-clock time — keeps re-running this
   // script against an unchanged checkout byte-for-byte idempotent.
-  const syncedAt = execFileSync('git', ['-C', UPSTREAM_ROOT, 'log', '-1', '--format=%cI'], {
+  const syncedAt = execFileSync('git', ['-C', UPSTREAM_ROOT, 'log', '-1', '--format=%cI', commit], {
     encoding: 'utf8'
   }).trim()
   let repo = 'hermes-agent'
@@ -322,15 +385,18 @@ function writeManifest(files) {
 
   const manifest = { commit, files: [...files].sort(), repo, syncedAt }
 
-  writeFileSync(path.join(DEST_ROOT, 'UPSTREAM.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  writeFileSync(path.join(targetRoot, 'UPSTREAM.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
 if (!existsSync(UPSTREAM_ROOT)) {
   fail(`HERMES_AGENT_ROOT not found: ${UPSTREAM_ROOT}`)
 }
 
-const files = syncFiles()
+cleanStaleStaging()
+assertUpstreamAllowListedPathsClean()
 
-lintFixDest()
-writeManifest(files)
-console.log(`sync-upstream: wrote ${files.length} files to ${path.relative(REPO_ROOT, DEST_ROOT)}`)
+const commit = execFileSync('git', ['-C', UPSTREAM_ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+const contents = buildContents(commit)
+
+stageAndSwap(contents, commit)
+console.log(`sync-upstream: wrote ${contents.size} files to ${path.relative(REPO_ROOT, DEST_ROOT)}`)

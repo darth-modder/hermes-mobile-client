@@ -57,7 +57,7 @@
 
 ## Follow-ups (assigned to Sonnet, do not block `done`)
 
-- [ ] `scripts/spike-gateway.mjs` exits 127 on success: a libuv `UV_HANDLE_CLOSING` assertion
+- [x] `scripts/spike-gateway.mjs` exits 127 on success: a libuv `UV_HANDLE_CLOSING` assertion
       fires after `PASS` because `process.exit(0)` runs while the WebSocket handle is still
       finalizing. Close and await the socket's `close` event before exiting so the script can be
       gated on its exit code.
@@ -363,6 +363,46 @@ The lifecycle decision itself stays Fable's.
    with a separate physical-device criterion for radio behaviour, or M03 stays open until a physical
    device is available. **That is a plan change → Fable, escalation #4.** Status left `in-progress`
    pending that decision; every other part of M03 is verified.
+
+   Resolved by decision D1 (`project-planning/DECISIONS.md`): criterion 2 reworded to "transport
+   loss mid-turn"; the radio-layer variant moved to M07 `[physical]`. M03 is `done`.
 2. **`scripts/spike-gateway.mjs` exits 127 on success** (libuv assertion after `PASS`). Harmless to
    a human reader, fatal if anything ever gates on it. One line for Sonnet: close/drain the socket
    before `process.exit(0)`.
+
+   Fixed — see the follow-up above and the Verification log entry below.
+
+### 2026-09-07 — Sonnet: `spike-gateway.mjs` exit-code fix
+
+Added `closeAndWait()` and awaited it for both the pre-reconnect close and the final close, which
+looked like the obvious fix — but a minimal repro (two sequential `new WebSocket(...)`, each opened
+and `close()`d with its `close` event fully awaited, then `process.exit(0)`) still reproduced
+`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94` and exit
+**127**, even with zero RPC traffic. A single connect/close/exit does *not* crash — it only
+reproduces with a second sequential connection, i.e. exactly the spike script's reconnect shape.
+Awaiting the JS `close` event is not sufficient: on this platform the underlying handle finalizes
+asynchronously on a later libuv tick, and `process.exit()` forces teardown before that tick runs.
+
+The fix that actually holds: don't call `process.exit()` at all on the success path. Setting
+`process.exitCode = 0` and letting the event loop drain naturally avoids the race entirely (no
+handle is mid-close when Node's own shutdown runs, because shutdown only starts once nothing is
+pending). Verified with the same two-socket repro — exit **0**, no assertion, and fast (~140ms,
+not a hidden timeout).
+
+`closeAndWait()` is kept (closing and awaiting close before starting the next connection is still
+correct and harmless), but the fix that matters is `process.exitCode = 0` replacing the final
+`process.exit(0)`. `fail()`'s `process.exit(1)` paths are untouched — out of scope for this
+follow-up, which is about the success exit code specifically.
+
+**Live verification**, throwaway `hermes serve --host 127.0.0.1 --port 9119`, token generated into
+a scratch file outside the repo and referenced only as `$(cat ...)`, never logged or committed
+(output piped through `sed` to redact it before saving):
+
+```
+$ node scripts/spike-gateway.mjs --url http://127.0.0.1:9119 --token <redacted> --timeout 60 > run.log 2>&1
+$ echo $?
+0
+```
+
+Full `run.log` (redacted) shows all five steps passing and `PASS` as the last line, no assertion.
+Server process killed immediately after (`kill $PID`); scratch token file deleted.

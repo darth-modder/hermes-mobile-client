@@ -105,6 +105,14 @@ function fail(step, error) {
   process.exit(1)
 }
 
+/** Closes a WebSocket and waits for its close event, so the handle is fully finalized before exit. */
+function closeAndWait(socket) {
+  return new Promise(resolve => {
+    socket.addEventListener('close', () => resolve(), { once: true })
+    socket.close()
+  })
+}
+
 const status = await fetch(`${baseUrl}/api/status`).catch(error => fail('1. /api/status reachability', error))
 
 if (!status.ok) {
@@ -203,8 +211,7 @@ console.log(`   reply: ${full.slice(0, 200) || JSON.stringify(completePayload).s
 
 // Reconnect replay: same watermark contract the app's gateway client uses to
 // survive a tunnel drop (session.events.since + per-session seq).
-ws.close()
-await new Promise(resolve => setTimeout(resolve, 250))
+await closeAndWait(ws)
 const ws2 = await connectWs().catch(error => fail('5. reconnect', error))
 const replay = await sendRpc(ws2, 'session.events.since', { last_seen: 0, session_id: sid }).catch(error =>
   fail('5. session.events.since replay', error)
@@ -222,6 +229,11 @@ if (!replay?.count) {
   fail('5. replay', 'empty replay window — events were not retained')
 }
 
-ws2.close()
+await closeAndWait(ws2)
 console.log('\nPASS — thin-client premise validated: dial, android-source session, streaming, replay.')
-process.exit(0)
+// No process.exit(0) here: on Windows, forcing exit immediately after a
+// WebSocket's 'close' event still races the underlying handle's own
+// finalization and trips a libuv assertion (UV_HANDLE_CLOSING), which turns
+// a clean run into exit code 127. Setting exitCode and letting the event
+// loop drain naturally avoids the race entirely.
+process.exitCode = 0

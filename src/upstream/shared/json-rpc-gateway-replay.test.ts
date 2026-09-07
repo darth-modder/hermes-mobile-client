@@ -71,21 +71,9 @@ describe('JsonRpcGatewayClient event-seq tracking + replay resume', () => {
     sockets[0].open()
     await p
 
-    sockets[0].serverFrame({
-      jsonrpc: '2.0',
-      method: 'event',
-      params: { type: 'message.delta', session_id: 's1', seq: 4 }
-    })
-    sockets[0].serverFrame({
-      jsonrpc: '2.0',
-      method: 'event',
-      params: { type: 'message.delta', session_id: 's1', seq: 2 }
-    }) // out of order / late
-    sockets[0].serverFrame({
-      jsonrpc: '2.0',
-      method: 'event',
-      params: { type: 'tool.start', session_id: 's2', seq: 9 }
-    })
+    sockets[0].serverFrame({ jsonrpc: '2.0', method: 'event', params: { type: 'message.delta', session_id: 's1', seq: 4 } })
+    sockets[0].serverFrame({ jsonrpc: '2.0', method: 'event', params: { type: 'message.delta', session_id: 's1', seq: 2 } }) // out of order / late
+    sockets[0].serverFrame({ jsonrpc: '2.0', method: 'event', params: { type: 'tool.start', session_id: 's2', seq: 9 } })
     sockets[0].serverFrame({ jsonrpc: '2.0', method: 'event', params: { type: 'skin.changed' } }) // no sid/seq
 
     expect(client.getSeqWatermarks()).toEqual({ s1: 4, s2: 9 })
@@ -200,12 +188,7 @@ describe('JsonRpcGatewayClient event-seq tracking + replay resume', () => {
     sock.serverFrame({
       jsonrpc: '2.0',
       id: req.id,
-      result: {
-        events: [{ type: 'status.update', session_id: 's1', seq: 2 }],
-        latest_seq: 10,
-        truncated: false,
-        count: 1
-      }
+      result: { events: [{ type: 'status.update', session_id: 's1', seq: 2 }], latest_seq: 10, truncated: false, count: 1 }
     })
     await Promise.resolve()
     expect(client.getSeqWatermarks().s1).toBe(10)

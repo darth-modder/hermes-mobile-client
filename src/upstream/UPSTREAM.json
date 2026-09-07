@@ -1,5 +1,5 @@
 {
-  "commit": "089bb32886c8c18f7fa20182c7bf8826d6935ac5",
+  "commit": "b973068c60ae92c1928041cb6a8e53a80bcf9c4c",
   "files": [
     "lib/chat-messages/hydration.ts",
     "lib/chat-messages/parts.ts",
@@ -25,5 +25,5 @@
     "types/hermes.ts"
   ],
   "repo": "https://github.com/NousResearch/hermes-agent.git",
-  "syncedAt": "2026-09-06T10:15:23Z"
+  "syncedAt": "2026-09-07T17:28:31+05:00"
 }

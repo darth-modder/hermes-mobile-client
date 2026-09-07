@@ -16,7 +16,9 @@ export interface ResolveGatewayWsUrlDeps {
 }
 
 export type GatewayWsUrlResult =
-  string | { ok: true; wsUrl: string } | { error: string; needsOauthLogin?: boolean; ok: false }
+  | string
+  | { ok: true; wsUrl: string }
+  | { error: string; needsOauthLogin?: boolean; ok: false }
 
 export class GatewayReauthRequiredError extends Error {
   readonly needsOauthLogin = true
