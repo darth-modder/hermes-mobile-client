@@ -1,0 +1,13 @@
+node_modules
+android
+ios
+.expo
+dist
+web-build
+.agents
+.claude
+.zcode
+project-planning
+*.md
+package-lock.json
+skills-lock.json

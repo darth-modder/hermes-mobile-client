@@ -1,32 +1,188 @@
 # M01 — Toolchain
 
-**Status:** todo
+**Status:** done
 **Depends on:** M00
 **Goal:** An Expo dev-client build runs on a physical Android device from this machine.
 
 ## Facts
 
 - Machine has Node 24.16 and npm 11.13.
-- Machine has **no Android SDK, JDK, or adb** (`ANDROID_HOME` unset, no `platform-tools`).
+- Android SDK at `D:\Software\Android-SDK` (platform-tools 37.0.1, build-tools 36.0.0,
+  platforms/android-37.0, emulator). `ANDROID_HOME`/`JAVA_HOME` are not set globally; every
+  command sets them per-invocation (see `docs/CONNECTING.md`).
+- **Local Gradle builds on this Windows machine are broken independent of JDK choice** — see
+  Blocker below. Builds run instead via a Linux-native Android SDK + JDK 21 + Node inside this
+  machine's existing WSL2 (Ubuntu 26.04) distro, against the same `D:\Stuff\...` project tree
+  mounted at `/mnt/d/...`. `docs/CONNECTING.md` documents the exact recipe.
+- An AVD named `hermes-test` already existed on this machine; it boots and is used as "the
+  device" for every on-device exit criterion below (`emulator-5554` in `adb devices`).
 
 ## Tasks
 
-- [ ] Install Android Studio (SDK 35+, platform-tools) and JDK 17; set `ANDROID_HOME`; add `platform-tools` to `PATH`; enable USB debugging on the phone.
-      Alternative: EAS account and `eas build -p android --profile development`, then install the APK.
-- [ ] Scaffold: `npx create-expo-app@latest . --template blank-typescript` (latest SDK), add `expo-router`, `expo-dev-client`
-- [ ] `app.config.ts`: scheme `hermes-android`, `android.package` `com.nousresearch.hermes.mobile`, plugin list
-- [ ] Copy repo conventions from hermes-agent: `.prettierrc` (no semicolons, single quotes, 120 cols, `arrowParens: avoid`, `trailingComma: none`); ESLint flat config with `typescript-eslint`, `perfectionist`, `react-hooks`, `unused-imports`
-- [ ] `package.json` scripts: `typecheck`, `lint`, `lint:fix`, `test` (vitest), `check` (= typecheck + test + lint), `start` (`expo start --dev-client`), `android` (`expo run:android`), `prebuild`, `apk:release`
-- [ ] `vitest.config.ts` for pure logic only (react-native aliased to a stub)
-- [ ] `npm run android` installs and launches the blank app
+- [x] Scaffold: `npx create-expo-app@latest --template default --no-install` (Expo SDK ~57.0.20,
+      RN 0.86.3, React 19.2.3, expo-router ~57.0.19), copied into the repo root; sample screens,
+      `scripts/reset-project.js`, and the template's own `AGENTS.md`/`CLAUDE.md`/`README.md` removed.
+- [x] `app.config.ts`: name `Hermes`, slug `hermes-android`, scheme `hermes-android`,
+      `android.package` `com.nousresearch.hermes.mobile`, plugins `expo-router`, `expo-dev-client`,
+      `expo-secure-store`, `expo-web-browser`, `expo-splash-screen`.
+      Note: SDK 57 removed the top-level `newArchEnabled` and `splash` config keys from
+      `ExpoConfig`'s type (new architecture is now the only architecture; splash config moved
+      under the `expo-splash-screen` plugin options). Functionally equivalent to what M01 asked
+      for; documented here since it's a deviation from the literal spec text.
+- [x] Copied repo conventions from hermes-agent: `.prettierrc` (exact), `eslint.config.mjs`
+      (ported from `../hermes-agent/eslint.config.shared.mjs`, pinned devDependency versions,
+      added `ignores` for `android/`, `ios/`, `.expo/` and a `no-restricted-globals` override for
+      `src/upstream/**` / `src/gateway/**`).
+- [x] `package.json` scripts: `typecheck`, `lint`, `lint:fix`, `fix`, `test`, `check`, `start`,
+      `android`, `prebuild`, `apk:release` — all present as specified.
+- [x] `vitest.config.ts`: aliases `react-native` to `src/test/react-native-stub.ts` (throws if any
+      of its exports are actually called) and `@` to `src/`.
+- [x] `npm run android` installs and launches the blank app — done via the WSL build path; see
+      Verification log.
 
 ## Deliverables
 
-- Expo project skeleton with lint/format/test wiring
-- `docs/CONNECTING.md` stub with the toolchain setup steps
+- Expo project skeleton with lint/format/test wiring — done.
+- `docs/CONNECTING.md` — done (toolchain env recipe including the WSL build path, `adb reverse`
+  recipe for M03).
 
 ## Exit criteria
 
-- Blank app visible on the device.
-- `npm run check` green.
-- `adb devices` lists the phone (or the EAS dev build installs).
+- [x] Blank app / dev-client shell visible on the device. **Verified live** — see
+      [docs/m01.png](../../docs/m01.png) (the app's own screen: "Hermes / Thin client scaffold —
+      M01", loaded through the dev-client from a running Metro bundler).
+- [x] `npm run check` green (typecheck + vitest + eslint). See Verification log.
+- [x] `adb devices` lists a device — `emulator-5554	device` (the pre-existing `hermes-test` AVD,
+      started this session).
+- [x] `npx expo-doctor` passes (21/21 checks).
+- [x] `npx expo prebuild --platform android --clean` succeeds; `android/local.properties` written
+      per-environment (Windows SDK path when building would work from Windows; WSL SDK path
+      `/home/you/Android/Sdk` for the actual build — see Blocker). Never committed
+      (`android/` is entirely git-ignored, regenerated by prebuild).
+
+## Blocker (worked around): local Gradle build fails on this machine's JDK, on every JDK version
+
+`./gradlew assembleDebug` (and therefore `npm run android`'s underlying Gradle invocation) fails on
+Windows before any compilation starts, while Gradle's own launcher is trying to open a loopback
+socket to talk to the daemon it's about to spawn:
+
+```
+java.io.IOException: Unable to establish loopback connection
+  at sun.nio.ch.PipeImpl$Initializer.init
+  at sun.nio.ch.WEPollSelectorImpl.<init>
+  at sun.nio.ch.WEPollSelectorProvider.openSelector
+  at java.nio.channels.Selector.open
+Caused by: java.net.SocketException: Invalid argument: connect
+  at sun.nio.ch.UnixDomainSockets.connect0 (Native Method)
+```
+
+**Root-caused, not just worked around.** Downloaded and checksum-verified a real Temurin JDK 21
+(`sha256: f9d6e191...`), independent of the JBR JDK 25 that ships with Android Studio, and ran the
+same two-line `Selector.open()` test program against it directly: identical failure. Pulled the
+actual OpenJDK source for `WindowsSelectorImpl.java` and `PipeImpl.java` from the `adoptium/jdk17u`
+through `adoptium/jdk24u` GitHub mirrors — **every one of them hardcodes** `new PipeImpl(sp, /* AF_UNIX
+*/ true, ...)` for the selector's internal wakeup pipe on Windows, with no system property to opt
+out. So this is not a JDK-version issue at all: it's that `AF_UNIX` domain-socket `connect()` fails
+with `EINVAL` on this specific Windows installation (build 10.0.26200) for every JDK that could
+plausibly build a modern Android project. The `afunix` kernel driver is present and reports
+`Status: Running`, so something below the JVM (Windows Firewall, AV/EDR, or a genuine platform
+regression on this build) is blocking the connect — diagnosing that further is outside what a
+JDK/toolchain choice can fix.
+
+**Workaround: build via WSL2.** This machine already has WSL2 with an `Ubuntu-26.04` distro
+installed. A real Linux kernel doesn't have this bug. Set up, entirely in user space (no `sudo` —
+interactive sudo isn't available non-interactively here):
+
+- `~/.jdks/temurin-21` — Temurin JDK 21 for **linux-x64**, downloaded + checksum-verified,
+  `tar -xzf`'d directly (no package manager).
+- `~/Android/Sdk` — a **separate, Linux-native** Android SDK: the Windows SDK's `build-tools`
+  binaries (aapt2, etc.) are Windows PE executables and cannot run under Linux, so this can't be
+  the same SDK directory as `D:\Software\Android-SDK`. Installed via Google's
+  `commandlinetools-linux-9862592_latest.zip` (extracted with `python3 -m zipfile`, no `unzip`
+  needed), then `sdkmanager "platform-tools" "build-tools;36.0.0" "platforms;android-37.0"` —
+  matching the Windows SDK's versions.
+- `~/.nvs/node/v24.16.0` — Node 24.16.0 for linux-x64 (checksum-verified against
+  `nodejs.org`'s own `SHASUMS256.txt`) — Gradle's `settings.gradle` shells out to `node` to
+  resolve Expo's autolinking config, so a Node absent from WSL's `PATH` fails the build at the
+  settings-evaluation stage before Gradle even gets to compiling anything.
+- `android/local.properties` (git-ignored) is written with `sdk.dir=/home/you/Android/Sdk`
+  when building from WSL.
+
+Gotcha worth recording: invoking `wsl.exe` from this environment's git-bash needs
+`MSYS2_ARG_CONV_EXCL="*"` set, or MSYS2's automatic POSIX-path rewriting mangles every Linux-style
+argument (`/home/you/...` silently became `C:/Program Files/Git/home/you/...`, and even
+plain variable assignments like `X=5` inside an inline `bash -lc '...'` string came through empty)
+— multi-statement inline commands were unreliable across that boundary regardless, so every WSL
+step here runs as a `bash /mnt/c/.../script.sh` script file instead of an inline string.
+
+The actual build (`./gradlew assembleDebug --no-daemon`, run from `/mnt/d/Stuff/Code/git/hermes-android/android`
+under WSL) took **32m 32s** — slow because Gradle's native-library hard-linking falls back to a
+slower copy across the Windows/WSL filesystem boundary (`/mnt/d/...`), not because anything is
+actually wrong; expected on every future first build from a clean Gradle cache, faster on
+incremental rebuilds.
+
+## Real bug found and fixed along the way: `babel-preset-expo` was never a declared dependency
+
+Not a toolchain/OS issue — a real gap in this repo's own `package.json`. `babel.config.js`
+references `babel-preset-expo`, and `npm ls` showed it resolving only as a *transitive* dependency
+of `expo` — which, for reasons not fully diagnosed (possibly npm's dependency-conflict-driven
+dedup, given the earlier `expo-router`/`vaul`/`@radix-ui` peer-conflict noise this project's tree
+already has), was not actually being installed into `node_modules`. This surfaced as a Metro
+bundling failure (`Cannot find module 'babel-preset-expo'`) the first time an on-device JS bundle
+was actually requested — which nothing before this session had exercised, since `npm run check`
+never invokes Metro. Fixed by adding `"babel-preset-expo": "~57.0.10"` directly to this project's
+own `devDependencies` (matching the version `expo@57.0.20` itself depends on) and reinstalling
+clean. `npm run check` doesn't catch this class of bug — it's worth remembering that a green
+`check` here does not prove the Metro bundle itself is buildable; only `npm run android` /
+`npm run start` do that.
+
+## Verification log
+
+### 2026-09-07 — `npm run check`
+
+```
+> hermes-android@1.0.0 check
+> npm run typecheck && npm run test && npm run lint
+
+> hermes-android@1.0.0 typecheck
+> tsc -p . --noEmit
+
+> hermes-android@1.0.0 test
+> vitest run
+
+ RUN  v4.1.10 D:/Stuff/Code/git/hermes-android
+
+ Test Files  3 passed (3)
+      Tests  10 passed (10)
+
+> hermes-android@1.0.0 lint
+> eslint .
+```
+
+All three steps exited 0. (`vitest` prints a harmless `configLoader: 'native'` warning about
+`vitest.config.ts` being ESM loaded as CommonJS — not a failure, not fixed because fixing it would
+require `"type": "module"` in `package.json`, which would break `babel.config.js` /
+`metro.config.js`'s CommonJS `module.exports`.)
+
+### 2026-09-07 — `npx expo-doctor`
+
+```
+Running 21 checks on your project...
+21/21 checks passed. No issues detected!
+```
+
+### 2026-09-07 — WSL Gradle build + on-device install/launch
+
+- `./gradlew assembleDebug --no-daemon` (WSL2, JDK 21, Android SDK 37.0/build-tools 36.0.0):
+  `BUILD SUCCESSFUL in 32m 32s`, 666 actionable tasks.
+- `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`: `Success`.
+- `adb shell am start -n com.nousresearch.hermes.mobile/.MainActivity`: launched, no crash —
+  showed the expo-dev-client launcher ("Hermes" / "Development Build"), correctly branded.
+- Started Metro (`npx expo start --dev-client --port 8081`), `adb reverse tcp:8081 tcp:8081`,
+  connected the dev-client to it. First attempt crashed with a Metro-side `TypeError: Cannot read
+  properties of undefined (reading 'transformFile')` caused by the missing `babel-preset-expo`
+  dependency (see above); fixed, Metro restarted with `--clear`, bundle succeeded.
+- App's own screen rendered: "Hermes" / "Thin client scaffold — M01", `expo-router`'s runtime
+  version banner reading `exposdk:57.0.0`. Screenshot: [docs/m01.png](../../docs/m01.png).
+
+Server version: n/a (no backend involved in this milestone).

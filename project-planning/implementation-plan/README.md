@@ -24,9 +24,9 @@ observed.
 | ID | Milestone | Goal | Depends on | Status |
 |---|---|---|---|---|
 | [M00](M00-repo-and-planning.md) | Repo + planning docs | The repo exists with this tracker committed | – | done |
-| [M01](M01-toolchain.md) | Toolchain | A dev build installs on a phone from this machine | M00 | todo |
-| [M02](M02-vendored-protocol.md) | Vendored protocol | Upstream code compiles under Expo; sync is idempotent | M00 | todo |
-| [M03](M03-connection-spike.md) | Connection spike | Stream + reconnect replay proven on device | M01, M02 | todo |
+| [M01](M01-toolchain.md) | Toolchain | A dev build installs on a phone from this machine | M00 | done |
+| [M02](M02-vendored-protocol.md) | Vendored protocol | Upstream code compiles under Expo; sync is idempotent | M00 | done |
+| [M03](M03-connection-spike.md) | Connection spike | Stream + reconnect replay proven on device | M01, M02 | done |
 | [M04](M04-connections-and-auth.md) | Connections + token/password auth | A gated backend can be added and signed into | M03 | todo |
 | [M05](M05-session-stream-reducer.md) | Session stream reducer | Gateway events reduce to state; desktop fixtures pass | M02 | todo |
 | [M06](M06-chat-screen.md) | Chat screen | Streaming chat with tool cards, approvals, attachments | M04, M05 | todo |
