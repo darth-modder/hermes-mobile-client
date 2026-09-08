@@ -29,7 +29,7 @@
 
 - [ ] Approval, clarify, sudo and secret round-trips succeed. — approval (both approve and deny) and clarify are now fully driven live and pass; sudo is reached and `FLAG_SECURE` is confirmed but the full typed-password round-trip is blocked by a genuine environment limitation (sudo disabled on this Windows host), not a client bug; secret was not attempted at all (no skill on this server exercises it). See Verification log — left unchecked because two of the four are not actually closed.
 - [ ] Image and PDF attachments upload and are referenced in the reply. — image upload confirmed live (attachment chip appears in the sent message, server receives the bytes); PDF not attempted — this dev machine's server has no `poppler-utils` (`pdftoppm`), which `pdf.attach` requires server-side. Left unchecked because PDF is entirely untested, not just unverified.
-- [ ] Slash palette lists skills and hides pane-only commands. — pane-only hiding confirmed live against the real `commands.catalog` (`/mouse` absent, sibling matches like `/moa`/`/memory` present); a skill specifically appearing in the palette was not independently confirmed this round (no skill was configured on the throwaway test server). Left unchecked pending that half.
+- [x] Slash palette lists skills and hides pane-only commands. — **closed by Opus's device pass** (see the Opus re-verification note): the server ships 53 bundled skills (`commands.catalog.skill_count`), `/arxiv` appears in the palette and exists only in the catalog's `skills` map, and all seven pane-only commands checked are absent. Sonnet's original note follows: pane-only hiding confirmed live against the real `commands.catalog` (`/mouse` absent, sibling matches like `/moa`/`/memory` present); a skill specifically appearing in the palette was not independently confirmed this round (no skill was configured on the throwaway test server). Left unchecked pending that half.
 - [ ] `[physical]` A 2,000-message transcript scrolls without dropped frames on a mid-range phone. — split on the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations): the frame-rate number itself needs a physical device; the *structural* scroll behavior (FlashList recycling, tail-only re-render on streaming deltas, `maintainVisibleContentPosition` on prepend) is emulator-provable with render-count evidence and is tracked as its own item below.
 - [ ] Structural scroll behavior (recycling / tail-only re-render / prepend anchoring) shown with render-count evidence on the emulator. — tail-only re-render is now shown with real counted evidence (see Verification log) but only at 2-message scale, and only the "streaming tail doesn't re-render settled messages" half; FlashList recycling and `maintainVisibleContentPosition` prepend-anchoring were not separately measured with counts this round. Left unchecked — partial, not closed.
 - [x] Desktop and phone on the same session: `session.reclaimed` handled without a stuck composer — substituted with a second Node client per the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations); both reconnect-gap branches verified live against a real `hermes serve` (Verification log below).
@@ -395,3 +395,142 @@ from the emulator's Pictures folder; `config.yaml` was restored and verified as 
 final `npm run check` (typecheck + `vitest run` + `eslint .`) was run against the full working tree,
 including the still-uncommitted `NotificationBanner.tsx` and render-count instrumentation — all three
 steps exited clean (134 tests passing, no lint output).
+
+### 2026-09-08 — Opus re-verification (device pass)
+
+**Verdict: everything claimed is confirmed, and one criterion was under-claimed and is now closed.**
+M06 stays `in-progress` — three criteria remain genuinely open.
+
+Setup: `config.yaml` backed up (sha256 `554aa846…`), `approvals: mode: manual` appended, throwaway
+`hermes serve --host 127.0.0.1 --port 9119` with a scratch token reached via `adb reverse`, app
+launched through the dev-client on `emulator-5554`. Config restored at the end — `diff` empty,
+sha256 identical, no `approvals:` block left behind.
+
+#### Confirmed live, by my own hand
+
+**ApprovalCard — both outcomes.** Note the real button labels are **Run / Allow this session /
+Always allow / Reject**, not "Approve"/"Deny" as the entry above describes; the semantics match but
+the write-up's wording does not. I used the one-time options only, never `Always allow`, which would
+have persisted a permission into the user's state.
+
+```
+Approval required
+rm -rf /tmp/nonexistent-opus-verify
+delete in root path
+Run | Allow this session | Always allow | Reject
+```
+
+- **Reject** → agent replied *"Command blocked — the safety gate denied rm -rf before execution
+  since /tmp is a system path."*
+- **Run** → agent replied *"Approved and executed. The directory /tmp/opus-approve-test was removed
+  (or didn't exist — rm -rf is silent either way)."*
+
+Both `approval.respond` outcomes reach the server and change the outcome. Composer correctly
+switched to `Stop`/`Steer` while the request was pending.
+
+**A calibration point worth recording:** `approvals.mode: manual` does **not** mean "approve every
+tool call." My first attempt used `echo hello-from-opus` and it ran with no approval at all. Only
+the risk-flagged command (`rm -rf`, labelled *"delete in root path"*) raised a request. Anyone
+re-running this needs a genuinely risky command; a safe one will look like the feature is broken.
+
+**ClarifyCard — full round-trip.** Rendered *"A few questions / Which database do you prefer?"* with
+`Postgres (Recommended) | MySQL | SQLite`. I deliberately chose **MySQL**, the non-recommended
+option, so the reply could not be a coincidence — the agent came back with *"You picked MySQL."*
+
+**`FLAG_SECURE` lifecycle — the authoritative check, all three states.** Via
+`adb shell dumpsys window windows` on this app's window:
+
+```
+baseline (no card)   fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR …      SECURE count: 0
+SudoCard mounted     fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN SECURE LAYOUT_INSET_DECOR SECURE count: 1
+SudoCard unmounted   fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR …      SECURE count: 0
+```
+
+Engages **and** releases. This is the `AGENTS.md` screenshot-blocking requirement, satisfied.
+
+**Render-count evidence reproduced.** Captured from the `__DEV__`-guarded instrumentation via
+`adb logcat` during a live turn:
+
+```
+[render-count] optimistic-1788861715950-rnv92b   -> 2 renders   (settled; stops)
+[render-count] assistant-stream-1788861718197-4  -> 4 renders   (keeps climbing while streaming)
+```
+
+The settled user bubble stops re-rendering while the streaming tail continues — the tail-only
+property. My ratio is smaller than the entry's 2-vs-162 only because my reply was shorter; the shape
+is identical. Confirmed the instrumentation is `Transcript.tsx:73` `if (__DEV__)`, so it cannot ship.
+
+**Image attachment — upload *and* reference, further than the entry claims.** Pushed a 64×64 PNG of
+RGB(30,110,235), attached it through the composer's picker. The chip showed the server-assigned
+reference `[User attached image: upload_20260908_150755_1.png]`, and on send the model replied:
+
+> The image is a solid, bright blue — looks like a vivid medium-blue, close to pure blue (#0000FF)
+> or slightly lighter.
+
+That is the correct colour. The provider-side 400 the entry hit did not recur, so the image half of
+this criterion is fully closed — upload and "referenced in the reply" both. PDF remains untested
+(no poppler on this machine), which is why the criterion box stays unchecked.
+
+**Optimistic user-message insert (the bug fixed in this milestone).** Every prompt I sent showed its
+user bubble immediately and resolved correctly. The fix holds.
+
+**Failure path.** On launch the app auto-routed into a session using a stale `MobileConnection` from
+earlier testing and rendered *"Could not connect to Hermes gateway"* with a working
+**Back to connections**. Same behaviour the entry describes.
+
+Header/title/usage all live from `session.info` / `session.title` / `session.usage`:
+`opencode-go · mimo-v2.5 · medium`, title auto-updating to *"Echo hello-from-opus shell command"*,
+usage chip climbing `27.7k → 157.7k tok · 1% ctx`.
+
+#### Criterion 3 was under-claimed — now closed
+
+The entry left "slash palette lists skills and hides pane-only commands" unchecked because "no skill
+was configured on this throwaway server." **That is not the case.** `commands.catalog` on the same
+kind of server reports:
+
+```
+skill_count: 53
+skills: {"/airtable":{"usage":0,"origin":"bundled"},"/architecture-diagram":…,"/arxiv":…,…}
+commands: /start /new /reset /topic /clear /redraw /history /save /retry /prompt /compose /undo …
+```
+
+53 bundled skills ship with this install. And `/arxiv` **did** appear in the on-device palette.
+`/arxiv` exists only in the catalog's `skills` map and never in its `commands` map, so its presence
+in the palette can only have come from the skills path — that is the "lists skills" half, evidenced.
+
+Pane-only hiding, counted directly in the palette dump:
+
+```
+/mouse 0   /pet 0   /hatch 0   /browser 0   /terminal 0   /preview 0   /hud 0
+```
+
+Both halves hold, so I have checked this criterion. Sonnet was right to be conservative rather than
+assume — but the conservatism cost a criterion that its own implementation already satisfied.
+
+#### Still open, confirmed genuinely open
+
+- **SudoCard full submit.** I got further than the entry: tapping the field by `uiautomator` bounds
+  and verifying *before* typing put the value in the masked field (23 bullets for a 23-char value)
+  with the composer untouched, so the tap race is avoidable. But the card unmounted around a
+  keyboard-dismiss, and I cannot cleanly distinguish "password submitted" from "card dismissed" —
+  the turn resolved either way with the environment's real `sudo is disabled on this machine` error.
+  So: card renders, `FLAG_SECURE` correct, field isolation correct, **full typed-value submit still
+  not cleanly proven.** Same conclusion as the entry, reached independently.
+- **SecretCard** — not attempted by either of us; no server-side trigger available.
+- **PDF attachment** — no poppler on this machine.
+- **`[physical]` frame rate** — needs hardware.
+- **Structural scroll** — tail-only re-render is proven; FlashList recycling and
+  `maintainVisibleContentPosition` prepend-anchoring are still unmeasured.
+
+#### Verifier findings
+
+1. **The ApprovalCard arrives clipped off the bottom of the screen, with its buttons unrendered.**
+   When the request landed, the card's node was `bounds=[60,2198][1020,2371]` on a 2400px screen and
+   the Run/Reject buttons were **absent from the accessibility tree entirely** — not merely
+   off-screen. I had to swipe the transcript before they existed to tap. A user who does not scroll
+   sees "Approval required" and no way to answer it. Worth fixing before M07 — an approval the user
+   cannot reach is worse than one that never rendered.
+2. **The write-up says "Approve"/"Deny"; the UI says "Run"/"Reject."** Harmless, but a future reader
+   reproducing this will look for buttons that do not exist.
+3. **Document that `approvals.mode: manual` only gates risk-flagged commands.** Both Sonnet and I
+   independently lost time to a safe command being auto-cleared under manual mode.
