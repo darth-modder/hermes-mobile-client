@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { Composer } from '../../../src/chat/Composer'
+import { NotificationBanner } from '../../../src/chat/NotificationBanner'
 import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
@@ -75,6 +76,7 @@ export default function SessionScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
       <SessionHeader storedSessionId={id} />
+      <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />
       <Composer storedSessionId={id} />
     </SafeAreaView>

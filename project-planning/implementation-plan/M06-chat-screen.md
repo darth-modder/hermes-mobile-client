@@ -27,11 +27,11 @@
 
 ## Exit criteria (on device)
 
-- [ ] Approval, clarify, sudo and secret round-trips succeed.
-- [ ] Image and PDF attachments upload and are referenced in the reply.
-- [ ] Slash palette lists skills and hides pane-only commands.
+- [ ] Approval, clarify, sudo and secret round-trips succeed. — approval (both approve and deny) and clarify are now fully driven live and pass; sudo is reached and `FLAG_SECURE` is confirmed but the full typed-password round-trip is blocked by a genuine environment limitation (sudo disabled on this Windows host), not a client bug; secret was not attempted at all (no skill on this server exercises it). See Verification log — left unchecked because two of the four are not actually closed.
+- [ ] Image and PDF attachments upload and are referenced in the reply. — image upload confirmed live (attachment chip appears in the sent message, server receives the bytes); PDF not attempted — this dev machine's server has no `poppler-utils` (`pdftoppm`), which `pdf.attach` requires server-side. Left unchecked because PDF is entirely untested, not just unverified.
+- [ ] Slash palette lists skills and hides pane-only commands. — pane-only hiding confirmed live against the real `commands.catalog` (`/mouse` absent, sibling matches like `/moa`/`/memory` present); a skill specifically appearing in the palette was not independently confirmed this round (no skill was configured on the throwaway test server). Left unchecked pending that half.
 - [ ] `[physical]` A 2,000-message transcript scrolls without dropped frames on a mid-range phone. — split on the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations): the frame-rate number itself needs a physical device; the *structural* scroll behavior (FlashList recycling, tail-only re-render on streaming deltas, `maintainVisibleContentPosition` on prepend) is emulator-provable with render-count evidence and is tracked as its own item below.
-- [ ] Structural scroll behavior (recycling / tail-only re-render / prepend anchoring) shown with render-count evidence on the emulator.
+- [ ] Structural scroll behavior (recycling / tail-only re-render / prepend anchoring) shown with render-count evidence on the emulator. — tail-only re-render is now shown with real counted evidence (see Verification log) but only at 2-message scale, and only the "streaming tail doesn't re-render settled messages" half; FlashList recycling and `maintainVisibleContentPosition` prepend-anchoring were not separately measured with counts this round. Left unchecked — partial, not closed.
 - [x] Desktop and phone on the same session: `session.reclaimed` handled without a stuck composer — substituted with a second Node client per the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations); both reconnect-gap branches verified live against a real `hermes serve` (Verification log below).
 
 ## Deviations from the literal spec (and why)
@@ -128,6 +128,19 @@
    event. Fixed in `session-connection.ts`: `submitPrompt` appends a `pending: true` user `ChatMessage`
    before the RPC call, flips `pending` off once the ack lands, and drops it if the RPC itself throws.
    See Verification log for the on-device before/after.
+9. **`$notifications` (`src/store/notifications.ts`) had a writer but no reader — found live, on-device,
+   during this round's Opus-review verification pass, not by inspection.** `notify()` is called from
+   `session-connection.ts`, `Composer.tsx`, and `SessionHeader.tsx` — but `grep -rln "\$notifications"
+   src app` turned up only the store file itself: nothing in the app ever subscribed to it. Every error
+   toast the reducer or the connection layer produced (a failed send, a failed attachment upload, a
+   reconnect warning) fired into an atom nobody rendered, and the user saw nothing. Concretely: the
+   first two image-attachment attempts this round appeared to fail with zero visible feedback, which
+   is what led to finding this. Fixed with a new `src/chat/NotificationBanner.tsx`, mounted in
+   `app/(main)/sessions/[id].tsx` between the header and the transcript — renders the most recent
+   notification (auto-dismissing after `durationMs` or 5s, tap-to-dismiss), styled by `kind`
+   (error/info/warning). After mounting it, a retried image attachment with a properly-selected image
+   succeeded and showed the expected chip — the earlier "failures" were most likely tap-target misses
+   on the system photo picker, with the invisible-toast bug masking whatever the actual error was.
 
 ## Verification log
 
@@ -266,3 +279,119 @@ image/PDF attachment upload, the `/`-slash and `@`-file completion palettes on-d
 code-reviewed + unit-tested per the mobile-slash-commands/markdown-blocks/highlight suites above),
 and the render-count evidence for the structural-scroll exit criterion. These remain open for a
 follow-up on-device pass.
+
+### 2026-09-08 — Opus-review follow-up: manual approval mode, attachments, slash palette, render counts
+
+This round closed the four gaps the previous entry left open, by directly editing (and then
+restoring) the user's real, persistent Hermes config — approved explicitly by the user in chat
+("back up the config, change it, and put it back when done") rather than worked around.
+
+**Config backup / mode switch / restore.** Before any change: copied
+`C:\Users\you\AppData\Local\hermes\config.yaml` to a scratch file outside the repo and
+recorded its sha256. Confirmed the starting effective mode via `hermes config get approvals.mode` →
+`smart` (matches the previous entry's "no explicit override, default smart" note — there actually
+was no `approvals.mode` key in the file at all; `smart` is the config-layer default). Set manual mode
+via the canonical CLI path, `hermes config set approvals.mode manual` (not a hand edit of the YAML).
+At the end of the session, restored the file from the scratch backup and verified the restore two
+ways: `diff` against the backup reported no differences, and the sha256 of the restored file matched
+the sha256 recorded before the change, byte for byte. Also re-ran `hermes config get approvals.mode`
+after the restore → back to `smart`, confirming the effective mode reverted along with the file. This
+restore step ran regardless of how the rest of the pass went, not as a happy-path afterthought.
+
+**ApprovalCard — both outcomes.** With manual mode active, sent a deliberately dangerous-looking
+command (`rm -rf /tmp/nonexistent-approval-test`) twice in separate turns. `approval.request` fired
+both times and `ApprovalCard` rendered. First turn: tapped **Deny** — the agent's own reply confirmed
+the command was blocked and never ran. Second turn: tapped **Approve** — the agent's reply confirmed
+the command executed (exit 0, path never existed so nothing was actually removed). Both `approval
+.respond` outcomes are now proven live, not just the approve path.
+
+**ClarifyCard.** Drove a prompt that made the agent ask a single clarifying question with a
+multiple-choice answer set. `ClarifyCard` rendered the question and choices; selected one; the
+server's follow-up reply showed it had received and used that exact answer. Full round-trip
+confirmed.
+
+**SudoCard — reached, `FLAG_SECURE` confirmed, full round-trip blocked by environment, not client
+code.** Drove a prompt requiring a sudo-gated shell command; `SudoCard` rendered with a masked
+Password field. Confirmed `expo-screen-capture`'s `FLAG_SECURE` engages while the card is mounted and
+releases afterward via the authoritative source (`adb shell dumpsys window windows`, filtered to this
+app's window entry) rather than inferring it from a black screenshot: the `fl=...` flags line showed
+`SECURE` present while `SudoCard` was on screen and absent once it unmounted. The typed-password
+submit step itself was not cleanly completed — repeated attempts to target the masked field by
+`uiautomator` bounds intermittently landed in the main composer instead (most likely a timing race
+between dumping the UI and the tap landing, across a keyboard-open/close layout shift) — but the
+prompt independently resolved when the agent reported the underlying `sudo` command is impossible on
+this Windows dev machine (`Failed with exit code 5`, "sudo is disabled on this machine"), which is an
+environment limitation unrelated to the mobile client. Documented plainly rather than claimed as a
+pass: the card renders, requests, and secures the screen correctly; the full typed-value submit path
+was not driven to a clean success this round.
+
+**SecretCard — not attempted.** No skill or flow was configured on this throwaway server that
+triggers a `secret.request`. Per the task's explicit instruction, this is stated plainly rather than
+folded into "SudoCard covers it" — they share request/store/respond plumbing, but that is an
+argument, not evidence of SecretCard's own behavior.
+
+**MMKV / composer-draft privacy check.** While chasing the SudoCard tap-target issue, a dummy value
+was accidentally typed into the main composer (not the SudoCard field) and then mostly-but-not-fully
+cleared. Pulled the app's MMKV file via `adb shell run-as com.nousresearch.hermes.mobile cat
+files/mmkv/hermes-android` and scanned it for printable ASCII runs (`re.findall(rb'[\x20-\x7e]{4,}',
+data)`): residual bytes from the accidentally-typed value were still present in the raw file even
+after the composer text had been cleared on screen — expected of MMKV's append/log-structured storage
+(old values persist until compaction), not a bug, but real, empirical confirmation that anything that
+reaches the composer's per-session draft persistence (`src/store/composer.ts`) can outlive being
+"cleared" at the UI layer. Reviewed `SudoCard.tsx`/`SecretCard.tsx` against this: their own Password
+/Secret fields are local component state, never routed through the composer's draft persistence path,
+so no secret value the *cards themselves* handle can reach MMKV this way. The exposure this confirms
+is narrower than "secrets leak" — it is "anything typed into the main composer, including by mistake,
+can leave residue in MMKV until compaction," which is the accidental-typo scenario this check set out
+to test, not a defect in SudoCard/SecretCard's own field isolation.
+
+**Image attachment — upload confirmed; vision analysis blocked server-side, not a client finding.**
+After mounting `NotificationBanner` (see Deviation #9), attached a real image via
+`expo-image-picker` → `image.attach_bytes`; the `[User attached image: ...]` reference chip appeared
+in the sent message, confirming the pipeline (`src/lib/attachments.ts`) works end to end. Asking the
+agent to analyze the image triggered a `vision_analyze` tool call that failed with a provider-side
+error (`HTTP 400: Error from provider (Console Go): Upstream request failed: [400] Provider returned
+error`), reproduced with two different test images (a 4x4 px PNG and a 64x64 gradient PNG). The model
+correctly identified it needed to call `vision_analyze` and the attachment bytes clearly reached the
+server — this is a limitation of the test provider/model (`opencode-go`/`mimo-v2.5`'s vision
+endpoint), not a client-side defect, and is reported as such rather than as a pass.
+
+**PDF attachment — not attempted; dependency confirmed absent.** `pdf.attach` needs `poppler-utils`
+(`pdftoppm`) installed server-side. Checked this dev machine directly: both `where pdftoppm` and
+`pdftoppm -v` failed (not found). Stated plainly rather than claimed as covered by the image path —
+the PDF path was never exercised.
+
+**Slash palette and `@`-file completion — live against the real server, not fixtures.** With the
+throwaway server's actual `commands.catalog`/`complete.slash`/`complete.path` RPCs (not the unit-test
+fixtures), typed `/` in the composer: the palette listed the server's real command set and correctly
+hid the pane-only command `/mouse` while showing sibling matches (`/moa`, `/memory`, etc.) — confirms
+`mobile-slash-commands.ts`'s `no-desktop-surface` filtering works against live data, not just the
+fixture in its unit tests. No skill was configured on this server, so a skill specifically appearing
+in the palette was not independently confirmed (left unchecked in Exit criteria for that reason).
+Typed `@` followed by a partial filename: `complete.path` returned real matches from the server's
+filesystem, and selecting one correctly rewrote the composer text — confirms the `@`-file completion
+path end to end on-device.
+
+**Structural scroll — tail-only re-render shown with real counted evidence, at small scale.** Added
+dev-only render-count instrumentation to `MessageBubble` (`src/chat/Transcript.tsx`,
+`messageRenderCounts`, logged via `console.log` so it is visible in `adb logcat -d | grep
+render-count` without a remote debugger attached). Drove one full streaming turn and read the counts
+back from logcat: the user's own optimistic bubble (id prefixed `optimistic-...`) settled at exactly
+2 renders (the initial pending insert, then the ack flip) and never rendered again; the assistant's
+streaming reply (id prefixed `assistant-stream-...`) climbed to 162 renders over the course of the
+same turn while nothing else in the transcript re-rendered at all — direct, counted confirmation that
+`MessageBubble`'s `memo()` on message identity produces exactly the "only the actively-streaming
+message re-renders" behavior the reducer's reference-stability contract is supposed to guarantee.
+This is real evidence, but only at 1–2-message scale (this session's transcript was short) — it does
+not by itself demonstrate FlashList recycling behavior or `maintainVisibleContentPosition` anchoring
+on prepend, which need a much longer transcript and active scrolling to observe, and were not
+separately measured this round. A second turn's render counts were not captured cleanly (the
+follow-up send may not have registered — the composer still showed unsent text on a later check) but
+this does not weaken the first turn's evidence, which was captured in full.
+
+**Cleanup performed on every path, including this one**: the throwaway `hermes serve` instance was
+killed and its `/api/health` endpoint confirmed no longer responding; the two test images were removed
+from the emulator's Pictures folder; `config.yaml` was restored and verified as described above; a
+final `npm run check` (typecheck + `vitest run` + `eslint .`) was run against the full working tree,
+including the still-uncommitted `NotificationBanner.tsx` and render-count instrumentation — all three
+steps exited clean (134 tests passing, no lint output).

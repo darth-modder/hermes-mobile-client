@@ -53,8 +53,27 @@ function roleStyleFor(role: ChatMessage['role']): { bubble: object; row: object 
   return { bubble: styles.assistantBubble, row: styles.assistantRow }
 }
 
+/**
+ * Per-message render counts, dev-only — the structural half of M06's perf
+ * criterion ("tail-only re-render on streaming deltas") needs instrumented
+ * counts, not "it looked smooth" (Opus's M06 review). `MessageBubble` is
+ * `memo`'d on `message` identity, and the reducer only ever produces a NEW
+ * object reference for the message actually being mutated (every other
+ * entry in `session.messages` keeps its old reference across a flush) — so
+ * an already-settled message's count should stay flat while only the
+ * streaming tail's count climbs. Logged (not just counted) so it shows up
+ * in `adb logcat` during a live on-device session without needing a
+ * debugger attached.
+ */
+export const messageRenderCounts: Record<string, number> = {}
+
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
   const roleStyle = roleStyleFor(message.role)
+
+  if (__DEV__) {
+    messageRenderCounts[message.id] = (messageRenderCounts[message.id] ?? 0) + 1
+    console.log(`[render-count] ${message.id} -> ${messageRenderCounts[message.id]}`)
+  }
 
   return (
     <View style={roleStyle.row}>
