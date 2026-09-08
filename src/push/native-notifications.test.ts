@@ -23,8 +23,13 @@ vi.mock('react-native-mmkv', () => ({
   })
 }))
 
-const { $nativeNotifyPrefs, dispatchNativeNotification, setNativeNotifyEnabled, setNativeNotifyKind } =
-  await import('./native-notifications')
+const {
+  $nativeNotifyPrefs,
+  ANDROID_NOTIFICATION_CHANNEL_ID,
+  dispatchNativeNotification,
+  setNativeNotifyEnabled,
+  setNativeNotifyKind
+} = await import('./native-notifications')
 
 const { $activeRuntimeSessionId, $runtimeToStored } = await import('../store/session-states')
 
@@ -67,6 +72,18 @@ describe('native-notifications', () => {
 
     expect(fired).toBe(true)
     expect(scheduleNotificationAsync).toHaveBeenCalledTimes(1)
+  })
+
+  // A bare `trigger: null` fires immediately but on no particular channel,
+  // so Android silently falls back to expo-notifications' own default
+  // "Miscellaneous" channel instead of the app's registered hermes-default
+  // one (importance/sound/badge all ignored) — found live, on-device.
+  it('schedules on the app-registered Android channel, not the default trigger', async () => {
+    await dispatchNativeNotification({ kind: 'approval', sessionId: 'sid-channel', title: 'x' })
+
+    expect(scheduleNotificationAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: { channelId: ANDROID_NOTIFICATION_CHANNEL_ID } })
+    )
   })
 
   it('an attention kind (input) fires while foregrounded if it is for a non-active session', async () => {

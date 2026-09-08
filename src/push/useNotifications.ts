@@ -15,7 +15,7 @@
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 
-const ANDROID_CHANNEL_ID = 'hermes-default'
+import { ANDROID_NOTIFICATION_CHANNEL_ID } from './native-notifications'
 
 export function useNotifications(): void {
   const router = useRouter()
@@ -35,7 +35,7 @@ export function useNotifications(): void {
         })
       })
 
-      await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+      await Notifications.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
         name: 'Hermes',
         importance: Notifications.AndroidImportance.DEFAULT
       })

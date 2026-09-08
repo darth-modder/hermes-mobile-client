@@ -750,3 +750,57 @@ Every exit criterion is now closed, including the notification one I closed abov
    unsettled.
 
 Neither needs new investigation — one is a small fix, the other is a decision already written up.
+
+### 2026-09-08 — Sonnet: notification-channel defect fixed
+
+The small fix from above. `dispatchNativeNotification` (`native-notifications.ts`) scheduled every
+notification with `trigger: null`, which fires immediately but on no particular channel — Android
+falls back to `expo-notifications`' own default "Miscellaneous" channel instead of the app's
+registered `hermes-default` one (`useNotifications.ts`'s `setNotificationChannelAsync` call), exactly
+as Opus found via `dumpsys notification`.
+
+Checked the installed `expo-notifications@57.0.17` type definitions
+(`node_modules/expo-notifications/build/Notifications.types.d.ts`) before touching anything: in this
+version `channelId` lives on the **trigger**, not `NotificationContentInput` — `NotificationTriggerInput
+= null | ChannelAwareTriggerInput | SchedulableNotificationTriggerInput` and
+`ChannelAwareTriggerInput = { channelId: string }`. So the fix is `trigger: { channelId:
+ANDROID_NOTIFICATION_CHANNEL_ID }` in place of `trigger: null` — still fires immediately, now on the
+right channel.
+
+The channel id string (`'hermes-default'`) was previously declared twice — once where it's registered
+(`useNotifications.ts`) and, after this fix, again where it's needed (`native-notifications.ts`) if
+left alone. Moved the constant to live in `native-notifications.ts` (the "pure policy" module the file
+doc comment says stays testable without native modules — a bare string export doesn't change that) and
+had `useNotifications.ts` import it, so the two can't drift apart again.
+
+**Regression test** (`native-notifications.test.ts`) — verified failing on the pre-fix code before
+restoring it:
+
+```
+ FAIL  ... > schedules on the app-registered Android channel, not the default trigger
+- "trigger": { "channelId": "hermes-default" }
++ "trigger": null
+ Tests  1 failed | 10 passed (11)
+```
+
+One fails on old code, ten pass (every existing native-notifications test, untouched). All eleven pass
+with the fix restored. `npm run check` — 25 files, **188 tests**, Prettier clean.
+
+**Not reached: live on-device confirmation via `dumpsys notification`.** Opus's original finding used
+a manual-approval command to force a real posted notification and read its `effectiveNotificationChannel`
+back. I could not reproduce that trigger on this machine: `approvals.mode` defaults to `manual`, but the
+risk classification that would route a command into that gate here is `tirith`
+(`security.tirith_enabled: true` by default), and `tirith` fails *open* at scan time when its binary
+isn't installed — which it isn't on this Windows host (`tirith: command not found`). So `rm -rf
+/tmp/...` ran straight through with no approval prompt at all, the same class of environment gap
+already recorded for `sudo` in this file's own 2026-09-08 log (no real `sudo` binary on this machine
+either). Installing `tirith` would be a dev-machine change on the same footing as poppler — not done
+without asking. The fix itself doesn't depend on reproducing the trigger: it's a one-line, type-checked
+correction verified by a test that demonstrably fails without it, the same standard used for the
+attachment-connection fix above.
+
+`hermes serve`'s `config.yaml`/`.env` were read-only this round — backed up with sha256 before any
+device work and confirmed byte-identical after (no config changes were needed or made; `approvals.mode`
+manual is already the shipped default, so no edit was required to check the risk-gating path either).
+Scratch tokens, screenshots, and the two throwaway `hermes serve` processes were deleted/killed and
+confirmed unreachable afterward.

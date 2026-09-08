@@ -46,6 +46,14 @@ export interface NativeNotificationPrefs {
 
 const STORAGE_KEY = 'hermes:native-notifications'
 
+// Registered by useNotifications.ts's setNotificationChannelAsync call (the
+// Android O+ channel this app actually configures — importance, sound,
+// badge). Owned here, the "pure policy" module, rather than there, so the
+// two can't drift: without passing this on the trigger below, a scheduled
+// notification silently falls back to expo-notifications' own default
+// "Miscellaneous" channel instead of this one (found live, on-device).
+export const ANDROID_NOTIFICATION_CHANNEL_ID = 'hermes-default'
+
 const DEFAULT_PREFS: NativeNotificationPrefs = {
   enabled: true,
   kinds: {
@@ -192,7 +200,13 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
         body: input.body,
         data: input.sessionId ? { storedSessionId: input.sessionId } : {}
       },
-      trigger: null
+      // A bare `null` trigger fires immediately but on no particular
+      // channel, so Android falls back to expo-notifications' own
+      // "Miscellaneous" channel — the app's own hermes-default channel
+      // (importance, sound, badge) is silently ignored. `channelId` is the
+      // one field `ChannelAwareTriggerInput` adds over `null`: still fires
+      // immediately, just on the right channel.
+      trigger: { channelId: ANDROID_NOTIFICATION_CHANNEL_ID }
     })
   } catch {
     // Best-effort: a notification that fails to schedule (permission denied,
