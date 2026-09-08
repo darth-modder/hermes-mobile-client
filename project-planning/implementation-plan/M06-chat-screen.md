@@ -1049,3 +1049,141 @@ and that is testable and fixable today without poppler. Installing poppler now w
 last mile of a path whose first mile does not work — so the deferral is still right, but for a
 different reason than recorded, and it is no longer the thing standing between M06 and a working
 attachment feature.
+
+### 2026-09-08 — Sonnet: root cause found and fixed — a discarded probe failure, not `file.attach`
+
+**The bug is not in `attachments.ts`.** `file.attach`, `pdf.attach`, `image.attach_bytes` and every
+other RPC-calling function in `session-connection.ts` are innocent — the defect is one level down, in
+the connection-recovery path M07 already built, and it is not attachment-specific: anything that runs
+after the gateway silently dies hits it the same way.
+
+#### Reproduction attempts — all succeeded, which is itself the clue
+
+Set up a throwaway `hermes serve` (token mode, backed up and restored `config.yaml`/`.env` with
+sha256 — confirmed byte-identical afterward) against the emulator via `adb reverse`, and ran Opus's
+exact repro (push a `.txt` to `/sdcard/Download`, tap the composer's 📄 button, select it) five times
+across variations:
+
+- Quick round-trip (a few seconds in the picker): chip appeared, `@file:` ref inserted, send worked.
+- Fresh session, immediate attach, no prior message: same result.
+- Deliberately held the picker open 26+ seconds — past `BACKGROUND_GRACE_MS` — before selecting:
+  **still succeeded.** JS logs (`[lifecycle-debug]` instrumentation, removed before this commit)
+  confirmed the mechanism working as designed: `AppState` genuinely goes `background` when the picker
+  opens, the grace timer arms for 20000ms, but Android suspends the JS thread for the whole window —
+  the timer never fires while backgrounded, and `active` cancels it cleanly on return. No poisoning.
+- Forced a *real* failure (killed the throwaway server) and tried both `submitPrompt` and
+  `pickAndAttachDocument`: **the error banner worked correctly both times** —
+  `Send failed / Hermes gateway is not connected` and `Attachment failed / Hermes gateway is not
+  connected`, rendered by `NotificationBanner` exactly as designed.
+
+That last result matters most: **`NotificationBanner`/`notify()` is not broken.** A clean socket
+close (server process exits, FIN reaches the client) is detected and surfaces a visible error
+immediately. The "invisible" failure Opus hit needs a *different* kind of death — one that never
+produces a close/error event at all.
+
+#### The actual defect: `reconnectAndProbeGateway()` throws away the one signal that would have caught it
+
+`useAppLifecycle.ts`'s own doc comment already names the failure mode precisely: "a socket that LOOKS
+open ... won't error until something tries to use it" — a half-open TCP connection where the peer is
+gone (a stale Wi-Fi AP, a NAT timeout, or the OS reclaiming a backgrounded app's transport) but no
+close/error event ever fires, so `connectionState` keeps reporting `'open'`. The foreground-return
+`ping` probe in `reconnectAndProbeGateway()` (`session-connection.ts`) exists specifically to catch
+this. Reading it closely:
+
+```ts
+export async function reconnectAndProbeGateway(): Promise<void> {
+  try {
+    const client = await ensureGatewayConnection()
+    await client.request('ping', {}, 5_000)
+  } catch {
+    // Swallowed — see doc comment above.
+  }
+}
+```
+
+The doc comment claimed a failed probe is "a legitimate outcome the ordinary reconnect-backoff/
+socket-close handling already owns." That is false for a **ping timeout specifically**: `request()`'s
+timeout branch (`upstream/shared/json-rpc-gateway.ts`) only rejects that one pending call — it never
+calls `close()` or `invalidate()`. No close handling runs. So a ping timeout proves the connection is
+dead and then does *nothing about it*: `gateway.connectionState` keeps saying `'open'` forever, and
+every RPC-calling function in this file (`attachFile`, `submitPrompt`, all the rest) goes through
+`requireGateway()`, which trusts that flag unconditionally and hands back the same broken instance —
+this is a **module-level singleton**, so once this happens every session is affected identically,
+matching "every `prompt.submit` fails afterwards ... in a different, previously-working session."
+Each RPC then hangs silently for its own timeout (30s for attach, 30 *minutes* for `prompt.submit`)
+with nothing to reject and thus nothing for `notify()` to show — which is why the failure looked
+invisible: there was no error, because nothing had failed yet as far as the code could tell.
+
+`am force-stop` + relaunch fixes it because that's the only thing that actually clears the module
+singleton and forces a fresh dial — exactly Opus's own observation.
+
+I could not force the emulator to reproduce the underlying half-dead socket itself (that needs a real
+OS network-policy kill or NAT timeout on a physical device, per D1's own classification of this class
+of behavior as `[physical]`), but the defect doesn't require reproducing the trigger to fix or test:
+it's a discarded signal, verifiable and testable directly.
+
+#### The fix
+
+`reconnectAndProbeGateway()` now invalidates the connection when the probe fails, and immediately
+attempts a fresh redial rather than waiting for the next lifecycle event:
+
+```ts
+try {
+  await client.request('ping', {}, 5_000)
+} catch {
+  client.invalidate()
+  await ensureGatewayConnection().catch(() => undefined)
+}
+```
+
+`invalidate()` already existed on `JsonRpcGatewayClient` for exactly this ("invalidate the current
+socket generation after an ambiguous transport outcome") — nothing added to the vendored file, no
+sync-script patch needed. `requireGateway()` and every attach/submit call site are untouched; the fix
+is entirely in the one place that was supposed to catch this and didn't.
+
+**Regression tests** (`session-connection.test.ts`, `reconnectAndProbeGateway` describe block) —
+verified failing on the pre-fix code before restoring it, the same discipline as the M07 grace-timer
+fix:
+
+```
+ FAIL  ... > invalidates the connection when the ping probe times out
+  expected "vi.fn()" to be called 1 times, but got 0 times
+ FAIL  ... > the connection no longer reports open after a probe timeout, so the next call redials
+  Expected: "closed"  Received: "open"
+ Tests  2 failed | 15 passed (17)
+```
+
+Two fail on old code, fifteen pass (including every pre-existing `submitPrompt`/`handleSocketClose`
+test, untouched). All four pass with the fix restored.
+
+#### Live re-verification after the fix, on-device
+
+Fresh session, immediate attach (no delay), full round trip:
+
+```
+chip: test-attach-5.txt
+submitted text includes: @file:C:\Users\you\AppData\Local\hermes\attachments\test-attach-5.txt
+model calls read_file(test-attach-5.txt)
+reply: fix-verified-1
+```
+
+`npm run check` — 25 files, **188 tests**, Prettier clean.
+
+#### The three things the task asked for
+
+1. **Attaching a non-PDF file produces a chip and inserts its `@file:` ref** — confirmed, repeatedly,
+   both before and after the fix (the shared picker/copy/base64/`file.attach` path was never actually
+   broken on its own — see above).
+2. **A failed attachment does not break anything else** — this is what the fix actually closes. Before
+   it, a probe-timeout-shaped failure poisoned every session's `submitPrompt` until restart; after it,
+   the very next RPC redials instead of reusing a known-dead instance.
+3. **The error is visible** — `NotificationBanner` already worked correctly for every failure I could
+   force (confirmed twice, attach and submit). The fix removes the one path that produced no error at
+   all to show.
+
+#### On the poppler deferral (unchanged from above, restated for the register)
+
+Re-scoped as recorded above: the shared attachment path is fixed, not blocked. PDF-specific rendering
+is what remains behind poppler.
+
+M06 stays `in-progress` per instruction — only Opus sets `done`.

@@ -42,12 +42,26 @@ const { getActiveConnection, setActiveConnection } = await import('../connection
 const { $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
 
-const { handleSocketClose, resetSessionConnectionForTests, setGatewayForTests, setReducerStateForTests, submitPrompt } =
-  await import('./session-connection')
+const {
+  handleSocketClose,
+  reconnectAndProbeGateway,
+  resetSessionConnectionForTests,
+  setGatewayForTests,
+  setReducerStateForTests,
+  submitPrompt
+} = await import('./session-connection')
 
 const { JsonRpcGatewayError } = await import('../upstream/shared/json-rpc-gateway')
 
 class FakeGateway {
+  // Real connectionState after invalidate() would flip to 'closed' via the
+  // client's own close/invalidateSocket handling — modeled here so a test
+  // can assert reconnectAndProbeGateway() actually redials afterward instead
+  // of reusing the same dead instance.
+  connectionState: string = 'open'
+  invalidate = vi.fn(() => {
+    this.connectionState = 'closed'
+  })
   request = vi.fn()
   close = vi.fn()
 }
@@ -201,5 +215,58 @@ describe('handleSocketClose: AGENTS.md "Credentials and reauth" applied to WS cl
     handleSocketClose(other, 4401)
 
     expect(getActiveConnection()?.needsLogin).toBeUndefined()
+  })
+})
+
+// The M06/M07 attachment-round bug: a socket that silently died while
+// backgrounded (no close/error event ever fired — a stale Wi-Fi AP, a NAT
+// timeout, or the OS reclaiming a backgrounded app's transport) still reports
+// connectionState 'open'. The foreground-return ping probe is the one thing
+// designed to catch this, but a probe *timeout* only rejects that one pending
+// call (JsonRpcGatewayClient.request()'s own timeout branch) — it never runs
+// the client's close handling. Before this fix, the probe's failure was
+// swallowed outright, so the same broken instance kept being handed out by
+// every requireGateway()-based RPC (attach, submit, ...) forever, each one
+// silently hanging for its own timeout instead of failing visibly — exactly
+// what looked like "file.attach breaks the whole connection".
+describe('reconnectAndProbeGateway: a half-open socket must not stay wedged forever', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    setActiveConnection(null)
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+  })
+
+  it('invalidates the connection when the ping probe times out', async () => {
+    fake.request.mockRejectedValue(new Error('request timed out after 5s: ping'))
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.invalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('the connection no longer reports open after a probe timeout, so the next call redials instead of reusing it', async () => {
+    fake.request.mockRejectedValue(new Error('request timed out after 5s: ping'))
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.connectionState).toBe('closed')
+  })
+
+  it('does not invalidate a probe that succeeds', async () => {
+    fake.request.mockResolvedValue(undefined)
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.invalidate).not.toHaveBeenCalled()
+    expect(fake.connectionState).toBe('open')
+  })
+
+  it('never throws, even though there is no active connection to redial to after invalidating', async () => {
+    fake.request.mockRejectedValue(new Error('request timed out after 5s: ping'))
+
+    await expect(reconnectAndProbeGateway()).resolves.toBeUndefined()
   })
 })

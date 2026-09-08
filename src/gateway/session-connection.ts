@@ -351,17 +351,41 @@ export function closeGatewayConnection(): void {
  * `ping` RPC below is the half-open probe (a socket that looks open but
  * whose peer silently vanished won't error until something tries to use
  * it). Never throws: "no active connection yet" (fresh install, still on
- * the connect screen) and a failed dial/probe are both legitimate outcomes
- * the ordinary reconnect-backoff/socket-close handling already owns —
- * surfacing them here a second time would just be a duplicate error path.
+ * the connect screen) and a failed dial are both legitimate outcomes the
+ * ordinary reconnect-backoff/socket-close handling already owns — surfacing
+ * them here a second time would just be a duplicate error path.
  */
 export async function reconnectAndProbeGateway(): Promise<void> {
-  try {
-    const client = await ensureGatewayConnection()
+  let client: MobileGateway
 
+  try {
+    client = await ensureGatewayConnection()
+  } catch {
+    // Dial itself failed — connect()'s own error handling already leaves the
+    // instance out of 'open', so the next ensureGatewayConnection() call
+    // (whichever lifecycle event triggers it) retries fresh. Nothing here to
+    // invalidate.
+    return
+  }
+
+  try {
     await client.request('ping', {}, 5_000)
   } catch {
-    // Swallowed — see doc comment above.
+    // The probe just proved this exact instance is dead — a half-open
+    // socket that still reports connectionState 'open' (no close/error
+    // event ever fired: a stale Wi-Fi AP, a NAT timeout, or the OS silently
+    // reclaiming a backgrounded app's transport) but never answers. A ping
+    // timeout does NOT run the client's own close handling — `request()`'s
+    // timeout branch only rejects that one pending call — so without
+    // invalidating here this same broken instance keeps being handed out by
+    // every `requireGateway()`-based RPC (attach, submit, ...) forever, each
+    // one silently hanging for its own timeout (30 s / 30 min) instead of
+    // failing visibly. Invalidate so `connectionState` stops lying about
+    // 'open', then redial right now rather than waiting for the next
+    // foreground/network-restore event to notice — a failed redial here is
+    // swallowed the same as a failed dial above.
+    client.invalidate()
+    await ensureGatewayConnection().catch(() => undefined)
   }
 }
 
