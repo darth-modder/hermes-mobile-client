@@ -45,6 +45,8 @@ const { bindSession, createReducerState } = await import('./session-stream-reduc
 const { handleSocketClose, resetSessionConnectionForTests, setGatewayForTests, setReducerStateForTests, submitPrompt } =
   await import('./session-connection')
 
+const { JsonRpcGatewayError } = await import('../upstream/shared/json-rpc-gateway')
+
 class FakeGateway {
   request = vi.fn()
   close = vi.fn()
@@ -134,6 +136,28 @@ describe('submitPrompt: optimistic user-message insert', () => {
     const session = $sessionStates.get()['stored-1']
 
     expect(session.messages[0].attachmentRefs).toBeUndefined()
+  })
+
+  it('a 4090 SESSION_NOT_OWNED rejection is rewritten to say the session is open elsewhere', async () => {
+    fake.request.mockRejectedValue(
+      new JsonRpcGatewayError('rejected', { code: 4090, data: { reason: 'SESSION_NOT_OWNED' } })
+    )
+
+    await expect(submitPrompt('stored-1', 'hello')).rejects.toThrow(/open elsewhere/)
+  })
+
+  it('a 4090 MAX_CONCURRENT_SESSIONS rejection gets its own message', async () => {
+    fake.request.mockRejectedValue(
+      new JsonRpcGatewayError('rejected', { code: 4090, data: { reason: 'MAX_CONCURRENT_SESSIONS' } })
+    )
+
+    await expect(submitPrompt('stored-1', 'hello')).rejects.toThrow(/Too many sessions/)
+  })
+
+  it('a non-4090 error passes through unchanged', async () => {
+    fake.request.mockRejectedValue(new Error('boom'))
+
+    await expect(submitPrompt('stored-1', 'hello')).rejects.toThrow('boom')
   })
 })
 

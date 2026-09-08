@@ -37,7 +37,7 @@ import { requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
 import { reconnectBackoffDelayMs } from '../upstream/lib/reconnect-backoff'
-import type { ConnectionState } from '../upstream/shared/json-rpc-gateway'
+import { type ConnectionState, JsonRpcGatewayError } from '../upstream/shared/json-rpc-gateway'
 import type { RpcEvent, SessionCreateResponse, SessionMessage, SessionResumeResponse } from '../upstream/types/hermes'
 
 import { DeltaFlushScheduler } from './delta-flush-scheduler'
@@ -299,6 +299,35 @@ function requireGateway(): MobileGateway {
   return gateway
 }
 
+/** M07's `AppLifecycle` (src/gateway/lifecycle.ts) `closeConnection`
+ *  callback — the background-grace timer's endpoint. A plain `gateway.close()`
+ *  wrapped so the lifecycle module never needs to import the singleton
+ *  itself. No-op if nothing is connected. */
+export function closeGatewayConnection(): void {
+  gateway?.close()
+}
+
+/**
+ * M07's `AppLifecycle` `reconnectAndProbe` callback (foreground return,
+ * network restored): `ensureGatewayConnection()` is a no-op if the socket
+ * survived the background grace, otherwise redials — either way the
+ * `ping` RPC below is the half-open probe (a socket that looks open but
+ * whose peer silently vanished won't error until something tries to use
+ * it). Never throws: "no active connection yet" (fresh install, still on
+ * the connect screen) and a failed dial/probe are both legitimate outcomes
+ * the ordinary reconnect-backoff/socket-close handling already owns —
+ * surfacing them here a second time would just be a duplicate error path.
+ */
+export async function reconnectAndProbeGateway(): Promise<void> {
+  try {
+    const client = await ensureGatewayConnection()
+
+    await client.request('ping', {}, 5_000)
+  } catch {
+    // Swallowed — see doc comment above.
+  }
+}
+
 /** The wire-level runtime id currently bound to `storedSessionId`, or the
  *  stored id itself when nothing has bound it yet — mirrors the reducer's own
  *  "placeholder key" convention (session-keys.ts): a session this client just
@@ -350,6 +379,39 @@ export async function resumeSession(storedSessionId: string): Promise<string> {
   publishAll()
 
   return storedSessionId
+}
+
+/**
+ * "Honor `gateway.capabilities.per_session_exclusive_submit`" (M07 task
+ * line): the server enforces a per-session active-writer lease on every
+ * `prompt.submit` (`tui_gateway/session_lifecycle.py`'s
+ * `_ensure_active_session_slot`) and rejects a submit from a second
+ * connection with JSON-RPC error 4090 and a `data.reason` of
+ * `SESSION_NOT_OWNED` (another surface — desktop, TUI — is actively driving
+ * this session right now), `MAX_CONCURRENT_SESSIONS`, or
+ * `SESSION_COORDINATION_UNAVAILABLE`. No client in this app calls
+ * `gateway.capabilities` to check the flag ahead of time (nothing branches on
+ * it — it's always true in practice, and there's no cheaper way to find out
+ * than trying); "honoring" it here means recognizing the rejection when it
+ * happens and telling the user something true ("open elsewhere") instead of
+ * a generic RPC-failure toast.
+ */
+function describeSubmitError(error: unknown): unknown {
+  if (!(error instanceof JsonRpcGatewayError) || error.code !== 4090) {
+    return error
+  }
+
+  const reason = (error.data as { reason?: unknown } | undefined)?.reason
+
+  if (reason === 'SESSION_NOT_OWNED') {
+    return new Error('This session is open elsewhere right now — try again once the other client is done.')
+  }
+
+  if (reason === 'MAX_CONCURRENT_SESSIONS') {
+    return new Error('Too many sessions are active at once. Close one and try again.')
+  }
+
+  return new Error('Could not claim this session right now. Try again in a moment.')
 }
 
 /**
@@ -407,7 +469,7 @@ export async function submitPrompt(
       messages: session.messages.filter(message => message.id !== optimisticId)
     })).state
     publishAll()
-    throw error
+    throw describeSubmitError(error)
   }
 }
 
