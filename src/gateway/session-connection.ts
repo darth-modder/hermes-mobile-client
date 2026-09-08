@@ -183,11 +183,23 @@ function handleGatewayEvent(event: RpcEvent): void {
   }
 }
 
-/** Classifies a WS close code the same way `src/net/auth/ladder.ts` classifies
- *  an HTTP status — 4401/4403 mirror 401/403 exactly (ladder.ts's own doc
- *  comment). Token/password connections (M04) have no silent refresh, so an
- *  unauthorized close always resolves to "sign in again" instead of retrying. */
-function handleSocketClose(connection: MobileConnection, code: number): void {
+/**
+ * AGENTS.md "Credentials and reauth", applied to the WS close code directly
+ * (mirrors `src/net/auth/ladder.ts`'s HTTP 401/403 classification exactly —
+ * 4401/4403 are that rule's WS-close spelling):
+ *   - 4401 (confirmed unauthorized) -> mark the connection `needsLogin`.
+ *     Token/password connections (M04) have no silent refresh, so this is
+ *     the only correct outcome for either mode today (M08's OAuth mode is
+ *     the first with a real `refresh()` to attempt before it).
+ *   - 4403 (confirmed forbidden) -> left as an ordinary closed state, no
+ *     login prompt. Forbidden means the credentials are fine but the action
+ *     isn't permitted; a login screen cannot fix that.
+ *   - Every other close code (timeout, 5xx-equivalent, connection refusal,
+ *     a plain drop) -> also left as an ordinary closed state. Never a login
+ *     prompt — the reconnect/backoff path (src/upstream/lib/
+ *     reconnect-backoff.ts) owns retrying those, not this function.
+ */
+export function handleSocketClose(connection: MobileConnection, code: number): void {
   if (code === 4401) {
     void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
   }
@@ -578,4 +590,19 @@ export function resetSessionConnectionForTests(): void {
   scheduler?.dispose()
   scheduler = null
   stateListeners.clear()
+}
+
+/** Test-only: inject a fake in place of the real dialed `MobileGateway`, so
+ *  the RPC-calling functions (`submitPrompt`, `respondApproval`, ...) can be
+ *  exercised against a fake `request`/`close` without a real socket. */
+export function setGatewayForTests(fake: MobileGateway | null): void {
+  gateway = fake
+}
+
+/** Test-only: seed `reducerState` directly (e.g. via `bindSession` +
+ *  `createReducerState`) so a test can call an RPC function against a known
+ *  session without going through `createSession`/`resumeSession`. */
+export function setReducerStateForTests(state: ReducerState): void {
+  reducerState = state
+  publishAll()
 }
