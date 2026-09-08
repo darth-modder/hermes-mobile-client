@@ -60,6 +60,9 @@ rows return to Fable as a policy escalation.
 | M06 | PDF attachment via `pdf.attach` | No `pdftoppm` (poppler) on the server host | Sonnet | Poppler on PATH for the `hermes serve` host (ask the user before installing) | Next throwaway server session, M07 verification (D8) |
 | M06 | Desktop-shaped payloads and `source: "desktop"` toolsets on a shared session | Concurrent edits in `../hermes-agent/apps/desktop/src/**` | Opus | `apps/desktop/**` has no uncommitted changes at build time; record the upstream commit | Opportunistic (D7) |
 | M06 | `maintainVisibleContentPosition` anchoring on prepend | No prepend code path exists | First milestone adding transcript history pagination | That milestone's implementation | None owed if no milestone adds one by M12 (D6) |
+| M07 | `[physical]` Airplane-mode toggle mid-turn on a real phone against a gated LAN backend | Real device | Opus | Device attached | Batched physical pass (D9) |
+| M07 | `[physical]` Screen off 15 minutes mid-turn (doze) | Real device | Opus | Device attached | Batched physical pass (D9) |
+| M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device, and `expo-network` wiring not yet built | Opus (device) / Sonnet (`expo-network`) | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
 
 ## Architecture
 

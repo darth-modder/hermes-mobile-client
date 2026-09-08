@@ -117,4 +117,63 @@ describe('AppLifecycle', () => {
 
     expect(closeConnection).not.toHaveBeenCalled()
   })
+
+  // Regression for the M07 background/foreground recovery bug (Opus's
+  // 2026-09-08 verification): Android can suspend the JS thread for the
+  // entire background window, so an already-overdue grace timer's "fire"
+  // callback can be in flight on the native bridge by the time `active`
+  // calls `clearTimeout` — cancellation loses that race and the callback
+  // runs anyway, *after* `active` has already reconnected. The fake timers
+  // above always honor `clearTimeout` (unlike the real platform), so this
+  // test injects a `clearTimeout` that — like the real bug — does not
+  // actually prevent the captured callback from later running, to prove the
+  // close is still suppressed once `active` has been processed.
+  it('a grace timer that fires after returning to active (clearTimeout lost the race) does not close the reconnected connection', () => {
+    const captured: { callback: (() => void) | null } = { callback: null }
+
+    const raceyLifecycle = new AppLifecycle({
+      clearTimeout: () => {
+        // No-op: simulates clearTimeout losing the race against an
+        // already in-flight native "fire" callback.
+      },
+      closeConnection,
+      reconnectAndProbe,
+      setTimeout: callback => {
+        captured.callback = callback
+
+        return 1
+      }
+    })
+
+    raceyLifecycle.handleAppStateChange('background')
+    raceyLifecycle.handleAppStateChange('active')
+
+    expect(reconnectAndProbe).toHaveBeenCalledTimes(1)
+    expect(closeConnection).not.toHaveBeenCalled()
+
+    // The stale timer fires anyway, despite the (ineffective) cancellation.
+    captured.callback?.()
+
+    expect(closeConnection).not.toHaveBeenCalled()
+  })
+
+  it('a grace timer that fires while still backgrounded still closes (the ordinary, non-racing case)', () => {
+    const captured: { callback: (() => void) | null } = { callback: null }
+
+    const raceyLifecycle = new AppLifecycle({
+      clearTimeout: () => {},
+      closeConnection,
+      reconnectAndProbe,
+      setTimeout: callback => {
+        captured.callback = callback
+
+        return 1
+      }
+    })
+
+    raceyLifecycle.handleAppStateChange('background')
+    captured.callback?.()
+
+    expect(closeConnection).toHaveBeenCalledTimes(1)
+  })
 })

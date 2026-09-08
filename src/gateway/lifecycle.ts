@@ -58,6 +58,19 @@ export class AppLifecycle {
   private readonly reconnectAndProbeFn: () => Promise<void>
 
   private graceTimerHandle: null | number = null
+  /**
+   * Tracked independently of `graceTimerHandle`/`clearTimeout` because
+   * Android can suspend the JS thread for the whole background window (see
+   * `BACKGROUND_GRACE_MS`'s doc and M07-sessions-and-lifecycle.md's
+   * Deviations #3): an overdue timer's "fire" callback can already be
+   * in-flight on the native bridge by the time `active` calls
+   * `clearTimeout`, so cancellation is not guaranteed to win the race. The
+   * timer callback below re-checks this flag itself rather than trusting
+   * that `cancelGrace()`'s `clearTimeout` actually prevented it from
+   * running — without that, a stale close can tear down a connection the
+   * foreground reconnect path already found healthy.
+   */
+  private isForeground = true
 
   constructor(options: AppLifecycleOptions) {
     this.backgroundGraceMs = options.backgroundGraceMs ?? BACKGROUND_GRACE_MS
@@ -71,12 +84,14 @@ export class AppLifecycle {
   /** `AppState`'s `change` event. */
   handleAppStateChange(status: AppLifecycleStatus): void {
     if (status === 'active') {
+      this.isForeground = true
       this.cancelGrace()
       void this.reconnectAndProbeFn()
 
       return
     }
 
+    this.isForeground = false
     this.scheduleGrace()
   }
 
@@ -101,6 +116,15 @@ export class AppLifecycle {
 
     this.graceTimerHandle = this.setTimeoutFn(() => {
       this.graceTimerHandle = null
+
+      // Re-check foreground state at fire time (see isForeground's doc
+      // comment) instead of trusting that scheduling/cancellation alone
+      // decided the outcome — a stale fire that lost its cancellation race
+      // must not close a connection `active` has already reconnected.
+      if (this.isForeground) {
+        return
+      }
+
       this.closeConnectionFn()
     }, this.backgroundGraceMs)
   }
