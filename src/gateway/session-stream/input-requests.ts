@@ -145,6 +145,17 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
       : state
 
+    // Mobile-only requirement (desktop docks these cards outside the
+    // scrollable transcript, so it never needed this): the ListHeaderComponent
+    // that mounts ApprovalCard/SudoCard/SecretCard/ClarifyCard sits at the
+    // inverted FlashList's visual bottom edge, which is off-screen until the
+    // list is scrolled there. Without this, a request can arrive rendered but
+    // unreachable — the buttons aren't even in the accessibility tree until
+    // the user scrolls (found on device, M06 Opus re-verification).
+    if (storedSessionId && ctx.isActiveEvent) {
+      effects.push({ type: 'scrollToBottom', storedSessionId })
+    }
+
     return handled(next, effects)
   }
 
@@ -159,7 +170,13 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
       : state
 
-    return handled(next, [{ type: 'setSudo', storedSessionId, request: { requestId, storedSessionId } }])
+    const effects: Effect[] = [{ type: 'setSudo', storedSessionId, request: { requestId, storedSessionId } }]
+
+    if (storedSessionId && ctx.isActiveEvent) {
+      effects.push({ type: 'scrollToBottom', storedSessionId })
+    }
+
+    return handled(next, effects)
   }
 
   if (event.type === 'secret.request') {
@@ -176,9 +193,15 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
       : state
 
-    return handled(next, [
+    const effects: Effect[] = [
       { type: 'setSecret', storedSessionId, request: { envVar, prompt: promptText, requestId, storedSessionId } }
-    ])
+    ]
+
+    if (storedSessionId && ctx.isActiveEvent) {
+      effects.push({ type: 'scrollToBottom', storedSessionId })
+    }
+
+    return handled(next, effects)
   }
 
   return notHandled(state)

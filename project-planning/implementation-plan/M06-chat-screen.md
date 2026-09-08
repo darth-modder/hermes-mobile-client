@@ -300,10 +300,13 @@ restore step ran regardless of how the rest of the pass went, not as a happy-pat
 
 **ApprovalCard — both outcomes.** With manual mode active, sent a deliberately dangerous-looking
 command (`rm -rf /tmp/nonexistent-approval-test`) twice in separate turns. `approval.request` fired
-both times and `ApprovalCard` rendered. First turn: tapped **Deny** — the agent's own reply confirmed
-the command was blocked and never ran. Second turn: tapped **Approve** — the agent's reply confirmed
+both times and `ApprovalCard` rendered. First turn: tapped **Reject** — the agent's own reply confirmed
+the command was blocked and never ran. Second turn: tapped **Run** — the agent's reply confirmed
 the command executed (exit 0, path never existed so nothing was actually removed). Both `approval
-.respond` outcomes are now proven live, not just the approve path.
+.respond` outcomes are now proven live, not just the approve path. (Correction: the buttons are
+labelled **Run / Allow this session / Always allow / Reject**, not "Approve"/"Deny" as originally
+written here — caught by Opus's re-verification pass below; the semantics described above are
+unchanged, only the button names were wrong.)
 
 **ClarifyCard.** Drove a prompt that made the agent ask a single clarifying question with a
 multiple-choice answer set. `ClarifyCard` rendered the question and choices; selected one; the
