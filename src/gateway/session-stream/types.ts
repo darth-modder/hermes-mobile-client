@@ -58,6 +58,13 @@ export interface SessionState {
    *  request) apart from the live one, exactly as the desktop's
    *  `$clarifyRequests` correlation does. */
   pendingClarifyRequestId: string | null
+  /** Same correlation purpose as `pendingClarifyRequestId`, for `sudo.expire` /
+   *  `secret.expire` — the server emits both (`_EXPIRING_REQUESTS` in
+   *  `tui_gateway/server.py`) on its 300s default block timeout, but a late
+   *  expire from an older, already-superseded request must not clear a
+   *  newer one raised since. */
+  pendingSudoRequestId: string | null
+  pendingSecretRequestId: string | null
   turnStartedAt: number | null
   turnLive: boolean
   usage: null | UsageStats
@@ -99,6 +106,8 @@ export function createSessionState(storedSessionId: string | null = null, messag
     interimBoundaryPending: false,
     needsInput: false,
     pendingClarifyRequestId: null,
+    pendingSudoRequestId: null,
+    pendingSecretRequestId: null,
     turnStartedAt: null,
     turnLive: false,
     usage: null,

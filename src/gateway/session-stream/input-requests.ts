@@ -167,7 +167,11 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
     }
 
     const next = storedSessionId
-      ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
+      ? updateSession(state, storedSessionId, current => ({
+          ...current,
+          needsInput: true,
+          pendingSudoRequestId: requestId
+        })).state
       : state
 
     const effects: Effect[] = [{ type: 'setSudo', storedSessionId, request: { requestId, storedSessionId } }]
@@ -177,6 +181,35 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
     }
 
     return handled(next, effects)
+  }
+
+  // Found live, on-device, testing the SecretCard skip branch (M06 round 4):
+  // the server's default 300s `_block` wait times out and emits `sudo.expire`
+  // / `secret.expire` (both are in `_EXPIRING_REQUESTS`, same as clarify) —
+  // but until this fix, nothing here handled either event, so `SudoCard`/
+  // `SecretCard` stayed mounted (and `FLAG_SECURE` stayed engaged) forever
+  // for a request the server had already given up on and resolved as
+  // "skipped". `clarify.expire` already did this correctly; sudo/secret just
+  // never got the same treatment.
+  if (event.type === 'sudo.expire') {
+    if (!storedSessionId) {
+      return handled(state)
+    }
+
+    const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+    const session = state.sessions.get(storedSessionId)
+
+    if (!requestId || !session || session.pendingSudoRequestId !== requestId) {
+      return handled(state)
+    }
+
+    const next = updateSession(state, storedSessionId, current => ({
+      ...current,
+      needsInput: false,
+      pendingSudoRequestId: null
+    })).state
+
+    return handled(next, [{ type: 'setSudo', storedSessionId, request: null }])
   }
 
   if (event.type === 'secret.request') {
@@ -190,7 +223,11 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
     const promptText = typeof payload?.prompt === 'string' ? payload.prompt : ''
 
     const next = storedSessionId
-      ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
+      ? updateSession(state, storedSessionId, current => ({
+          ...current,
+          needsInput: true,
+          pendingSecretRequestId: requestId
+        })).state
       : state
 
     const effects: Effect[] = [
@@ -202,6 +239,27 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
     }
 
     return handled(next, effects)
+  }
+
+  if (event.type === 'secret.expire') {
+    if (!storedSessionId) {
+      return handled(state)
+    }
+
+    const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+    const session = state.sessions.get(storedSessionId)
+
+    if (!requestId || !session || session.pendingSecretRequestId !== requestId) {
+      return handled(state)
+    }
+
+    const next = updateSession(state, storedSessionId, current => ({
+      ...current,
+      needsInput: false,
+      pendingSecretRequestId: null
+    })).state
+
+    return handled(next, [{ type: 'setSecret', storedSessionId, request: null }])
   }
 
   return notHandled(state)
