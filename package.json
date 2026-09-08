@@ -9,7 +9,7 @@
     "lint:fix": "eslint . --fix",
     "fix": "prettier --write . && npm run lint:fix",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run lint",
+    "check": "npm run typecheck && npm run test && npm run lint && prettier --check .",
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "prebuild": "expo prebuild --platform android --clean",

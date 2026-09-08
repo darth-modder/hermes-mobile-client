@@ -221,11 +221,15 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
   // cannot set Authorization on a WebSocket upgrade, hence the ticket.
   const oauth = connection.authMode === 'oauth' ? await getConnectionOAuth(connection.id) : null
 
-  const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(connection.baseUrl, '/api/auth/ws-ticket', {
-    credentials: 'include',
-    method: 'POST',
-    token: oauth?.accessToken
-  })
+  const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(
+    connection.baseUrl,
+    '/api/auth/ws-ticket',
+    {
+      credentials: 'include',
+      method: 'POST',
+      token: oauth?.accessToken
+    }
+  )
 
   return { mode: 'ticket', ticket }
 }
@@ -357,7 +361,11 @@ export async function resumeSession(storedSessionId: string): Promise<string> {
  * entirely if the RPC itself fails (nothing to show for a submit that never
  * reached the server).
  */
-export async function submitPrompt(storedSessionId: string, text: string, attachmentRefs: string[] = []): Promise<void> {
+export async function submitPrompt(
+  storedSessionId: string,
+  text: string,
+  attachmentRefs: string[] = []
+): Promise<void> {
   const prompt = [text, ...attachmentRefs].filter(Boolean).join('\n')
   const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const now = Date.now() / 1000
@@ -386,7 +394,9 @@ export async function submitPrompt(storedSessionId: string, text: string, attach
 
     reducerState = updateSession(reducerState, storedSessionId, session => ({
       ...session,
-      messages: session.messages.map(message => (message.id === optimisticId ? { ...message, pending: false } : message))
+      messages: session.messages.map(message =>
+        message.id === optimisticId ? { ...message, pending: false } : message
+      )
     })).state
     publishAll()
   } catch (error) {
@@ -539,7 +549,11 @@ export interface AttachPdfResult {
  * of time (no capability probe on the wire), so callers must surface a 5028
  * as "PDF attachments aren't available on this server", not a generic error.
  */
-export async function attachPdf(storedSessionId: string, contentBase64: string, filename?: string): Promise<AttachPdfResult> {
+export async function attachPdf(
+  storedSessionId: string,
+  contentBase64: string,
+  filename?: string
+): Promise<AttachPdfResult> {
   return requireGateway().request(
     'pdf.attach',
     { content_base64: contentBase64, filename, session_id: runtimeIdForStored(storedSessionId) },

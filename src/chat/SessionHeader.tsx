@@ -102,7 +102,11 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
         </View>
       </View>
       <TouchableOpacity disabled={compressing} onPress={() => void compress()} style={styles.compressButton}>
-        {compressing ? <ActivityIndicator color="#8a8a99" size="small" /> : <Text style={styles.compressText}>Compress</Text>}
+        {compressing ? (
+          <ActivityIndicator color="#8a8a99" size="small" />
+        ) : (
+          <Text style={styles.compressText}>Compress</Text>
+        )}
       </TouchableOpacity>
     </View>
   )

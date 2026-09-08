@@ -23,9 +23,7 @@ export type MobileUnavailableReason = 'advanced' | 'messaging' | 'no-mobile-ui' 
 export type MobileCommandRpc = 'prompt.btw' | 'session.compress' | 'session.interrupt' | 'session.title'
 
 export type MobileCommandSurface =
-  | { kind: 'rpc'; rpc: MobileCommandRpc }
-  | { kind: 'exec' }
-  | { kind: 'unavailable'; reason: MobileUnavailableReason }
+  { kind: 'rpc'; rpc: MobileCommandRpc } | { kind: 'exec' } | { kind: 'unavailable'; reason: MobileUnavailableReason }
 
 export interface MobileCommandSpec {
   name: string

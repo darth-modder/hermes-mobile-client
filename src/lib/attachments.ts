@@ -66,7 +66,10 @@ export async function pickAndAttachDocument(storedSessionId: string): Promise<Co
   const filename = asset.name || filenameFromUri(asset.uri)
 
   if (asset.mimeType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
-    const base64 = await FileSystemLegacy.readAsStringAsync(asset.uri, { encoding: FileSystemLegacy.EncodingType.Base64 })
+    const base64 = await FileSystemLegacy.readAsStringAsync(asset.uri, {
+      encoding: FileSystemLegacy.EncodingType.Base64
+    })
+
     const response = await attachPdf(storedSessionId, base64, filename)
 
     return { label: `📎 ${response.filename} (${response.pages_attached}p)`, ref: '' }

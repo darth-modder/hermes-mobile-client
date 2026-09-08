@@ -42,13 +42,8 @@ const { getActiveConnection, setActiveConnection } = await import('../connection
 const { $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
 
-const {
-  handleSocketClose,
-  resetSessionConnectionForTests,
-  setGatewayForTests,
-  setReducerStateForTests,
-  submitPrompt
-} = await import('./session-connection')
+const { handleSocketClose, resetSessionConnectionForTests, setGatewayForTests, setReducerStateForTests, submitPrompt } =
+  await import('./session-connection')
 
 class FakeGateway {
   request = vi.fn()

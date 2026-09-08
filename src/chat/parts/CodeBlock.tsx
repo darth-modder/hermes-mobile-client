@@ -39,7 +39,9 @@ const CLASS_COLORS: Record<string, { color?: string; italic?: boolean; bold?: bo
   'hljs-strong': { bold: true }
 }
 
-function styleForClasses(classNames: string[]): { color?: string; fontStyle?: 'italic'; fontWeight?: 'bold' } | undefined {
+function styleForClasses(
+  classNames: string[]
+): { color?: string; fontStyle?: 'italic'; fontWeight?: 'bold' } | undefined {
   for (let i = classNames.length - 1; i >= 0; i--) {
     const match = CLASS_COLORS[classNames[i]]
 

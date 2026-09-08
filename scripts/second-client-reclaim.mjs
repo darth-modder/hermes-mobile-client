@@ -43,7 +43,9 @@ const gapKind = argValue('gap', 'long')
 const gapSeconds = Number(argValue('gap-seconds', gapKind === 'short' ? 9 : 25))
 
 if (!rawUrl || !token) {
-  console.error('Usage: node scripts/second-client-reclaim.mjs --url http://host:port --token <SESSION_TOKEN> --gap long|short')
+  console.error(
+    'Usage: node scripts/second-client-reclaim.mjs --url http://host:port --token <SESSION_TOKEN> --gap long|short'
+  )
   process.exit(2)
 }
 
@@ -211,12 +213,20 @@ if (gapKind === 'long') {
   if (reclaimed) {
     console.log(`✓ PASS (long gap): session.reclaimed fired — reason=${reclaimed.payload?.reason}`)
   } else {
-    fail('long gap', `expected session.reclaimed (reason ws_orphan_reap) but saw: ${[...eventsA, ...eventsB].map(e => e.name).join(', ') || 'NONE'}`)
+    fail(
+      'long gap',
+      `expected session.reclaimed (reason ws_orphan_reap) but saw: ${[...eventsA, ...eventsB].map(e => e.name).join(', ') || 'NONE'}`
+    )
   }
 } else if (reclaimed) {
-  fail('short gap', `expected NO session.reclaimed within the grace period, but saw one — reason=${reclaimed.payload?.reason}`)
+  fail(
+    'short gap',
+    `expected NO session.reclaimed within the grace period, but saw one — reason=${reclaimed.payload?.reason}`
+  )
 } else {
-  console.log('✓ PASS (short gap): no session.reclaimed fired, as expected — client B\'s own session.resume is what must re-attach it')
+  console.log(
+    "✓ PASS (short gap): no session.reclaimed fired, as expected — client B's own session.resume is what must re-attach it"
+  )
 }
 
 clientB.close()

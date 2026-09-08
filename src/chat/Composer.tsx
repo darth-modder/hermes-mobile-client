@@ -171,7 +171,14 @@ export function Composer({ storedSessionId }: ComposerProps) {
     clearComposer()
 
     if (output) {
-      notify({ durationMs: 6000, id: `slash-output-${storedSessionId}`, kind: 'info', message: output, title: command, type: 'notify' })
+      notify({
+        durationMs: 6000,
+        id: `slash-output-${storedSessionId}`,
+        kind: 'info',
+        message: output,
+        title: command,
+        type: 'notify'
+      })
     }
   }
 

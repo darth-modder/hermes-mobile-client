@@ -39,7 +39,9 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
         {request.command}
       </Text>
       {request.description ? <Text style={styles.description}>{request.description}</Text> : null}
-      {request.smartDenied ? <Text style={styles.smartDenied}>Flagged by the guardian — reduced to once/deny.</Text> : null}
+      {request.smartDenied ? (
+        <Text style={styles.smartDenied}>Flagged by the guardian — reduced to once/deny.</Text>
+      ) : null}
       <View style={styles.row}>
         {choices.map(choice => (
           <TouchableOpacity
