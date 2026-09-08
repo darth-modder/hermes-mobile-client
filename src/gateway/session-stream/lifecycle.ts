@@ -22,8 +22,62 @@ import type { Effect } from './types'
 export const handleLifecycleEvent: FamilyHandler = (state, ctx) => {
   const { event, payload } = ctx
 
-  if (event.type === 'gateway.ready' || event.type === 'skin.changed') {
+  if (event.type === 'gateway.ready') {
+    const rawEpoch = (payload as { replay_epoch?: unknown } | undefined)?.replay_epoch
+    const epoch = typeof rawEpoch === 'string' && rawEpoch ? rawEpoch : null
+    const priorEpoch = state.lastReplayEpoch
+    const next = epoch !== priorEpoch ? { ...state, lastReplayEpoch: epoch } : state
+
+    // First gateway.ready this client has ever seen (priorEpoch === null):
+    // nothing to compare against, not a restart. A CHANGED epoch on a later
+    // gateway.ready (M07: "gateway.ready.replay_epoch change") means the
+    // backend process restarted between this socket and the last one — the
+    // transport layer already resets its own seq watermarks for this (see
+    // json-rpc-gateway.ts's adoptReplayEpoch); the app layer's own job is
+    // everything downstream of "every runtime id we're holding is now
+    // meaningless": drop the runtime->stored map (a stale runtime id must
+    // never be reused to address a request) and re-resume the active
+    // session, if any, so its view reflects the fresh backend's own state
+    // rather than whatever was last rendered from the dead one.
+    if (priorEpoch !== null && epoch !== null && epoch !== priorEpoch) {
+      const activeStoredId = state.activeRuntimeSessionId
+        ? (state.runtimeToStored.get(state.activeRuntimeSessionId) ?? null)
+        : null
+
+      const effects: Effect[] = [{ type: 'refreshSessions' }]
+
+      if (activeStoredId) {
+        effects.push({ type: 'hydrate', storedSessionId: activeStoredId, runtimeSessionId: null, attempts: 3 })
+      }
+
+      return handled({ ...next, runtimeToStored: new Map() }, effects)
+    }
+
+    return handled(next)
+  }
+
+  if (event.type === 'skin.changed') {
     return handled(state)
+  }
+
+  if (event.type === 'replay.truncated') {
+    // The transport layer's own fetchReplay() synthesizes this locally (not
+    // from the server) when a reconnect's replay came back with events
+    // dropped from the server's 512-event ring — the client's watermark is
+    // too far behind to trust the partial catch-up. The only correct
+    // response is to throw away the assumption of continuity and re-fetch
+    // this session's full current state, the same `hydrate` effect
+    // session.reclaimed already uses for the analogous "our view might be
+    // stale" case. The event's own (runtime-id-space) `session_id` is
+    // already resolved to `ctx.storedSessionId` by the router preamble, same
+    // as every other event — no need to re-read the payload.
+    if (!ctx.storedSessionId) {
+      return handled(state)
+    }
+
+    return handled(state, [
+      { type: 'hydrate', storedSessionId: ctx.storedSessionId, runtimeSessionId: null, attempts: 3 }
+    ])
   }
 
   if (event.type === 'sessions.changed') {

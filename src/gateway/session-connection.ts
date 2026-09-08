@@ -33,6 +33,7 @@ import { notify } from '../store/notifications'
 import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
+import { requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
 import { reconnectBackoffDelayMs } from '../upstream/lib/reconnect-backoff'
@@ -128,7 +129,8 @@ function dispatchEffects(effects: Effect[]): void {
         break
 
       case 'refreshSessions':
-        // No session-list store yet (M07 owns it) — nothing to refresh.
+        requestSessionListRefresh()
+
         break
 
       case 'hydrate':

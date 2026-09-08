@@ -34,3 +34,18 @@ export function upsertSessionSummary(summary: SessionSummary): void {
   next[index] = summary
   $sessions.set(next)
 }
+
+/**
+ * M07: the reducer's `refreshSessions` effect (sessions.changed,
+ * session.reclaimed, a replay-epoch cold start) fires while the session list
+ * screen may already be mounted and visible, so a fetch-on-mount alone would
+ * miss it. A bare counter rather than owning the fetch here: this module has
+ * no REST client (src/api/sessions.ts, above session-connection.ts in the
+ * dependency graph) and the list screen already knows how to fetch — it just
+ * needs telling *when*.
+ */
+export const $sessionListRefreshRequests = atom(0)
+
+export function requestSessionListRefresh(): void {
+  $sessionListRefreshRequests.set($sessionListRefreshRequests.get() + 1)
+}

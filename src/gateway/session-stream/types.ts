@@ -159,6 +159,15 @@ export interface ReducerState {
   compactedTurns: Set<string>
   /** Buffered, not-yet-flushed message/reasoning deltas, by stored id. */
   pendingDeltas: Map<string, QueuedDelta[]>
+  /** The most recent `gateway.ready` payload's `replay_epoch` (M07). The
+   *  transport layer (json-rpc-gateway.ts) already resets its OWN per-session
+   *  seq watermarks when this changes — a backend restart, not just a normal
+   *  reconnect — but the app layer still needs to know: the reconnected
+   *  session's `session.resume` reply IS the fresh state, and every runtime
+   *  id this client is holding onto belongs to the backend process that no
+   *  longer exists. `null` until the first `gateway.ready` (never itself a
+   *  "changed" event — nothing to compare against yet). */
+  lastReplayEpoch: null | string
 }
 
 export function createReducerState(): ReducerState {
@@ -168,7 +177,8 @@ export function createReducerState(): ReducerState {
     activeRuntimeSessionId: null,
     unscopedStreamRuntimeSessionId: null,
     compactedTurns: new Set(),
-    pendingDeltas: new Map()
+    pendingDeltas: new Map(),
+    lastReplayEpoch: null
   }
 }
 

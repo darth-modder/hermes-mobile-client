@@ -1,5 +1,6 @@
-import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useStore } from '@nanostores/react'
+import { useFocusEffect, useRouter } from 'expo-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
+import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
 /** `session.started_at`/`last_active` are epoch seconds (REST, unlike the
@@ -82,9 +84,29 @@ export default function SessionListScreen() {
     }
   }, [])
 
+  // The reducer's `refreshSessions` effect (sessions.changed,
+  // session.reclaimed, a replay-epoch cold start) can fire while this screen
+  // is already mounted and visible — a mount-only fetch would miss it.
+  const refreshRequestCount = useStore($sessionListRefreshRequests)
+  const skipInitialRefreshSignal = useRef(true)
+
   useEffect(() => {
-    void load()
-  }, [load])
+    if (skipInitialRefreshSignal.current) {
+      skipInitialRefreshSignal.current = false
+
+      return
+    }
+
+    void load({ silent: true })
+  }, [load, refreshRequestCount])
+
+  // Coming back from a chat screen (pin/title/delete could have happened
+  // there, or simply time passed) — refetch rather than show stale rows.
+  useFocusEffect(
+    useCallback(() => {
+      void load({ silent: true })
+    }, [load])
+  )
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
