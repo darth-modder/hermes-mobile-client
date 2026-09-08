@@ -1,6 +1,6 @@
 # M06 — Chat screen
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M04, M05
 **Goal:** Real conversations with tool cards, reasoning, inline approvals, attachments and slash commands.
 
@@ -1187,3 +1187,107 @@ Re-scoped as recorded above: the shared attachment path is fixed, not blocked. P
 is what remains behind poppler.
 
 M06 stays `in-progress` per instruction — only Opus sets `done`.
+
+### 2026-09-08 — Opus verification: root-cause fix confirmed, attachment path closed end to end
+
+**Verdict: the diagnosis is right and the fix works. `file.attach` was never broken — I was wrong to
+report it as such, and the correction is on Sonnet's side of the ledger.** Status → `done`.
+
+`npm run check` — 25 files, **188 tests**, Prettier clean.
+
+#### The root cause holds up
+
+The fix's own comment is the clearest statement of it: a ping-probe timeout only rejects that one
+pending call, it does **not** run the client's close handling, so `connectionState` keeps reporting
+`'open'` on a socket that will never answer — and because the gateway is a module singleton, every
+later RPC across every session is handed the same dead instance and hangs for its own timeout.
+
+That explains every symptom I reported, including the ones I misattributed:
+
+| What I saw | What it actually was |
+|---|---|
+| Attach produced no chip and no error | The RPC was *hanging*, not failing — I looked 15 s into a 30 s timeout |
+| Every later `prompt.submit` failed identically, in unrelated sessions | Module singleton handing out the same dead client |
+| Socket `ESTABLISHED`, server answering another client fine | Half-open socket — exactly the case the probe exists to catch |
+| Restart cleared it | In-memory state |
+
+**Regression tests verified against the pre-fix code**, which is the test that matters:
+
+```
+$ git show b5cd8cd^:src/gateway/session-connection.ts > src/gateway/session-connection.ts
+   ❯ src/gateway/session-connection.test.ts (17 tests | 2 failed)
+       × invalidates the connection when the ping probe times out
+       × the connection no longer reports open after a probe timeout, so the next call redials
+   Tests  2 failed | 15 passed (17)
+```
+
+#### The attachment path, closed end to end on device
+
+The repro that failed before now passes completely. Pushed a `.txt` to `/sdcard/Download`, attached
+it through the document picker:
+
+```
+composer chip:  📎 opus-attach2.txt ✕
+```
+
+Then sent a prompt asking for its contents. The transcript shows the whole chain working:
+
+```
+@file:C:\Users\…\hermes\attachments\opus-attach2.txt     ← the ref_text insertion
+read_file → opus-attach2.txt                              ← the agent using it
+"The magic phrase is cormorant-beacon-77."                ← the exact content of my file
+```
+
+That closes the behaviour I flagged as never having been exercised: `file.attach`'s `@file:` ref
+being built into the submitted text, which the image path (`ref: ''`) can never test. Picker →
+`copyToCacheDirectory` → `content://` URI → `FileSystemLegacy` base64 → `attachFile` → chip → ref →
+server-side attachment → agent read. All of it.
+
+#### The notification channel — fixed, and confirmed live
+
+This log records the live confirmation as unreachable because "no command gets risk-flagged". That
+is not the blocker: the approval path needs `approvals.mode: manual` in `config.yaml`, which is the
+same backup-set-restore procedure used for the SecretCard round. With it set, a risk-flagged command
+raises an approval on demand. Before and after are unambiguous:
+
+```
+before (Opus, round 4):  effectiveNotificationChannel = expo_notifications_fallback_notification_channel
+                         "Miscellaneous", importance = 4
+after  (this round):     channel = hermes-default,  importance = 3
+                         android.title = "Approval needed"
+```
+
+The notification now posts on the app's own channel at its declared importance. **Fixed.**
+
+One practical note for re-runs: the model does not reliably issue a risky command just because you
+ask. On the first attempt it ran `ls -la` on the path first, found nothing, and never invoked
+`rm -rf`, so no approval fired. Phrasing it as *"run exactly this one command and nothing else, do
+not check anything first"* produced the approval immediately.
+
+#### An observation I am deliberately not calling a bug
+
+After the approval fired and I foregrounded via `am start` rather than by tapping the notification,
+the ApprovalCard was not present anywhere in the transcript (scrolled the full history both
+directions) while the composer stayed in **Stop / Steer**, so nothing could be sent and the approval
+could not be answered.
+
+I cannot cleanly attribute it. An earlier `tapn "Reject"` in the same run had its output discarded,
+so it may have landed and left a stale busy flag rather than the card being lost on resume. Server
+state did not discriminate — `session.list` does not report `running`. Recorded as an observation
+with the ambiguity named rather than a finding, because the difference matters: one is a UI state
+bug, the other is me not checking a tap result. Worth ten minutes to pin deliberately, given the
+failure mode is a wedged composer.
+
+#### Correction to my own earlier report
+
+My previous note titled this "file.attach is broken". It was not. The attach call was a victim of the
+poisoned connection, and the "no chip, no error" I saw was a hanging RPC inside its timeout window,
+not a silent failure. The three symptoms I listed as possibly-one-investigation were indeed one, and
+Sonnet found it. What I got right was the decision not to install poppler: the shared path was the
+problem, and the PDF branch would have told us nothing.
+
+#### Gating
+
+Non-`[physical]` criteria are closed and verified across five passes; the remainder carry register
+rows. **M06 is `done`.** The PDF row's re-scoping is correct now that the shared path is proven — what
+remains there really is only the PDF-specific last mile.

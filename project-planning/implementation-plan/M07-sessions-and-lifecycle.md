@@ -804,3 +804,17 @@ device work and confirmed byte-identical after (no config changes were needed or
 manual is already the shipped default, so no edit was required to check the risk-gating path either).
 Scratch tokens, screenshots, and the two throwaway `hermes serve` processes were deleted/killed and
 confirmed unreachable afterward.
+
+### 2026-09-08 — Opus: notification channel fix verified live
+
+`channel=hermes-default`, `importance=3` (was `expo_notifications_fallback_notification_channel`,
+"Miscellaneous", importance 4). Fixed. The live confirmation this log records as unreachable only
+needed `approvals.mode: manual` in `config.yaml` — the same backup-set-restore procedure used for the
+SecretCard round — not a `tirith` install. Full evidence, plus a practical note on getting the model
+to actually issue a risk-flagged command, is in M06's Opus note of the same date.
+
+**M07 remains `in-progress` on Fable's D2 decision alone.** Every exit criterion is closed or carries
+a register row, and the channel defect that was the other blocker is gone. D2's premise — a
+client-side background grace, then close — is not implementable with a JS timer on Android, and the
+recommendation to drop it in favour of the server's orphan reap changes this milestone's lifecycle
+contract. That is a decision, not implementation work.
