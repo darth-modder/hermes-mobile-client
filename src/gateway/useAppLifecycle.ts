@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 
 import { AppLifecycle, type NetworkLifecycleState } from './lifecycle'
-import { closeGatewayConnection, reconnectAndProbeGateway } from './session-connection'
+import { reconnectAndProbeGateway } from './session-connection'
 
 function toLifecycleStatus(status: AppStateStatus): 'active' | 'background' | 'inactive' {
   return status === 'active' ? 'active' : status === 'inactive' ? 'inactive' : 'background'
@@ -29,7 +29,6 @@ export function useAppLifecycle(): void {
 
   useEffect(() => {
     const lifecycle = new AppLifecycle({
-      closeConnection: closeGatewayConnection,
       reconnectAndProbe: reconnectAndProbeGateway
     })
 

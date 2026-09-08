@@ -3,15 +3,25 @@
  * network switches" — the WS-protocol half (both `session.reclaimed`
  * outcomes, `gateway.ready` replay-epoch cold start, `replay.truncated`
  * hydration) already lives in session-stream/lifecycle.ts and
- * session-connection.ts; this module owns only WHEN to close/redial, not
- * WHAT happens on reconnect (fetchReplay() and the reducer's own handling
- * cover that automatically once the socket is back up).
+ * session-connection.ts; this module owns only WHEN to redial, not WHAT
+ * happens on reconnect (fetchReplay() and the reducer's own handling cover
+ * that automatically once the socket is back up).
+ *
+ * `active -> background` is deliberately a no-op here (D10, 2026-09-08):
+ * D2's original client-side 20s grace-then-close cannot be implemented as a
+ * JS timer on Android (the RN JS thread is suspended for the whole
+ * background window, so the timer fires late, on resume, racing the very
+ * reconnect it was meant to precede — see
+ * M07-sessions-and-lifecycle.md's Deviations #3/#7 and the "D2 re-examined"
+ * section). The socket is left to the OS (observed to survive well past 90s
+ * backgrounded untouched) and the server's own independent orphan reap
+ * (`ws_orphan_reap_grace_s`, D2); the client only ever decides what to do on
+ * *return* to foreground/network.
  *
  * Deliberately decoupled from `MobileGateway`/`session-connection.ts`'s
- * concrete shape — callers pass plain callbacks (`closeConnection`,
- * `reconnectAndProbe`) so this class needs no RN/Expo module and no real
- * socket to unit-test. The real wiring (a hook mounted once near the app
- * root) supplies `() => gateway?.close()` and
+ * concrete shape — the caller passes a plain `reconnectAndProbe` callback so
+ * this class needs no RN/Expo module and no real socket to unit-test. The
+ * real wiring (a hook mounted once near the app root) supplies
  * `() => ensureGatewayConnection().then(g => g.request('ping', {}, 5000))`.
  *
  * `close_on_disconnect` is never sent (grep confirms no caller anywhere in
@@ -21,18 +31,7 @@
 export type AppLifecycleStatus = 'active' | 'background' | 'inactive'
 export type NetworkLifecycleState = 'closed' | 'open'
 
-export const BACKGROUND_GRACE_MS = 20_000
-
 export interface AppLifecycleOptions {
-  /** `AppState`'s own default export shape (active/background/inactive) —
-   *  `background` and `inactive` are treated identically: anything that
-   *  isn't `active` starts the grace timer. */
-  backgroundGraceMs?: number
-  /** Close the live gateway socket — called once the grace elapses. */
-  closeConnection: () => void
-  /** Injectable timer, for tests. Defaults to the global setTimeout/clearTimeout. */
-  clearTimeout?: (handle: number) => void
-  setTimeout?: (callback: () => void, ms: number) => number
   /** Redial (a no-op if already connected — `ensureGatewayConnection`'s own
    *  contract) and send a bounded `ping` as a half-open probe: a socket that
    *  LOOKS open (no close event fired yet) but whose peer vanished without a
@@ -45,54 +44,24 @@ export interface AppLifecycleOptions {
 }
 
 /**
- * Owns exactly the background-grace-then-close timer and the
- * foreground/network-restore reconnect-and-probe trigger. Framework-specific
- * listener wiring (AppState.addEventListener, expo-network's event) is the
- * caller's job — see useAppLifecycle below for the real one.
+ * Owns exactly the foreground/network-restore reconnect-and-probe trigger.
+ * `active -> background` is a no-op — see the file doc comment. Framework-
+ * specific listener wiring (AppState.addEventListener, expo-network's event)
+ * is the caller's job — see useAppLifecycle below for the real one.
  */
 export class AppLifecycle {
-  private readonly backgroundGraceMs: number
-  private readonly closeConnectionFn: () => void
-  private readonly clearTimeoutFn: (handle: number) => void
-  private readonly setTimeoutFn: (callback: () => void, ms: number) => number
   private readonly reconnectAndProbeFn: () => Promise<void>
 
-  private graceTimerHandle: null | number = null
-  /**
-   * Tracked independently of `graceTimerHandle`/`clearTimeout` because
-   * Android can suspend the JS thread for the whole background window (see
-   * `BACKGROUND_GRACE_MS`'s doc and M07-sessions-and-lifecycle.md's
-   * Deviations #3): an overdue timer's "fire" callback can already be
-   * in-flight on the native bridge by the time `active` calls
-   * `clearTimeout`, so cancellation is not guaranteed to win the race. The
-   * timer callback below re-checks this flag itself rather than trusting
-   * that `cancelGrace()`'s `clearTimeout` actually prevented it from
-   * running — without that, a stale close can tear down a connection the
-   * foreground reconnect path already found healthy.
-   */
-  private isForeground = true
-
   constructor(options: AppLifecycleOptions) {
-    this.backgroundGraceMs = options.backgroundGraceMs ?? BACKGROUND_GRACE_MS
-    this.closeConnectionFn = options.closeConnection
     this.reconnectAndProbeFn = options.reconnectAndProbe
-    this.setTimeoutFn = options.setTimeout ?? ((callback, ms) => setTimeout(callback, ms) as unknown as number)
-    this.clearTimeoutFn =
-      options.clearTimeout ?? (handle => clearTimeout(handle as unknown as ReturnType<typeof setTimeout>))
   }
 
-  /** `AppState`'s `change` event. */
+  /** `AppState`'s `change` event. `background`/`inactive` are no-ops — see
+   *  the file doc comment for why. */
   handleAppStateChange(status: AppLifecycleStatus): void {
     if (status === 'active') {
-      this.isForeground = true
-      this.cancelGrace()
       void this.reconnectAndProbeFn()
-
-      return
     }
-
-    this.isForeground = false
-    this.scheduleGrace()
   }
 
   /** `expo-network`'s connectivity-change event, collapsed to "reachable at
@@ -109,35 +78,9 @@ export class AppLifecycle {
     }
   }
 
-  private scheduleGrace(): void {
-    if (this.graceTimerHandle !== null) {
-      return
-    }
-
-    this.graceTimerHandle = this.setTimeoutFn(() => {
-      this.graceTimerHandle = null
-
-      // Re-check foreground state at fire time (see isForeground's doc
-      // comment) instead of trusting that scheduling/cancellation alone
-      // decided the outcome — a stale fire that lost its cancellation race
-      // must not close a connection `active` has already reconnected.
-      if (this.isForeground) {
-        return
-      }
-
-      this.closeConnectionFn()
-    }, this.backgroundGraceMs)
-  }
-
-  private cancelGrace(): void {
-    if (this.graceTimerHandle !== null) {
-      this.clearTimeoutFn(this.graceTimerHandle)
-      this.graceTimerHandle = null
-    }
-  }
-
-  /** Teardown (app unmount — never happens in practice, but tests want it). */
-  dispose(): void {
-    this.cancelGrace()
-  }
+  /** Teardown (app unmount). No-op today — kept as the symmetric half of
+   *  construction for `useAppLifecycle`'s effect cleanup, since this class
+   *  is a per-mount instance and any future per-instance state would need
+   *  the same hook. */
+  dispose(): void {}
 }

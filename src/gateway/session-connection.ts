@@ -336,14 +336,6 @@ function requireGateway(): MobileGateway {
   return gateway
 }
 
-/** M07's `AppLifecycle` (src/gateway/lifecycle.ts) `closeConnection`
- *  callback — the background-grace timer's endpoint. A plain `gateway.close()`
- *  wrapped so the lifecycle module never needs to import the singleton
- *  itself. No-op if nothing is connected. */
-export function closeGatewayConnection(): void {
-  gateway?.close()
-}
-
 /**
  * M07's `AppLifecycle` `reconnectAndProbe` callback (foreground return,
  * network restored): `ensureGatewayConnection()` is a no-op if the socket

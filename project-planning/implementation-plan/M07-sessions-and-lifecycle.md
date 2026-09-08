@@ -12,8 +12,8 @@
       `app/(main)/session-list.tsx`, not the task's named `app/(main)/sessions/index.tsx` — see Deviations #1
       for why.
 - [x] `src/gateway/lifecycle.ts`:
-  - [ ] `active -> background`: keep the socket 20s, then `close()`. *(Reworded by D10, 2026-09-08, to: "no client action; the socket is left to the OS and the server's orphan reap (D2, D10)." Original wording kept. Unchecked until Sonnet removes the grace timer and its tests.)* **Built and unit-tested; found live,
-        on-device, that the 20s timer does not reliably fire while actually backgrounded — see Deviations #3.**
+  - [x] `active -> background`: keep the socket 20s, then `close()`. *(Reworded by D10, 2026-09-08, to: "no client action; the socket is left to the OS and the server's orphan reap (D2, D10)." Original wording kept. Grace timer, `scheduleGrace`/`cancelGrace`, `BACKGROUND_GRACE_MS` and the `isForeground` guard removed this round — see Deviations #10 and the D2 re-examined section above (now resolved by D10).)* **Built and unit-tested; found live,
+        on-device, that the 20s timer does not reliably fire while actually backgrounded — see Deviations #3 (historical: the grace this describes no longer exists).**
   - [x] `background -> active`: redial (a no-op if the socket survived) + a `ping` RPC as the half-open probe.
         **Reported live-confirmed last round; Opus's 2026-09-08 re-verification found this false — a real
         recovery bug (the app never reconnects after an ordinary background/foreground cycle). Root-caused,
@@ -289,6 +289,22 @@
    Not fixed structurally (e.g. an `.npmrc` default) — that's a decision with consequences for every future
    `npm install` on this project, out of scope for this milestone to make unilaterally; noted here so the next
    person who hits the same `ERESOLVE` error reaches for `--force`, not `--legacy-peer-deps`.
+
+10. **Withdrawing the grace (D10.1) also orphaned two things the task line didn't name; both removed, not left
+    dead.** `closeGatewayConnection()` (`session-connection.ts`) existed for exactly one caller —
+    `AppLifecycle`'s grace-timer callback via `useAppLifecycle.ts`'s `closeConnection` option — and its own doc
+    comment said so ("the background-grace timer's endpoint"). With the timer path gone it had zero remaining
+    callers, so it and the `closeConnection` option/field/constructor-arg on `AppLifecycle` are deleted rather
+    than kept as an unused hook for a mechanism that no longer exists; same for `clearTimeout`/`setTimeout`
+    injection and `BACKGROUND_GRACE_MS`'s re-export, which existed only to drive the timer under test.
+    `AppLifecycle.dispose()` is the one piece kept despite having nothing to do post-removal: it's the
+    symmetric teardown half of a per-mount instance (`useAppLifecycle.ts` still constructs one per effect run
+    and tears it down on unmount alongside the `AppState`/network subscription removals), cheap to keep, and
+    a natural landing spot if `AppLifecycle` ever grows another subscription — judged worth keeping as a
+    stable public shape rather than forcing `useAppLifecycle.ts` to special-case its absence. `npm run check`
+    green throughout (184 tests, was 188 — the 4 removed were the grace-close, grace-cancel,
+    second-background-no-restart, and dispose-cancels-timer cases, all meaningless once there's no timer to
+    cancel).
 
 ## D2 re-examined: the client-side 20 s background grace cannot be implemented as written on Android
 
