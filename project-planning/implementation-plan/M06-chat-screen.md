@@ -1,6 +1,6 @@
 # M06 — Chat screen
 
-**Status:** done
+**Status:** in-progress
 **Depends on:** M04, M05
 **Goal:** Real conversations with tool cards, reasoning, inline approvals, attachments and slash commands.
 
@@ -968,3 +968,84 @@ frame rate, PDF, desktop-shaped payloads, prepend anchoring — all carry regist
 and an unblocking condition.
 
 **M06 is `done`.**
+
+### 2026-09-08 — Opus: `file.attach` path tested without poppler, and a bug it found
+
+**Why this test instead of the PDF one.** The PDF criterion was blocked on installing poppler.
+Reading `src/lib/attachments.ts` first showed that was buying very little: `pickAndAttachDocument`'s
+two branches share everything that can realistically break —
+
+```
+DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, type: '*/*' })
+FileSystemLegacy.readAsStringAsync(asset.uri, { encoding: Base64 })
+   ├─ .pdf  → attachPdf(...)        ← the only part needing poppler
+   └─ else  → data: URL → attachFile(...)
+```
+
+The picker, the cache copy, the `content://` URI and base64-encoding a binary file were **completely
+untested** — the image path never touches them, because `ImagePicker` returns base64 itself. And the
+`file.attach` branch alone returns `ref: response.ref_text`, an `@file:` reference that must be
+inserted into the submitted text; the image branch returns `ref: ''`. So the non-PDF branch carries
+*more* untested client-specific behaviour than the PDF one, and needs no server dependency.
+
+**Result: the shared path does not work, and it takes the app down with it.**
+
+Pushed a 140-byte `.txt` to `/sdcard/Download`, opened the composer's document button, and selected
+it from the picker — three times, the third with the row's clickable bounds verified explicitly
+(`[0,538][1080,730]`, distinct from the `[891,…]` "Preview the file" button, so a mis-tap is ruled
+out). Every time: **no attachment chip, no error, no notification banner.** Nothing.
+
+Then the app was globally broken. Every subsequent `prompt.submit` failed — in the fresh session and
+in a different, previously-working one:
+
+```
+composer still holds "ping" after Send;  no user bubble;  no reply;  no error shown
+established to 9119: 2        server /api/status: 200
+```
+
+The JS logs show `submitPrompt` **is** running and the RPC **is** throwing:
+
+```
+[render-count] optimistic-1788885185676-bhviyy -> 1     ← two Send taps,
+[render-count] optimistic-1788885224871-8cfbft -> 1     ← two optimistic bubbles, both rolled back
+```
+
+That is the M06 optimistic-insert rollback working exactly as designed — and it is the tell: the
+bubble is only dropped when the RPC itself throws.
+
+The server is not at fault. A host-side Node client, same server, same token, at the same moment:
+
+```
+  dialed ok
+  session.create ok sid=afa9615a
+  prompt.submit ACCEPTED from a host client
+```
+
+`adb shell am force-stop` plus a relaunch fully restores normal operation (`after-restart-ok` came
+back on the next send), so the bad state is in-memory, not persisted.
+
+#### What this means
+
+1. **`file.attach` does not work**, and its failure is invisible — the criterion's non-PDF half is
+   not merely untested, it is broken.
+2. **A failed attachment poisons the connection for everything else.** After it, no prompt can be
+   submitted in any session until the app is restarted, while the socket stays `ESTABLISHED` and the
+   server keeps accepting the identical call from another client. That is worse than the attachment
+   failing on its own.
+3. **RPC errors on this screen are still invisible to the user.** M06 added `NotificationBanner`
+   precisely so error effects have a renderer; nothing appeared for either the attach or the failed
+   sends. Whatever path these throw down does not reach it. Note the source comment in
+   `attachments.ts` explicitly intends the opposite: *"surfaced here as a thrown Error the composer
+   should show, not silently swallow"*.
+
+Not diagnosed further — root-causing is the implementer's job. The reproduction is exact and cheap:
+push any non-PDF file to `/sdcard/Download`, attach it, then try to send anything.
+
+#### On the poppler deferral
+
+The register row should be re-scoped. It currently reads as "PDF attachments untested", implying the
+attachment feature is fine but for a missing server renderer. It is not: the shared path is broken,
+and that is testable and fixable today without poppler. Installing poppler now would only add the
+last mile of a path whose first mile does not work — so the deferral is still right, but for a
+different reason than recorded, and it is no longer the thing standing between M06 and a working
+attachment feature.
