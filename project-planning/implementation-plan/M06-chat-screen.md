@@ -1,6 +1,6 @@
 # M06 — Chat screen
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M04, M05
 **Goal:** Real conversations with tool cards, reasoning, inline approvals, attachments and slash commands.
 
@@ -907,3 +907,64 @@ check two rounds ago) for the dummy value: absent. `.env` restored from the back
 token file and `.env` backup deleted; `.env` restored and verified as above (no `config.yaml` change
 was made this round, so nothing to restore there); final `npm run check` (145 tests, prettier clean)
 run against the working tree including the `sudo.expire`/`secret.expire` fix.
+
+### 2026-09-08 — Opus verification (round 4): SecretCard closure and the expire fix
+
+**Verdict: verified. Status → `done`** under D9.1 — every non-`[physical]` criterion is closed and
+every remaining one has a row in the deferred criteria register.
+
+#### The `sudo.expire` / `secret.expire` bug was real
+
+Confirmed both halves independently rather than taking the report on trust:
+
+```
+$ git grep -c "sudo.expire\|secret.expire" 6a0460c^ -- src/
+(no matches — nothing in src/ handled either event before the fix)
+```
+
+And the server genuinely emits them — `tui_gateway/server.py:1228`:
+
+```python
+_EXPIRING_REQUESTS = frozenset({
+    "secret.request", "sudo.request", "clarify.request", "terminal.read.request", …
+```
+
+with `server.py:1271` calling `expire()` for any member on deadline. `clarify.request` was handled
+from M05; its two siblings were not. So a server-side timeout left `SudoCard`/`SecretCard` mounted
+forever — and, because the card drives `expo-screen-capture`, `FLAG_SECURE` stuck on with it. Found
+by live testing rather than inspection, which is the right way to find this class of bug.
+
+#### SecretCard — D8's trigger path confirmed at source
+
+D9.3 requires a deferral be justified from the upstream trigger path rather than from failed
+attempts; the same standard is worth applying to a *closure*. D8's analysis holds:
+`skills/productivity/airtable/SKILL.md:9` declares `env_vars: [AIRTABLE_API_KEY]`, and your `.env`
+contains no such key — so the missing-env-var capture path D8 traced through
+`tools/skills_tool_setup.py` → `agent_callbacks.py` → `_block("secret.request", …)` really is
+reachable. Both Sonnet and I had previously concluded "no trigger exists" from failed attempts;
+Fable was right to push back, and the criterion closed.
+
+#### `.env` restore — verified independently
+
+The submit branch writes a real value into `~/.hermes/.env` via `save_env_value_secure`, so the
+restore matters. Checked against your actual file rather than the report:
+
+```
+AIRTABLE lines: 0        total lines: 547
+keys present: BROWSERBASE_*, HERMES_CUSTOM_OPENCODE_GO_API_KEY, OPENCODE_GO_API_KEY, TERMINAL_*, …
+```
+
+No residue. The one match for my dummy-value regex was a pre-existing commented-out line, not test
+leftovers. No secret value was printed at any point in this check.
+
+#### Gating
+
+All non-`[physical]` criteria are closed, and I verified the substance of most of them myself across
+four passes: approval (Run and Reject), clarify with a non-default choice, sudo render +
+`FLAG_SECURE` lifecycle across all three states, image upload with a correct vision reply, slash
+palette (both halves, one of which I closed myself), tail-only re-render and FlashList recycling with
+counts, and the scroll-reachability fix with an untouched-screen acceptance test. The remainder —
+frame rate, PDF, desktop-shaped payloads, prepend anchoring — all carry register rows with an owner
+and an unblocking condition.
+
+**M06 is `done`.**

@@ -244,3 +244,93 @@ ping, not a fresh dial, but it did not crash or hang).
 Throwaway `hermes serve` killed, `/api/health` confirmed unreachable afterward (`curl` exit 7 / `000`).
 Scratch session token deleted. No `config.yaml` change was needed this round (no approval-mode testing).
 Final `npm run check` clean (typecheck, 171 vitest, eslint, prettier) at every commit this round.
+
+### 2026-09-08 — Opus verification
+
+**Verdict: the reported work checks out, and one reported-as-working behaviour does not.** M07 stays
+`in-progress`. A new bug is recorded below that is squarely inside this milestone's own remit.
+
+#### Confirmed
+
+`npm run check` — 24 files, **171 tests**, Prettier clean (Prettier is now inside `check`, as claimed).
+
+**`per_session_exclusive_submit` honoring — verified against upstream, not just against the tests.**
+Code `4090` alone is ambiguous upstream (`methods_bot_relay.py:70`, `methods_tools.py:1176`,
+`methods_prompt.py:564` all use it), so keying on `data.reason` rather than the code is the correct
+choice. Both reason strings are real: `hermes_cli/active_sessions.py:103-104` defines
+`SESSION_NOT_OWNED` and `MAX_CONCURRENT_SESSIONS`, returned from the refusal path at lines 510/519,
+with `PER_SESSION_EXCLUSIVE_SUBMIT = True` at line 116.
+
+**`AppLifecycle` unit coverage** — 9 cases, including that a second background transition does not
+restart an already-armed timer and that `dispose` cancels a pending one.
+
+**Session list screen** — reached it live. It is now the landing screen, and it surfaced
+`HTTP 401 /api/sessions?limit=100&order=recent` with a **Retry** when I connected with a stale token.
+The error path renders correctly; that is real evidence, not just the happy path.
+
+#### The background-grace finding — reproduced independently
+
+Sonnet's finding is correct and I reproduced it from scratch. With a session open and the WebSocket
+confirmed `ESTABLISHED` on the host:
+
+```
+=== backgrounding via KEYCODE_HOME at 18:59:54 ===
+  mCurrentFocus=…nexuslauncher.NexusLauncherActivity
+  t+10s  established connections to 9119: 2
+  t+20s  established connections to 9119: 2
+  t+30s  established connections to 9119: 2
+  t+45s  established connections to 9119: 2
+  t+60s  established connections to 9119: 2
+```
+
+Sixty seconds — three times the 20 s grace — and the socket never closed. Android suspends the RN JS
+thread for a backgrounded app, so a `setTimeout`-based grace cannot fire. Honestly reported and
+correctly diagnosed; a real fix needs a native background-task mechanism, not a timer.
+
+#### New finding: the app does not recover from a background/foreground cycle
+
+The milestone file says the foreground half "is `active`, no timer involved, and is live-confirmed
+working." **It is not.** Continuing the same run, I brought the app back to the foreground:
+
+```
+=== foreground the app again ===
+  mCurrentFocus=…hermes.mobile/.MainActivity
+  established to 9119: 0
+  t+5s / t+10s / t+20s / t+35s after foreground: 0, 0, 0, 0
+  t+30s / t+60s / t+90s: 0, 0, 0
+```
+
+The connection is closed on resume — the long-expired grace timer fires the moment the JS thread
+wakes — and **nothing reconnects**, across 90+ seconds. The app is then left in a chat screen with a
+dead socket and no indication anything is wrong. I typed a message and tapped Send:
+
+```
+  Say hello after backgrounding      ← still sitting in the composer
+  Send
+  established to 9119 now: 0
+```
+
+No user bubble, no reply, no error banner, no retry. A silent no-op. This is the exact scenario the
+milestone exists to cover ("survives background"), and it is worse than the grace timer not firing:
+the timer not firing is a missing optimisation, whereas this leaves the app unusable after the most
+ordinary interaction a phone has — switching away and back.
+
+Likely shape, for whoever picks it up: on resume the `active` handler and the expired grace timer
+both run, and the close wins, so the connection is torn down *after* the reconnect path has already
+decided it had nothing to do. The unit tests cannot catch it because they drive the timer with fake
+timers in the order the design intends, not in the order Android delivers it.
+
+#### Bookkeeping
+
+M07's three `[physical]` criteria (airplane mode, doze, Wi-Fi→cellular) are marked in this file as
+"proposed alongside the other two" for the deferred criteria register, but **no M07 rows exist in
+that register yet** (`implementation-plan/README.md`). Under D9.1 those rows are a precondition for
+M07 ever being marked `done`. Not urgent — two non-`[physical]` criteria are open anyway — but it
+should not be forgotten at the point it does matter.
+
+#### Verdict
+
+`in-progress`, correctly. Open on Sonnet's own account: backend restart not live-verified, and the
+notification criterion not started (blocked on `expo-notifications`). Open on mine: the
+background/foreground recovery bug above, which I would treat as the highest-priority item in this
+milestone — it is a regression in the milestone's headline promise, not a gap in an unbuilt feature.

@@ -1,6 +1,6 @@
 # M04 — Connections + token/password auth
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M03
 **Goal:** Add a gated backend, sign in with a password provider, persist and reuse the session.
 
