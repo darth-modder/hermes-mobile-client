@@ -1,35 +1,14 @@
-import { useRouter } from 'expo-router'
-import { useEffect } from 'react'
-import { ActivityIndicator, StyleSheet, View } from 'react-native'
+import { Redirect } from 'expo-router'
 
 import { getActiveConnection } from '../src/connections/registry'
 
 /**
- * No session-list screen exists yet (M07), so there is nothing useful to
- * show here beyond routing onward: straight into a new chat if a connection
- * is already configured, otherwise to the connect flow.
+ * Routes onward: the session list if a connection is already configured
+ * (M07 — replaces M06's Deviation #6 stopgap, which always minted a new
+ * session here since no list screen existed yet), otherwise the connect flow.
  */
 export default function HomeScreen() {
-  const router = useRouter()
+  const connection = getActiveConnection()
 
-  useEffect(() => {
-    const connection = getActiveConnection()
-
-    router.replace(connection ? { params: { id: 'new' }, pathname: '/(main)/sessions/[id]' } : '/connect')
-  }, [router])
-
-  return (
-    <View style={styles.container}>
-      <ActivityIndicator color="#8a8a99" size="large" />
-    </View>
-  )
+  return <Redirect href={connection ? '/session-list' : '/connect'} />
 }
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    backgroundColor: '#0b0b0f',
-    flex: 1,
-    justifyContent: 'center'
-  }
-})
