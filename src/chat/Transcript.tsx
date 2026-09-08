@@ -67,12 +67,31 @@ function roleStyleFor(role: ChatMessage['role']): { bubble: object; row: object 
  */
 export const messageRenderCounts: Record<string, number> = {}
 
+/**
+ * Recycling evidence, dev-only — the other unmeasured half of the structural
+ * scroll criterion. `recycleSlotId` is generated once per mounted
+ * `MessageBubble` instance (`useRef`, no deps) and logged on every render
+ * alongside the `message.id` it is currently showing. If FlashList is truly
+ * recycling rows (reusing the same underlying component instance for a new
+ * item as it scrolls into a freed slot) instead of mounting a fresh row per
+ * message, the same `slot` id will show up against multiple different
+ * `message` ids in `adb logcat` as the list is scrolled — a mount-per-row
+ * list would show a strict 1:1 slot:message mapping forever.
+ */
+let nextRecycleSlotId = 0
+
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
   const roleStyle = roleStyleFor(message.role)
+  const recycleSlotId = useRef<null | number>(null)
 
   if (__DEV__) {
+    if (recycleSlotId.current === null) {
+      recycleSlotId.current = nextRecycleSlotId++
+    }
+
     messageRenderCounts[message.id] = (messageRenderCounts[message.id] ?? 0) + 1
     console.log(`[render-count] ${message.id} -> ${messageRenderCounts[message.id]}`)
+    console.log(`[recycle-slot] slot=${recycleSlotId.current} message=${message.id}`)
   }
 
   return (

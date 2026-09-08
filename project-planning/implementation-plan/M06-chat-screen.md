@@ -27,11 +27,11 @@
 
 ## Exit criteria (on device)
 
-- [ ] Approval, clarify, sudo and secret round-trips succeed. — approval (both approve and deny) and clarify are now fully driven live and pass; sudo is reached and `FLAG_SECURE` is confirmed but the full typed-password round-trip is blocked by a genuine environment limitation (sudo disabled on this Windows host), not a client bug; secret was not attempted at all (no skill on this server exercises it). See Verification log — left unchecked because two of the four are not actually closed.
-- [ ] Image and PDF attachments upload and are referenced in the reply. — image upload confirmed live (attachment chip appears in the sent message, server receives the bytes); PDF not attempted — this dev machine's server has no `poppler-utils` (`pdftoppm`), which `pdf.attach` requires server-side. Left unchecked because PDF is entirely untested, not just unverified.
+- [ ] Approval, clarify, sudo and secret round-trips succeed. — **three of four now fully closed this round** (see the 2026-09-08 "approval-card fix" Verification log entry below): approval (both Run and Reject), clarify, and — new this round — sudo's full typed-password submit, proven distinguishable from a mere dismiss by the agent's follow-up reply describing the actual failed command attempt, not a generic non-response. Only secret remains genuinely untested: no skill or flow on this server ever triggers a `secret.request`, and this was not worked around. Left unchecked because secret is the one real gap left in a four-part criterion.
+- [ ] Image and PDF attachments upload and are referenced in the reply. — image upload confirmed live (attachment chip appears in the sent message, server receives the bytes); PDF not attempted — this dev machine's server has no `poppler-utils` (`pdftoppm`), which `pdf.attach` requires server-side. Left unchecked because PDF is entirely untested, not just unverified. Proposed as a Fable deferral this round (see Deviations #10).
 - [x] Slash palette lists skills and hides pane-only commands. — **closed by Opus's device pass** (see the Opus re-verification note): the server ships 53 bundled skills (`commands.catalog.skill_count`), `/arxiv` appears in the palette and exists only in the catalog's `skills` map, and all seven pane-only commands checked are absent. Sonnet's original note follows: pane-only hiding confirmed live against the real `commands.catalog` (`/mouse` absent, sibling matches like `/moa`/`/memory` present); a skill specifically appearing in the palette was not independently confirmed this round (no skill was configured on the throwaway test server). Left unchecked pending that half.
-- [ ] `[physical]` A 2,000-message transcript scrolls without dropped frames on a mid-range phone. — split on the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations): the frame-rate number itself needs a physical device; the *structural* scroll behavior (FlashList recycling, tail-only re-render on streaming deltas, `maintainVisibleContentPosition` on prepend) is emulator-provable with render-count evidence and is tracked as its own item below.
-- [ ] Structural scroll behavior (recycling / tail-only re-render / prepend anchoring) shown with render-count evidence on the emulator. — tail-only re-render is now shown with real counted evidence (see Verification log) but only at 2-message scale, and only the "streaming tail doesn't re-render settled messages" half; FlashList recycling and `maintainVisibleContentPosition` prepend-anchoring were not separately measured with counts this round. Left unchecked — partial, not closed.
+- [ ] `[physical]` A 2,000-message transcript scrolls without dropped frames on a mid-range phone. — split on the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations): the frame-rate number itself needs a physical device; the *structural* scroll behavior (FlashList recycling, tail-only re-render on streaming deltas, `maintainVisibleContentPosition` on prepend) is emulator-provable with render-count evidence and is tracked as its own item below. Proposed as a Fable deferral this round (see Deviations #10) alongside PDF and secret.
+- [ ] Structural scroll behavior (recycling / tail-only re-render / prepend anchoring) shown with render-count evidence on the emulator. — **two of three now proven with real counts this round**: tail-only re-render (2-vs-162 renders, prior round) and FlashList recycling (new this round — 16 underlying component instances handled 29 distinct logical messages across a scrolled transcript, with 11 of those 16 instances each rendering between 2 and 6 *different* message ids over time; a mount-per-row list would show a strict 1:1 instance:message mapping forever, so reuse this direct is real recycling evidence, not inference). The third sub-part, `maintainVisibleContentPosition` anchoring on prepend, has **no exercised code path to measure**: M06 has no live "load older history" mechanism — `session.resume` seeds the *entire* history in one shot on mount, and `session-stream/types.ts`'s own header comment says this client has "no pagination-authority race to arbitrate" (unlike the desktop's multi-window tile cache). The prop is configured defensively for whenever M07 adds real pagination; nothing in M06's feature set ever prepends to an already-rendered, scrolled transcript. Left unchecked — two of three closed, the third is out of this milestone's scope to exercise, not merely unmeasured.
 - [x] Desktop and phone on the same session: `session.reclaimed` handled without a stuck composer — substituted with a second Node client per the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations); both reconnect-gap branches verified live against a real `hermes serve` (Verification log below).
 
 ## Deviations from the literal spec (and why)
@@ -141,6 +141,51 @@
    (error/info/warning). After mounting it, a retried image attachment with a properly-selected image
    succeeded and showed the expected chip — the earlier "failures" were most likely tap-target misses
    on the system photo picker, with the invisible-toast bug masking whatever the actual error was.
+10. **A real correctness bug in the primary interaction M06 exists to deliver: the approval card could
+    arrive with its own buttons entirely absent from the accessibility tree, not merely off-screen —
+    found by Opus's device pass, root-caused and fixed this round.** `input-requests.ts` pushed a
+    `scrollToBottom` effect for `clarify.request` (line 81, the only one) but never for
+    `approval.request`, `sudo.request`, or `secret.request`. All four cards mount inside the inverted
+    `FlashList`'s `ListHeaderComponent`, which sits at the list's visual bottom edge — reachable only if
+    something tells the list to scroll there. `ClarifyCard` worked by accident of being the one request
+    type wired to that effect; the other three did not, so a user who did not think to scroll saw
+    "Approval required" with no way to answer it. Fixed by pushing the same `scrollToBottom` effect
+    (gated identically: `storedSessionId && ctx.isActiveEvent`) for all three remaining request types,
+    covered by a new `input-requests-scroll.test.ts` (six cases: active vs. background session, all
+    three request types). Also corrected this file's own "Approve"/"Deny" wording to the real button
+    labels, Run/Reject. See the 2026-09-08 "approval-card fix" Verification log entry for the on-device
+    before/after (buttons absent from the tree at HEAD; present and tappable without any scroll after
+    the fix, for both ApprovalCard and SudoCard).
+11. **Deferral bundle proposed for Fable, not yet landed — three more criteria are environment-blocked
+    on this machine, not client bugs.** Raised together rather than one at a time, per this round's
+    task brief, alongside the two deviations above that are already pending their own D-entries:
+    - **PDF attachment** (exit criterion, line 31): `pdf.attach` needs server-side `poppler-utils`
+      (`pdftoppm`), confirmed absent on this dev machine (`where pdftoppm` / `pdftoppm -v` both fail).
+      Proposed split, mirroring Deviation #1's perf-criterion pattern: close the *image* half of the
+      attachment criterion now (fully proven this round, including a correct vision-model reply — see
+      Opus's re-verification note), and defer the *PDF* half pending either installing poppler on a
+      dev/CI machine or a real device that has it.
+    - **SecretCard round-trip** (part of the approval/clarify/sudo/secret criterion, line 30): neither
+      Sonnet nor Opus could provoke a `secret.request` — no skill or flow configured on this server's
+      install triggers one. Propose deferring this one sub-criterion, named explicitly rather than
+      folded into "SudoCard covers it" (shared plumbing is not evidence of SecretCard's own behavior).
+    - **`[physical]` frame rate** (exit criterion, line 33): already tagged `[physical]` and already
+      known to need real hardware — listed here only so all three deferrals are handed to Fable
+      together rather than piecemeal.
+
+    **Recommendation on M07**: M06's remaining gaps are now almost entirely environment-bound (missing
+    poppler, no secret-triggering flow on this server, no physical device) rather than client-code gaps
+    — every criterion that was actually about this milestone's own code (approval/clarify/sudo
+    round-trips, the optimistic-insert bug, the notification-banner bug, the scroll-reachability bug,
+    tail-only re-render, FlashList recycling) is now closed. M07 depends on M06 per the tracker, and
+    holding the critical path on a missing PDF renderer or an un-triggerable secret flow does not
+    protect anything M07 actually needs from M06 (session list and lifecycle, not attachments or
+    secrets). Recommend Fable consider letting M07 start once Opus confirms the above, with these three
+    plus the two earlier deviations (#1 perf-split, #2 second-client substitution) landed as D-entries
+    marking the remainder explicitly deferred rather than silently dropped.
+
+    I did **not** edit `project-planning/DECISIONS.md` myself for any of these — same discipline as
+    Deviations #1 and #2: propose, do not land.
 
 ## Verification log
 
@@ -537,3 +582,123 @@ assume — but the conservatism cost a criterion that its own implementation alr
    reproducing this will look for buttons that do not exist.
 3. **Document that `approvals.mode: manual` only gates risk-flagged commands.** Both Sonnet and I
    independently lost time to a safe command being auto-cleared under manual mode.
+
+### 2026-09-08 — approval-card fix: root cause, on-device acceptance test, SudoCard submit, recycling evidence
+
+Follow-up round closing the gaps Opus's device pass raised. Same discipline as every prior round:
+`config.yaml` backed up (`sha256sum` recorded) before touching it, `approvals.mode: manual` set via
+the canonical `hermes config set` path, restored and verified at the end — `diff` empty, sha256
+identical to the pre-change backup, and `hermes config get approvals.mode` back to `smart`. Throwaway
+`hermes serve --host 127.0.0.1 --port 9119`, locally-generated session token in a scratch file outside
+the repo (deleted after use, never logged), reached via `adb reverse`.
+
+**Root cause, confirmed by code inspection before touching anything**: `src/gateway/session-stream/
+input-requests.ts` had exactly one `scrollToBottom` push (the `clarify.request` branch) and none in
+`approval.request`, `sudo.request`, or `secret.request`. Fixed by adding the same effect, identically
+gated, to all three (`git show` diff in commit `5e1b42b`). Six new reducer-level tests
+(`input-requests-scroll.test.ts`) cover active vs. background session for all three types. `npm run
+check` clean (140 tests) before any device work started.
+
+**Acceptance test — ApprovalCard, buttons present without touching the screen.** Sent a risk-flagged
+command (`rm -rf /tmp/nonexistent-fixtest`), did not touch the screen, and dumped:
+
+```
+'Approval required' [60,1744][1020,1791]
+'rm -rf /tmp/nonexistent-fixtest' [60,1806][1020,1853]
+'delete in root path' [60,1864][1020,1907]
+'Run' [91,1949][153,1996]
+'Allow this session' [237,1949][522,1996]
+'Always allow' [606,1949][810,1996]
+'Reject' [91,2059][190,2106]
+```
+
+All four buttons present with real, on-screen bounds (well inside the 2400px height) — a direct
+contrast with the pre-fix report (`bounds=[60,2198][1020,2371]`, buttons **absent from the tree
+entirely**). Dismissed the keyboard to confirm visually too (screenshot: card fully on-screen, no
+scroll needed). Tapped **Run** (the one-time option, not "Always allow," to avoid persisting a
+permission into the user's config) — agent replied "Done. Exit code 0, no output — expected since
+/tmp/nonexistent-fixtest doesn't exist, rm -rf silently succeeds." Full round-trip confirmed.
+
+**Repeated for SudoCard, per the task brief.** Sent a sudo-gated prompt; without touching the screen:
+
+```
+'Sudo password requested' [60,1961][1020,2008]
+'Password' [60,2029][856,2128]
+'Send' [907,2055][987,2102]
+```
+
+Reachable too — the fix covers all three request types, not just approval. `expo-screen-capture`'s
+`FLAG_SECURE` confirmed independently: `adb exec-out screencap` returned a solid black image while
+this card was mounted (same authoritative signal Opus used via `dumpsys window windows`).
+
+**SudoCard full typed-value submit — closed this round, distinguishable from a mere dismiss.** The
+task's specific technique (tap the field by `uiautomator` bounds, re-dump, confirm the value landed in
+the `password="true"` field with the composer untouched, *before* doing anything else) worked cleanly
+once the keyboard was dismissed **before** the first tap — tapping while the keyboard from the just-sent
+prompt was still open repeatedly routed the tap to a keyboard letter key instead (landed in the main
+composer, not the password field, reproducing the exact failure mode the task brief described; recovered
+by pressing back/ESC to dismiss the keyboard, re-dumping, and only then tapping). Verified before typing:
+
+```
+password=true bounds=[60,2029][856,2128] focused=true text='Password'
+password=false bounds=[204,1342][734,1438] focused=false text='Message Hermes…'
+```
+
+Typed a dummy value, verified again before doing anything else:
+
+```
+password=true bounds=[60,2029][856,2128] text_len=16 text='••••••••••••••••'
+password=false bounds=[204,1342][734,1438] text_len=15 text='Message Hermes…'
+```
+
+16 characters landed in the masked field exactly (`dummy-fixtest-pw`), composer untouched. Tapped the
+card's own inline **Send** button (`[907,2055][987,2102]`, distinct from the composer's Send). Result —
+the gap the task named (submitted vs. dismissed are otherwise indistinguishable) is closed by the
+*content* of what came back: the card unmounted and the agent's reply was a direct continuation
+describing the **actual attempted command's failure** ("The command failed — Sudo is disabled on this
+machine, and apt isn't available on Windows anyway," followed by alternative package-manager
+suggestions), not a generic non-response. That reply is only possible if the server received the
+password via `sudo.respond`, attempted the real OS-level `sudo apt update` with it, and reported the
+failure — proving the submit path end to end. The environment limitation (sudo disabled on this
+Windows host) is unrelated to the client and was already known from the prior round; what's new is
+proof the value actually reaches `sudo.respond` rather than the request merely expiring.
+
+**FlashList recycling — the other unmeasured structural-scroll half, closed with counts.** Extended
+`MessageBubble`'s existing `__DEV__` instrumentation (`Transcript.tsx`) with a `[recycle-slot]` log: a
+`useRef`-generated slot id, stable for the life of one mounted component instance, logged alongside
+whichever `message.id` it is currently rendering. If FlashList recycles rows, the same slot id will
+show up against multiple different message ids over time; a naive mount-per-row list would show a
+strict 1:1 mapping forever. Sent 12 short prompts to build up the transcript (288.4k tok by the end —
+this session had already accumulated a lot of history from earlier rounds), then scrolled through the
+full history. Result, read back from `adb logcat`:
+
+```
+distinct slots: 16
+distinct messages seen total: 29
+slots that handled >1 message id (recycled): 11
+ slot 13 handled 6 messages
+ slot 14 handled 6 messages
+ slot 6 handled 6 messages
+ slot 8 handled 6 messages
+ slot 7 handled 5 messages
+ ...
+```
+
+16 underlying component instances rendered 29 distinct logical messages, 11 of those instances each
+having shown between 2 and 6 *different* messages over the course of scrolling — direct, counted proof
+of recycling, not inference from smooth scrolling. Combined with the prior round's tail-only re-render
+evidence (2 vs. 162 renders), two of the structural criterion's three sub-parts are now closed with
+real counts. The third, `maintainVisibleContentPosition` anchoring on prepend, has no code path to
+exercise in this milestone — see Deviations #11 and the exit-criteria note above.
+
+**Cleanup, every exit path**: `config.yaml` restored and verified (`diff` empty, sha256
+`554aa846c8b3e7353835e05919129454b63377cfa968f696c914147f10031d91` matching before and after);
+`hermes config get approvals.mode` confirmed back to `smart`; the throwaway `hermes serve` instance
+killed and `/api/health` confirmed unreachable afterward; the scratch session-token file deleted; a
+final `npm run check` (140 tests) run clean against the working tree including the new recycle-slot
+instrumentation.
+
+**Not reached this round**: SecretCard (no trigger available on this server — see Deviations #11);
+PDF attachment (poppler still absent); `[physical]` frame rate (needs hardware). All three proposed to
+Fable as a bundled deferral in Deviations #11, alongside the two deviations already pending from the
+prior round.
