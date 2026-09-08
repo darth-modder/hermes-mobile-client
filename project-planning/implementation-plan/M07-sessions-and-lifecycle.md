@@ -1,6 +1,6 @@
 # M07 — Session management + lifecycle
 
-**Status:** in-progress
+**Status:** done
 **Depends on:** M06
 **Goal:** Sessions list and switch reliably; the app survives backgrounding, doze and network changes.
 
@@ -935,3 +935,101 @@ a register row, and the channel defect that was the other blocker is gone. D2's 
 client-side background grace, then close — is not implementable with a JS timer on Android, and the
 recommendation to drop it in favour of the server's orphan reap changes this milestone's lifecycle
 contract. That is a decision, not implementation work.
+
+### 2026-09-09 — Opus verification: D10 implemented and closed
+
+**Verdict: verified. D10.3's gate conditions are all met. Status → `done`.**
+
+`npm run check` — 26 files, **194 tests**, Prettier clean.
+
+#### D10's premise checked at source before checking the implementation
+
+D10.2 asserts the server already returns what the client needs. It does, exactly where the decision
+says: `src/upstream/types/hermes.ts:676` (`pending_approval`) and `:687` (`pending_clarify`), and
+upstream `tui_gateway/server.py:2722-2723` adds both to the resume payload via
+`_pending_approval_request_payload` / `_pending_clarify_request_payload`. So the wedged composer
+really was a client-side gap against data that was already on the wire.
+
+#### D10.1 — grace withdrawn, cleanly
+
+```
+$ grep -rn "BACKGROUND_GRACE_MS|scheduleGrace|cancelGrace|isForeground|closeGatewayConnection|closeConnection" src/ app/
+(no matches)
+```
+
+Nothing orphaned. `background -> active` and the `expo-network` handler remain, per the decision.
+Removing `closeGatewayConnection` along with its only caller (Deviation #10) is the right call —
+leaving dead plumbing behind would have been the worse outcome.
+
+**Regression check on the removal.** The `isForeground` guard existed to fix a bug I found; deleting
+it is only safe because the timer it guarded is gone too. Verified end to end: backgrounded 25 s,
+foregrounded, sent a message — `d10-recovery-ok` came back with the connection alive. Ordinary
+recovery still works with no timer in the picture at all.
+
+#### D10.2 — the new criterion, closed on both branches
+
+Run exactly as worded: card mounted from the resume payload, answerable, composer not stuck — on
+each reconnect branch.
+
+**Long gap, 35 s (past the server's 20 s orphan reap — the reclaim branch):**
+
+```
+sent 00:27:58 → HOME → 35 s → foreground 00:28:36
+Approval required   FOUND bounds=[60,1744][1020,1791]
+Run                 FOUND bounds=[91,1949][153,1996]
+Reject              FOUND bounds=[91,2059][190,2106]
+Allow this session  FOUND bounds=[237,1949][522,1996]
+```
+
+Present **without scrolling**, all actions on-screen. Tapped **Run** → *"Done. /tmp/opus-d10-long
+removed."* Composer returned to **Send** (`Stop`/`Steer` absent).
+
+**Short gap, 6 s (inside the grace — no reclaim):** card restored the same way; tapped **Reject**;
+composer returned to **Send**.
+
+This is the exact scenario I recorded last round as a wedged composer I could not attribute. Fable
+was right to call it a code gap rather than an ambiguity — the card is now restored on both branches
+and answerable in both.
+
+Worth noting the implementation also pushes `scrollToBottom` when it restores a card. That is the
+fix for the clipping bug I found in M06 applied consistently to the restore path, rather than
+re-introducing an unreachable card by a different route.
+
+#### Deviation #11 — accepted, with the residual risk named
+
+`restorePendingRequestsFromResume` **sets** approval/clarify when the payload has them, but only
+**clears** sudo/secret when stale — it never clears a stale approval or clarify. That follows
+D10.2's literal wording, and the reasoning (this client has one connection, so it lacks the race the
+desktop's broader clear guards against) is sound for the common case.
+
+The residual: since D7 reworded the criterion to "a second concurrent client", a second client
+answering an approval leaves this app showing a card the server no longer waits on, until some other
+event corrects it. Narrow, not worth reopening, and correctly documented rather than hidden — but it
+is the one place where D7's multi-client framing and D10.2's single-connection reasoning point in
+different directions. Worth a look if M09 or M11 makes multi-client use ordinary.
+
+#### D10.3 gate
+
+| Condition | State |
+|---|---|
+| Grace removed, `npm run check` green | Yes — no survivors, 194 tests |
+| New criterion closed and Opus-verified | Yes — both branches, live, above |
+| Three `[physical]` register rows accurate | Yes — airplane mode, doze, Wi-Fi→cellular all present and current |
+| No other decision outstanding | Yes — D2 was superseded by D10 |
+
+**M07 is `done`.**
+
+#### Housekeeping
+
+The three implementation commits (`7607bdb`, `fab17b6`, `66f19e9`) were committed but **not pushed** —
+`origin/main` was still at `c3a5304`. Pushed together with this note.
+
+`config.yaml` backed up and restored: `diff` empty, sha256
+`554aa846c8b3e7353835e05919129454b63377cfa968f696c914147f10031d91`, no `approvals:` block left
+behind. Throwaway server stopped, scratch token deleted, nothing in git history.
+
+One cosmetic artefact, mine not Sonnet's: the stored connection's **label** still contains the
+session token I mis-typed into it several rounds ago. That token has been dead since I rotated it
+the same minute, and the value never reached a repo file — but the string persists in the app's MMKV
+connection registry on this emulator. Clearing it is a one-tap edit on the connect screen; noted so
+it is not mistaken later for a live credential.
