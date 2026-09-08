@@ -11,6 +11,23 @@
  * Idempotent: running this twice in a row against an unchanged upstream
  * checkout must produce no git diff. UPSTREAM.json's `syncedAt` is therefore
  * the upstream COMMIT's date, not wall-clock time.
+ *
+ * The swap trades atomicity for watcher-compatibility (M02 follow-up,
+ * decision D5). A directory rename (or delete-then-recreate) is atomic —
+ * src/upstream/ is either the old tree or the new one, never a mix — but
+ * both fail EPERM on this machine with Metro running (this project's normal
+ * dev state, not an edge case: Metro's watcher holds handles on the
+ * directory entry itself, even though it never blocks overwriting a file's
+ * content inside it). `stageAndSwap` below copies every file in place
+ * instead, which sidesteps that lock but gives up the atomicity: a crash
+ * mid-copy (process killed, disk full — the only realistic failure, since
+ * every content-shaped failure — a patch assertion, a lint error, an
+ * unresolved import — already happened earlier, inside the isolated staging
+ * directory, before any file in src/upstream/ is touched) can leave it
+ * holding a mix of old and new files, where the old rename-based swap would
+ * have left it wholly intact or wholly gone. Recovery is the same either
+ * way and is safe: re-run the script (idempotent) to finish the copy, or
+ * `git checkout src/upstream` to revert.
  */
 
 import { execFileSync } from 'node:child_process'
