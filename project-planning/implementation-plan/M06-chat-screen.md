@@ -702,3 +702,116 @@ instrumentation.
 PDF attachment (poppler still absent); `[physical]` frame rate (needs hardware). All three proposed to
 Fable as a bundled deferral in Deviations #11, alongside the two deviations already pending from the
 prior round.
+
+### 2026-09-08 — Opus verification (round 3): the scroll-reachability fix
+
+**Verdict: the fix works, verified on device against the exact failure I originally reported.**
+M06 stays `in-progress`, but for the first time nothing is blocking it except Fable's deferral
+decision — every remaining criterion is environment-bound, not code.
+
+#### Root cause independently confirmed before testing the fix
+
+```
+$ git show HEAD~2:src/gateway/session-stream/input-requests.ts | grep -c scrollToBottom
+1        ← only the clarify branch
+$ grep -c scrollToBottom src/gateway/session-stream/input-requests.ts
+4        ← clarify + approval + sudo + secret
+```
+
+That single-vs-four asymmetry *predicts exactly* what I observed on device last round without
+having been told to look for it: `ClarifyCard` rendered with every choice tappable, while
+`ApprovalCard` arrived with its buttons absent from the accessibility tree entirely. This is a real
+root cause, not a plausible-looking patch. `input-requests-scroll.test.ts` covers all three newly
+fixed types × active/background — 6 cases.
+
+#### Acceptance test — passed, run exactly as specified
+
+Fresh session, throwaway `hermes serve`, `approvals.mode: manual`. Sent
+`rm -rf /tmp/opus-round3-nonexistent`, then **touched nothing** — no swipe, no scroll — and dumped:
+
+```
+FOUND "Approval required"   bounds=[60,1744][1020,1791]
+FOUND "Run"                 bounds=[91,1949][153,1996]
+FOUND "Allow this session"  bounds=[237,1949][522,1996]
+FOUND "Always allow"        bounds=[606,1949][810,1996]
+FOUND "Reject"              bounds=[91,2059][190,2106]
+```
+
+All four actions present, all fully on-screen (lowest edge 2106 on a 2400px display). Contrast with
+my pre-fix reading, where the card's node sat at `bounds=[60,2198][1020,2371]` and the buttons did
+not exist in the tree at all. Then tapped **Run** directly at its reported coordinates without
+scrolling first → *"Done. rm -rf completed with exit code 0."* Full round-trip from an unscrolled
+screen.
+
+#### FlashList recycling — reproduced independently, after first failing to
+
+Worth recording the false negative, because it would mislead the next person. My first attempt, on a
+fresh 14-message transcript, produced a strict 1:1 mapping:
+
+```
+distinct slots: 14   distinct messages: 14   recycled slots: 0
+```
+
+That is precisely the *non*-recycling signature this instrumentation is designed to detect, and it
+would have read as a refutation. It is not — it is a scale artifact. FlashList only recycles rows
+that leave the render window, and 14 short messages never do. Extending the transcript to 30
+messages and scrolling the full history repeatedly:
+
+```
+distinct slots:    18
+distinct messages: 30
+slots that handled >1 distinct message (recycled): 15
+  slot 2 -> 6    slot 9 -> 6    slot 10 -> 6    slot 1 -> 5    slot 4 -> 5 …
+```
+
+18 component instances covering 30 logical messages, 15 of them each having rendered 2–6 *different*
+messages. That closely matches the entry's own 16/29/11 and confirms it. **Anyone re-running this
+needs ~30 messages; below roughly 20 it will look like recycling is broken when it is not.**
+
+Instrumentation confirmed dev-only — both `[render-count]` and the new `[recycle-slot]` sit inside
+`if (__DEV__)` at `Transcript.tsx:87`, so neither can ship.
+
+#### Claims accepted without re-driving
+
+I did not re-run the SudoCard submit or the ClarifyCard round-trip. I verified both myself last
+round, and the entry's argument for the submit is sound on its own terms: a reply describing the
+*actual attempted command's* failure can only follow from the password reaching `sudo.respond`. A
+generic dismissal cannot produce that.
+
+#### Cleanup
+
+`config.yaml` backed up before any change and restored afterwards — `diff` empty, sha256
+`554aa846c8b3e7353835e05919129454b63377cfa968f696c914147f10031d91` identical before and after, no
+`approvals:` block left behind. Note this is the same hash I independently recorded in my own earlier
+round, so the file is byte-identical to its state before *any* of this work. Throwaway server killed
+and confirmed unreachable; scratch token deleted; no token or 48-hex string anywhere in git history.
+
+#### Verifier findings
+
+1. **`npx prettier --check .` fails on 10 committed files** — `scripts/second-client-reclaim.mjs`,
+   `src/chat/Composer.tsx`, `src/chat/SessionHeader.tsx`, `src/chat/parts/{ApprovalCard,CodeBlock,
+   UsageChip}.tsx`, `src/gateway/session-connection{,.test}.ts`, `src/lib/attachments.ts`,
+   `src/lib/mobile-slash-commands.ts`. All are M06-introduced. `npm run check` is typecheck + vitest
+   + eslint and does **not** run Prettier, so this accumulated silently across several commits while
+   `check` stayed green — structurally the same trap M01 recorded for `babel-preset-expo`
+   ("a green `check` does not prove X"). M02 and M05 both state Prettier passes repo-wide; that is no
+   longer true. Fix is `npm run fix`, but consider adding `prettier --check` to the `check` script so
+   it cannot drift again.
+2. **`package-lock.json` is uncommitted and drifted** — `@types/node` 26.4.1→26.5.0,
+   `@typescript-eslint/*` 8.69.0→8.70.0, 43 insertions/43 deletions, from a stray `npm install`.
+   `AGENTS.md` requires pinned dependencies; a dirty lockfile means the next `npm ci` does not match
+   the tree. Left for Sonnet to resolve deliberately — a lockfile bump is a dependency decision, not
+   something a verifier should silently commit or revert.
+
+#### Gating
+
+Every criterion that is about M06's own code is now closed and independently verified across my
+three passes: approval (both outcomes), clarify, sudo render + `FLAG_SECURE` lifecycle + submit,
+image upload and reference, slash palette (both halves), the optimistic-insert bug, the
+notification-banner bug, the scroll-reachability bug, tail-only re-render, and FlashList recycling.
+
+What remains — SecretCard (no trigger on this install), PDF (no poppler), `[physical]` frame rate —
+is environment-bound and cannot be closed by writing code. M06 therefore stays `in-progress`
+**solely pending Fable's D-entry** on Deviation #11's bundled deferral. I have not written
+`DECISIONS.md`; that is Fable's, as it was for Sonnet. Once that decision lands, M06 is ready to be
+marked `done` without further implementation.
