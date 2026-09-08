@@ -28,6 +28,7 @@ import { getActiveConnection, updateActiveConnection } from '../connections/regi
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
 import type { MobileConnection } from '../connections/types'
 import { httpRequest } from '../net/http'
+import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
 import { notify } from '../store/notifications'
 import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
@@ -141,6 +142,15 @@ function dispatchEffects(effects: Effect[]): void {
       case 'setClarify':
         if (effect.storedSessionId) {
           setClarifyRequest(effect.storedSessionId, effect.request)
+
+          if (effect.request) {
+            void dispatchNativeNotification({
+              body: effect.request.question,
+              kind: 'input',
+              sessionId: effect.storedSessionId,
+              title: 'Hermes needs input'
+            })
+          }
         }
 
         break
@@ -148,15 +158,42 @@ function dispatchEffects(effects: Effect[]): void {
       case 'setApproval':
         setApprovalRequest(effect.storedSessionId, effect.request)
 
+        if (effect.request) {
+          void dispatchNativeNotification({
+            body: effect.request.command || effect.request.description,
+            kind: 'approval',
+            sessionId: effect.storedSessionId,
+            title: 'Approval needed'
+          })
+        }
+
         break
 
       case 'setSudo':
         setSudoRequest(effect.storedSessionId, effect.request)
 
+        if (effect.request) {
+          void dispatchNativeNotification({
+            body: 'A command needs your sudo password.',
+            kind: 'input',
+            sessionId: effect.storedSessionId,
+            title: 'Hermes needs input'
+          })
+        }
+
         break
 
       case 'setSecret':
         setSecretRequest(effect.storedSessionId, effect.request)
+
+        if (effect.request) {
+          void dispatchNativeNotification({
+            body: effect.request.prompt || effect.request.envVar,
+            kind: 'input',
+            sessionId: effect.storedSessionId,
+            title: 'Hermes needs input'
+          })
+        }
 
         break
 

@@ -22,20 +22,29 @@
         (`session-stream/lifecycle.ts`), unchanged this milestone; already proven live via
         `scripts/second-client-reclaim.mjs` in M06's own verification. Not re-derived here.
   - [x] `gateway.ready.replay_epoch` change: cold start (drop the runtime->stored map, re-resume the active
-        session, refresh the session list). New this milestone, unit-tested (8 tests), not live-tested — see
-        Deviations #4.
+        session, refresh the session list). New this milestone, unit-tested (8 tests). **Live-verified this
+        round** — see the backend-restart verification log entry: a real process restart produces a new
+        `replay_epoch`, and the client correctly cold-started onto the same stored session rather than losing
+        or duplicating it.
   - [x] `replay.truncated`: `hydrate` (same effect `session.reclaimed` already uses). New this milestone,
-        unit-tested, not live-tested — see Deviations #4.
-  - [ ] `expo-network` change handling (reset backoff + redial on "closed → open"; ping probe on "open"). Not
-        built — see Deviations #5.
+        unit-tested, not live-tested — see Deviations #4 (staging a 512-event replay-ring eviction on demand
+        remains out of reach without a scripted flood, which is out of scope for this round).
+  - [x] `expo-network` change handling (reset backoff + redial on "closed → open"; ping probe on "open"). Built
+        this round — `useAppLifecycle.ts` now also subscribes to `Network.addNetworkStateListener` and feeds
+        `AppLifecycle.handleNetworkChange` (already unit-tested from M07's first round) the same way `AppState`
+        feeds `handleAppStateChange`. See Deviations #9 for build/live-test status.
 - [x] Never send `close_on_disconnect: true` — confirmed by inspection (`grep -rn close_on_disconnect src`
       returns nothing); nothing to change, since nothing in this app has ever set it.
 - [x] Honor `gateway.capabilities.per_session_exclusive_submit` — a `prompt.submit` rejected with JSON-RPC
       4090 is rewritten to a true, reason-specific message (`SESSION_NOT_OWNED` / `MAX_CONCURRENT_SESSIONS` /
       other) instead of a generic RPC-failure toast. Unit-tested (3 tests), not live-tested — see Deviations #6.
-- [ ] Foreground notifications via `expo-notifications` — **not started.** Needs a new native dependency and a
-      WSL2 rebuild (~20-30 min); deferred this round rather than shipped half-built (a policy module with
-      nothing calling it yet). See Deviations #5.
+- [x] Foreground notifications via `expo-notifications` — built this round: `src/push/native-notifications.ts`
+      (the ported desktop policy — kinds, attention set, throttle, persisted prefs) and
+      `src/push/useNotifications.ts` (permission request, Android channel, tap-to-open via the M07 deep link
+      route). Wired into `session-connection.ts`'s `dispatchEffects` for the four blocking-input effects
+      (`setApproval` → kind `approval`; `setSudo`/`setSecret`/`setClarify` → kind `input`, matching upstream's
+      own mapping). Unit-tested (10 cases, `native-notifications.test.ts`). See Deviations #9 for build/live-test
+      status.
 - [x] Deep link `hermes-android://session/<id>` — `app/session/[id].tsx`, a thin `<Redirect>` to the chat
       screen. Live-confirmed (see Verification log).
 
@@ -53,10 +62,12 @@
   `describeSubmitError` (the 4090 rewrite)
 - `src/store/sessions.ts` addition: `$sessionListRefreshRequests`, wiring the reducer's `refreshSessions`
   effect (a no-op until this milestone — "no session-list store yet") to something real
-- **Not delivered:** `src/store/notifications.ts` is NOT touched by this milestone despite being named in the
-  original task line — that file is M06's in-app toast queue (`notify()`/`$notifications`), a different
-  concern from the native/OS notification policy this task line actually means (upstream's
-  `apps/desktop/src/store/native-notifications.ts`). See Deviations #5.
+- **Delivered this round, at a different path than the task line named:** `src/push/native-notifications.ts`
+  (the ported native/OS notification policy — upstream's `apps/desktop/src/store/native-notifications.ts`)
+  and `src/push/useNotifications.ts` (the real `expo-notifications` wiring). The task line's literal
+  `src/store/notifications.ts` stays untouched by this milestone, as recorded last round — that file is M06's
+  in-app toast queue (`notify()`/`$notifications`), a different concern. Filed under `src/push/` instead,
+  matching `implementation-plan/README.md`'s own target layout row for that directory.
 
 ## Exit criteria
 
@@ -66,9 +77,9 @@
   below.
 - `[physical]` Screen off 15 minutes mid-turn (doze) — **not attempted, needs hardware.** Same register
   entry as above.
-- `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds — **not attempted, needs hardware**, and
-  separately blocked on the `expo-network` wiring not existing yet (Deviations #5) even to attempt on a
-  physical device. Same register entry.
+- `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds — **not attempted, needs hardware.** The
+  `expo-network` wiring this depended on (Deviations #5) is now built (see the task list above) — this
+  criterion's only remaining blocker is the physical device itself. Same register entry.
 - [x] Reconnect inside the server orphan grace produces no `session.reclaimed`; reconnect after it produces
   one, and the transcript is identical in both cases — **already closed by M06's evidence, not re-derived.**
   This is the reducer's `session.reclaimed` handling (`session-stream/lifecycle.ts`), unchanged by this
@@ -85,8 +96,22 @@
   `20260908_193853_410fb8`, not a new session), and a prompt submitted after the restart completed a full
   round trip (reasoning, a tool call, streamed reply) with no manual reconnect and no app restart. See the
   Verification log.
-- [ ] An approval for a non-active session shows a local notification whose tap opens that session — **not
-  started**, blocked on the `expo-notifications` dependency (Deviations #5).
+- [ ] An approval for a non-active session shows a local notification whose tap opens that session — **code
+  built and unit-tested this round; partially live-verified.** The WSL2 native rebuild succeeded and the
+  permission/channel half is live-confirmed (see Verification log: the OS permission dialog fired on first
+  launch, "Allow" granted, `dumpsys notification` shows the `hermes-default` channel registered). The dispatch
+  pipeline was also observed to actually fire in production, not just in unit tests — a live `sudo.request`
+  produced a real `SudoCard` with `FLAG_SECURE` active (screenshots came back solid black, matching the
+  same protection D8 confirmed for SudoCard). What is **not** confirmed live this round: an actual posted OS
+  notification while backgrounded/non-active. Both live attempts (a dangerous `rm -rf` command, then a
+  `sudo` command) resolved faster than the backgrounding/foregrounding round-trip could catch them — the
+  `rm -rf` never even reached an approval gate (see Deviations #9's note on the approval-context detector),
+  and the `sudo` attempt's card appeared and then resolved on its own (this Windows dev host has no real
+  `sudo` binary, so the tool call self-corrected) before a `dumpsys notification` check landed. Left
+  unchecked rather than claimed: the client-side gating logic this depends on (`shouldFire`) is fully
+  unit-tested and was exercised for real up to the point of scheduling, but the last leg — the OS actually
+  showing it — needs either a slower-to-resolve trigger or a physical device to pin down without racing a
+  fast local model.
 
 ## Deviations from the literal spec (and why)
 
@@ -215,6 +240,48 @@
 
 8. **Proposed for Fable: D2's client-side background grace should be dropped, not fixed further.** See the
    "D2 re-examined" section below — evidence and a recommendation, decision left to Fable per house style.
+
+9. **`expo-notifications` and `expo-network` built this round, per the user's direction (acting for Fable) to
+   spend the WSL2 rebuild now rather than defer a third time.** `src/push/native-notifications.ts` ports
+   upstream's policy (kinds, the `{approval, input}` attention set, 1s throttle, persisted prefs — MMKV via
+   this project's existing `src/lib/storage.ts`, not `localStorage`) with one scope cut: the plugin door
+   (`ctx.os.notify`) isn't ported, since plugins have no UI surface on mobile (AGENTS.md). Only `approval` and
+   `input` are dispatched anywhere in this app today — the four blocking-input effects the reducer already
+   emits (`setApproval`→`approval`, `setSudo`/`setSecret`/`setClarify`→`input`, matching upstream's own
+   mapping in `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/input-requests.ts`) — the
+   other five kinds exist in the type for shape parity (a future M09 settings screen) but have no caller,
+   same "don't half-build a policy nothing calls" discipline as last round.
+   `src/push/useNotifications.ts` is the real wiring: permission request, an Android notification channel
+   (required on Android O+), and tap-to-open via the existing `hermes-android://session/<id>` deep-link route
+   (`app/session/[id].tsx`) reused as the navigation target. `expo-network` change handling went into
+   `useAppLifecycle.ts` directly (the same hook already owns the `AppState` listener) rather than a second
+   hook, since `AppLifecycle.handleNetworkChange` already existed and was already unit-tested — this was
+   already the stated intent in that file's own doc comment. Unit-tested: 10 new cases in
+   `native-notifications.test.ts` (attention-vs-completion gating, throttle dedupe including cross-session
+   non-interference, the global/per-kind off switches, prefs persistence). `npm run check` — 183 tests
+   (was 173), typecheck/lint/prettier all green.
+
+   **A real, unrelated dependency-resolution bug found and fixed along the way.** Adding the two packages via
+   `npx expo install` requires an `npm install`, which fails outright on this checkout with a pre-existing
+   `ERESOLVE` conflict (`react-dom@19.2.8` vs. a range `expo-router`'s vendored `@radix-ui`/`vaul` tree wants)
+   — reproduced on a plain `npm install` with zero other changes, so it predates this round and isn't
+   something M07 caused. The obvious-looking fix, `npm install --legacy-peer-deps`, is **wrong**: it reverts
+   npm to pre-v7 behavior, which does not auto-install *required* (non-optional) peer dependencies at all —
+   it silently dropped `react-native-nitro-modules` (a hard, non-optional peer of `react-native-mmkv` 4.3.2,
+   already used by this project for `expo-secure-store`-adjacent storage) and `react-refresh` (a hard peer of
+   `babel-preset-expo`), among others. `npm run check` stayed green throughout (vitest/tsc/eslint never touch
+   either package), so this was silent until the native build hit
+   `UnknownProjectException: Project with path ':react-native-nitro-modules' could not be found` and, after a
+   first fix attempt, Metro's own bundler hit `Cannot find module 'react-refresh/babel'` — caught by actually
+   requesting a bundle (`curl .../index.bundle`) before trusting the install, not by `npm run check` alone.
+   **Fix:** `npm install --force` instead — it still performs npm 7+'s full peer-auto-install, it just
+   tolerates the one real conflict rather than reverting resolution mode entirely — plus `react-native-nitro-modules`
+   added as an explicit direct dependency (`package.json`) so it's never silently peer-only again regardless of
+   which install mode someone reaches for next. Confirmed a diff of `package-lock.json`'s package set against
+   `origin/main` before this round shows zero missing entries, and a fresh Metro bundle request returns `200`.
+   Not fixed structurally (e.g. an `.npmrc` default) — that's a decision with consequences for every future
+   `npm install` on this project, out of scope for this milestone to make unilaterally; noted here so the next
+   person who hits the same `ERESOLVE` error reaches for `--force`, not `--legacy-peer-deps`.
 
 ## D2 re-examined: the client-side 20 s background grace cannot be implemented as written on Android
 
@@ -493,3 +560,58 @@ affordance was used and the app process itself was never restarted — only back
 Both throwaway servers killed, `/api/health` unreachable confirmed after each, scratch tokens deleted,
 scratch screenshot directory removed (`.scratch-m07/`, never committed). `npm run check` re-run clean
 after all device work (173 tests, typecheck/eslint/prettier).
+
+### 2026-09-08 — expo-notifications / expo-network: build, then partial live verification
+
+**Dependency-resolution detour first (Deviations #9):** `npm install --legacy-peer-deps` (needed to work
+around a pre-existing `ERESOLVE` conflict) silently dropped `react-native-nitro-modules` (a hard peer of
+`react-native-mmkv`) and `react-refresh` (a hard peer of `babel-preset-expo`) — caught by the native build
+failing (`UnknownProjectException: ... ':react-native-nitro-modules' ...`) and then, after a first fix
+attempt, by actually requesting a Metro bundle and getting `Cannot find module 'react-refresh/babel'`
+instead of trusting a green `npm run check` (which never touches either package). Fixed with `npm install
+--force` instead, plus `react-native-nitro-modules` added as an explicit direct dependency so it can't
+silently go peer-only again. Confirmed a full package-set diff against `origin/main`'s lockfile came back
+empty and a bundle request returned `200`.
+
+**WSL2 build:** `npm run prebuild`, `android/local.properties` rewritten to the WSL SDK, then
+`./gradlew assembleDebug --no-daemon` from WSL2 per `docs/CONNECTING.md`. First two attempts failed on the
+dependency issue above; the third succeeded — `BUILD SUCCESSFUL in 27m 23s` (786 actionable tasks, 754
+executed). `adb install -r` onto `emulator-5554` succeeded.
+
+**Live-confirmed:** fresh app launch fired the real Android "Allow Hermes to send you notifications?"
+system dialog (`useNotifications.ts`'s permission request actually running); tapped Allow.
+`adb shell dumpsys notification` afterward shows `NotificationChannel{mId='hermes-default', ...}`
+registered against the app — the channel setup in `useNotifications.ts` ran for real, not just in a unit
+test. Later in the same session, submitting a message that led the model to run `sudo apt update` produced
+a real, live `setSudo` effect: the chat screen showed a `SudoCard`, and `adb shell screencap` returned a
+solid black image for it — `FLAG_SECURE` is active on that screen exactly as D8 confirmed for SudoCard
+previously, re-confirmed here by symptom (uiautomator's accessibility-tree dump still read the card's text
+fine, since that's a different, non-pixel channel).
+
+**Not live-confirmed this round: an actual posted OS notification.** Two attempts:
+
+1. A message asking the model to run `rm -rf /tmp/hermes-notif-live-test` (confirmed via
+   `hermes approvals test` to be a real `ask-approval` dangerous-command match, rule "delete in root
+   path") executed immediately with no approval gate at all — `hermes approvals test` is a dry-run of the
+   same detector, not proof the live gateway path reaches it the same way. Read enough of
+   `tools/approval.py`/`tools/approval_context.py` (upstream, read-only, via `git show`) to see the real
+   gate is `_is_gateway_approval_context()` / `_unattended_deny()`, gated on `HERMES_SESSION_PLATFORM` and
+   related context vars — plausible that something about this throwaway single-shot `hermes serve` doesn't
+   set up that context the same way a longer-lived install would, but this is server-side runtime behavior
+   or environment setup outside this app's own code, not something worth spending further client-side
+   testing budget to root-cause.
+2. A message asking for `sudo apt update` did produce the `SudoCard` above (confirming the `setSudo` effect
+   and thus `dispatchNativeNotification` call site genuinely fire in production) — but by the time a
+   `dumpsys notification` check could run, the card had already resolved on its own: this Windows dev host
+   has no real `sudo` binary, so the tool call self-corrected ("sudo is disabled on this machine...") faster
+   than the backgrounding round-trip could catch it. Both attempts were timing races against a fast local
+   model that this round didn't win — not evidence that `dispatchNativeNotification` itself is broken (its
+   pure gating logic is fully unit-tested, including the exact "backgrounded → attention kind fires"
+   branch this needed), just that pinning the *last* leg (the OS actually showing something) needs either a
+   deliberately slow-to-resolve trigger (e.g. a long preamble before the tool call, to buy navigation time)
+   or a physical device session where backgrounding isn't an adb-script race. Left as the honest gap for
+   next round or the batched physical pass.
+
+`hermes serve`'s `config.yaml` was read-only this round (backed up with sha256 before touching device work,
+confirmed byte-identical after — no approval-mode config changes were needed or made). Scratch token and
+scratch screenshots deleted; throwaway server killed and confirmed unreachable afterward.

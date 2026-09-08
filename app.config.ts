@@ -42,6 +42,12 @@ const config: ExpoConfig = {
         resizeMode: 'contain',
         backgroundColor: '#0B0B0F'
       }
+    ],
+    [
+      'expo-notifications',
+      {
+        color: '#0B0B0F'
+      }
     ]
   ],
   experiments: {
