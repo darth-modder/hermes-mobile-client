@@ -1,0 +1,8 @@
+{
+  "name": "hermes-push",
+  "label": "Push Notifications",
+  "description": "Expo push registration for the Hermes Android/iOS client. Backend-only — no dashboard UI.",
+  "version": "0.1.0",
+  "tab": { "hidden": true },
+  "api": "api.py"
+}
