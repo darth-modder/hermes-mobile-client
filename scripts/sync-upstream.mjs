@@ -510,6 +510,13 @@ function writeManifest(targetRoot, commit, files) {
   const manifest = { commit, files: [...files].sort(), repo, syncedAt }
 
   writeFileSync(path.join(targetRoot, 'UPSTREAM.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+
+  // Upstream is MIT, which requires its copyright notice and licence text to
+  // travel with any copy — and everything under src/upstream/ IS a copy. The
+  // notice is emitted here, from the same pinned commit as the vendored files,
+  // rather than hand-placed: this script wipes and rewrites the whole directory
+  // on every run, so a hand-added file would silently vanish on the next sync.
+  writeFileSync(path.join(targetRoot, 'LICENSE.upstream'), readUpstreamFile(commit, 'LICENSE'))
 }
 
 if (!existsSync(UPSTREAM_ROOT)) {
