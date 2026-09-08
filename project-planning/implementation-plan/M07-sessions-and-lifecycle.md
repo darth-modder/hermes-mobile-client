@@ -615,3 +615,138 @@ fine, since that's a different, non-pixel channel).
 `hermes serve`'s `config.yaml` was read-only this round (backed up with sha256 before touching device work,
 confirmed byte-identical after — no approval-mode config changes were needed or made). Scratch token and
 scratch screenshots deleted; throwaway server killed and confirmed unreachable afterward.
+
+### 2026-09-08 — Opus verification (round 2): the recovery fix, and the notification criterion closed
+
+**Verdict: the fix is real and verified live. The notification criterion is now closed too — I was
+able to pin the posted OS notification that this log records as unpinned — but doing so surfaced a
+defect.** M07 stays `in-progress` for that defect plus the open D2 escalation; nothing else is
+outstanding.
+
+`npm run check` — 25 files, **183 tests**, Prettier clean.
+
+#### The recovery fix — regression test proved, then verified on device
+
+The strongest evidence a regression test is real is that it fails on the old code. It does:
+
+```
+$ git show 99f036a^:src/gateway/lifecycle.ts > src/gateway/lifecycle.ts   # old code, new tests
+   ❯ src/gateway/lifecycle.test.ts (11 tests | 1 failed)
+       × a grace timer that fires after returning to active (clearTimeout lost the race)
+         does not close the reconnected connection
+   Tests  1 failed | 10 passed (11)
+```
+
+One fails, ten pass — so the new test pins exactly the bug and the fix is targeted rather than a
+blanket disable. The companion test ("fires while still backgrounded still closes") is the right
+guard against over-fixing, and it passes on both versions.
+
+**Acceptance test, run exactly as specified:**
+
+```
+WS established before backgrounding: 2
+KEYCODE_HOME at 21:12:14 → nexuslauncher focused
+  t+20s / t+40s / t+60s / t+80s / t+95s backgrounded:  established = 2 throughout
+foreground at 21:13:58
+  t+5s / t+15s / t+30s / t+45s foregrounded:           established = 2 throughout
+```
+
+Then the half that failed last round — sending after the cycle:
+
+```
+  Recover string after background          ← title auto-updated
+  recovered-after-background               ← the reply
+  Reply with exactly: recovered-after-background   ← user bubble present
+```
+
+A real send, a real reply, composer cleared. Last round this was a silent no-op with a dead socket.
+**Fixed.**
+
+**Backend restart corroborated incidentally.** I killed and restarted the throwaway server mid-run
+for an unrelated reason; on returning to the app it had already reconnected (`established = 2`) with
+the same stored session. That independently supports this log's backend-restart claim without my
+having set out to test it.
+
+#### The notification criterion — closed, with the technique this log was missing
+
+This log records two failed attempts to pin a posted OS notification, both lost to a fast-resolving
+local model. The trick is to use a trigger that *cannot* self-resolve: an **approval** blocks for the
+server's 300 s window, which is an enormous target compared to a model turn. With `approvals.mode:
+manual`, I sent a risk-flagged command and backgrounded the app within two seconds:
+
+```
+t+15s / t+30s / t+45s / t+60s backgrounded: posted notifications for the app = 2
+
+android.title = String (Approval needed)
+android.text  = String (rm -rf /tmp/opus-notif-test)
+importance=4  flags=AUTO_CANCEL
+```
+
+A real notification, posted by the app, while backgrounded. Then the tap half:
+
+```
+tap the notification → mCurrentFocus = …hermes.mobile/.MainActivity
+  Approval required
+  rm -rf /tmp/opus-notif-test
+  delete in root path
+  Run | Allow this session | Always allow | Reject
+```
+
+It opened the app into the right session with the card live and every action present. The pipeline
+works end to end. Recorded here so nobody spends a third round on it: **use an approval, not a
+prompt.**
+
+Caveat on wording: there is only one session on this server, so "an approval for a **non-active**
+session" was exercised as "the app was backgrounded", not "a different session was in the
+foreground". The dispatch and deep-link machinery is proven; the multi-session routing is not.
+
+#### Defect found while closing it: the notification posts on the wrong channel
+
+```
+effectiveNotificationChannel = NotificationChannel{
+    mId='expo_notifications_fallback_notification_channel', mName=Miscellaneous, mImportance=4, … }
+```
+
+The app registers `hermes-default` (importance 3) — I confirmed it exists in `dumpsys notification`'s
+channel list — but the dispatched notification does not name it, so `expo-notifications` falls back
+to its own "Miscellaneous" channel. Consequences are user-visible, not cosmetic:
+
+- The notification appears under **Miscellaneous** in Android's per-app notification settings, not
+  under a Hermes-named channel.
+- Everything `hermes-default` encodes (importance, sound, badge) is ignored; the notification
+  inherits importance 4 from the fallback instead of the intended 3.
+- A user who tunes or mutes the Hermes channel changes nothing, and a user who mutes "Miscellaneous"
+  silences approvals.
+
+Fix is to pass the channel id when scheduling. Worth doing before M11 builds push on top of this
+policy layer, since M11 will inherit whatever channel behaviour is established here.
+
+#### Bookkeeping
+
+The Wi-Fi→cellular register row still reads "`expo-network` wiring not yet built" with Sonnet as
+part-owner. That is now stale — `expo-network` is wired (`useAppLifecycle.ts:1`). I have corrected
+the row to name the remaining blocker (hardware only) rather than leave it misdescribing the state.
+
+The dependency fix is durable, not just locally lucky: `react-native-nitro-modules` is pinned at
+`0.37.1` in `package.json`, and `package-lock.json` resolves it plus `react-refresh@0.18.0`,
+`expo-notifications@57.0.17` and `expo-network@57.0.1` — so `npm ci` reproduces this tree for the
+next developer without anyone needing to know `--force` was involved. The lockfile is committed and
+clean. Good catch on `--legacy-peer-deps`, and the right instinct that only an actual Metro bundle
+would have caught it.
+
+D2's escalation is written up in this file and **not** landed unilaterally — `DECISIONS.md` still has
+nine entries. Correct discipline.
+
+#### Why M07 is still `in-progress`
+
+Every exit criterion is now closed, including the notification one I closed above. Two things hold
+`done`:
+
+1. The notification-channel defect — a real defect inside a criterion I just verified.
+2. **Fable's D2 decision is outstanding.** D2's premise (a client-side background grace, then close)
+   is demonstrably not implementable with a JS timer on Android, and the recommendation to drop it in
+   favour of the server's orphan reap changes this milestone's lifecycle contract. Marking M07 `done`
+   while its lifecycle design is awaiting a decision would be marking the tracker true and the design
+   unsettled.
+
+Neither needs new investigation — one is a small fix, the other is a decision already written up.

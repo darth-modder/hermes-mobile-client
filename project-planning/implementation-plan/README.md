@@ -62,7 +62,7 @@ rows return to Fable as a policy escalation.
 | M06 | `maintainVisibleContentPosition` anchoring on prepend | No prepend code path exists | First milestone adding transcript history pagination | That milestone's implementation | None owed if no milestone adds one by M12 (D6) |
 | M07 | `[physical]` Airplane-mode toggle mid-turn on a real phone against a gated LAN backend | Real device | Opus | Device attached | Batched physical pass (D9) |
 | M07 | `[physical]` Screen off 15 minutes mid-turn (doze) | Real device | Opus | Device attached | Batched physical pass (D9) |
-| M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device, and `expo-network` wiring not yet built | Opus (device) / Sonnet (`expo-network`) | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
+| M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device (`expo-network` wiring landed 2026-09-08) | Opus | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
 
 ## Architecture
 
