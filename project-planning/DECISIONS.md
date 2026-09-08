@@ -254,3 +254,35 @@ when a quiet client is gone; the client handles whichever outcome it meets. That
 honest if what the server was waiting for comes back with the resume, which is why the pending
 request restore is a criterion and not a note. For M11: an open socket does not mean the app is
 awake, so push gating must use the presence endpoint M11 already designs, never socket state.
+
+## D11 — Dev-machine changes: what Sonnet may do alone, what only the user does; EAS project id and plugin install for M11 (2026-09-09)
+
+**Decision.** A standing rule, then the two M11 cases it settles.
+
+1. **Sonnet may make a dev-machine change without escalation when it is local, reversible and
+   unbilled**: files under `HERMES_HOME` (`~/.hermes/plugins/`, `config.yaml`, `.env`), tools on
+   PATH, emulator state. Conditions: back up anything that already exists (sha256 recorded),
+   test against a throwaway `hermes serve`, never the user's running instance, and restore or
+   remove at the end of the round unless the user says to keep it. Poppler (D8) falls under this
+   rule from now on; ask once, in the round's write-up, not as a blocking escalation.
+2. **Only the user does**: creating accounts, logging in, entering credentials or payment details,
+   accepting terms, and anything billed. Sonnet asks for the resulting identifier and continues.
+3. **EAS project id (M11).** Option (c) now: build the whole push pipeline with token registration
+   gated on `extra.eas.projectId` being present, and a clear in-app and log message when it is
+   absent. The user creates the Expo account, runs `eas login` and `eas init` in this repo, and
+   commits the `projectId` that lands in `app.config.ts`. D3 already routes M12 release builds
+   through EAS Build, so the account is needed regardless; this is the moment to create it. The
+   physical push-delivery criterion is already deferred under D9.
+4. **Plugin install (M11).** Sonnet installs `server-plugin/hermes-push/` into
+   `~/.hermes/plugins/hermes-push/` under rule 1: the directory does not exist today, so cleanup is
+   removing it. Verify with a throwaway server on 9119 (`GET /api/plugins/hermes-push/devices`),
+   never by restarting the user's own `hermes serve`. Note the risk that justifies the throwaway
+   rule: the plugin's `pre_approval_request` hook runs inside every approval on whichever server
+   loads it, so a bug there blocks approvals for that instance. Remove the folder at the end of
+   the round and say so in the log; the install doc the task list already calls for is what the
+   user follows to keep it.
+
+**Reasoning.** Every environment sign-off so far (poppler, tirith, the plugin folder, the EAS id)
+has cost an escalation round for a change that is either trivially reversible or one only the
+user can make. Splitting on reversibility and ownership answers all of them in advance. Account
+creation and credentials are the user's by policy, not by preference.
