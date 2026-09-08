@@ -306,6 +306,25 @@
     second-background-no-restart, and dispose-cancels-timer cases, all meaningless once there's no timer to
     cancel).
 
+11. **D10.2's restore scope: mount on presence, clear on absence only for sudo/secret — approval/clarify are
+    never cleared by this function.** D10.2's own wording only calls out clearing "stale sudo or secret
+    request state" on hydrate; it says nothing about clearing approval/clarify when `session.resume` omits
+    them. Read literally (and implemented that way in `resume-pending.ts`): `pending_approval`/`pending_clarify`
+    present -> mount, exactly like the live event; absent -> untouched, no clear. This is deliberately narrower
+    than the desktop's `restorePendingClarifyFromSnapshot`, which also clears a *locally held* clarify when the
+    snapshot omits it (its `authoritativeAbsent` path) — that extra behavior exists there to guard a real race
+    (a newer live event arriving while the `session.resume` RPC is still in flight, worth guarding on desktop's
+    multi-window/multi-resume-path architecture) that this app's simpler one-connection, one-effect-handler
+    setup doesn't create in the same way: nothing subscribes to gateway events until `ensureGatewayConnection()`
+    has already run, and `resumeSession()` is the only caller of this function, so there's no second code path
+    that could already be holding a fresher approval/clarify by the time this one resolves. Porting the desktop's
+    extra clear would also need a `pendingApprovalRequestId` field on `SessionState` that doesn't exist today
+    (clarify already has one; approval never needed one, since nothing implements `approval.expire` client-side —
+    grep confirms no such event exists in the vendored catalog at all) — adding a field with no other use to
+    guard a race this app's architecture doesn't have was judged not worth it. Sudo/secret are the one case with
+    a real, named reason to clear unconditionally (D10.2 says so explicitly: upstream has no resume field for
+    either, so a client-held card for one is *always* stale after a `session.resume`, not conditionally).
+
 ## D2 re-examined: the client-side 20 s background grace cannot be implemented as written on Android
 
 *Decided: D10 (2026-09-08) adopts option (c).*
@@ -837,6 +856,79 @@ confirmed unreachable afterward.
 needed `approvals.mode: manual` in `config.yaml` — the same backup-set-restore procedure used for the
 SecretCard round — not a `tirith` install. Full evidence, plus a practical note on getting the model
 to actually issue a risk-flagged command, is in M06's Opus note of the same date.
+
+### 2026-09-09 — D10.2 pending-request restore: live, both branches, both request kinds
+
+`npm run check` green before any device work (26 files, 194 tests — 184 after the D10.1 grace
+removal, +10 for `resume-pending.test.ts`). `config.yaml` backed up with sha256
+(`554aa846c8b3e7353835e05919129454b63377cfa968f696c914147f10031d91`) before touching it;
+`hermes config set approvals.mode manual`. Throwaway `hermes serve --host 127.0.0.1 --port 9119`
+with a scratch `HERMES_DASHBOARD_SESSION_TOKEN`, `adb reverse` for 8081/9119 (already in place from
+an earlier session), dev-client reloaded onto `emulator-5554` via Metro. Cleared app data, connected
+fresh with the scratch token.
+
+**Approval — short gap (before: nothing reads `pending_approval`; after: restored).** Sent "run
+exactly this one command and nothing else, do not check anything first: rm -rf
+/tmp/nonexistent-d10" under `approvals.mode: manual`. `ApprovalCard` appeared (`rm -rf
+/tmp/nonexistent-d10`, "delete in root path", Run / Allow this session / Always allow / Reject).
+`KEYCODE_HOME` at 23:52:25, `adb shell am start` at 23:52:30 (~5s gap, inside the server's 20s
+orphan grace — no reclaim). `uiautomator dump` (no scrolling) showed `"Approval required"`, `"Run"`,
+`"Allow this session"`, `"Always allow"`, `"Reject"` all present. Tapped Reject: the transcript
+showed "The command was blocked by the system — it wasn't executed." — composer accepted the
+answer, agent reported the block.
+
+**Approval — long gap (over the server's 20s orphan grace).** Second command
+(`nonexistent-d10-long`) sent in the same session; `ApprovalCard` appeared again. `KEYCODE_HOME` at
+23:54:43, held 30s, `am start` at 23:55:13 (~30s gap — past the orphan-reap threshold M03/M06/D2
+already established for this server, `ws_orphan_reap_grace_s` default 20s). `uiautomator dump`
+again showed the full card present without scrolling. Tapped Reject: "The command was blocked again
+by the system. This appears to be a security measure that prevents destructive operations like
+`rm -rf`, even when targeting non-existent directories." A second attempt at re-deriving the
+`session.reclaimed` signal itself (a temporary `console.log` in `session-stream/lifecycle.ts`'s
+`session.reclaimed` branch) was inconclusive: Metro's own inspector socket to the dev-client visibly
+dies while the app is backgrounded (`ReconnectingWebSocket`/`ReactNativeJNI` errors in `logcat` at
+the moment of backgrounding), so `console.log` output could not be confirmed reaching either logcat
+or the Metro terminal for this edit, and a same-session retry was contaminated by the model
+self-censoring a third `rm -rf` after two rejections (no tool call was even issued, so nothing to
+restore). Not re-derived further — same call M07's own log already made for the airplane-mode-style
+criteria: the wire-level reclaim mechanism is independently proven in M03/M06/D2, and this round's
+job is proving the *restore* logic behaves the same on both sides of that threshold, which the
+timing alone (30s > 20s) already demonstrates. Reverted the debug log before committing (confirmed
+`git diff` on the file is empty).
+
+**Clarify — short gap.** Fresh session, "Use the clarify tool right now to ask me which of these I
+prefer, red or blue. Do not do anything else first." `ClarifyCard` appeared ("Which color do you
+prefer?", Red (Recommended) / Blue). `KEYCODE_HOME` at 00:05:37, `am start` at 00:05:42 (~5s).
+`uiautomator dump` showed `"A few questions"`, `"Red (Recommended)"`, `"Blue"` present. Tapped Blue:
+transcript showed "You picked Blue." — composer accepted the answer.
+
+**Clarify — long gap.** Same session, "circle or square" follow-up; `ClarifyCard` appeared ("Which
+shape do you prefer?", Circle (Recommended) / Square). `KEYCODE_HOME` at 00:08:43, held 30s, `am
+start` at 00:09:13 (~30s). `uiautomator dump` showed the card present without scrolling. Tapped
+Square: transcript showed "You picked Square." — composer accepted the answer.
+
+**A UI-testing artifact worth recording, not a product bug:** on two of the four taps, the
+`uiautomator`-reported bounds for the target button were stale by the time the tap landed (the
+inverted `FlashList` reflows while the model is still streaming reasoning above the card), so the
+first tap landed on the composer instead and typed a stray character; a second tap after the layout
+settled (confirmed by a fresh screenshot matching the fresh dump) landed correctly both times. This
+is a property of driving the UI via `adb input tap` against a moving target, not of the app under
+test — the same card was reachable and answerable in every case once the layout had settled, which
+is what the criterion is actually about.
+
+Cleanup: `config.yaml` restored from backup, sha256-confirmed byte-identical
+(`554aa846c8b3e7353835e05919129454b63377cfa968f696c914147f10031d91`), backup file deleted. Throwaway
+`hermes serve` killed (`taskkill`), confirmed unreachable (`curl` exit 7 / `000`). Scratch token and
+screenshots deleted. App data cleared. `npm run check` unaffected (no source changes this round
+beyond the reverted debug log).
+
+**Not restorable and not attempted here (by design):** sudo/secret have no `pending_*` field in
+`session.resume` at all (D10.2), so there is nothing to restore-test for them; the unit tests already
+cover the unconditional-clear-on-hydrate behavior for both.
+
+Exit criterion checkbox left for Opus, per the task's own discipline (Sonnet records evidence, only
+Opus/Fable close criteria on this milestone going forward per house style established over the last
+several rounds).
 
 **M07 remains `in-progress` on Fable's D2 decision alone.** Every exit criterion is closed or carries
 a register row, and the channel defect that was the other blocker is gone. D2's premise — a

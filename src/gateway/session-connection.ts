@@ -51,6 +51,7 @@ import {
   flushSessionDeltas,
   reduceGatewayEvent,
   type ReducerState,
+  restorePendingRequestsFromResume,
   updateSession
 } from './session-stream-reducer'
 
@@ -422,13 +423,21 @@ export async function createSession(params: { cwd?: string; title?: string } = {
 }
 
 /** Resume an existing stored session — the normal way to open a chat screen,
- *  and how the `hydrate` effect recovers after a reclaim or lost connection. */
+ *  and how the `hydrate` effect recovers after a reclaim or lost connection.
+ *  Both reconnect branches (inside the server's orphan grace, and after a
+ *  `session.reclaimed`) call this the same way, so pending-request restore
+ *  (D10.2) runs identically on either. */
 export async function resumeSession(storedSessionId: string): Promise<string> {
   const client = await ensureGatewayConnection()
   const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
+
+  const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
+
+  reducerState = restored.state
+  dispatchEffects(restored.effects)
   publishAll()
 
   return storedSessionId
