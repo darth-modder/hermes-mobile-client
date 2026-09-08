@@ -31,7 +31,7 @@ import { handleStatusEvent } from './session-stream/status'
 import { handleToolEvent } from './session-stream/tools'
 import type { Effect, ReduceResult, ReducerState } from './session-stream/types'
 
-export { bindSession, resolveStoredSessionId, setActiveSession } from './session-stream/session-keys'
+export { bindSession, resolveStoredSessionId, setActiveSession, updateSession } from './session-stream/session-keys'
 export { createReducerState, createSessionState } from './session-stream/types'
 export type {
   ApprovalRequest,

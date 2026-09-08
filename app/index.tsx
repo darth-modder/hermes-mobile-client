@@ -1,10 +1,26 @@
-import { StyleSheet, Text, View } from 'react-native'
+import { useRouter } from 'expo-router'
+import { useEffect } from 'react'
+import { ActivityIndicator, StyleSheet, View } from 'react-native'
 
+import { getActiveConnection } from '../src/connections/registry'
+
+/**
+ * No session-list screen exists yet (M07), so there is nothing useful to
+ * show here beyond routing onward: straight into a new chat if a connection
+ * is already configured, otherwise to the connect flow.
+ */
 export default function HomeScreen() {
+  const router = useRouter()
+
+  useEffect(() => {
+    const connection = getActiveConnection()
+
+    router.replace(connection ? { params: { id: 'new' }, pathname: '/(main)/sessions/[id]' } : '/connect')
+  }, [router])
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Hermes</Text>
-      <Text style={styles.subtitle}>Thin client scaffold — M01</Text>
+      <ActivityIndicator color="#8a8a99" size="large" />
     </View>
   )
 }
@@ -15,15 +31,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b0b0f',
     flex: 1,
     justifyContent: 'center'
-  },
-  subtitle: {
-    color: '#8a8a99',
-    fontSize: 14,
-    marginTop: 8
-  },
-  title: {
-    color: '#f2f2f5',
-    fontSize: 28,
-    fontWeight: '600'
   }
 })

@@ -1,9 +1,12 @@
 // The message-composer's own draft state, per session — independent of the
 // gateway-event reducer (nothing on the wire drives it; the user's typing
-// does). Declared here per M05's atom list so M06's chat screen has
-// somewhere to put it; the composer UI itself is M06's job.
+// does). Persisted to MMKV (M06's per-session draft persistence task) so a
+// half-typed message survives the app being backgrounded/killed, exactly
+// like the desktop's own per-session composer draft.
 
 import { atom } from 'nanostores'
+
+import { readJson, writeJson } from '../lib/storage'
 
 export interface ComposerAttachment {
   ref: string
@@ -16,15 +19,27 @@ export interface ComposerDraft {
 }
 
 const EMPTY_DRAFT: ComposerDraft = { text: '', attachments: [] }
+const STORAGE_KEY = 'composer.drafts'
 
-export const $composerDrafts = atom<Record<string, ComposerDraft>>({})
+function loadPersistedDrafts(): Record<string, ComposerDraft> {
+  return readJson<Record<string, ComposerDraft>>(STORAGE_KEY) ?? {}
+}
+
+function persistDrafts(drafts: Record<string, ComposerDraft>): void {
+  writeJson(STORAGE_KEY, Object.keys(drafts).length > 0 ? drafts : null)
+}
+
+export const $composerDrafts = atom<Record<string, ComposerDraft>>(loadPersistedDrafts())
 
 export function composerDraft(storedSessionId: string): ComposerDraft {
   return $composerDrafts.get()[storedSessionId] ?? EMPTY_DRAFT
 }
 
 export function setComposerDraft(storedSessionId: string, draft: ComposerDraft): void {
-  $composerDrafts.set({ ...$composerDrafts.get(), [storedSessionId]: draft })
+  const next = { ...$composerDrafts.get(), [storedSessionId]: draft }
+
+  $composerDrafts.set(next)
+  persistDrafts(next)
 }
 
 export function clearComposerDraft(storedSessionId: string): void {
@@ -38,4 +53,5 @@ export function clearComposerDraft(storedSessionId: string): void {
 
   delete next[storedSessionId]
   $composerDrafts.set(next)
+  persistDrafts(next)
 }

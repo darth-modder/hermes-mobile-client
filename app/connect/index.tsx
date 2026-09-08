@@ -93,6 +93,7 @@ export default function ConnectScreen() {
       })
 
       setStatus(`Connected — install_id=${statusBody.install_id ?? '(none)'}`)
+      router.replace({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' })
     } catch (error) {
       const message =
         error instanceof HttpError

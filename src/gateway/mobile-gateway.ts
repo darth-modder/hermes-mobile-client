@@ -1,6 +1,8 @@
-import { JsonRpcGatewayClient } from '../upstream/shared/json-rpc-gateway'
+import { type GatewayClientOptions, JsonRpcGatewayClient } from '../upstream/shared/json-rpc-gateway'
 
 const REQUEST_TIMEOUT_MS = 30_000
+
+export type MobileGatewayOptions = Pick<GatewayClientOptions, 'onSocketClose' | 'socketFactory'>
 
 /**
  * prompt.submit is effectively fire-and-forget: turn completion is signaled
@@ -13,12 +15,13 @@ const REQUEST_TIMEOUT_MS = 30_000
 export const PROMPT_SUBMIT_REQUEST_TIMEOUT_MS = 1_800_000
 
 export class MobileGateway extends JsonRpcGatewayClient {
-  constructor() {
+  constructor(options: MobileGatewayOptions = {}) {
     super({
       closedErrorMessage: 'Hermes gateway connection closed',
       connectErrorMessage: 'Could not connect to Hermes gateway',
       notConnectedErrorMessage: 'Hermes gateway is not connected',
-      requestTimeoutMs: REQUEST_TIMEOUT_MS
+      requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      ...options
     })
   }
 }

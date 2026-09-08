@@ -1,0 +1,581 @@
+/**
+ * The connection glue layer M06 adds: owns the one live `MobileGateway`
+ * socket (AGENTS.md / M04: one active connection in v1), feeds every inbound
+ * frame through the pure `session-stream-reducer`, publishes the result into
+ * `src/store/*` atoms, and exposes the RPC-calling functions the chat screen
+ * needs (submit/stop/steer/btw, the four blocking-input `*.respond` calls,
+ * attachments, slash-command completion).
+ *
+ * Nothing in here re-derives transcript state: `reduceGatewayEvent` /
+ * `flushSessionDeltas` (src/gateway/session-stream-reducer.ts) own that, and
+ * every side effect they describe is dispatched here into the matching store
+ * — never recomputed. This module owns WHEN a frame reaches the reducer and
+ * WHERE its effects land; the reducer owns WHAT they mean.
+ *
+ * Deviation (documented in M06-chat-screen.md): the reauth ladder
+ * (src/net/auth/ladder.ts) is wired here at the WS-close boundary, not around
+ * every RPC call. A live gateway session's failure mode is a 4401/4403 socket
+ * close, not an HTTP 401 mid-request — `runWithReauthLadder`'s HTTP-shaped
+ * retry doesn't fit a socket that just went away. `classifyFailure`'s table
+ * (401/4401 -> unauthorized, 403/4403 -> forbidden) is reused directly against
+ * the close code instead. Token/password connections (M04) have no silent
+ * refresh, so an unauthorized close always lands on `needsLogin` — matching
+ * `nextReauthAction`'s "no refresh available" branch. M08's OAuth mode is the
+ * first to have a real refresh to attempt before that.
+ */
+
+import { getActiveConnection, updateActiveConnection } from '../connections/registry'
+import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import type { MobileConnection } from '../connections/types'
+import { httpRequest } from '../net/http'
+import { setClarifyRequest } from '../store/clarify'
+import { notify } from '../store/notifications'
+import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
+import { requestScrollToBottom } from '../store/scroll'
+import { publishReducerState } from '../store/session-states'
+import { publishTodosFromReducerState } from '../store/todos'
+import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
+import { reconnectBackoffDelayMs } from '../upstream/lib/reconnect-backoff'
+import type { ConnectionState } from '../upstream/shared/json-rpc-gateway'
+import type { RpcEvent, SessionCreateResponse, SessionMessage, SessionResumeResponse } from '../upstream/types/hermes'
+
+import { DeltaFlushScheduler } from './delta-flush-scheduler'
+import { buildGatewayWsUrl, createGatewaySocketFactory, type DialAuth, type DialTarget } from './dial'
+import { MobileGateway, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from './mobile-gateway'
+import {
+  bindSession,
+  createReducerState,
+  type Effect,
+  flushSessionDeltas,
+  reduceGatewayEvent,
+  type ReducerState,
+  updateSession
+} from './session-stream-reducer'
+
+const DELTA_EVENT_TYPES = new Set(['message.delta', 'reasoning.delta'])
+
+let gateway: MobileGateway | null = null
+let reducerState: ReducerState = createReducerState()
+let scheduler: DeltaFlushScheduler | null = null
+let disposeEvents: (() => void) | null = null
+
+const stateListeners = new Set<(state: ConnectionState) => void>()
+
+/** Subscribe to the live gateway's connection state (idle/connecting/open/closed/error). */
+export function onGatewayConnectionState(listener: (state: ConnectionState) => void): () => void {
+  stateListeners.add(listener)
+
+  return () => stateListeners.delete(listener)
+}
+
+function publishAll(): void {
+  publishReducerState(reducerState)
+  publishTodosFromReducerState(reducerState)
+}
+
+function flushDeltas(): void {
+  const startedAt = Date.now()
+  reducerState = flushSessionDeltas(reducerState)
+  publishAll()
+  scheduler?.reportFlushCost(Date.now() - startedAt)
+}
+
+/** Best-effort reconnect for a session the UI is (or was) actively looking
+ *  at — the reducer's `hydrate` effect (session.reclaimed while active, or a
+ *  turn recovered from a lost connection). Never throws; a final failure
+ *  surfaces as a `notify` toast instead of an unhandled rejection. */
+async function rehydrateSession(storedSessionId: string | null, attempts: number): Promise<void> {
+  if (!storedSessionId) {
+    return
+  }
+
+  const totalAttempts = Math.max(1, attempts)
+
+  for (let attempt = 0; attempt < totalAttempts; attempt++) {
+    try {
+      await resumeSession(storedSessionId)
+
+      return
+    } catch (error) {
+      if (attempt === totalAttempts - 1) {
+        notify({
+          type: 'notify',
+          id: `hydrate-failed-${storedSessionId}`,
+          kind: 'error',
+          title: 'Reconnect failed',
+          message: error instanceof Error ? error.message : String(error)
+        })
+
+        return
+      }
+
+      await new Promise(resolve => setTimeout(resolve, reconnectBackoffDelayMs(attempt)))
+    }
+  }
+}
+
+function dispatchEffects(effects: Effect[]): void {
+  for (const effect of effects) {
+    switch (effect.type) {
+      case 'notify':
+        notify(effect)
+
+        break
+
+      case 'scrollToBottom':
+        requestScrollToBottom(effect.storedSessionId)
+
+        break
+
+      case 'refreshSessions':
+        // No session-list store yet (M07 owns it) — nothing to refresh.
+        break
+
+      case 'hydrate':
+        void rehydrateSession(effect.storedSessionId, effect.attempts ?? 1)
+
+        break
+
+      case 'setClarify':
+        if (effect.storedSessionId) {
+          setClarifyRequest(effect.storedSessionId, effect.request)
+        }
+
+        break
+
+      case 'setApproval':
+        setApprovalRequest(effect.storedSessionId, effect.request)
+
+        break
+
+      case 'setSudo':
+        setSudoRequest(effect.storedSessionId, effect.request)
+
+        break
+
+      case 'setSecret':
+        setSecretRequest(effect.storedSessionId, effect.request)
+
+        break
+
+      // Not in M06's task list (no haptics/sound dependency pulled in yet) — revisit later if wanted.
+      case 'haptic':
+
+      case 'sound':
+        break
+    }
+  }
+}
+
+function handleGatewayEvent(event: RpcEvent): void {
+  const { state, effects } = reduceGatewayEvent(reducerState, event)
+
+  reducerState = state
+  dispatchEffects(effects)
+
+  if (DELTA_EVENT_TYPES.has(event.type)) {
+    // Buffered by the reducer (session.pendingDeltas) — coalesced into a
+    // single tail-only re-render by the scheduler instead of one publish per
+    // delta (M06's perf criterion: no dropped frames on a 2k-message thread).
+    scheduler?.schedule()
+  } else {
+    publishAll()
+  }
+}
+
+/** Classifies a WS close code the same way `src/net/auth/ladder.ts` classifies
+ *  an HTTP status — 4401/4403 mirror 401/403 exactly (ladder.ts's own doc
+ *  comment). Token/password connections (M04) have no silent refresh, so an
+ *  unauthorized close always resolves to "sign in again" instead of retrying. */
+function handleSocketClose(connection: MobileConnection, code: number): void {
+  if (code === 4401) {
+    void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  }
+}
+
+async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
+  if (connection.authMode === 'token') {
+    const token = await getConnectionToken(connection.id)
+
+    if (!token) {
+      throw new Error('No stored session token for this connection')
+    }
+
+    return { mode: 'token', token }
+  }
+
+  // Password/OAuth (gated): mint a single-use WS ticket over the existing
+  // cookie session (password) or bearer token (OAuth, M08) — browsers/RN
+  // cannot set Authorization on a WebSocket upgrade, hence the ticket.
+  const oauth = connection.authMode === 'oauth' ? await getConnectionOAuth(connection.id) : null
+
+  const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(connection.baseUrl, '/api/auth/ws-ticket', {
+    credentials: 'include',
+    method: 'POST',
+    token: oauth?.accessToken
+  })
+
+  return { mode: 'ticket', ticket }
+}
+
+/** Establish the one live gateway connection for the active `MobileConnection`.
+ *  A no-op (returns the existing socket) if one is already open. */
+export async function ensureGatewayConnection(): Promise<MobileGateway> {
+  if (gateway && gateway.connectionState === 'open') {
+    return gateway
+  }
+
+  const connection = getActiveConnection()
+
+  if (!connection) {
+    throw new Error('No active connection — add one first')
+  }
+
+  const auth = await resolveAuth(connection)
+
+  const headers =
+    connection.headerNames && connection.headerNames.length > 0
+      ? await getConnectionHeaders(connection.id, connection.headerNames)
+      : undefined
+
+  const baseUrl = new URL(connection.baseUrl)
+
+  const target: DialTarget = {
+    host: baseUrl.host,
+    protocol: baseUrl.protocol === 'https:' ? 'https:' : 'http:',
+    profile: connection.provider
+  }
+
+  disposeEvents?.()
+  gateway?.close()
+
+  const instance = new MobileGateway({
+    onSocketClose: event => {
+      handleSocketClose(connection, event.code)
+
+      return false
+    },
+    socketFactory: createGatewaySocketFactory(auth, headers)
+  })
+
+  disposeEvents = instance.onAny(handleGatewayEvent)
+  instance.onState(state => {
+    for (const listener of stateListeners) {
+      listener(state)
+    }
+  })
+
+  scheduler ??= new DeltaFlushScheduler({ flush: flushDeltas })
+  gateway = instance
+
+  await instance.connect(buildGatewayWsUrl(target, auth))
+
+  return instance
+}
+
+function requireGateway(): MobileGateway {
+  if (!gateway) {
+    throw new Error('Not connected to a Hermes gateway')
+  }
+
+  return gateway
+}
+
+/** The wire-level runtime id currently bound to `storedSessionId`, or the
+ *  stored id itself when nothing has bound it yet — mirrors the reducer's own
+ *  "placeholder key" convention (session-keys.ts): a session this client just
+ *  created has no runtime->stored mapping until its first `session.info`, so
+ *  RPCs addressed by the caller's stored id fall through to it unchanged,
+ *  which is exactly the runtime id `session.create` minted. */
+function runtimeIdForStored(storedSessionId: string): string {
+  for (const [runtimeId, stored] of reducerState.runtimeToStored) {
+    if (stored === storedSessionId) {
+      return runtimeId
+    }
+  }
+
+  return storedSessionId
+}
+
+function seedSessionMessages(storedSessionId: string, messages: SessionMessage[] | undefined): void {
+  if (!messages?.length) {
+    return
+  }
+
+  const chatMessages = toChatMessages(messages)
+  reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
+}
+
+/** Start a brand-new session (no session-list screen exists yet — M07 — so
+ *  this is also today's only way to reach a chat). Binds it as the active
+ *  session and returns its stored id for navigation. */
+export async function createSession(params: { cwd?: string; title?: string } = {}): Promise<string> {
+  const client = await ensureGatewayConnection()
+  const response = await client.request<SessionCreateResponse>('session.create', { source: 'android', ...params })
+  const storedId = response.stored_session_id ?? response.session_id
+
+  reducerState = bindSession(reducerState, response.session_id, storedId, { makeActive: true })
+  seedSessionMessages(storedId, response.messages)
+  publishAll()
+
+  return storedId
+}
+
+/** Resume an existing stored session — the normal way to open a chat screen,
+ *  and how the `hydrate` effect recovers after a reclaim or lost connection. */
+export async function resumeSession(storedSessionId: string): Promise<string> {
+  const client = await ensureGatewayConnection()
+  const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
+
+  reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
+  seedSessionMessages(storedSessionId, response.messages)
+  publishAll()
+
+  return storedSessionId
+}
+
+/**
+ * The reducer deliberately does not own the optimistic user-message insert
+ * (session-stream/steer-arrival-order.test.ts's own doc comment: that's the
+ * desktop's `redirectPrompt`-shaped UI-layer concern, not wire-protocol
+ * state) — nothing on the wire echoes the user's own submitted text back as
+ * an event, so without this the bubble the user just typed would never
+ * appear until the reply arrives. Appended directly here, then flipped off
+ * `pending` once the RPC ack lands (server accepted the turn) or dropped
+ * entirely if the RPC itself fails (nothing to show for a submit that never
+ * reached the server).
+ */
+export async function submitPrompt(storedSessionId: string, text: string, attachmentRefs: string[] = []): Promise<void> {
+  const prompt = [text, ...attachmentRefs].filter(Boolean).join('\n')
+  const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const now = Date.now() / 1000
+
+  const optimisticMessage: ChatMessage = {
+    id: optimisticId,
+    parts: [textPart(text, now)],
+    pending: true,
+    role: 'user',
+    timestamp: now,
+    ...(attachmentRefs.length > 0 ? { attachmentRefs } : {})
+  }
+
+  reducerState = updateSession(reducerState, storedSessionId, session => ({
+    ...session,
+    messages: [...session.messages, optimisticMessage]
+  })).state
+  publishAll()
+
+  try {
+    await requireGateway().request(
+      'prompt.submit',
+      { session_id: runtimeIdForStored(storedSessionId), text: prompt },
+      PROMPT_SUBMIT_REQUEST_TIMEOUT_MS
+    )
+
+    reducerState = updateSession(reducerState, storedSessionId, session => ({
+      ...session,
+      messages: session.messages.map(message => (message.id === optimisticId ? { ...message, pending: false } : message))
+    })).state
+    publishAll()
+  } catch (error) {
+    reducerState = updateSession(reducerState, storedSessionId, session => ({
+      ...session,
+      messages: session.messages.filter(message => message.id !== optimisticId)
+    })).state
+    publishAll()
+    throw error
+  }
+}
+
+export async function stopTurn(storedSessionId: string): Promise<void> {
+  await requireGateway().request('session.interrupt', { session_id: runtimeIdForStored(storedSessionId) })
+}
+
+/** Mid-turn correction that redirects the active model turn (the composer's
+ *  "steer" action) — apps/desktop's own composer calls the same RPC. */
+export async function steerTurn(storedSessionId: string, text: string): Promise<void> {
+  await requireGateway().request('session.redirect', { session_id: runtimeIdForStored(storedSessionId), text })
+}
+
+export async function askBtw(storedSessionId: string, text: string): Promise<void> {
+  await requireGateway().request('prompt.btw', { session_id: runtimeIdForStored(storedSessionId), text })
+}
+
+export async function compressSession(storedSessionId: string): Promise<void> {
+  await requireGateway().request('session.compress', { session_id: runtimeIdForStored(storedSessionId) }, 120_000)
+}
+
+export async function renameSession(storedSessionId: string, title: string): Promise<void> {
+  await requireGateway().request('session.title', { session_id: runtimeIdForStored(storedSessionId), title })
+}
+
+/** The generic fallback for a `/command` `mobile-slash-commands.ts` doesn't
+ *  special-case (quick commands, plugin commands, skills, and every other
+ *  server-registered built-in) — mirrors the TUI's own slash worker path. */
+export async function execSlashCommand(storedSessionId: string, command: string): Promise<string> {
+  const result = await requireGateway().request<{ output?: string }>('slash.exec', {
+    command,
+    session_id: runtimeIdForStored(storedSessionId)
+  })
+
+  return result.output ?? ''
+}
+
+export async function respondApproval(
+  storedSessionId: string,
+  choice: string,
+  options: { requestId?: string; all?: boolean } = {}
+): Promise<void> {
+  await requireGateway().request('approval.respond', {
+    all: options.all ?? false,
+    choice,
+    request_id: options.requestId,
+    session_id: runtimeIdForStored(storedSessionId)
+  })
+  setApprovalRequest(storedSessionId, null)
+}
+
+/** `question_id` present -> one answer in a batch clarify; the card stays
+ *  open (server keeps every question editable) until the response reports no
+ *  `remaining` questions. Absent -> the single-question form, cleared right away. */
+export async function respondClarify(
+  storedSessionId: string,
+  requestId: string,
+  answer: string,
+  questionId?: string
+): Promise<void> {
+  const result = await requireGateway().request<{ status: string; remaining?: string[] }>('clarify.respond', {
+    answer,
+    request_id: requestId,
+    session_id: runtimeIdForStored(storedSessionId),
+    ...(questionId ? { question_id: questionId } : {})
+  })
+
+  if (!questionId || result.remaining?.length === 0) {
+    setClarifyRequest(storedSessionId, null)
+  }
+}
+
+export async function respondSudo(storedSessionId: string, requestId: string, password: string): Promise<void> {
+  await requireGateway().request('sudo.respond', {
+    password,
+    request_id: requestId,
+    session_id: runtimeIdForStored(storedSessionId)
+  })
+  setSudoRequest(storedSessionId, null)
+}
+
+export async function respondSecret(storedSessionId: string, requestId: string, value: string): Promise<void> {
+  await requireGateway().request('secret.respond', {
+    request_id: requestId,
+    session_id: runtimeIdForStored(storedSessionId),
+    value
+  })
+  setSecretRequest(storedSessionId, null)
+}
+
+export interface AttachImageResult {
+  attached: boolean
+  path: string
+  text?: string
+  [key: string]: unknown
+}
+
+/** `content_base64` accepts raw base64 OR a `data:...;base64,` wrapper —
+ *  tui_gateway/prompt_attachments.py's `_b64_payload` strips the wrapper when
+ *  present and decodes as-is otherwise. 25 MiB cap (server-enforced, 4018). */
+export async function attachImageBytes(
+  storedSessionId: string,
+  contentBase64: string,
+  filename?: string
+): Promise<AttachImageResult> {
+  return requireGateway().request('image.attach_bytes', {
+    content_base64: contentBase64,
+    filename,
+    session_id: runtimeIdForStored(storedSessionId)
+  })
+}
+
+export interface AttachFileResult {
+  attached: boolean
+  name: string
+  ref_text: string
+  uploaded: boolean
+  [key: string]: unknown
+}
+
+export async function attachFile(storedSessionId: string, dataUrl: string, name?: string): Promise<AttachFileResult> {
+  return requireGateway().request('file.attach', {
+    data_url: dataUrl,
+    name,
+    session_id: runtimeIdForStored(storedSessionId)
+  })
+}
+
+export interface AttachPdfResult {
+  attached: boolean
+  filename: string
+  pages_attached: number
+  text: string
+  [key: string]: unknown
+}
+
+/**
+ * 50 MiB cap, 25 pages/call (server-enforced). Requires `pdftoppm`
+ * (poppler-utils) on the SERVER — a server without it fails every call with
+ * error 5028 "pdftoppm not installed"; this client cannot detect that ahead
+ * of time (no capability probe on the wire), so callers must surface a 5028
+ * as "PDF attachments aren't available on this server", not a generic error.
+ */
+export async function attachPdf(storedSessionId: string, contentBase64: string, filename?: string): Promise<AttachPdfResult> {
+  return requireGateway().request(
+    'pdf.attach',
+    { content_base64: contentBase64, filename, session_id: runtimeIdForStored(storedSessionId) },
+    130_000
+  )
+}
+
+export async function commandsCatalog(): Promise<Record<string, unknown>> {
+  return requireGateway().request('commands.catalog', {})
+}
+
+export interface SlashCompletionItem {
+  display: string
+  kind: 'command' | 'skill'
+  meta: string
+  text: string
+}
+
+export async function completeSlash(text: string): Promise<SlashCompletionItem[]> {
+  const result = await requireGateway().request<{ items?: SlashCompletionItem[] }>('complete.slash', { text })
+
+  return result.items ?? []
+}
+
+export interface PathCompletionItem {
+  display: string
+  meta: string
+  text: string
+}
+
+/** `@`-file/folder reference completion. `word` is the active `@`-token
+ *  (e.g. `@`, `@file:src/`, `@src/index`); each item's `text` is the full
+ *  replacement token (`@file:src/index.ts`), same shape as `complete.slash`'s
+ *  items (`tui_gateway/methods_complete.py`'s shared `_item()` helper). */
+export async function completePath(word: string): Promise<PathCompletionItem[]> {
+  const result = await requireGateway().request<{ items?: PathCompletionItem[] }>('complete.path', { word })
+
+  return result.items ?? []
+}
+
+/** Test-only: reset every module-level singleton between tests. */
+export function resetSessionConnectionForTests(): void {
+  disposeEvents?.()
+  disposeEvents = null
+  gateway?.close()
+  gateway = null
+  reducerState = createReducerState()
+  scheduler?.dispose()
+  scheduler = null
+  stateListeners.clear()
+}

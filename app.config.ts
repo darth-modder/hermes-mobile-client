@@ -21,10 +21,18 @@ const config: ExpoConfig = {
     'expo-dev-client',
     'expo-secure-store',
     'expo-web-browser',
+    'expo-document-picker',
+    'expo-file-system',
     [
       'expo-camera',
       {
         cameraPermission: 'Hermes uses the camera to scan a connection QR code.'
+      }
+    ],
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'Hermes uses your photos to attach images to a chat message.'
       }
     ],
     [
