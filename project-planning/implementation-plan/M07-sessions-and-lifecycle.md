@@ -12,7 +12,7 @@
       `app/(main)/session-list.tsx`, not the task's named `app/(main)/sessions/index.tsx` — see Deviations #1
       for why.
 - [x] `src/gateway/lifecycle.ts`:
-  - [x] `active -> background`: keep the socket 20s, then `close()`. **Built and unit-tested; found live,
+  - [ ] `active -> background`: keep the socket 20s, then `close()`. *(Reworded by D10, 2026-09-08, to: "no client action; the socket is left to the OS and the server's orphan reap (D2, D10)." Original wording kept. Unchecked until Sonnet removes the grace timer and its tests.)* **Built and unit-tested; found live,
         on-device, that the 20s timer does not reliably fire while actually backgrounded — see Deviations #3.**
   - [x] `background -> active`: redial (a no-op if the socket survived) + a `ping` RPC as the half-open probe.
         **Reported live-confirmed last round; Opus's 2026-09-08 re-verification found this false — a real
@@ -112,6 +112,13 @@
   unit-tested and was exercised for real up to the point of scheduling, but the last leg — the OS actually
   showing it — needs either a slower-to-resolve trigger or a physical device to pin down without racing a
   fast local model.
+- [ ] A pending approval or clarify request survives background -> foreground on both reconnect branches:
+  on return the card is mounted from `session.resume`'s `pending_approval` / `pending_clarify`,
+  answerable, and the composer is not stuck. *(Added by D10, 2026-09-08. Emulator-provable: drive the
+  detached-then-resume case with a risk-flagged command under `approvals.mode: manual`, background via
+  HOME, foreground via `am start`, on both the short-gap and the post-reap branch. Sudo and secret have no
+  resume field upstream; stale sudo/secret state must be cleared on hydrate and the gap recorded here as an
+  upstream limitation.)*
 
 ## Deviations from the literal spec (and why)
 
@@ -238,7 +245,7 @@
    "Say hello after M07 background fix" in the composer and tapped Send: the user bubble appeared, the turn
    ran, and the assistant replied "Hello! 👋" — a real, complete round trip, not just a socket staying open.
 
-8. **Proposed for Fable: D2's client-side background grace should be dropped, not fixed further.** See the
+8. **Landed as D10 (2026-09-08): option (c), grace withdrawn; D10 also turns Opus's wedged-composer observation into an exit criterion.** Original note follows. **Proposed for Fable: D2's client-side background grace should be dropped, not fixed further.** See the
    "D2 re-examined" section below — evidence and a recommendation, decision left to Fable per house style.
 
 9. **`expo-notifications` and `expo-network` built this round, per the user's direction (acting for Fable) to
@@ -284,6 +291,8 @@
    person who hits the same `ERESOLVE` error reaches for `--force`, not `--legacy-peer-deps`.
 
 ## D2 re-examined: the client-side 20 s background grace cannot be implemented as written on Android
+
+*Decided: D10 (2026-09-08) adopts option (c).*
 
 D2 says "the client keeps the socket open for its own 20 s grace after backgrounding, then closes." Deviations
 #3 (last round) and the live re-test in #7 above (independently reproduced twice now, by Opus and by me) both

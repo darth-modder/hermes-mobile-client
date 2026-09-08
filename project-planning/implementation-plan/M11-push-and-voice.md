@@ -13,6 +13,9 @@ file (upstream `hermes_cli/web_server_dashboard.py`). Those routes sit behind th
 
 ## Tasks
 
+*Note from D10 (2026-09-08): the client no longer closes its socket on backgrounding, and a frozen app
+holds an open socket. Push gating must use the presence endpoint below, never socket state.*
+
 - [ ] `server-plugin/hermes-push/plugin.yaml` and `__init__.py`: `register_hook("pre_approval_request", ...)`, `register_hook("on_stream_end", ...)`; publisher POSTs to `https://exp.host/--/api/v2/push/send` with `{ kind, session_id, title }` only, never message content
 - [ ] `server-plugin/hermes-push/dashboard/manifest.json` and `dashboard/api.py` router: `POST /devices { token, platform, label }`, `DELETE /devices/{id}`, `POST /devices/{id}/presence { foreground }`; registry at `~/.hermes/hermes-push/devices.json`; push only to devices whose last presence is background
 - [ ] Install doc: copy the folder to `~/.hermes/plugins/hermes-push/`, restart `hermes serve`, verify `GET /api/plugins/hermes-push/devices`

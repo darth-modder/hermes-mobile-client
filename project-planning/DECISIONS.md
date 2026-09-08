@@ -49,6 +49,8 @@ independent defaults that happen to match. Keeping a background socket alive lon
 Android, not the server, and the server continues a running turn regardless (the activity-stale
 interrupt is 600 s).
 
+*Client-side grace withdrawn by D10 (2026-09-08); the reclaim-handling half of this decision stands.*
+
 ## D3 — Build path: WSL2 for development, EAS Build for release (2026-09-07)
 
 **Decision.** Keep the WSL2 build path as the supported local development route and document it
@@ -207,3 +209,48 @@ closed; it needs no PDF renderer, secret prompt or frame-rate number.
 milestone, where it actually protects something. Holding M04 and M06 `in-progress` while nobody
 works on them makes the tracker lie about where effort is going. The third leg of the standing rule
 exists because of SecretCard: "we could not provoke it" is not the same as "it cannot be provoked".
+
+## D10 — Client-side background grace withdrawn; pending input requests must be restored from `session.resume`; M07 gate (2026-09-08)
+
+**Decision.** Three parts.
+
+1. **D2's client-side grace is withdrawn (M07 option (c)).** The sentence "the client keeps the
+   socket open for its own 20 s grace after backgrounding, then closes" no longer applies. Sonnet
+   deletes `BACKGROUND_GRACE_MS`, the `active -> background` timer path and the `isForeground`
+   guard from `src/gateway/lifecycle.ts`, with the tests that drove them; `background -> active`
+   (redial if needed, then the `ping` probe) and the `expo-network` handler stay. The M07 task line
+   is reworded to *"`active -> background`: no client action; the socket is left to the OS and the
+   server's orphan reap (D2, D10)"*, original wording kept visible. Everything else in D2 stands:
+   both reclaim outcomes are handled, state is keyed by stored session id, the server's grace value
+   is never assumed.
+2. **The wedged composer Opus recorded is a code gap, not an ambiguity, and it gets a criterion.**
+   `session.resume` returns `pending_approval` and `pending_clarify`
+   (`tui_gateway/server.py`, the resume payload builder; vendored type
+   `src/upstream/types/hermes.ts:676-693`). Nothing in `src/` or `app/` reads either field, so an
+   approval that arrived while the transport was detached, or that the reclaim branch replaced with
+   a fresh runtime session, is lost on the client while the server still waits for it, and the
+   composer stays on Stop / Steer with nothing answerable. The desktop's `restorePendingApproval`
+   in `apps/desktop/src/app/session/hooks/use-session-actions/index.ts` is the reference
+   implementation. New M07 exit criterion, emulator-provable: *"A pending approval or clarify
+   request survives background -> foreground on both reconnect branches: on return the card is
+   mounted from `session.resume`'s `pending_approval` / `pending_clarify`, answerable, and the
+   composer is not stuck."* Upstream has no resume field for `sudo.request` or `secret.request`, so
+   those cannot be restored; on hydrate the client must clear any stale sudo or secret state so the
+   composer does not wedge on them either, and the gap is recorded in the milestone file as an
+   upstream limitation, not a register row.
+3. **M07 gate.** `done` when the grace is removed with `npm run check` green, the new criterion is
+   closed and Opus-verified, and the three `[physical]` rows already in the register stay
+   accurate. No other decision is outstanding.
+
+**Reasoning.** Android freezes the JS thread for the whole background window, so a JS timer cannot
+close anything on schedule; it fires late, on resume, racing the reconnect it was meant to precede.
+That mechanism has now produced two real bugs (the timer never firing, then the racy close) and
+zero observed benefit: the socket sits open harmlessly for 90 s and more, and the server has its
+own authority for a client that goes quiet, the 20 s orphan reap plus the 600 s activity-stale
+interrupt. A native background task (option (a)) would buy a literal reading of D2 at the cost of a
+foreground-service notification or WorkManager quirks per OEM, for a property nothing needs. The
+lifecycle contract is therefore: the client reconnects and probes on return; the server decides
+when a quiet client is gone; the client handles whichever outcome it meets. That contract is only
+honest if what the server was waiting for comes back with the resume, which is why the pending
+request restore is a criterion and not a note. For M11: an open socket does not mean the app is
+awake, so push gating must use the presence endpoint M11 already designs, never socket state.
