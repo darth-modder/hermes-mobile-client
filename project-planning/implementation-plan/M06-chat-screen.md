@@ -27,7 +27,7 @@
 
 ## Exit criteria (on device)
 
-- [ ] Approval, clarify, sudo and secret round-trips succeed. — **three of four now fully closed this round** (see the 2026-09-08 "approval-card fix" Verification log entry below): approval (both Run and Reject), clarify, and — new this round — sudo's full typed-password submit, proven distinguishable from a mere dismiss by the agent's follow-up reply describing the actual failed command attempt, not a generic non-response. Only secret remains genuinely untested: no skill or flow on this server ever triggers a `secret.request`, and this was not worked around. Left unchecked because secret is the one real gap left in a four-part criterion. **D8 (2026-09-08): not deferred.** `secret.request` is triggerable on this install: the bundled `/airtable` skill declares `prerequisites.env_vars: [AIRTABLE_API_KEY]`, and `hermes serve` sets `HERMES_INTERACTIVE=1`, so asking the agent to use that skill with the key absent routes through upstream's secret-capture callback to `secret.request`. Returned to Sonnet; drive both skip and submit branches, back up and restore `~/.hermes/.env`.
+- [x] Approval, clarify, sudo and secret round-trips succeed. — **all four now closed.** Approval (both Run and Reject), clarify, sudo's full typed-password submit, and — new this round, per D8's returned assignment — secret's both branches (skip and submit), via the bundled `/airtable` skill's `AIRTABLE_API_KEY` requirement. See the 2026-09-08 "SecretCard round-trip" Verification log entry for full command output: `secret.request` fired exactly as D8 predicted, `SecretCard` mounted reachable without scrolling (first live exercise of the scroll fix for this request type), `FLAG_SECURE` engaged/released (confirmed via `dumpsys window windows`, both states), skip branch confirmed via the server's real 300s timeout (`.env` byte-identical before/after, sha256-verified), submit branch confirmed via a dummy value that reached `secret.respond` and was written to `~/.hermes/.env` (agent's own reply: "The AIRTABLE_API_KEY environment variable is set to a dummy placeholder value"), then `.env` restored and reverified byte-identical, and the dummy value confirmed absent from the app's own MMKV file. A real gap was found and fixed along the way — see Deviation #12.
 - [ ] Image and PDF attachments upload and are referenced in the reply. *(Split by D8, 2026-09-08: image half closed — upload, server reference and a correct vision reply; PDF half deferred to the README register, owner Sonnet, unblocks when poppler is on the server host's PATH. Original wording kept above.)* — image upload confirmed live (attachment chip appears in the sent message, server receives the bytes); PDF not attempted — this dev machine's server has no `poppler-utils` (`pdftoppm`), which `pdf.attach` requires server-side. Left unchecked because PDF is entirely untested, not just unverified. Proposed as a Fable deferral this round (see Deviations #10).
 - [x] Slash palette lists skills and hides pane-only commands. — **closed by Opus's device pass** (see the Opus re-verification note): the server ships 53 bundled skills (`commands.catalog.skill_count`), `/arxiv` appears in the palette and exists only in the catalog's `skills` map, and all seven pane-only commands checked are absent. Sonnet's original note follows: pane-only hiding confirmed live against the real `commands.catalog` (`/mouse` absent, sibling matches like `/moa`/`/memory` present); a skill specifically appearing in the palette was not independently confirmed this round (no skill was configured on the throwaway test server). Left unchecked pending that half.
 - [ ] `[physical]` A 2,000-message transcript scrolls without dropped frames on a mid-range phone. *(D6 + D8, 2026-09-08: this is half (a) of the split; deferred to the README register, owner Opus, target the batched physical pass on the OEM-skinned device expected within weeks. Under D9 it no longer holds M06's `done`.)* — split on the user's (acting for Fable) direction, pending Fable's own D-entry (see Deviations): the frame-rate number itself needs a physical device; the *structural* scroll behavior (FlashList recycling, tail-only re-render on streaming deltas, `maintainVisibleContentPosition` on prepend) is emulator-provable with render-count evidence and is tracked as its own item below. Proposed as a Fable deferral this round (see Deviations #10) alongside PDF and secret.
@@ -186,6 +186,17 @@
 
     I did **not** edit `project-planning/DECISIONS.md` myself for any of these — same discipline as
     Deviations #1 and #2: propose, do not land.
+12. **`sudo.expire`/`secret.expire` were never handled — found live, on-device, testing SecretCard's
+    skip branch (D8's return of that criterion), fixed same-session.** The server's default 300s
+    `_block` wait (`tui_gateway/server.py`) times out and emits `sudo.expire` / `secret.expire` — both
+    are in `_EXPIRING_REQUESTS`, same as `clarify.request` — but `input-requests.ts` only ever handled
+    `clarify.expire`. Left as-is, `SudoCard`/`SecretCard` would stay mounted (and `FLAG_SECURE` stay
+    engaged) forever for a request the server had already resolved as "skipped". Fixed by mirroring
+    `clarify.expire`'s handling, including its request-id correlation guard (a late expire from a
+    superseded request must not clear a newer one): `SessionState` gained `pendingSudoRequestId` /
+    `pendingSecretRequestId`, set on `*.request` and checked on `*.expire`. Five new reducer tests
+    (`sudo-secret-expire.test.ts`). Verified live: the skip-branch test below ran against the *fixed*
+    code and the card cleared correctly at the real 300s mark.
 
 ## Verification log
 
@@ -815,3 +826,84 @@ is environment-bound and cannot be closed by writing code. M06 therefore stays `
 **solely pending Fable's D-entry** on Deviation #11's bundled deferral. I have not written
 `DECISIONS.md`; that is Fable's, as it was for Sonnet. Once that decision lands, M06 is ready to be
 marked `done` without further implementation.
+
+### 2026-09-08 — SecretCard round-trip (D8's return of exit criterion 1)
+
+D8 confirmed `secret.request` is triggerable on this install via the bundled `/airtable` skill
+(`prerequisites.env_vars: [AIRTABLE_API_KEY]`) and returned the criterion. Same discipline as every
+prior round: confirmed `AIRTABLE_API_KEY` absent from both `~/.hermes/.env` and the process
+environment before touching anything (`grep -i AIRTABLE ~/.hermes/.env` and `env | grep -i AIRTABLE`,
+both empty); backed up `.env` to a scratch file outside the repo and recorded its sha256
+(`c4277981…`) before any change. Throwaway `hermes serve --host 127.0.0.1 --port 9119`, scratch
+session token, `adb reverse`. `config.yaml` was not touched — this test needs no approval-mode change.
+
+**`secret.request` fired exactly as predicted.** Prompted "Use the airtable skill to list my bases."
+— the skill loaded, found `AIRTABLE_API_KEY` unset, and the server emitted `secret.request`. Dumped
+the UI without touching the screen:
+
+```
+'AIRTABLE_API_KEY' [60,1908][1020,1955]
+'Enter value for AIRTABLE_API_KEY' [60,1965][1020,2008]
+'Value' [60,2030][856,2130]
+'Send' [907,2056][987,2103]
+```
+
+Reachable without any scroll — the first live exercise of the scroll-reachability fix (Deviation #10)
+for `secret.request` specifically (it had only been proven for `approval.request`/`sudo.request`
+before). `FLAG_SECURE` confirmed via the authoritative source, both states:
+
+```
+SecretCard mounted:   fl=... SECURE ...
+SecretCard cleared:   fl=... (no SECURE)
+```
+
+**Skip branch.** Left the request untouched and let the server's real 300s `_block` timeout fire —
+no synthetic shortcut. `secret.expire` arrived and the fixed reducer (Deviation #12, fixed
+mid-session after being found here) correctly cleared `SecretCard` and released `FLAG_SECURE`,
+confirmed via a background poll (`until` loop checking `AIRTABLE_API_KEY` absent from the UI dump)
+that returned after 4m55s — matching the 300s default almost exactly. Agent's reply confirmed nothing
+was stored ("You don't have an AIRTABLE_API_KEY configured yet... To set up:"). `.env` verified
+byte-identical to the backup, both `diff` (empty) and sha256 (`c4277981…`, matching before and after).
+
+**Submit branch.** Fresh `secret.request` in a new turn. Targeted the masked field by `uiautomator`
+bounds, dismissing the keyboard *before* the first tap (the technique that closed SudoCard's submit
+last round) — confirmed focus before typing:
+
+```
+password=true bounds=[60,2030][856,2130] focused=true
+```
+
+Typed `dummy-secretcard-test2`, verified the exact length landed before doing anything else:
+
+```
+password=true text_len=22   (composer untouched, text_len=15 placeholder)
+```
+
+**A tap-delivery snag, and how it was resolved.** The card's own inline Send button
+(`[907,2056][987,2103]`) did not register a tap across many attempts and techniques (instant tap,
+double-tap, swipe-tap, retrying after an `adb kill-server`/`start-server` cycle, a full app restart) —
+notably, `SecretCard.tsx`'s button is byte-for-byte the same shape as `SudoCard.tsx`'s (same
+`TouchableOpacity`/style), which had submitted cleanly the previous round, so this was tracked down as
+a device/ADB touch-delivery issue rather than assumed to be a code defect. Resolved by using the
+field's own `onSubmitEditing` (already wired in `SecretCard.tsx`, same as `SudoCard.tsx`) via
+`adb shell input keyevent KEYCODE_ENTER` instead of tapping the button — this worked immediately and
+is arguably the more realistic interaction anyway (a masked password/secret field's IME "Done" action).
+Separately, `adb exec-out screencap` began returning a stale, byte-identical-every-time black PNG
+partway through this chase (confirmed by checking the actual on-screen content via `uiautomator` text
+dumps instead, which showed a perfectly normal white launcher screen underneath) — a device capture
+glitch, not `FLAG_SECURE`; noted here so a future session doesn't chase a phantom "screen stuck black"
+lead the way this one briefly did.
+
+The turn resolved with the agent's own reply: *"The AIRTABLE_API_KEY environment variable is set to a
+dummy placeholder value. To list your Airtable bases, I need a valid Personal Access Token (PAT)."*
+— only possible if `secret.respond` delivered the value and `save_env_value_secure` wrote it.
+Confirmed directly: `grep -i AIRTABLE ~/.hermes/.env` showed the key now present (value not printed —
+redacted through `sed` before this log was written). Checked the app's own MMKV file
+(`adb shell run-as ... cat files/mmkv/hermes-android`, same technique as the composer-draft privacy
+check two rounds ago) for the dummy value: absent. `.env` restored from the backup and reverified:
+`diff` empty, sha256 identical to before any of this round's testing.
+
+**Cleanup, every exit path**: throwaway server killed, `/api/health` confirmed unreachable; scratch
+token file and `.env` backup deleted; `.env` restored and verified as above (no `config.yaml` change
+was made this round, so nothing to restore there); final `npm run check` (145 tests, prettier clean)
+run against the working tree including the `sudo.expire`/`secret.expire` fix.
