@@ -19,8 +19,12 @@ over WebSocket JSON-RPC (`/api/ws`) and REST (`/api/*`). No agent logic runs on 
 
 Status: `todo` · `in-progress` · `blocked` · `done`. Update this table and tick the task boxes
 in the milestone file as work lands. Every exit criterion is something that can be run or
-observed. Criteria tagged `[physical]` must be run on a physical device before `done`; everything
-else may be proven on the emulator (decision D1). Rule changes are logged in
+observed. Criteria tagged `[physical]` must be run on a physical device; everything else may be
+proven on the emulator (decision D1). Since D9, an open `[physical]` criterion no longer holds a
+milestone's `done`: Opus may mark a milestone `done` once every other criterion is closed and each
+open `[physical]` criterion has a row in the deferred criteria register below. The register is an
+exit gate of M12. A criterion blocked by the dev environment rather than the code may also be
+deferred by register entry under D9's standing rule. Rule changes are logged in
 [../DECISIONS.md](../DECISIONS.md); never rewrite an exit criterion in place without a D-entry.
 
 | ID | Milestone | Goal | Depends on | Status |
@@ -41,6 +45,21 @@ else may be proven on the emulator (decision D1). Rule changes are logged in
 
 Critical path: M00 → M01/M02 → M03 → M04 → M06 → M07 → M11 → M12. M05 runs in parallel with
 M03/M04; M08, M09, M10 can run in parallel after M06.
+
+## Deferred criteria register
+
+Criteria that cannot be closed on this machine today (decision D9). Each row names who re-checks
+it and what unblocks it; the milestone file keeps the criterion's original wording. M12 does not
+ship with an open `[physical]` row. If no physical device is attached by 2026-10-31, the physical
+rows return to Fable as a policy escalation.
+
+| Milestone | Criterion | Blocker | Owner | Unblocks when | Target |
+|---|---|---|---|---|---|
+| M04 | `[physical]` Cookies survive app kill and relaunch | Real device (OEM WebView) | Opus | Device attached | Batched physical pass (D9) |
+| M06 | `[physical]` 2,000-message transcript frame rate | Real device | Opus | Device attached | Batched physical pass (D8, D9) |
+| M06 | PDF attachment via `pdf.attach` | No `pdftoppm` (poppler) on the server host | Sonnet | Poppler on PATH for the `hermes serve` host (ask the user before installing) | Next throwaway server session, M07 verification (D8) |
+| M06 | Desktop-shaped payloads and `source: "desktop"` toolsets on a shared session | Concurrent edits in `../hermes-agent/apps/desktop/src/**` | Opus | `apps/desktop/**` has no uncommitted changes at build time; record the upstream commit | Opportunistic (D7) |
+| M06 | `maintainVisibleContentPosition` anchoring on prepend | No prepend code path exists | First milestone adding transcript history pagination | That milestone's implementation | None owed if no milestone adds one by M12 (D6) |
 
 ## Architecture
 
