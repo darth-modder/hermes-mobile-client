@@ -2,9 +2,12 @@
 
 **Status:** in-progress (Sonnet's implementation round done and Opus-verified — `npm run check`
 independently reconfirmed, native rebuild BUILD SUCCESSFUL, APK smoke-tested on `emulator-5554`;
-both incidents resolved. Open before `done`: the login affordance itself — nothing in the running
-app calls `nativeLogin` yet — plus the `[physical]` Custom Tabs criterion, now a register row.
-See Verification log.)
+both incidents resolved. A follow-up round then wired `app/connect/index.tsx`'s `mode: 'oauth'`
+branch to `nativeLogin` — `npm run check` reconfirmed green and a Metro export clean, but the live
+on-device tap-through was **not** attempted: the shared emulator had `adb reverse` entries for
+`9119`/`8090` (M09's ports) at the time, so it was left alone per D12. Open before `done`: the
+`[physical]` Custom Tabs criterion — now genuinely reachable through the UI, still needs an actual
+run. See Verification log.)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -22,6 +25,9 @@ the phone does the same with a tiny native module.
 - [x] `src/net/auth/token-refresh.ts`: single in-flight refresh; proactive at `expires_at - 60 s`; on 401; **persist the rotated refresh token before resolving** (Portal reuse detection revokes on replay); foreground-only; `session_expired` sets `needsLogin`
 - [x] Hermes Cloud discovery for kind `cloud`, ported from upstream `apps/desktop/electron/connection-config.ts` (`resolveRemote`) — see Deviations for what this actually meant once the upstream source was read
 - [x] Logout: `POST /auth/logout` best effort, then clear SecureStore entries
+- [x] *(follow-up round)* `app/connect/index.tsx`'s `mode: 'oauth'` branch (left as a stub by M04,
+  flagged as the milestone's own open gap above): wire it to `nativeLogin`, so the goal line's
+  "login works" claim has an actual caller — see Deviations #7 and Verification log
 
 ## Deliverables
 
@@ -38,12 +44,19 @@ the phone does the same with a tiny native module.
 - `src/connections/types.ts`: `MobileConnection` gained an optional `org` field for `kind: 'cloud'`
   provenance (additive, unused by any dialing logic — see cloud-discovery.ts's header)
 - `.gitignore` fix (see Deviations — an unrelated real bug found while staging this milestone)
+- `app/connect/index.tsx` *(follow-up round)*: `mode: 'oauth'` branch now calls `nativeLogin`,
+  with a loading state on the button, a shared status line for success/failure (same convention
+  the `mode: 'token'` branch already used), and `setActiveConnection` persisting the connection the
+  same way the token and password branches do
 
 ## Exit criteria
 
 - `[physical]` Portal login completes via Custom Tabs on a real device (decision D1: whether the
   device browser redirects to `http://127.0.0.1:<port>` is OEM-dependent). **Open** — needs the
-  register entry (Opus, D9) plus the batched physical pass.
+  register entry (Opus, D9) plus the batched physical pass. *(Follow-up round: the UI path to
+  reach this now exists — `app/connect/index.tsx`'s "Sign in with Portal" button — but the
+  in-app tap-through itself was not attempted on the emulator this round; see Verification log
+  for why.)*
 - Access-token expiry triggers a silent refresh. **Implemented and unit-tested**
   (`token-refresh.test.ts`); **contract-verified** against a real, throwaway `hermes serve` (see
   Verification log) for the exact wire shape; **not yet driven through the real running app** —
@@ -122,6 +135,28 @@ the phone does the same with a tiny native module.
 
 6. **Native rebuild found and fixed a `.gitignore` bug (see #4), then succeeded.** No Kotlin/build
    fixes were needed beyond that — see Verification log.
+
+7. **The OAuth affordance was wired inline into `app/connect/index.tsx`, not as a child screen
+   like the password branch's `app/connect/[id]/login.tsx`.** (Follow-up round.) The password
+   branch routes to a separate screen because it needs to collect a username and password first.
+   OAuth needs no such form — `nativeLogin` only needs a `connectionId` and the already-known
+   `baseUrl`/`provider`, so a "Sign in with Portal" button can call it directly from the same
+   screen the token branch already handles inline. The *outcome handling* still mirrors the
+   established pattern: a `connecting` boolean disabling the button and swapping its label during
+   the async call (same as `connectToken`'s "Connecting…"), and the shared `status` text for both
+   the success and failure message (same convention `connectToken` uses for `HttpError`) rather
+   than a separate error banner like the password screen's. `NativeLoginError`'s own `message` is
+   used verbatim on failure — it already distinguishes cancelled/timed-out/state-mismatch/
+   invalid-code/provider-error/malformed-response, so no remapping was needed. On success, the
+   fresh access token is used for one `probeStatus` call (mirrors `connectToken`'s "verify before
+   persisting" step) to read `install_id`, then `setActiveConnection` persists the connection with
+   `authMode: 'oauth'` — `nativeLogin` itself already wrote the bearer payload to SecureStore via
+   `setConnectionOAuth`, so this only adds the MMKV-side connection metadata, the same division of
+   labor `connectToken` already has between `setConnectionToken` (secret) and `setActiveConnection`
+   (metadata). Navigation on success goes straight into `/(main)/sessions/[id]` (matching
+   `connectToken`, and the task's explicit "navigate into the app on success"), not through the
+   password screen's separate "Connected" interstitial with its debug-only WS-ticket-dial button —
+   that interstitial reads as leftover M04 test scaffolding, not a pattern worth propagating.
 
 ## Verification log
 
@@ -233,12 +268,13 @@ theirs, flagged back to me or redone. I did not touch any of the other unfamilia
 
 1. Add the `[physical]` Portal-login register row (owner Opus, per D9's standing process) —
    unblocks when a physical device is attached (already tracked for M04/M06/M07's rows).
-2. Wire an actual "Sign in with Portal" affordance somewhere so `nativeLogin` gets exercised
-   through the real running app rather than only via unit tests and the real-server contract
-   check above — `app/connect/index.tsx` already has an explicit `mode: 'oauth'` branch from M04
-   saying "Nous Portal sign-in is not yet supported here"; nobody's milestone file currently
-   claims finishing that screen explicitly. M08's own deliverables list is the auth/net layer
-   only, so this was deliberately left as-is rather than guessed at.
+2. ~~Wire an actual "Sign in with Portal" affordance...~~ **Done in the 2026-09-09 follow-up
+   round** — `app/connect/index.tsx`'s `mode: 'oauth'` branch now calls `nativeLogin` (see
+   Deviation #7, Tasks, Deliverables, and that round's Verification log entry). `npm run check`
+   and a Metro export both confirm it end to end; what's still open is the actual on-device
+   tap-through (the emulator was in active use by M09 when this was attempted — see that
+   Verification log entry for the exact evidence and a ready-to-run repro for whoever has the
+   emulator free next).
 3. Restart (or confirm intentionally stopped) whatever was running on port 9119 before this round
    — see the first Incident note above.
 4. Read the second Incident note above and confirm whether `m08-gradle-verify.sh` was legitimate
@@ -246,6 +282,59 @@ theirs, flagged back to me or redone. I did not touch any of the other unfamilia
 5. Consider the coverage gap in Deviations #5 (`sessions.ts`/`push/api.ts`/`voice/api.ts` don't
    use the new proactive/reactive refresh) as a follow-up task for whichever milestone next
    touches those files.
+
+### 2026-09-09 — Follow-up round: wired the login affordance (open item 2)
+
+Scope: only `app/connect/index.tsx`'s `mode: 'oauth'` branch (see Deviation #7 for the design
+choice). No other file touched.
+
+**`npm run check`** (from `D:\Stuff\Code\git\hermes-android-m08`, same as the prior round's
+numbers — this round added no new test files, since the app-screen layer has no test harness in
+this repo yet — RNTL/`@testing-library/react-native` isn't a dependency and no `app/**/*.test.*`
+file exists anywhere, for any screen, so this follows the existing convention rather than
+introducing one unilaterally):
+```
+> tsc -p . --noEmit                     — clean
+> vitest run                            — Test Files 39 passed (39); Tests 299 passed (299)
+> python -m unittest discover ...       — Ran 52 tests, OK
+> eslint .                              — clean (one perfectionist/sort-named-imports error fixed:
+                                            `nativeLogin`/`NativeLoginError` import order)
+> prettier --check .                    — All matched files use Prettier code style! (one file
+                                            reformatted by `prettier --write` first: line-length
+                                            wrap on the new `DetectedMode` union and the ternary
+                                            in `connectOAuth`'s catch block)
+```
+
+**Metro bundle** (`npx expo export --platform android`): succeeded, **2320 modules** (up from
+2307 in the prior round — consistent with one new import, `nativeLogin`/`NativeLoginError`, and
+its transitive graph already exercised by existing tests). `dist/` removed after, not committed.
+
+**Live on-device tap-through: not attempted, deliberately.** Checked whether `emulator-5554` was
+free before assuming so, per this round's own instructions and D12: `adb devices` showed it
+attached and responsive; `adb shell dumpsys window | grep mCurrentFocus` showed
+`com.nousresearch.hermes.mobile/.MainActivity` already in the foreground (this app, already
+installed from the prior round's native-build smoke test); but `adb reverse --list` showed two
+live entries — `tcp:9119` and `tcp:8090` — neither of which this round set up. `9119` is M09's
+assigned throwaway port under D12; a live `adb reverse` for it, plus several `node` processes on
+the host with recent start times, is strong evidence M09's own session had the emulator attached
+for its own dev workflow at that moment. Per the note in the milestone file about the shared
+emulator (and the general D11/D12 principle of not guessing at another owner's live state),
+nothing was installed, launched, or torn down — no `expo start`, no `adb install`, no `adb shell
+am start`, no change to the existing `adb reverse` entries. This means the "does 'Sign in with
+Portal' actually open a Custom Tab" check named in this round's task is **not yet done** — only
+`npm run check` and the Metro export confirm the code is wired and type-correct end to end.
+Whoever next has exclusive use of the emulator (or a physical device) can close this with: launch
+the already-installed dev-client build against a `expo start` Metro instance (JS-only change, no
+new native module — no rebuild needed), navigate to Add Connection, point it at a `hermes serve`
+instance with an OAuth provider registered and no password provider, tap "Detect auth mode" then
+"Sign in with Portal", and confirm a Custom Tab opens (it cannot complete without real Portal
+credentials — D11 rule 2 — so a Custom Tab opening and then timing out after 2 minutes, or the
+user backing out of it and the screen showing "Sign-in failed: Sign-in timed out — no response
+after 2 minutes." or "...was cancelled.", is the expected and sufficient result).
+
+No throwaway server was started this round (nothing needed one — no new server-facing code path),
+so there is nothing to report against the "don't use `hermes serve --stop`" rule; it was not
+invoked.
 
 ### 2026-09-09 — Opus verification: `npm run check` reconfirmed; both incidents resolved; M08 stays in-progress
 
