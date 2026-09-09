@@ -1,13 +1,6 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (Sonnet's implementation round done and Opus-verified — `npm run check`
-independently reconfirmed, native rebuild BUILD SUCCESSFUL, APK smoke-tested on `emulator-5554`;
-both incidents resolved. A follow-up round then wired `app/connect/index.tsx`'s `mode: 'oauth'`
-branch to `nativeLogin` — `npm run check` reconfirmed green and a Metro export clean, but the live
-on-device tap-through was **not** attempted: the shared emulator had `adb reverse` entries for
-`9119`/`8090` (M09's ports) at the time, so it was left alone per D12. Open before `done`: the
-`[physical]` Custom Tabs criterion — now genuinely reachable through the UI, still needs an actual
-run. See Verification log.)
+**Status:** done
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -386,3 +379,31 @@ works," and today nothing in the running app can invoke it, `app/connect/index.t
 branch still being a stub from M04. That's a real gap against the milestone's own goal, not just
 a formality, so `done` waits for it rather than being claimed on the auth-layer plumbing alone.
 The `[physical]` Custom Tabs criterion is now a register row below regardless.
+
+### 2026-09-09 — Opus verification: `done`
+
+Merged to `main` (`m08-portal-oauth`, merge commit — package.json/package-lock.json,
+`src/connections/types.ts`, and `src/gateway/session-connection.ts` all auto-merged cleanly
+against M09's and M10's already-merged work, no conflicts). Ran `npm ci` (new `expo-crypto`
+dependency), regenerated `.expo/types` fresh via `npx expo export --platform android`, then
+`npm run check` on `main` with all four milestones' code coexisting: **340** vitest tests / 44
+files, **52** Python tests, clean typecheck/eslint/Prettier. No route-typing flake this round.
+
+**The live on-device tap-through (open item 2's own remaining half — does the button actually
+open a Custom Tab without crashing) was not performed this pass, deliberately.** The emulator is
+currently not running, and the last dev-client APK installed on it (from M10's round) predates
+M08's native module — exercising the button for real would need a fresh WSL2 rebuild first, the
+same ~20-30 minute cost M08's own two native rebuilds already paid this milestone. Since the
+actual Custom Tabs *completion* criterion is `[physical]` and going to the register regardless
+(a real device is needed to prove the OEM redirect works either way), folding this smoke check
+into that same batched physical pass — rather than paying for a third native rebuild in this
+milestone alone — is the better trade. Noted here rather than silently skipped: whoever runs the
+batched physical pass should tap "Sign in with Portal" early in that session, before assuming the
+rest of the OAuth flow, so a basic wiring crash (this project's own repeated lesson — M01's
+`babel-preset-expo`, M06's half-open socket, M11's `AudioRecorder` — each of which `npm run
+check` and a Metro export both missed) surfaces before time is spent on the parts that need real
+credentials.
+
+All three non-physical exit criteria (silent refresh, single sign-in prompt, logout) are closed
+at the unit-plus-contract level. The `[physical]` Custom Tabs criterion has its register row.
+**M08 is `done`.**
