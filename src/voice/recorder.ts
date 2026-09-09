@@ -10,6 +10,7 @@
  */
 
 import * as FileSystemLegacy from 'expo-file-system/legacy'
+import { Platform } from 'react-native'
 
 import { transcribeAudio } from './api'
 
@@ -23,6 +24,42 @@ let activeRecorder: any = null
 
 export function isRecording(): boolean {
   return activeRecorder !== null
+}
+
+/**
+ * `expo-audio`'s own `useAudioRecorder` hook (not used here — this module is deliberately
+ * hook-free so start/stop can be called from plain event handlers) does two things this direct
+ * construction must replicate:
+ *
+ * 1. The constructible `AudioRecorder` class lives at `AudioModule.AudioRecorder` — `AudioModule`
+ *    is the native module's default export, re-exported as a value from `expo-audio`'s index.
+ *    `index.d.ts` re-exports `AudioModule.types` with `export type *`, so `AudioRecorder` is
+ *    visible to TypeScript at the top level but does not actually exist there at runtime; found
+ *    live, on-device (`Could not start recording — undefined cannot be used as a constructor`).
+ * 2. `RecordingPresets.HIGH_QUALITY` nests platform-specific overrides under `.android`/`.ios`
+ *    (e.g. `android: { outputFormat: 'mpeg4', audioEncoder: 'aac' }`) that the hook flattens
+ *    onto the top-level options object before construction (`createRecordingOptions`, not part
+ *    of the package's public API, so reimplemented here rather than reached into
+ *    `expo-audio/build/utils/options`) — passing the preset as-is would silently drop them.
+ */
+function platformRecordingOptions(preset: Record<string, unknown>): Record<string, unknown> {
+  const common = {
+    bitRate: preset.bitRate,
+    extension: preset.extension,
+    isMeteringEnabled: preset.isMeteringEnabled ?? false,
+    numberOfChannels: preset.numberOfChannels,
+    sampleRate: preset.sampleRate
+  }
+
+  if (Platform.OS === 'android') {
+    return { ...common, directory: preset.directory, ...(preset.android as object | undefined) }
+  }
+
+  if (Platform.OS === 'ios') {
+    return { ...common, directory: preset.directory, ...(preset.ios as object | undefined) }
+  }
+
+  return { ...common, ...(preset.web as object | undefined) }
 }
 
 /** Requests mic permission (if not already granted) and starts recording. Throws if
@@ -46,7 +83,8 @@ export async function startRecording(): Promise<void> {
 
   await Audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true })
 
-  const recorder = new Audio.AudioRecorder(Audio.RecordingPresets.HIGH_QUALITY)
+  const options = platformRecordingOptions(Audio.RecordingPresets.HIGH_QUALITY as unknown as Record<string, unknown>)
+  const recorder = new Audio.AudioModule.AudioRecorder(options)
 
   await recorder.prepareToRecordAsync()
   recorder.record()

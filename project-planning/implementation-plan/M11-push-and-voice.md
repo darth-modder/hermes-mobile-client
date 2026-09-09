@@ -25,8 +25,8 @@ holds an open socket. Push gating must use the presence endpoint below, never so
 - [x] `server-plugin/hermes-push/dashboard/manifest.json` and `dashboard/api.py` router: `POST /devices { token, platform, label }`, `DELETE /devices/{id}`, `POST /devices/{id}/presence { foreground }`; registry at `~/.hermes/hermes-push/devices.json`; push only to devices whose last presence is background
 - [x] Install doc: copy the folder to `~/.hermes/plugins/hermes-push/`, restart `hermes serve`, verify `GET /api/plugins/hermes-push/devices` — `server-plugin/hermes-push/README.md`; the round's own install was via a throwaway server (D11), removed afterward
 - [x] `src/push/register.ts`: Expo push token registered on login and on rotation (needs an EAS project id); `handlers.ts`: tap opens `hermes-android://session/<id>`; presence sent on AppState changes; settings toggle; graceful degradation when the route 404s (plugin absent)
-- [x] `src/voice/recorder.ts`: `expo-audio` records m4a; `POST /api/audio/transcribe { data_url, mime_type }` (upstream `hermes_cli/web_routers/audio.py`); result inserted into the composer
-- [x] `src/voice/tts.ts`: `POST /api/audio/speak { text }` returns a data URL; write to a temp file and play — **not reached:** `GET /api/audio/voice-config` for client-direct providers and PCM streaming from `/api/audio/speak-stream` (the task line's own stretch item); the relay path above is what closes both voice exit criteria
+- [x] `src/voice/recorder.ts`: `expo-audio` records m4a; `POST /api/audio/transcribe { data_url, mime_type }` (upstream `hermes_cli/web_routers/audio.py`); result inserted into the composer — live on `emulator-5554`: permission grant, record start/stop, upload and the empty-transcript-means-no-insert guard all confirmed (see the 2026-09-09 device-verification log entry for the real `AudioRecorder` construction bug this pass caught and fixed)
+- [x] `src/voice/tts.ts`: `POST /api/audio/speak { text }` returns a data URL; write to a temp file and play — live on `emulator-5554`: a real reply played to completion through the emulator's audio stack. **not reached:** `GET /api/audio/voice-config` for client-direct providers and PCM streaming from `/api/audio/speak-stream` (the task line's own stretch item); the relay path above is what closes both voice exit criteria
 
 ## Deliverables
 
@@ -86,6 +86,57 @@ holds an open socket. Push gating must use the presence endpoint below, never so
    `--legacy-peer-deps` (verified: `react-native-nitro-modules@0.37.1` and `react-refresh` —
    both flagged as previously, silently dropped by that flag — are present after a clean
    `npm ci`).
+4. **Python test toolchain: stdlib `unittest`, not `pytest`.** This repo had no Python test
+   infrastructure at all before this round, and `npm run check` (typecheck + vitest + eslint)
+   is a TypeScript-only pipeline; `server-plugin/hermes-push` needed its own. Python 3.12.10 is
+   on PATH; `pytest` is not installed. Two real options: stdlib `unittest` via
+   `python -m unittest discover` (zero new dependencies, composes into `npm run check` as one
+   more `&&`, and "green check" keeps meaning one command), or `pytest` (nicer ergonomics —
+   fixtures, parametrization, better failure output — at the cost of a dev-machine install
+   every future developer needs too, permitted under D11 rule 1 but not free). Chose `unittest`:
+   nothing here needs `pytest`'s ergonomics badly enough to justify the extra dependency, and
+   the "no new dependency at all" property is worth more than nicer assert output for a Python
+   surface this small (four test files, 52 tests). Wired in as `npm run test:plugin`, folded
+   into `npm run check`; `AGENTS.md`'s Verification line updated to say so. One real cost:
+   `dashboard/api.py` imports `fastapi`/`pydantic` at module level (its request models) and
+   neither is installed in this plain-Python environment, so its actual FastAPI route handlers
+   stay untested directly — the input-validation and token-redaction logic they wrap is what
+   got extracted into `device_requests.py` and tested there (see the plugin-tests commit); the
+   thin route plumbing around it was verified live in last round's throwaway-server pass
+   instead, the same tradeoff this project already makes for `useNotifications.ts` and
+   `attachments.ts`.
+5. **`recorder.ts` was constructing `AudioRecorder` from the wrong place — a real bug the
+   native-rebuild pass caught on the first tap, not a hypothetical.** `expo-audio`'s
+   `index.d.ts` re-exports `AudioModule.types` with `export type *`, so `AudioRecorder`
+   typechecks at the top level (`Audio.AudioRecorder`) but does not exist there at runtime —
+   the actual constructible class is `AudioModule.AudioRecorder`, reachable only through the
+   native module's own default export. `npm run check` could not have caught this: nothing in
+   this repo mocks `expo-audio` deeply enough to distinguish a real export from a
+   type-only one, and TypeScript itself was satisfied (the type declaration lies about
+   what exists at runtime). Fixed alongside a second gap in the same construction call:
+   `RecordingPresets.HIGH_QUALITY` nests Android/iOS overrides under `.android`/`.ios` that
+   `expo-audio`'s own `useAudioRecorder` hook flattens via an unexported `createRecordingOptions`
+   helper before constructing — bypassed here (this module is deliberately hook-free), so a
+   local equivalent (`platformRecordingOptions`) was written instead of reaching into the
+   package's unexported internals. See the 2026-09-09 device-verification log entry for the
+   full live trace (permission → record → upload → empty-transcript guard, all confirmed after
+   the fix). This is exactly the standing lesson repeated at the top of this round's brief:
+   only a real Metro bundle and a real device catch this class of bug — `npm run check` and
+   `expo export` both stayed green throughout.
+
+## Flagged for Fable: D11.4's risk paragraph is inverted
+
+Not edited here — `DECISIONS.md` is Fable's file. D11.4 says: *"the plugin's
+`pre_approval_request` hook runs inside every approval on whichever server loads it, so a bug
+there blocks approvals for that instance."* That justified this round's throwaway-server
+discipline for testing the plugin. It is now known false: `pre_approval_request` is not in the
+gateway approval path at all (Deviation #1 above, and Opus's 2026-09-09 verification note
+independently confirmed the same trace) — a bug in this plugin's approval handling cannot block
+approvals for anything, because approvals never pass through it. The throwaway-server
+discipline itself was still the right call (D11 rule 1's general "never test against the user's
+running instance" applies regardless of this specific risk), so nothing about *practice* needs
+to change — only the stated *reason* in D11.4 is wrong and should be corrected so the next
+reader isn't given a false justification.
 
 ## Verification log
 
@@ -280,3 +331,87 @@ when it is reached. The other three — no push while foregrounded, dictation in
 spoken reply — are all unproven: the first has no test to stand on, the other two need the native
 rebuild that was deliberately stopped. The milestone file says so plainly rather than implying
 otherwise, which is the right call.
+
+### 2026-09-09 — Sonnet: plugin tests + regression tests, closing both coverage gaps
+
+`npm run check` now runs 248 TypeScript tests (up from 228) and 52 Python tests (new) —
+`server-plugin/hermes-push`'s two protected surfaces (`registry.backgrounded_tokens()`, the
+poll watcher) and the publisher payload shape are all covered, per Deviation #4's toolchain
+decision (stdlib `unittest`, no new dependency).
+
+The watcher lock regression test was checked against `8f89171^` for real, not by analogy: the
+lock-guarded re-check was manually reverted to the pre-fix two-line write-back in place (no
+commit — an in-editor swap), the test suite re-run, confirmed `test_untrack_during_an_in_flight_
+poll_iteration_is_not_resurrected` fails (`'sess-1' unexpectedly found in {'sess-1': True}` —
+the exact resurrection the fix prevents), then the fix was restored and the test re-confirmed
+green; a `diff` against the pre-verification file confirmed byte-identical restoration. The
+three TypeScript bugs (in `usePushRegistration.ts`, `Composer.tsx`, `tts.ts` — none of which had
+or has any test coverage, matching this project's own convention for native-wiring modules)
+got the same treatment at one remove: the exact pre-fix control flow was reconstructed from the
+diff as a small unexported class in each test file (`MountOnceListener`, `alwaysApply`,
+`NoCleanupTracker`) and run through the identical regression scenario the real fix passes —
+each reconstruction fails it, which is the empirical form of "this bug was real" available when
+the buggy code itself never had a test harness to check out and run.
+
+Metro bundle export clean before and after both commits.
+
+### 2026-09-09 — Sonnet: live device verification, `emulator-5554` — one real bug found and fixed
+
+Finished the WSL2 build the previous round stopped partway through
+(`./gradlew assembleDebug --no-daemon`, 7m51s warm, `BUILD SUCCESSFUL`), installed on
+`emulator-5554`, connected Metro, and drove the app through a throwaway `hermes serve` with a
+scratch session token (deleted after; server killed and confirmed unreachable — `curl` exit 7 —
+at the end).
+
+**Dictation.** Tapping the mic threw `Could not start recording — undefined cannot be used as a
+constructor`, live, first try. Root cause: `expo-audio`'s `index.d.ts` re-exports
+`AudioModule.types` with `export type *`, so `AudioRecorder` typechecks at the top level but
+does not exist there at runtime — the real constructible class is `AudioModule.AudioRecorder`
+(confirmed by reading `node_modules/expo-audio/build/ExpoAudio.js`'s own `useAudioRecorder`
+hook, which the app's code doesn't use — this module is deliberately hook-free). A second,
+related gap: `RecordingPresets.HIGH_QUALITY` nests platform overrides under `.android`/`.ios`
+that the hook flattens via an unexported `createRecordingOptions` helper before construction;
+passing the preset through unflattened would have silently dropped `outputFormat`/`audioEncoder`
+on Android. Fixed both in `recorder.ts` (a local `platformRecordingOptions` reimplementation,
+since the flattening helper isn't part of the package's public API) and reinstalled via Fast
+Refresh — no second native rebuild needed, the fix was JS-only. Re-tested: the permission
+dialog appeared, "While using the app" granted it, the OS's own mic-in-use indicator went green,
+recording stopped and uploaded to `/api/audio/transcribe` without error. The local Whisper
+"base" model had never been used on this machine (first-use download, ~139 MB, confirmed via
+the growing `~/.cache/huggingface` file), and the emulator's virtual microphone has no
+scriptable way to inject real speech in this environment (no `adb emu` mic command; no
+WAV-input launch flag — `emulator -help-audio` confirms nothing beyond the audio backend
+choice) — so the returned transcript was empty, exactly as
+`hermes_cli/web_routers/audio.py`'s own documented behavior for silence ("no speech detected...
+returns an empty transcript" rather than an error), and the composer correctly stayed empty
+(`uiautomator dump` showed no `text` attribute on the `EditText`, only the `hint`) rather than
+inserting nothing-of-value. This closes the mechanism — permission, native recording, upload,
+the empty-result guard — but not a literal "spoke a word, saw it appear" pass; that needs real
+audio input this environment cannot provide.
+
+**TTS.** `POST /api/audio/speak` against the edge-tts provider (no API key needed, already the
+config default) round-tripped correctly on the first try — no bug here. Sent "Say hello in one
+short sentence.", got a real reply, tapped the speaker. `logcat` shows the complete real
+playback: `AudioModule` requesting audio focus, `MediaSessionService` transitioning
+BUFFERING → PLAYING, position advancing 0 → 2913 → 3745 ms decoding `audio/mpeg`, then a clean
+STOPPED and `abandonAudioFocus()`. This is a full, real playback through the emulator's audio
+stack — the criterion closes on the mechanism and the audible result both.
+
+**Settings screens.** Both `hermes-android://settings/voice` and
+`hermes-android://settings/notifications` render correctly via deep link (no navigation hub
+exists yet — M09's job, noted in the original brief). Voice settings correctly showed
+"Microphone access: Granted" after the permission grant above. Notifications settings showed
+all toggles including "Enable push" (on by default, matching `settings.ts`), and the console
+log confirmed the EAS-gating message (`[push] disabled: no EAS project id...`) fires correctly
+on-device, not just under vitest.
+
+**Fix verification.** `npm run check` green (248 TS tests + 52 Python tests, unchanged — this
+was a runtime bug no existing test caught, since nothing in this repo mocks `expo-audio` at the
+level that would have caught a wrong constructor path) after the `recorder.ts` fix.
+
+**What's still open.** The `[physical]` push-delivery criterion (needs a real device + EAS
+project id + Expo push token, none available here) — register row above. A literal
+non-empty-transcript dictation pass — needs real speech audio into a real or better-instrumented
+microphone input, which this emulator environment cannot provide; the mechanism up to that point
+is fully proven live.
+
