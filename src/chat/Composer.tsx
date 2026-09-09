@@ -21,6 +21,9 @@ import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mo
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
+import { cancelRecording, isRecording, startRecording, stopRecordingAndTranscribe } from '../voice/recorder'
+import { speakUnspokenReply } from '../voice/speech-progress'
+import { speak } from '../voice/tts'
 
 import { CompletionList } from './CompletionList'
 import { SlashPalette } from './SlashPalette'
@@ -56,6 +59,9 @@ export function Composer({ storedSessionId }: ComposerProps) {
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(() => composerDraft(storedSessionId).attachments)
   const [sending, setSending] = useState(false)
   const [attaching, setAttaching] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
   const [slashItems, setSlashItems] = useState<SlashCompletionItem[]>([])
   const slashDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [atItems, setAtItems] = useState<PathCompletionItem[]>([])
@@ -66,6 +72,13 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
     setText(draft.text)
     setAttachments(draft.attachments)
+
+    // Switching sessions abandons any in-progress recording for the previous one — the mic
+    // button is per-composer-instance, not per-session state worth preserving across a switch.
+    if (isRecording()) {
+      void cancelRecording()
+      setRecording(false)
+    }
   }, [storedSessionId])
 
   useEffect(() => {
@@ -272,6 +285,75 @@ export function Composer({ storedSessionId }: ComposerProps) {
     setAttachments(current => current.filter((_, i) => i !== index))
   }
 
+  const toggleRecording = async () => {
+    if (recording) {
+      setRecording(false)
+      setTranscribing(true)
+
+      try {
+        const { transcript } = await stopRecordingAndTranscribe()
+
+        if (transcript) {
+          setText(current => (current ? `${current.trim()} ${transcript}` : transcript))
+        }
+      } catch (error) {
+        notify({
+          id: `dictate-failed-${storedSessionId}`,
+          kind: 'error',
+          message: error instanceof Error ? error.message : String(error),
+          title: 'Dictation failed',
+          type: 'notify'
+        })
+      } finally {
+        setTranscribing(false)
+      }
+
+      return
+    }
+
+    try {
+      await startRecording()
+      setRecording(true)
+    } catch (error) {
+      notify({
+        id: `record-failed-${storedSessionId}`,
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        title: 'Could not start recording',
+        type: 'notify'
+      })
+    }
+  }
+
+  const speakLastReply = async () => {
+    setSpeaking(true)
+
+    try {
+      const spoke = await speakUnspokenReply(storedSessionId, session?.messages ?? [], speak)
+
+      if (!spoke) {
+        notify({
+          durationMs: 3000,
+          id: `speak-nothing-${storedSessionId}`,
+          kind: 'info',
+          message: 'No new reply to read out.',
+          title: 'Nothing to speak',
+          type: 'notify'
+        })
+      }
+    } catch (error) {
+      notify({
+        id: `speak-failed-${storedSessionId}`,
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        title: 'Speech failed',
+        type: 'notify'
+      })
+    } finally {
+      setSpeaking(false)
+    }
+  }
+
   return (
     <KeyboardStickyView>
       <View style={styles.container}>
@@ -295,6 +377,16 @@ export function Composer({ storedSessionId }: ComposerProps) {
           </TouchableOpacity>
           <TouchableOpacity disabled={attaching} onPress={() => void attachDocument()} style={styles.iconButton}>
             <Text style={styles.iconText}>📄</Text>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={transcribing} onPress={() => void toggleRecording()} style={styles.iconButton}>
+            {transcribing ? (
+              <ActivityIndicator color="#f2f2f5" size="small" />
+            ) : (
+              <Text style={[styles.iconText, recording ? styles.iconTextActive : null]}>🎤</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity disabled={speaking} onPress={() => void speakLastReply()} style={styles.iconButton}>
+            {speaking ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.iconText}>🔊</Text>}
           </TouchableOpacity>
           <TextInput
             multiline
@@ -358,6 +450,9 @@ const styles = StyleSheet.create({
   },
   iconText: {
     fontSize: 18
+  },
+  iconTextActive: {
+    opacity: 0.5
   },
   input: {
     color: '#f2f2f5',

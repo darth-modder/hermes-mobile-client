@@ -48,6 +48,12 @@ const config: ExpoConfig = {
       {
         color: '#0B0B0F'
       }
+    ],
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Hermes uses the microphone to transcribe voice messages.'
+      }
     ]
   ],
   experiments: {
