@@ -1,6 +1,6 @@
 # M10 — Management screens
 
-**Status:** in-progress (all tasks and exit criteria closed this round; `done` is Opus's call per handover rule 5)
+**Status:** done
 **Depends on:** M09
 **Goal:** Projects, cron, webhooks, artifacts and messaging channels at desktop parity.
 
@@ -90,3 +90,25 @@ npx expo export --platform android --output-dir <tmp>
 **`src/api/{projects,cron,artifacts}.ts` and `src/lib/artifacts.ts` are solid and live-verified** against a real backend (WS RPC round-trip for projects, REST + a real `cron.changed` broadcast for cron, REST for webhooks/pairing via the M09-ported `messaging.ts`, and the artifact-share exit criterion confirmed with an actual downloaded file opening Android's native "Sharing 1 file" sheet). All five new screens were also visually confirmed rendering correctly against the live server post-rebuild (Projects, Cron, Webhooks, Artifacts, Channels+Pairing), plus the drawer itself (all seven destinations, backdrop dismiss).
 
 **Route-typing risk, called out for the second time.** Opus's post-merge `npm run check` needs to independently confirm `/(main)/settings`, `/(main)/projects`, `/(main)/cron`, `/(main)/webhooks`, `/(main)/artifacts`, `/(main)/channels` (all bare-alias form) still typecheck against `main`'s regenerated `.expo/types/router.d.ts` after this branch merges — do not assume the form that typechecks in this worktree survives the merge, per M09's own precedent.
+
+### 2026-09-09 — Opus verification: `done`
+
+Independently reran `npm run check` from this worktree before merging: **289** vitest tests /
+39 files, **52** Python tests (`OK`), clean typecheck/eslint/Prettier — exact match. Merged to
+`main` as a clean **fast-forward** (`d97fdbe..4a270a3`, no divergence — M10 branched from M09's
+merge point and never needed a rebase). Ran `npm ci` (new `expo-sharing` dependency), deleted
+`.expo/types` and regenerated it fresh via `npx expo export --platform android`, then reran
+`npm run check` on `main` itself: still green, 289/52 tests, clean typecheck. **The route-typing
+flake did not recur this time** — the bare-alias form this round used happened to match main's
+regenerated types. Two round-trips into this project now (M09 needed a fix, M10 didn't); still
+worth treating as environment-sensitive rather than assuming either form is stable, exactly as
+both milestones' write-ups already say.
+
+Spot-checked the live-verification claims against the write-up's own detail level (WS RPC method
+names for `projects.*`, the `cron.changed`/`sessions.changed` broadcast pairing, the webhook
+one-time-secret response shape) — internally consistent with the upstream reference points table
+in `README.md` and with the real response shapes M09's own pass already established for the
+adjacent REST surface. No `[physical]` criteria in this milestone; all four are closed and
+live-verified with real command/output evidence, most of it against actual server state changes
+(a cron job that really ran, a file that really downloaded and opened the native share sheet),
+not just unit tests. **M10 is `done`.**
