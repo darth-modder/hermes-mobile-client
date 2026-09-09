@@ -103,8 +103,15 @@ class ApprovalWatcher:
                     logger.debug("hermes-push: has_blocking_approval failed for %s", session_id, exc_info=True)
                     continue
 
-                was_pending = self._pending_state.get(session_id, False)
-                self._pending_state[session_id] = pending
+                with self._lock:
+                    # A session untracked between the snapshot above and here must not have its
+                    # entry resurrected by this iteration (untrack_session pops it under the
+                    # same lock) — re-check membership rather than blindly writing back.
+                    if session_id not in self._tracked:
+                        continue
+
+                    was_pending = self._pending_state.get(session_id, False)
+                    self._pending_state[session_id] = pending
 
                 if pending and not was_pending:
                     self._notify_approval(session_id)

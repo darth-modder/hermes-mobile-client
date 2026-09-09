@@ -12,7 +12,7 @@
  */
 
 import Constants from 'expo-constants'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { AppState, type AppStateStatus, Platform } from 'react-native'
 
 import { registerPushDevice, reportPushPresence, unregisterPushDevice } from './api'
@@ -56,6 +56,13 @@ async function ensureRegistered(): Promise<void> {
     return
   }
 
+  // A genuine rotation (not first-time registration): drop the old server-side row before
+  // registering the new one — device ids are derived from the token (registry.py), so leaving
+  // it would accumulate one stale row per rotation with no GC path.
+  if (state.deviceId && state.token && state.token !== token) {
+    await unregisterPushDevice(state.deviceId)
+  }
+
   const device = await registerPushDevice(token, Platform.OS, Platform.OS === 'android' ? 'Android' : 'iOS')
 
   if (device) {
@@ -74,40 +81,51 @@ async function ensureUnregistered(): Promise<void> {
 }
 
 export function usePushRegistration(): void {
-  const enabled = $pushEnabled.get()
-  const enabledRef = useRef(enabled)
-
+  // One effect drives both registration and the rotation listener off the SAME live `enabled`
+  // state (nanostores' `subscribe` calls its listener immediately with the current value, so
+  // this also covers the initial mount — no separate "run once on mount" effect needed). Toggling
+  // push off/on later attaches/detaches the rotation listener along with it: leaving a rotation
+  // listener attached after opt-out would silently re-register the device on the next token
+  // rotation, defeating the toggle (settings.ts's documented "off unregisters" contract).
   useEffect(() => {
-    return $pushEnabled.subscribe(next => {
-      enabledRef.current = next
-
-      if (next) {
-        void ensureRegistered()
-      } else {
-        void ensureUnregistered()
-      }
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!enabledRef.current) {
-      return
-    }
-
-    void ensureRegistered()
-
     let rotationSubscription: { remove: () => void } | undefined
+    let cancelled = false
 
-    void (async () => {
+    const attachRotationListener = async () => {
+      if (rotationSubscription) {
+        return
+      }
+
       const Notifications = await import('expo-notifications')
+
+      if (cancelled) {
+        return
+      }
 
       rotationSubscription = Notifications.addPushTokenListener(() => {
         void ensureRegistered()
       })
-    })()
+    }
+
+    const detachRotationListener = () => {
+      rotationSubscription?.remove()
+      rotationSubscription = undefined
+    }
+
+    const unsubscribe = $pushEnabled.subscribe(enabled => {
+      if (enabled) {
+        void ensureRegistered()
+        void attachRotationListener()
+      } else {
+        detachRotationListener()
+        void ensureUnregistered()
+      }
+    })
 
     return () => {
-      rotationSubscription?.remove()
+      cancelled = true
+      unsubscribe()
+      detachRotationListener()
     }
   }, [])
 

@@ -67,6 +67,14 @@ export function Composer({ storedSessionId }: ComposerProps) {
   const [atItems, setAtItems] = useState<PathCompletionItem[]>([])
   const atDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Kept in sync every render (not just via the effect below) so toggleRecording's async
+  // transcription branch can tell, once the network call resolves, whether the user has since
+  // switched to a different session — `isRecording()` alone can't catch this: the recorder is
+  // already cleared before stopRecordingAndTranscribe's network await even starts.
+  const currentSessionIdRef = useRef(storedSessionId)
+
+  currentSessionIdRef.current = storedSessionId
+
   useEffect(() => {
     const draft = composerDraft(storedSessionId)
 
@@ -287,23 +295,31 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
   const toggleRecording = async () => {
     if (recording) {
+      const recordedForSessionId = storedSessionId
+
       setRecording(false)
       setTranscribing(true)
 
       try {
         const { transcript } = await stopRecordingAndTranscribe()
 
-        if (transcript) {
+        // The user may have switched sessions while transcription was in flight — this
+        // composer instance is reused across sessions (see the storedSessionId effect above),
+        // so an unguarded setText here would insert text recorded for one session into
+        // whichever session's draft happens to be current when the network call resolves.
+        if (transcript && currentSessionIdRef.current === recordedForSessionId) {
           setText(current => (current ? `${current.trim()} ${transcript}` : transcript))
         }
       } catch (error) {
-        notify({
-          id: `dictate-failed-${storedSessionId}`,
-          kind: 'error',
-          message: error instanceof Error ? error.message : String(error),
-          title: 'Dictation failed',
-          type: 'notify'
-        })
+        if (currentSessionIdRef.current === recordedForSessionId) {
+          notify({
+            id: `dictate-failed-${recordedForSessionId}`,
+            kind: 'error',
+            message: error instanceof Error ? error.message : String(error),
+            title: 'Dictation failed',
+            type: 'notify'
+          })
+        }
       } finally {
         setTranscribing(false)
       }

@@ -11,13 +11,24 @@ import { speakText } from './api'
 import { base64FromDataUrl, extensionForMime } from './audio-format'
 
 let activePlayer: any = null
+let activeFilePath: null | string = null
 
-/** Stops and releases whatever this module last started playing, if anything. Safe to call
- *  with nothing playing (no-op). */
+/** Stops and releases whatever this module last started playing, if anything, and deletes its
+ *  temp file — otherwise every `speak()` call leaves a `hermes-tts-*` file behind permanently
+ *  (nothing else in this module ever cleaned them up). Safe to call with nothing playing
+ *  (no-op). The player is released before the delete, so this never removes a file still
+ *  backing an active player. */
 export function stopSpeaking(): void {
   if (activePlayer) {
     activePlayer.remove()
     activePlayer = null
+  }
+
+  if (activeFilePath) {
+    const path = activeFilePath
+
+    activeFilePath = null
+    FileSystemLegacy.deleteAsync(path, { idempotent: true }).catch(() => undefined)
   }
 }
 
@@ -45,5 +56,6 @@ export async function speak(text: string): Promise<void> {
   const player = Audio.createAudioPlayer(path)
 
   activePlayer = player
+  activeFilePath = path
   player.play()
 }
