@@ -65,3 +65,10 @@ be green at every milestone. The Python half runs on stdlib `unittest`
 (`python -m unittest discover`, wired in as `npm run test:plugin`) — no pytest, no new
 dependency; see M11's Deviations for why. On-device exit criteria are listed per milestone and
 get ticked in the milestone file when observed.
+
+**Never run `hermes serve --stop` to tear down a throwaway server.** It is not scoped by
+`--port` — confirmed at the source (`hermes_cli/dashboard_procs.py`'s
+`_kill_stale_dashboard_processes`, and the flag's own help text: "Stop all running Hermes web
+server processes"). It stops *every* Hermes dashboard/serve process on the machine, including
+another milestone's throwaway server or the user's own running instance. Kill your own throwaway
+server by its own PID instead (recorded when you launch it).
