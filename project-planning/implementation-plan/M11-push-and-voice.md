@@ -188,3 +188,95 @@ one — nothing about the native module changed since) before treating any of th
 emulator-provable exit criteria as closed. `android/local.properties` was written (WSL SDK
 path) and `npm run prebuild` was run to regenerate `android/` with `expo-audio`'s native code —
 both reproducible from a clean checkout, nothing to undo.
+
+### 2026-09-09 — Opus verification
+
+**Verdict: the reported work holds up, including the two claims that mattered most. M11 stays
+`in-progress`, correctly — no on-device pass happened and three of four exit criteria are unproven.
+Two coverage gaps below.**
+
+`npm run check` — 31 files, **228 tests**, Prettier clean. `npx expo export --platform android` —
+exit 0, a 5.9 MB `.hbc` bundle. That second one matters: it is the check `npm run check` cannot do,
+and it is what caught the missing `babel-preset-expo` back in M01.
+
+#### The `pre_approval_request` finding is correct, and it is a good one
+
+This is the claim worth checking hardest, because it contradicts both M11's own Push design section
+and D11.4's stated risk ("the plugin's `pre_approval_request` hook runs inside every approval on
+whichever server loads it"). Traced independently to `tools/approval.py:758`:
+
+```python
+# CLI interactive: single combined prompt, wrapped in the pre/post plugin hooks.
+…
+hook_kwargs = dict(…, session_key=session_key, surface="cli")
+approval_context._fire_approval_hook("pre_approval_request", **hook_kwargs)
+```
+
+The dispatch sits inside the **CLI-interactive** branch with `surface="cli"` hardcoded, and the
+gateway path returns earlier through `grant()` / `deny()` without ever reaching it. So the hook
+genuinely never fires for a gateway or mobile session. The milestone's design section was written
+against a hook that cannot serve it, and building the poll-based watcher instead was the right call.
+
+Two consequences to record rather than leave implicit: **M11's Push design section is now wrong** and
+should say so where it names the hook, and **D11.4's risk paragraph is inverted** — a bug in this
+plugin's approval path cannot block approvals for that instance, because it is not in the approval
+path at all. Neither needs a new decision; both need the text corrected so the next reader is not
+misled the same way.
+
+#### `npm ci` really was broken before this round — and that corrects me
+
+Verified by running it against the pre-M11 tree in isolation:
+
+```
+$ (package.json + package-lock.json from 6615e9d)  npm ci --dry-run
+npm error   vaul@"^1.1.2" from expo-router@57.0.19
+npm error   13 more (@radix-ui/react-dismissable-layer, ...)
+npm error Fix the upstream dependency conflict…            EXIT=1
+
+$ (current tree)  npm ci --dry-run
+added 804 packages in 1s                                    EXIT=0
+```
+
+So this was a real, pre-existing reproducibility defect: a fresh clone could not install. It is fixed
+by pinning `react-dom` to match `react`.
+
+**This corrects my own earlier verification.** In the M07 round I wrote that the lockfile was
+"self-consistent… so `npm ci` reproduces this tree for the next developer". I had checked that the
+lockfile *contained* the right versions and never actually ran `npm ci`. It did not reproduce, and
+had not for some time. Reading a lockfile is not the same as installing from it.
+
+#### The push invariants hold
+
+- **No message content leaves the machine.** Payloads are `{ kind, session_id, title }` with fixed
+  title strings (`"Hermes needs your approval"`); no approval body or reply text.
+- **Presence gates delivery, never socket state** (D10). `registry.backgrounded_tokens()` returns
+  only devices whose last *reported* presence is `background`. Every mention of sockets in the plugin
+  is a comment explaining why they are not used.
+- **D11.4 cleanup done** — `~/.hermes/plugins/hermes-push/` is gone. The now-empty `plugins/`
+  directory remains; trivial, but it did not exist before the round.
+
+#### Verifier findings
+
+1. **The plugin has no tests at all.** `find server-plugin -name "*test*"` → 0. The 228 tests are all
+   TypeScript; the Python half has none. That half contains the two things most worth protecting: the
+   delivery gate (`backgrounded_tokens`) and the approval watcher, both of which run **inside the
+   user's `hermes serve`**. The watcher is also the piece with no upstream contract behind it — it
+   polls because the hook does not fire, so upstream is free to change what it polls without
+   breaking any test. `npm run check` cannot cover any of it. This is the highest-value gap in the
+   milestone.
+2. **The four self-review bugs were fixed without regression tests.** `8f89171` touches
+   `watcher.py`, `Composer.tsx`, `usePushRegistration.ts` and `tts.ts` — and no test file. Every
+   other fix this project has shipped came with a test that fails on the pre-fix code, which is how
+   the grace-timer race, the probe-timeout poisoning and the scroll-reachability bug were each
+   proved. Four real bugs — a stale token listener re-registering after opt-out, dictation landing in
+   the wrong session, leaked TTS temp files, a watcher lock gap — are exactly the kind that return
+   silently. Finding them by review was good; leaving them unpinned means the next refactor can undo
+   them for free.
+
+#### Status
+
+`in-progress` is right. The `[physical]` push-delivery criterion needs the device and a register row
+when it is reached. The other three — no push while foregrounded, dictation into the composer,
+spoken reply — are all unproven: the first has no test to stand on, the other two need the native
+rebuild that was deliberately stopped. The milestone file says so plainly rather than implying
+otherwise, which is the right call.
