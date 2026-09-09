@@ -22,7 +22,7 @@ import * as Crypto from 'expo-crypto'
 import * as WebBrowser from 'expo-web-browser'
 
 import { setConnectionOAuth } from '../../connections/secure'
-import { httpRequest } from '../http'
+import { HttpError, httpRequest } from '../http'
 
 import {
   cancelLoopbackListener,
@@ -36,7 +36,7 @@ const VERIFIER_RANDOM_BYTES = 32 // RFC 7636 recommends >= 32; 32 hex-encoded by
 const STATE_RANDOM_BYTES = 24
 
 export type NativeLoginFailureReason =
-  'cancelled' | 'malformed-response' | 'provider-error' | 'state-mismatch' | 'timed-out'
+  'cancelled' | 'invalid-code' | 'malformed-response' | 'provider-error' | 'state-mismatch' | 'timed-out'
 
 export class NativeLoginError extends Error {
   readonly cause: unknown
@@ -204,10 +204,26 @@ export async function nativeLogin(
       throw new NativeLoginError('malformed-response', 'Sign-in response was missing an authorization code.')
     }
 
-    const body = await httpRequest<NativeTokenResponse>(baseUrl, '/auth/native/token', {
-      body: { code: callback.code, code_verifier: pkce.verifier },
-      method: 'POST'
-    })
+    let body: NativeTokenResponse
+
+    try {
+      body = await httpRequest<NativeTokenResponse>(baseUrl, '/auth/native/token', {
+        body: { code: callback.code, code_verifier: pkce.verifier },
+        method: 'POST'
+      })
+    } catch (error) {
+      // Confirmed by a real throwaway server (M08's verification log): a
+      // rejected code is 400 "Invalid or expired authorization code."
+      // (`native_flow.CodeInvalid`, hermes_cli/dashboard_auth/routes.py's
+      // `auth_native_token`) — surfaced as its own reason rather than a raw
+      // HttpError so a caller can show "try signing in again" instead of a
+      // stack trace.
+      if (error instanceof HttpError && error.status === 400) {
+        throw new NativeLoginError('invalid-code', 'The sign-in code was rejected or already used.', error)
+      }
+
+      throw error
+    }
 
     const result = parseTokenResponse(body)
 

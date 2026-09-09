@@ -11,6 +11,11 @@ node_modules/
 dist/
 web-build/
 .kotlin/
+# Local Expo native modules (modules/*/android/) keep their hand-written source under version
+# control, but Gradle's own build output under each one is exactly as disposable as the root
+# android/'s.
+modules/*/android/build/
+modules/*/android/.cxx/
 expo-env.d.ts
 *.jks
 *.keystore

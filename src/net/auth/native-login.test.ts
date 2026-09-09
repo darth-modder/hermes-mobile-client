@@ -193,6 +193,23 @@ describe('nativeLogin', () => {
     })
   })
 
+  it('rejects with invalid-code when the server rejects the code (400)', async () => {
+    loopback.waitForLoopbackCallback.mockImplementationOnce(async () => {
+      const url = new URL(webBrowser.openBrowserAsync.mock.calls[0][0] as string)
+
+      return { code: 'auth-code', state: url.searchParams.get('state') }
+    })
+
+    global.fetch = vi.fn(async () =>
+      jsonResponse(400, { detail: 'Invalid or expired authorization code.' })
+    ) as unknown as typeof fetch
+
+    await expect(nativeLogin('conn-1', 'http://host')).rejects.toMatchObject({
+      name: 'NativeLoginError',
+      reason: 'invalid-code'
+    })
+  })
+
   it('always cancels the loopback listener afterward, on both success and failure', async () => {
     loopback.waitForLoopbackCallback.mockResolvedValueOnce({ code: 'auth-code', state: 'wrong-state' })
 
