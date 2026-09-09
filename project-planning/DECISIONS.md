@@ -286,3 +286,36 @@ awake, so push gating must use the presence endpoint M11 already designs, never 
 has cost an escalation round for a change that is either trivially reversible or one only the
 user can make. Splitting on reversibility and ownership answers all of them in advance. Account
 creation and credentials are the user's by policy, not by preference.
+
+## D12 — Remaining milestones run in parallel; verification is one pass per milestone plus regression tests (2026-09-09)
+
+**Decision.** Two parts.
+
+1. **Parallel execution.** M08, M09 and M11 run concurrently from now; M10 starts when M09's API
+   port has merged, not when M09 is `done`; M12 starts when M08, M09 and M10 are `done` and M11's
+   only open items are the register rows. Each milestone works on its own branch
+   (`m08-portal-oauth`, `m09-settings`, `m10-management`, `m11-push-voice`) in its own git
+   worktree, merged to `main` by fast-forward or a merge commit at each verified handoff, never by
+   force. Collision points, owned as follows: `package.json` and `package-lock.json` (any branch
+   that adds a dependency rebases onto `main` first and re-runs `npm ci`); `app/(main)/_layout.tsx`
+   and the route tree (additive only, one screen per route file); `src/net/http.ts` and
+   `src/net/auth/*` (M08 owns changes, others consume); native modules and `android/` (M08 owns;
+   M11's native rebuilds batch with M08's). Shared dev resources: throwaway servers on distinct
+   ports (M08 9120, M09 9119, M10 9121, M11 9122); one emulator, so device passes are serialized by
+   Opus, not run concurrently; the user's `hermes serve`, `config.yaml` and `.env` are touched
+   only under D11 rule 1.
+2. **Verification shape.** Per milestone: `npm run check` green before handoff; one Opus emulator
+   pass over the exit criteria, each with its command and output; a regression test for every bug
+   found on device, failing on the pre-fix code. After a fix, Opus re-runs only the criteria the
+   fix touched and accepts the rest from the prior pass by reference. Write-ups carry the command,
+   the output, the verdict, and the root cause of anything found; the narrative of how a result
+   was obtained goes in only when the next person needs it to reproduce. `[physical]` criteria go
+   to the register (D9). Handover rule 5 ("only Opus changes a tracker status to `done`") stands.
+
+**Reasoning.** The dependency graph has been wider than the execution has: M08 depends only on
+M04, M09 on M06, M11 on M07, and all three have been runnable since M07 closed. M06 cost three
+full device passes and an 800-line milestone file for two implementation commits; the bugs were
+real and verification found every one of them, so verification stays, but repeated full passes
+and re-derived claims were the expensive part, not the passes themselves. Worktrees and owned
+collision points are the minimum that lets three implementers share one repo without the
+lockfile becoming the merge conflict of every round.
