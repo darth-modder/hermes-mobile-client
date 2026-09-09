@@ -17,6 +17,7 @@ import { AppState, type AppStateStatus, Platform } from 'react-native'
 
 import { registerPushDevice, reportPushPresence, unregisterPushDevice } from './api'
 import { needsReRegistration, pushProjectId, readPushRegistration, writePushRegistration } from './register'
+import { RotationListenerController } from './rotation-controller'
 import { $pushEnabled } from './settings'
 
 async function ensureRegistered(): Promise<void> {
@@ -83,41 +84,41 @@ async function ensureUnregistered(): Promise<void> {
 export function usePushRegistration(): void {
   // One effect drives both registration and the rotation listener off the SAME live `enabled`
   // state (nanostores' `subscribe` calls its listener immediately with the current value, so
-  // this also covers the initial mount — no separate "run once on mount" effect needed). Toggling
-  // push off/on later attaches/detaches the rotation listener along with it: leaving a rotation
-  // listener attached after opt-out would silently re-register the device on the next token
-  // rotation, defeating the toggle (settings.ts's documented "off unregisters" contract).
+  // this also covers the initial mount — no separate "run once on mount" effect needed).
+  // RotationListenerController (rotation-controller.ts, unit-tested) owns whether the listener
+  // is currently attached as one explicit piece of state, so toggling push off/on can't leave
+  // it attached-but-stale the way two independent effects did (the bug fixed in 8f89171: a
+  // rotation firing after opt-out silently re-registered the device).
   useEffect(() => {
     let rotationSubscription: { remove: () => void } | undefined
     let cancelled = false
 
-    const attachRotationListener = async () => {
-      if (rotationSubscription) {
-        return
+    const controller = new RotationListenerController({
+      attach: () => {
+        void (async () => {
+          const Notifications = await import('expo-notifications')
+
+          if (cancelled) {
+            return
+          }
+
+          rotationSubscription = Notifications.addPushTokenListener(() => {
+            void ensureRegistered()
+          })
+        })()
+      },
+      detach: () => {
+        rotationSubscription?.remove()
+        rotationSubscription = undefined
       }
-
-      const Notifications = await import('expo-notifications')
-
-      if (cancelled) {
-        return
-      }
-
-      rotationSubscription = Notifications.addPushTokenListener(() => {
-        void ensureRegistered()
-      })
-    }
-
-    const detachRotationListener = () => {
-      rotationSubscription?.remove()
-      rotationSubscription = undefined
-    }
+    })
 
     const unsubscribe = $pushEnabled.subscribe(enabled => {
+      controller.onEnabledChange(enabled)
+
       if (enabled) {
         void ensureRegistered()
-        void attachRotationListener()
       } else {
-        detachRotationListener()
         void ensureUnregistered()
       }
     })
@@ -125,7 +126,7 @@ export function usePushRegistration(): void {
     return () => {
       cancelled = true
       unsubscribe()
-      detachRotationListener()
+      controller.dispose()
     }
   }, [])
 

@@ -9,27 +9,30 @@ import * as FileSystemLegacy from 'expo-file-system/legacy'
 
 import { speakText } from './api'
 import { base64FromDataUrl, extensionForMime } from './audio-format'
+import { PlaybackFileTracker } from './playback-tracker'
 
 let activePlayer: any = null
-let activeFilePath: null | string = null
+
+// See playback-tracker.ts: fixes the bug where every speak() call left its temp file behind
+// forever (nothing here previously tracked file paths at all, only the player).
+const fileTracker = new PlaybackFileTracker()
+
+function deleteFile(path: null | string): void {
+  if (path) {
+    FileSystemLegacy.deleteAsync(path, { idempotent: true }).catch(() => undefined)
+  }
+}
 
 /** Stops and releases whatever this module last started playing, if anything, and deletes its
- *  temp file — otherwise every `speak()` call leaves a `hermes-tts-*` file behind permanently
- *  (nothing else in this module ever cleaned them up). Safe to call with nothing playing
- *  (no-op). The player is released before the delete, so this never removes a file still
- *  backing an active player. */
+ *  temp file. Safe to call with nothing playing (no-op). The player is released before the
+ *  delete, so this never removes a file still backing an active player. */
 export function stopSpeaking(): void {
   if (activePlayer) {
     activePlayer.remove()
     activePlayer = null
   }
 
-  if (activeFilePath) {
-    const path = activeFilePath
-
-    activeFilePath = null
-    FileSystemLegacy.deleteAsync(path, { idempotent: true }).catch(() => undefined)
-  }
+  deleteFile(fileTracker.stop())
 }
 
 /** Synthesizes `text` server-side and plays the reply. Throws if the backend request fails;
@@ -49,13 +52,17 @@ export async function speak(text: string): Promise<void> {
     encoding: FileSystemLegacy.EncodingType.Base64
   })
 
-  stopSpeaking()
+  if (activePlayer) {
+    activePlayer.remove()
+    activePlayer = null
+  }
+
+  deleteFile(fileTracker.start(path))
 
   const Audio = await import('expo-audio')
 
   const player = Audio.createAudioPlayer(path)
 
   activePlayer = player
-  activeFilePath = path
   player.play()
 }

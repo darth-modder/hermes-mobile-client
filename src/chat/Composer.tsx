@@ -26,6 +26,7 @@ import { speakUnspokenReply } from '../voice/speech-progress'
 import { speak } from '../voice/tts'
 
 import { CompletionList } from './CompletionList'
+import { shouldApplyDictationResult } from './dictation-guard'
 import { SlashPalette } from './SlashPalette'
 
 export interface ComposerProps {
@@ -307,11 +308,12 @@ export function Composer({ storedSessionId }: ComposerProps) {
         // composer instance is reused across sessions (see the storedSessionId effect above),
         // so an unguarded setText here would insert text recorded for one session into
         // whichever session's draft happens to be current when the network call resolves.
-        if (transcript && currentSessionIdRef.current === recordedForSessionId) {
+        // See dictation-guard.ts for the (unit-tested) regression this guards against.
+        if (transcript && shouldApplyDictationResult(recordedForSessionId, currentSessionIdRef.current)) {
           setText(current => (current ? `${current.trim()} ${transcript}` : transcript))
         }
       } catch (error) {
-        if (currentSessionIdRef.current === recordedForSessionId) {
+        if (shouldApplyDictationResult(recordedForSessionId, currentSessionIdRef.current)) {
           notify({
             id: `dictate-failed-${recordedForSessionId}`,
             kind: 'error',
