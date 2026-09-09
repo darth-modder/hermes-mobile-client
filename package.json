@@ -19,6 +19,7 @@
   "dependencies": {
     "@nanostores/react": "2.0.1",
     "@shopify/flash-list": "2.3.2",
+    "@tanstack/react-query": "5.102.8",
     "expo": "~57.0.20",
     "expo-audio": "~57.0.4",
     "expo-camera": "~57.0.4",
@@ -54,8 +55,8 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
-    "babel-preset-expo": "~57.0.10",
     "@types/react": "~19.2.4",
+    "babel-preset-expo": "~57.0.10",
     "eslint": "9.39.5",
     "eslint-plugin-perfectionist": "5.10.0",
     "eslint-plugin-react-hooks": "7.1.1",

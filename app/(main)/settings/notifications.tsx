@@ -3,6 +3,7 @@ import { Stack } from 'expo-router'
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
 import {
   $nativeNotifyPrefs,
   NATIVE_NOTIFICATION_KINDS,
@@ -37,7 +38,7 @@ export default function NotificationsSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ title: 'Notifications' }} />
+      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Notifications' }} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>Push notifications</Text>
         <Text style={styles.sectionHint}>

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+
 type PermissionState = 'checking' | 'denied' | 'granted' | 'undetermined'
 
 async function checkMicrophonePermission(): Promise<PermissionState> {
@@ -32,7 +34,7 @@ export default function VoiceSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ title: 'Voice' }} />
+      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Voice' }} />
       <View style={styles.content}>
         <Text style={styles.sectionTitle}>Dictation</Text>
         <Text style={styles.sectionHint}>

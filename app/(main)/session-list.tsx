@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
+import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
@@ -66,23 +67,32 @@ export default function SessionListScreen() {
   const [error, setError] = useState<null | string>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
+  // M09: a profile switch (settings/profiles.tsx) scopes this list via
+  // `?profile=` — `load`'s identity changes with it, so the useFocusEffect
+  // below re-fetches under the new scope the next time this screen regains
+  // focus (returning from Settings), the same "come back, refetch" path
+  // that already covers a pin/title/delete made on the chat screen.
+  const activeProfile = useStore($activeProfile)
 
-  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
-    if (!opts.silent) {
-      setError(null)
-    }
+  const load = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      if (!opts.silent) {
+        setError(null)
+      }
 
-    try {
-      const result = await listSessions({ limit: 100, order: 'recent' })
+      try {
+        const result = await listSessions({ limit: 100, order: 'recent', profile: activeProfile || undefined })
 
-      setSessions(result.sessions)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
+        setSessions(result.sessions)
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setRefreshing(false)
+      }
+    },
+    [activeProfile]
+  )
 
   // The reducer's `refreshSessions` effect (sessions.changed,
   // session.reclaimed, a replay-epoch cold start) can fire while this screen
@@ -176,9 +186,14 @@ export default function SessionListScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
-        <TouchableOpacity onPress={startNewSession} style={styles.newButton}>
-          <Text style={styles.newButtonText}>+ New</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity hitSlop={12} onPress={() => router.push('/(main)/settings')} style={styles.settingsButton}>
+            <Text style={styles.settingsIcon}>⚙</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={startNewSession} style={styles.newButton}>
+            <Text style={styles.newButtonText}>+ New</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <TextInput
@@ -272,6 +287,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12
   },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10
+  },
   list: {
     paddingBottom: 24
   },
@@ -350,6 +370,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 12,
     paddingVertical: 8
+  },
+  settingsButton: {
+    padding: 4
+  },
+  settingsIcon: {
+    color: '#8a8a99',
+    fontSize: 20
   },
   title: {
     color: '#f2f2f5',

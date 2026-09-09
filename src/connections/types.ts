@@ -22,4 +22,8 @@ export interface MobileConnection {
   /** Set by the reauth ladder on a confirmed 401 that survived one refresh
    *  attempt — the UI should show the login screen for this connection. */
   needsLogin?: boolean
+  /** At most one connection in the registry (registry.ts's `listConnections`)
+   *  is primary — the one the connections screen defaults new sessions to.
+   *  Independent of which connection is *active* right now (M09). */
+  primary?: boolean
 }

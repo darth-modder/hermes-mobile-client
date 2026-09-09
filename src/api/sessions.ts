@@ -59,6 +59,9 @@ export interface ListSessionsParams {
    *  long-running chat that auto-compressed onto a fresh id stays on page
    *  one) — the desktop's default for its sidebar. */
   order?: 'created' | 'recent'
+  /** M09: scopes the list to one Hermes profile via `?profile=` — omit for
+   *  the connection's default profile. See `src/store/profile.ts`. */
+  profile?: string
 }
 
 /** `GET /api/sessions` (hermes_cli/web_routers/sessions.py `get_sessions`). */
@@ -83,7 +86,7 @@ export async function listSessions(params: ListSessionsParams = {}): Promise<Pag
 
   const suffix = query.toString()
 
-  return sessionsRequest<PaginatedSessions>(`/api/sessions${suffix ? `?${suffix}` : ''}`)
+  return sessionsRequest<PaginatedSessions>(`/api/sessions${suffix ? `?${suffix}` : ''}`, { profile: params.profile })
 }
 
 export interface UpdateSessionFlagsBody {

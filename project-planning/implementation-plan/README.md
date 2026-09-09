@@ -38,7 +38,7 @@ deferred by register entry under D9's standing rule. Rule changes are logged in
 | [M06](M06-chat-screen.md) | Chat screen | Streaming chat with tool cards, approvals, attachments | M04, M05 | done |
 | [M07](M07-sessions-and-lifecycle.md) | Session management + lifecycle | Session list; survives background, doze, network switch | M06 | done |
 | [M08](M08-portal-oauth.md) | Portal OAuth | Nous Portal login via on-device loopback listener | M04 | todo |
-| [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | todo |
+| [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | in-progress |
 | [M10](M10-management-screens.md) | Management screens | Projects, cron, webhooks, artifacts, channels | M09 | todo |
 | [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | in-progress |
 | [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11 | todo |
