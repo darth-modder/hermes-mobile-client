@@ -415,3 +415,91 @@ non-empty-transcript dictation pass — needs real speech audio into a real or b
 microphone input, which this emulator environment cannot provide; the mechanism up to that point
 is fully proven live.
 
+
+### 2026-09-09 — Opus verification: both coverage gaps closed
+
+**Verdict: both gaps are genuinely closed, and the native rebuild earned its keep.** M11 stays
+`in-progress` — dictation's non-empty path and the `[physical]` delivery criterion remain open, both
+honestly.
+
+`npm run check` — **248** TypeScript tests across 34 files, **52** Python tests (`Ran 52 tests… OK`),
+Prettier clean, exit 0. The Python suite is wired into `check` itself
+(`test:plugin: python -m unittest discover …`), not left as a command someone must remember, and
+`AGENTS.md`'s Verification line now describes the new composition. Choosing stdlib `unittest` over
+pytest was the right call — zero new dependencies, and "green check" still means one command.
+
+#### Gap 1 — the plugin is now tested where it matters
+
+Coverage lands exactly on the two things that justified the gap:
+
+- `backgrounded_tokens()` — no devices; a freshly registered device excluded *until* it reports
+  background; foreground yields nothing; background yields its token; mixed devices; and toggling
+  back to foreground removing it again. That is the entire delivery gate, in every state.
+- The publisher payload is pinned **structurally**, not by example:
+  `assertEqual(set(message.keys()), {"to", "title", "data", "priority"})`. Anyone adding a `body`
+  field breaks the build, which is the correct shape for an invariant whose whole purpose is that
+  message content never reaches Expo's servers.
+
+Extracting `dashboard/api.py`'s validation and redaction into a pure `device_requests.py` so it is
+testable without FastAPI is the same pure/wiring split this repo already uses on the TypeScript side.
+Consistent, and it makes the security-relevant half testable rather than merely reviewable.
+
+#### Gap 2 — the four bugs are pinned, and the method is sound
+
+I checked the part that could have been circular. The fixes were *extractions*, so the new modules did
+not exist at `8f89171^` and the new tests cannot be run against the real pre-fix code — reconstruction
+is the only available method, and its worth depends entirely on being faithful.
+
+It is. Comparing `MountOnceListener` against the real pre-fix `usePushRegistration.ts`:
+
+```js
+// 8f89171^ — the actual code
+useEffect(() => {
+  if (!enabledRef.current) { return }
+  … Notifications.addPushTokenListener(…)
+  return () => { rotationSubscription?.remove() }
+}, [])                                    // ← mount-only, reads a ref snapshot
+```
+
+A mount-only effect reading `enabledRef.current` attaches once if `enabled` was true at mount and has
+no path that detaches on a later toggle-off — which is precisely what the reconstruction models
+("attach once on first true, never revisited, no reachable detach"). Not a strawman. The watcher's
+lock bug got the literal treatment (reverted in place, confirmed failing, restored, diffed
+byte-identical), which is better still where it is possible.
+
+Residual, stated for the record rather than as a criticism: a reconstruction proves the *modelled*
+control flow was broken, not the original file. That is inherent to testing an extraction, and the
+mitigation — quoting the pre-fix diff in the test's doc comment so the model can be audited — is the
+right one.
+
+#### The native rebuild found exactly the class of bug it exists to find
+
+Verified at source. `expo-audio`'s `index.js` does **not** export `AudioRecorder` (only
+`AudioModule.AudioRecorder` exists at runtime), while `index.d.ts`'s `export type *` re-export makes
+it visible to TypeScript at the top level. So `new AudioRecorder(…)` typechecks cleanly and is
+`undefined` when it runs — `Could not start recording — undefined cannot be used as a constructor`.
+
+No amount of `npm run check` catches that, and no amount of review reliably does either. It is the
+third time in this project that only an actual run found the defect (`babel-preset-expo` in M01, the
+half-open socket in M06, this). The fix's comment documents both the cause and the options-flattening
+gap alongside it.
+
+#### One thing I fixed
+
+`__pycache__/` was untracked and ungitignored, so `npm run check` now dirtied the working tree on
+every run — a side effect of the Python suite I asked for. Added `__pycache__/` and `*.pyc` to
+`.gitignore`. One line, obviously correct, and it keeps `git status` usable as a verification signal.
+
+#### Status
+
+`in-progress`, correctly.
+
+- `[physical]` push delivery — deferred, register row present with the right blockers (device **and**
+  a real Expo push token, which needs the user's `eas init` per D11.3).
+- No push while foregrounded — the gate is now exhaustively tested on the server side and the local
+  notification policy on the client side. Effectively closed at the logic level; the end-to-end
+  client-reports-presence → plugin-gates path has not been exercised as one flow.
+- Dictation — the empty-transcript path is confirmed live; a non-empty transcript needs real speech
+  audio the emulator cannot script. Documented rather than papered over, which is the right call.
+- TTS — reported confirmed live with logcat showing playback advancing 0→3745 ms. I did not
+  re-run it; recorded as Sonnet's evidence rather than mine.

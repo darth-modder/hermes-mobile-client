@@ -26,6 +26,10 @@ expo-env.d.ts
 .zcode/
 skills-lock.json
 
+# python (the plugin test suite; `npm run check` runs it)
+__pycache__/
+*.pyc
+
 # tooling
 .DS_Store
 npm-debug.*
