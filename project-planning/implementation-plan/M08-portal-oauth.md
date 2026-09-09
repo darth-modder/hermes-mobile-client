@@ -1,6 +1,6 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (set back by Opus 2026-09-09: marked `done` without an Opus verification pass — handover rule 5 / D12.2)
+**Status:** in-progress (Opus device pass 2026-09-09: criterion 2 verified, criterion 4 partially verified, **criterion 3 fails** — see the Verifier findings at the end of this file; the `[physical]` criterion keeps its register row)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -475,3 +475,239 @@ decision and not something the verifier can authorise.
 One Opus pass per milestone, per D12.2: the exit criteria on `emulator-5554`, each with its command
 and output, `[physical]` ones to the register. The device passes serialize (D12.1) so they run one
 at a time. Nothing here needs re-implementing — it needs checking.
+
+### 2026-09-09 — Opus device pass (D12.2)
+
+**Verdict: one criterion verified, one partially verified, one fails, and the `[physical]` one ran
+green on the emulator without closing its register row. M08 stays `in-progress`.** The two problems
+are in the same place — nothing in the app ever reaches the "your session died, sign in again" state
+unless a WebSocket was already open — and neither is visible to `npm run check`, which is why this
+milestone's own log could honestly call them "implemented and unit-tested".
+
+#### The harness, and what it is honest about
+
+The criteria are about Nous Portal, and there is no Portal to point at. So I built a Portal-shaped
+identity provider in front of a **real** `hermes serve`, and drove the real app against it:
+
+```
+app (emulator-5554) ──adb reverse 9120──▶ portal_stub (9120) ──▶ hermes serve (9130, real)
+```
+
+The stub owns exactly the five endpoints M08's own client contract names — `/api/auth/providers`,
+`/auth/native/authorize`, `/auth/native/token`, `/auth/native/refresh`, `/auth/logout` — verifies the
+PKCE S256 challenge for real (`sha256(verifier) == challenge`, a mismatch returns `invalid_grant`),
+rotates refresh tokens, implements Portal's reuse-detection semantics (a replayed RT is rejected),
+and forwards everything else to the real backend. Access-token lifetime is a knob, which is what
+makes expiry observable in minutes instead of hours.
+
+Two things it does **not** get right, stated up front:
+
+1. **`GET /api/health` is overridden to `auth_required: true`.** The real backend reports `false`
+   even while it is token-gated, and `app/connect/index.tsx:42-48` short-circuits to token mode on
+   that field before ever reading `/api/auth/providers` — so an unmodified backend cannot be driven
+   into oauth mode at all. A genuinely Portal-gated backend would report `true`; the stub reports
+   what such a backend would.
+2. **`POST /api/auth/ws-ticket` returns 401 for the whole pass.** Not an app fault and not a stub
+   bug: `hermes_cli/dashboard_auth/routes.py:449` gates it behind `_require_session(request)`, which
+   wants a real backend Session. The stub is the identity provider, not the backend, so no such
+   session exists. The consequence is that **no WebSocket ever opened during this pass** — which
+   turns out to be the exact condition the findings below live in, so it is worth naming loudly
+   rather than burying.
+
+#### 1. `[physical]` Portal login completes via Custom Tabs — ran green here; row stays open
+
+Driven twice, end to end, unattended:
+
+```
+[stub] AUTHORIZE #1 method=S256 redirect_uri=http://127.0.0.1:38135/cb challenge_len=43 state_len=48
+[stub] TOKEN #1 PKCE S256 VERIFIED (sha256(verifier) == challenge)
+[stub] POST /auth/native/token -> 200
+```
+
+Tap to stored session in **14 seconds**: Custom Tab opened, the IdP page redirected to the loopback
+listener on a random port, the native module answered the single `GET /cb`, and the app exchanged the
+code with a verifier that hashes to the challenge it sent. `nativeLogin`'s own comment — "Chrome-on-
+emulator does redirect correctly in practice" — is now measured rather than asserted.
+
+**The register row stays open anyway.** D1's question is whether an *OEM* browser issues the loopback
+GET, and Chrome-on-emulator cannot answer that. This is supporting evidence, not the criterion.
+
+One incident worth recording because it cost an hour and will cost the next person the same: the
+first attempt failed with the listener still bound and the tab parked on the IdP page. Chrome's
+first-run screen had consumed the listener's **2-minute deadline** before the tab ever navigated. The
+app behaved correctly (`timed-out` is exactly the right classification); the emulator was the problem.
+Chrome's first-run must be cleared *before* the first login attempt, not during it. I cleared it with
+the user's explicit approval (no account added — the "Use without an account" path).
+
+#### 2. Access-token expiry triggers a silent refresh — verified
+
+Access-token lifetime set to 150 s; `REFRESH_SKEW_SECONDS` is 60, so the refresh window opens at
+`expires_at - 60`. Both sides of that boundary, from the stub's own counters:
+
+```
+expires_at = 1788977998            skew opens at 1788977938
+t=1788977877  (61s before expiry, OUTSIDE skew)  ws-ticket minted   refresh_hits=0   ← no premature refresh
+t=1788977950  (48s before expiry, INSIDE skew)   REFRESH #1         refresh_hits=1   ← rotated, new expires_at=1788978100
+```
+
+No prompt, no interruption, no user-visible anything — silent, which is the criterion. `refresh_hits`
+went 0 → 1, so it refreshed **once**, not on every request.
+
+**And the invariant underneath it holds.** AGENTS.md requires the *rotated* refresh token be persisted
+before the refresh promise resolves, because Portal reuse-detection revokes a session that replays a
+stale RT. If the app resolved first and persisted later, the next refresh would present the old token.
+It does not:
+
+```
+[stub] REFRESH #1 presented_current_rt=True   → issues rt_B (rotating away from rt_A)
+[stub] REFRESH #2 presented_current_rt=True   → presented rt_B, not rt_A
+```
+
+The stub logs `REFRESH REPLAY DETECTED` on a stale RT and never had cause to. This was previously
+claimed on unit tests alone; it is now observed against a server that would have caught the mistake.
+
+#### 3. Refresh-token expiry produces exactly one "sign in again" prompt — FAILS
+
+It produces **zero**. See Verifier findings below.
+
+#### 4. Logout clears every SecureStore entry for the connection — partially verified
+
+The clearing itself is exact. `SecureStore.xml` read through `run-as` across a full cycle:
+
+```
+before login            9 keys
+after Portal login     10 keys   + name="key_v1-conn.conn-1788978742393-6ajoqg.oauth"
+after Delete            9 keys   − name="key_v1-conn.conn-1788978742393-6ajoqg.oauth"
+diff(before, after)     identical — byte-for-byte back to the pre-login key set
+```
+
+**But that is the `Delete` button's path, not logout's.** `logoutConnection` — the function this
+criterion is about — has no caller anywhere in the app, and there is no sign-out affordance at all
+(`grep -rniE "sign out|signout|log ?out" app/` → nothing). `Delete` calls
+`deleteAllConnectionSecrets` directly (`app/(main)/settings/connections.tsx:112`), skipping
+`logoutConnection`'s best-effort `POST /auth/logout`. The stub confirms it was never called:
+`logout_hits: 0` for the entire pass.
+
+So: the half that matters on-device (SecureStore really is cleared, completely, for an OAuth
+connection) is verified. The deliverable named by the criterion is unreachable code.
+
+#### Environment
+
+Throwaway servers on 9120 and 9130 stopped **by PID**, never `--stop` (AGENTS.md). `config.yaml`
+compared against a pre-pass backup — unchanged, no restore needed. `adb reverse tcp:9120` removed;
+the user's own 9119/9121/8081 reverses left alone. Every test connection created during the pass
+deleted from the app, and `SecureStore.xml` verified identical to its pre-pass key set. The stub's
+session token was generated inside the launcher and exported only to its two child processes — never
+written to a file, a log, or a command line.
+
+## Verifier findings — 2026-09-09, M08 device pass
+
+Two findings, one root cause: **`needsLogin` is reachable from exactly one place, and that place
+requires a WebSocket that was already open.**
+
+```
+$ grep -rn "needsLogin" src/ app/ --include=*.ts --include=*.tsx | grep -v test
+src/connections/types.ts:29:  needsLogin?: boolean
+src/gateway/session-connection.ts:264:  ... updateActiveConnection(... needsLogin: true ...)   ← handleSocketClose, non-oauth
+src/gateway/session-connection.ts:278:  ... updateActiveConnection(... needsLogin: true ...)   ← recoverOauthUnauthorizedClose
+app/(main)/settings/connections.tsx:160:  {connection.needsLogin ? ' · needs sign-in' : ''}     ← the only render
+```
+
+Both setters are downstream of `handleSocketClose(connection, 4401)`.
+
+### Finding 1 — a dead refresh token during reconnect strands the user with no way back
+
+`resolveAuth` (`session-connection.ts:285`) calls `ensureFreshOAuthAccessToken` *before* minting the
+WS ticket — the proactive leg, and the right design. But when the refresh token is dead, that leg
+returns `null`, the ticket POST 401s, `ensureGatewayConnection()` rejects, and **no socket ever
+opens** — so `handleSocketClose` never runs and `needsLogin` is never set.
+
+Driven live. Stub set to reject refreshes with `401 {"error":"session_expired"}`, then the app
+foregrounded inside the skew window:
+
+```
+[stub] REFRESH #3 presented_current_rt=True kill=True
+[stub] POST /auth/native/refresh -> 401          ← confirmed dead RT
+```
+
+Then three more foreground cycles:
+
+```
+after foreground #1: refresh_hits=3
+after foreground #2: refresh_hits=3
+after foreground #3: refresh_hits=3
+```
+
+The good half: **exactly one** refresh attempt on a dead RT, and the stale token is never replayed —
+so the "never a retry loop" half of the criterion genuinely holds, and Portal's reuse detection is
+never tripped. The bad half is what the user sees:
+
+```
+Connections screen:  http://127.0.0.1:9120 · active · Nous Portal · used 10m ago
+                     (no ' · needs sign-in')
+Sessions screen:     HTTP 401 /api/sessions?limit=100&order=recent   [ Retry ]
+```
+
+A Retry button that cannot ever succeed, on a connection the app still presents as healthy, with no
+sign-in affordance anywhere (see Finding 2 — there is no logout/sign-in-again path either). The only
+recovery is to delete the connection and add it again from scratch.
+
+This is not an exotic path. It is *the* common one: a refresh token dies while the app is closed, and
+the user opens the app the next morning. The socket-close path (4401 on an already-open socket) may
+well work correctly — `recoverOauthUnauthorizedClose` reads right — but I could not reach it, because
+the harness's ws-ticket 401 prevents any socket from opening. I am not claiming that path is broken;
+I am reporting that the path I *could* reach produces zero prompts where the criterion requires one.
+
+Contributing cause: **`runWithReauthLadder` has no production caller.** M06 built the HTTP-401 half of
+this rule — "relogin once → retry → still 401 → needsLogin" — and nothing uses it:
+
+```
+$ grep -rn "runWithReauthLadder\|NeedsLoginError" src/ app/ --include=*.ts --include=*.tsx
+src/gateway/session-connection.ts:18:   ... `runWithReauthLadder`'s HTTP-shaped ...      ← a comment
+src/net/auth/ladder.ts: ...                                                             ← the definition
+src/net/auth/ladder.test.ts: ...                                                        ← 11 tests
+```
+
+One comment, the definition, and its own tests. Every REST 401 in the app — including the
+`/api/sessions` one above — bypasses it entirely, which is why a 401 on a REST screen produces a raw
+error string rather than a refresh attempt or a login prompt. This milestone's own exit-criteria text
+is, on inspection, precisely accurate about it: "`runWithReauthLadder`'s own existing contract (M06)
+guarantees one refresh attempt … **for any caller that goes through it**." There are none.
+
+I am not proposing the fix — that is the implementer's call, and it plausibly belongs to whichever
+milestone owns the REST error surface rather than to M08 alone. The minimum M08 needs is that a
+confirmed `session_expired` reaches `needsLogin` from the pre-connect path, not only from a socket
+close.
+
+### Finding 2 — `logoutConnection` is unreachable
+
+```
+$ grep -rn "logoutConnection" src/ app/ --include=*.ts --include=*.tsx | grep -v test
+src/net/auth/logout.ts:43:export async function logoutConnection(...)      ← the definition, nothing else
+```
+
+No caller, and no sign-out UI. `Delete` is the only path that clears secrets and it calls
+`deleteAllConnectionSecrets` directly, so `POST /auth/logout` is never sent (`logout_hits: 0` across
+the whole pass, including a full login → delete cycle).
+
+Worth being fair about the blast radius: for token and OAuth modes the server has nothing to revoke
+anyway — `logout.ts`'s own header comment works this out correctly and in detail, and it is right.
+So the missing call costs little *today*. What it costs is the criterion, and it means the one
+deliverable a user would reach for after Finding 1 ("just sign me out and back in") does not exist in
+the UI.
+
+### What this does not question
+
+- The login flow itself is correct and fast, PKCE included, and the loopback module works.
+- The proactive refresh is correct, including the rotation-persistence invariant that Portal's reuse
+  detection punishes getting wrong.
+- The single-attempt / no-retry-loop half of criterion 3 holds exactly as designed.
+- `logout.ts`'s analysis of the upstream revocation gap is accurate — I traced it to
+  `routes.py`'s `auth_logout` and its cookie-only refresh-token read.
+
+### To clear this
+
+Criterion 3 needs `needsLogin` set when a confirmed `session_expired` lands on the pre-connect path.
+Criterion 4 needs `logoutConnection` wired to an affordance. Both are then re-verifiable on the
+emulator with the same harness in minutes — the stub's `/__ctl/kill_refresh` switch reproduces
+Finding 1 on demand.
