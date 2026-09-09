@@ -40,7 +40,7 @@ deferred by register entry under D9's standing rule. Rule changes are logged in
 | [M08](M08-portal-oauth.md) | Portal OAuth | Nous Portal login via on-device loopback listener | M04 | todo |
 | [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | todo |
 | [M10](M10-management-screens.md) | Management screens | Projects, cron, webhooks, artifacts, channels | M09 | todo |
-| [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | todo |
+| [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | in-progress |
 | [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11 | todo |
 
 Critical path: M00 → M01/M02 → M03 → M04 → M06 → M07 → M11 → M12. M05 runs in parallel with
