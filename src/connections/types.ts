@@ -19,6 +19,11 @@ export interface MobileConnection {
   headerNames?: string[]
   installId?: string
   lastUsedAt?: number
+  /** `kind: 'cloud'` only — the Hermes Cloud org slug/id this connection was
+   *  discovered under (cloud-discovery.ts). Provenance only; dialing a cloud
+   *  connection is identical to a remote one (see cloud-discovery.ts's
+   *  header) and never branches on this field. */
+  org?: string
   /** Set by the reauth ladder on a confirmed 401 that survived one refresh
    *  attempt — the UI should show the login screen for this connection. */
   needsLogin?: boolean

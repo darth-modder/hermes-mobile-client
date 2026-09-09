@@ -38,6 +38,16 @@ vi.mock('expo-secure-store', () => ({
   setItemAsync: vi.fn()
 }))
 
+// M08: handleSocketClose's oauth branch calls refreshConnectionOAuth
+// directly — mocked here so the "on 4401, try refresh first" decision is
+// exercised without a real token-refresh HTTP round trip.
+const tokenRefresh = {
+  ensureFreshOAuthAccessToken: vi.fn(async () => null),
+  refreshConnectionOAuth: vi.fn(async () => false)
+}
+
+vi.mock('../net/auth/token-refresh', () => tokenRefresh)
+
 const { getActiveConnection, setActiveConnection } = await import('../connections/registry')
 const { $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
@@ -214,6 +224,62 @@ describe('handleSocketClose: AGENTS.md "Credentials and reauth" applied to WS cl
 
     handleSocketClose(other, 4401)
 
+    expect(getActiveConnection()?.needsLogin).toBeUndefined()
+  })
+})
+
+describe('handleSocketClose: M08 — a 4401 on an oauth connection tries refresh before needsLogin', () => {
+  const oauthConnection = {
+    authMode: 'oauth' as const,
+    baseUrl: 'http://127.0.0.1:9120',
+    id: 'conn-oauth',
+    kind: 'remote' as const,
+    label: 'test-oauth'
+  }
+
+  beforeEach(() => {
+    mmkvBacking.clear()
+    setActiveConnection(oauthConnection)
+    tokenRefresh.refreshConnectionOAuth.mockReset()
+    resetSessionConnectionForTests()
+  })
+
+  it('a successful refresh does NOT mark the connection needsLogin', async () => {
+    tokenRefresh.refreshConnectionOAuth.mockResolvedValue(true)
+    // ensureGatewayConnection's own redial attempt has no real backend to
+    // reach in this test — make it fail fast and predictably rather than
+    // waiting on a real connection-refused timeout.
+    global.fetch = vi.fn(async () => {
+      throw new Error('no network in unit tests')
+    }) as unknown as typeof fetch
+
+    handleSocketClose(oauthConnection, 4401)
+
+    await vi.waitFor(() => {
+      expect(tokenRefresh.refreshConnectionOAuth).toHaveBeenCalledWith(oauthConnection.id, oauthConnection.baseUrl)
+    })
+
+    expect(getActiveConnection()?.needsLogin).toBeUndefined()
+  })
+
+  it('a failed refresh (dead refresh token) DOES mark the connection needsLogin', async () => {
+    tokenRefresh.refreshConnectionOAuth.mockResolvedValue(false)
+
+    handleSocketClose(oauthConnection, 4401)
+
+    await vi.waitFor(() => {
+      expect(getActiveConnection()?.needsLogin).toBe(true)
+    })
+  })
+
+  it('does not fall through to the token/password immediate-needsLogin path', () => {
+    tokenRefresh.refreshConnectionOAuth.mockResolvedValue(false)
+
+    handleSocketClose(oauthConnection, 4401)
+
+    // Synchronously, right after the call, nothing has flipped yet — the
+    // oauth branch is async (it awaits a refresh attempt first), unlike the
+    // token/password branch which sets needsLogin synchronously.
     expect(getActiveConnection()?.needsLogin).toBeUndefined()
   })
 })

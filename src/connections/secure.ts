@@ -31,7 +31,13 @@ export async function deleteConnectionToken(connectionId: string): Promise<void>
 export interface StoredOAuthSession {
   accessToken: string
   refreshToken?: string
+  /** Epoch seconds (matches the gateway's `expires_at` — hermes_cli/dashboard_auth/routes.py
+   *  `_bearer_payload`), not milliseconds. */
   expiresAt?: number
+  /** Provider name and gateway user id from the bearer payload (M08) — carried through for a
+   *  future account display; nothing in this milestone branches on them. */
+  provider?: string
+  userId?: string
 }
 
 export async function setConnectionOAuth(connectionId: string, session: StoredOAuthSession): Promise<void> {

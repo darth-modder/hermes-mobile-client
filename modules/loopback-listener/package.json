@@ -1,0 +1,9 @@
+{
+  "name": "loopback-listener",
+  "version": "1.0.0",
+  "description": "RFC 8252 loopback redirect listener for Portal OAuth (M08) — Android only. Not published; consumed by src/net/auth/loopback-listener.ts via a relative import.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "license": "UNLICENSED"
+}
