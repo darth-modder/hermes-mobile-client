@@ -64,6 +64,7 @@ rows return to Fable as a policy escalation.
 | M07 | `[physical]` Screen off 15 minutes mid-turn (doze) | Real device | Opus | Device attached | Batched physical pass (D9) |
 | M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device (`expo-network` wiring landed 2026-09-08) | Opus | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
 | M11 | `[physical]` Screen off 30 minutes; an approval arrives as a push; tapping opens the card and responding succeeds | Real device + a real Expo push token (also needs an EAS project id, D11) | Opus | Device attached and `extra.eas.projectId` committed | Batched physical pass (D9) |
+| M11 | Dictation inserts transcribed text into the composer (non-empty-transcript path; the mechanism itself — permission, native recording, upload, empty-transcript guard — is proven live on `emulator-5554`, 2026-09-09) | Emulator has no scriptable microphone input: no `adb emu` mic command, and the emulator's only audio-injection path ("Insert audio from file" under Extended Controls > Microphone) is a GUI control this headless workflow cannot drive; `emulator -help-audio` confirms nothing beyond backend selection | Opus | Device attached (real speech input) | Batched physical pass (D9) |
 
 ## Architecture
 

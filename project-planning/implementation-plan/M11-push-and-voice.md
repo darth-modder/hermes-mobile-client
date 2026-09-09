@@ -503,3 +503,28 @@ every run — a side effect of the Python suite I asked for. Added `__pycache__/
   audio the emulator cannot script. Documented rather than papered over, which is the right call.
 - TTS — reported confirmed live with logcat showing playback advancing 0→3745 ms. I did not
   re-run it; recorded as Sonnet's evidence rather than mine.
+
+### 2026-09-09 — Opus: D12 round, register row added, no session dispatched
+
+Checked M11 against D12's dispatch brief: install doc (`server-plugin/hermes-push/README.md`,
+present and complete — copy/enable/restart/verify steps, uninstall too), the D10 presence note
+(present verbatim in the task list above: "Push gating must use the presence endpoint below,
+never socket state"), and the last pass's own findings (both coverage gaps closed in `e12a262` /
+`700e15b`, the `__pycache__` fix landed in the same round) — all three already satisfied. Nothing
+left for Sonnet to do; per the brief, M11 waits rather than being handed invented work.
+
+Added the dictation non-empty-transcript gap to the deferred criteria register (D9 standing
+rule 3), matching Fable's framing of it as register-bound alongside push delivery. Independent
+confirmation for that rule's second leg: the block is the dev environment, not the code — the
+mechanism (permission → record → upload → empty-transcript guard) is already proven live, and
+Android emulator microphone input has no scriptable/headless injection path (`adb emu` has no
+mic subcommand; the emulator's only audio-injection control, Extended Controls > Microphone >
+"Insert audio from file", is GUI-only). A physical device is the only way to close it, same as
+push delivery.
+
+Both of M11's open items are now register rows, matching D12's condition for M12 to start. Status
+stays `in-progress` (not `done`): unlike M04/M06, where the deferred physical criterion was one
+part of a broader milestone, both of M11's remaining gaps sit on its two headline features (push
+actually arriving, dictation actually transcribing real speech), so `done` is reserved for the
+batched physical pass rather than claimed early under D9's general allowance. No worktree/branch
+opened for M11 this round.
