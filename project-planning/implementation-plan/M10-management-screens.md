@@ -180,3 +180,90 @@ decision and not something the verifier can authorise.
 One Opus pass per milestone, per D12.2: the exit criteria on `emulator-5554`, each with its command
 and output, `[physical]` ones to the register. The device passes serialize (D12.1) so they run one
 at a time. Nothing here needs re-implementing — it needs checking.
+
+### 2026-09-09 — Opus device pass (D12.2)
+
+**Verdict: three of four exit criteria verified live by me. Status stays `in-progress` on the
+fourth**, which I did not drive. Nothing found contradicts the implementation — the three I drove
+all passed first time, on merged `main` against a real backend.
+
+Run on `emulator-5554` against a throwaway `hermes serve` on **9121** (M10's port per D12.1), on the
+merged-`main` build described in M09's Opus note.
+
+#### 1. Create and trigger a cron job; `cron.changed` updates the list live — verified
+
+Created `opus-cron-check` / `0 9 * * *` / prompt through the form; it listed as `SCHEDULED`. Tapped
+**Trigger** and watched without touching anything else:
+
+```
+before:  opus-cron-check  SCHEDULED  0 9 * * *   [Trigger] [Pause] [Delete]
+t+8s:    opus-cron-check  SCHEDULED  0 9 * * *   Ran — scheduled
+t+16s / t+26s / t+40s: unchanged
+```
+
+The row gained `Ran — scheduled` with no manual refresh, which is the `cron.changed` broadcast
+driving the list. Job deleted afterwards.
+
+#### 2. Webhook create / enable / delete round-trips — verified
+
+Created `opus-hook` → listed at `http://localhost:8644/webhooks/opus-hook`, with the one-time secret
+shown behind a **Dismiss**. The enable switch round-tripped `checked=true → false → true`. **Delete**
+raised a confirm dialog; after **DELETE** the list returned to `No webhooks yet.` and the row was
+gone.
+
+#### 3. Pairing approve / revoke — NOT verified by me
+
+The Channels screen lists thirteen platforms, all `Not configured · disabled`, and no pairing
+surface exists without a configured platform. This milestone's own log is explicit that it used a
+**synthetic pending entry written into the server's `PairingStore`**, which is a legitimate method —
+I confirmed the machinery it relies on exists (`gateway/pairing.py`: `_pending_path`,
+`generate_code`, `approve_code`, `approve_request`, `revoke`, and a pending entry shaped
+`{hash, salt, user_id, user_name, created_at}` keyed by a random id).
+
+I could not reproduce it: creating an authentic entry means calling `generate_code` through the
+server's own module, and the system Python cannot import it (`ModuleNotFoundError: No module named
+'yaml'` — hermes runs its own interpreter). Hand-crafting the salted hash instead would be testing my
+fixture, not the store.
+
+**This is the one open item.** It is small: whoever has hermes's interpreter on PATH can create the
+pending entry in a minute and drive approve + revoke from the Channels screen. I am not marking it
+closed on the implementer's evidence, for the same reason the statuses were reverted in the first
+place.
+
+#### 4. Artifact share opens the system share sheet with the file — verified
+
+Took three attempts, and the first two are worth recording because the app behaved correctly in both:
+
+- Sharing M10's own `m10-artifact-test.txt` → `Could not share / Download failed: HTTP 404`. The
+  file was a Windows temp file that has since been cleaned up. Correct handling of a dangling
+  artifact.
+- Sharing a fresh `/tmp/opus-artifact.txt` → `HTTP 400`; the agent's own reply had flagged that the
+  path "resolved outside" the workspace root, so the download endpoint refused it. Also correct.
+- Sharing a workspace-relative `opus-share2.txt` → the Android chooser opened:
+
+```
+focus: com.android.intentresolver/com.android.intentresolver.ChooserActivityLauncher
+Sharing 1 file
+hermes-artifact-1788975480334-txt
+Quick Share · Print · Chrome · Drive
+```
+
+The system share sheet, with the file. Criterion met.
+
+Small UX note, not a defect: an artifact whose file is unreachable still renders a **Share** button
+that can only fail. Cheap to grey out, and it would turn two of my three attempts into information
+the user has before tapping rather than after.
+
+#### On the rebuild gap
+
+This milestone's log already records hitting the same class of failure I did — "the already-installed
+shared dev-client APK predated `expo-sharing`, crashing the whole app" — and fixed it by rebuilding.
+That was the right local fix; what went unnoticed is that the same thing recurs on *every* merge that
+adds a native module, and M08's later merge re-broke it. See M09's Opus note for the full analysis and
+the D12.1 gap it points at.
+
+#### Environment
+
+`config.yaml` backed up and restored (`diff` empty). Cron job deleted, webhook deleted, the two files
+I created removed, throwaway server on 9121 stopped **by PID** per the AGENTS.md rule, scratch token
+deleted and absent from git history.
