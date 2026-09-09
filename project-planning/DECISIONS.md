@@ -282,6 +282,9 @@ awake, so push gating must use the presence endpoint M11 already designs, never 
    the round and say so in the log; the install doc the task list already calls for is what the
    user follows to keep it.
 
+*Correction by D13 (2026-09-10): the risk paragraph in part 4 is wrong; `pre_approval_request` does not fire for
+gateway sessions. The throwaway-server rule stands for the ordinary reason.*
+
 **Reasoning.** Every environment sign-off so far (poppler, tirith, the plugin folder, the EAS id)
 has cost an escalation round for a change that is either trivially reversible or one only the
 user can make. Splitting on reversibility and ownership answers all of them in advance. Account
@@ -312,6 +315,9 @@ creation and credentials are the user's by policy, not by preference.
    was obtained goes in only when the next person needs it to reproduce. `[physical]` criteria go
    to the register (D9). Handover rule 5 ("only Opus changes a tracker status to `done`") stands.
 
+*Amended by D13 (2026-09-10): the merger rebuilds the dev client from merged `main` whenever a merge adds or
+changes a native module; device passes cite the merged commit they ran against.*
+
 **Reasoning.** The dependency graph has been wider than the execution has: M08 depends only on
 M04, M09 on M06, M11 on M07, and all three have been runnable since M07 closed. M06 cost three
 full device passes and an 800-line milestone file for two implementation commits; the bugs were
@@ -319,3 +325,48 @@ real and verification found every one of them, so verification stays, but repeat
 and re-derived claims were the expensive part, not the passes themselves. Worktrees and owned
 collision points are the minimum that lets three implementers share one repo without the
 lockfile becoming the merge conflict of every round.
+
+## D13 — Corrections from the 2026-09-10 Opus round: D11.4's hook claim, D12.1's rebuild gap, and `auth_required` detection (2026-09-10)
+
+**Decision.** Three parts.
+
+1. **D11.4's risk paragraph is withdrawn as stated.** `pre_approval_request` does not fire for
+   gateway sessions. Verified at `../hermes-agent/tools/approval.py`: the `is_gateway or is_ask`
+   branch returns through `_await_gateway_decision` (live `notify_cb`, wired at
+   `tui_gateway/server.py:905` to a plain `approval.request` event write) or through
+   `_pending_result`, and `_fire_approval_hook("pre_approval_request", ...)` sits below both, in the
+   CLI-interactive path with `surface="cli"`. Every mobile session is a gateway session, so the
+   plugin is not in the approval path and cannot block it. The throwaway-server rule in D11.4
+   stands for the ordinary reason (do not test against the user's instance), not for that one.
+   M11's poll-based watcher was the correct design for the same reason; the "Push design" prose in
+   `M11-push-and-voice.md` that names the hook carries a correction note, original kept.
+2. **D12.1 is amended: the merger rebuilds.** Worktrees do not share `android/`, so a branch APK
+   contains only that branch's native additions and a build of the merged tree never exists by
+   itself. Rule: whoever lands a merge to `main` that adds or changes a native module, an Expo
+   config plugin, or `app.config.ts`'s `plugins` array rebuilds the dev client from the merged
+   `main` commit before any device pass against that tree, installs it on `emulator-5554`, and
+   records the commit hash and `BUILD SUCCESSFUL` line in the milestone's verification log. A
+   device pass cites the hash it ran against; a pass against a branch APK is evidence for that
+   branch only and is marked as such. Opus's merged-`main` build of 2026-09-10 (29 native modules,
+   `BUILD SUCCESSFUL in 20m 18s`) is the current baseline. Prior M08/M09/M10 live claims made
+   against branch APKs stand as branch evidence and are re-run only where the merged build
+   behaves differently.
+3. **`auth_required` detection is correct; no re-scoping of M08.** `hermes_cli/web_server.py`
+   sets `app.state.auth_required = should_require_dashboard_auth(host, trusted_public_hosts)`:
+   true for any non-loopback bind, or for a non-loopback `dashboard.public_url`. A
+   `HERMES_DASHBOARD_SESSION_TOKEN` on a `127.0.0.1` bind is loopback token mode by the server's
+   own definition, which is exactly the first row of the README auth matrix ("Loopback bind
+   (ungated): paste session token; dev only"). A Portal-gated deployment is non-loopback by
+   construction and reports true, so the app's short-circuit at `app/connect/index.tsx:42-48`
+   matches the server contract. Harness for M08 from now on: engage the gate the way the server
+   does, either `hermes serve --host 0.0.0.0` as M04 did, or `dashboard.public_url` set to a
+   non-loopback hostname in `config.yaml` under D11 rule 1 with backup and restore. Overriding the
+   health payload in a harness is not evidence of anything and is retired.
+
+**Reasoning.** Two of these are my own text being wrong or incomplete, and the log should say
+so where the next reader will look, rather than being silently edited. The hook claim was a
+plausible reading of `VALID_HOOKS` that I did not trace into the approval path; Opus and Sonnet
+did, independently. The rebuild gap was found the expensive way, by an APK missing a module the
+other branch had added, and the rule now names the cost as the merger's. The `auth_required`
+question was the right one to raise at plan level, and the answer is in the server's gate rule
+rather than in any deployment we lack.
