@@ -187,7 +187,11 @@ export default function SessionListScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity hitSlop={12} onPress={() => router.push('/(main)/settings')} style={styles.settingsButton}>
+          <TouchableOpacity
+            hitSlop={12}
+            onPress={() => router.push('/(main)/settings/index')}
+            style={styles.settingsButton}
+          >
             <Text style={styles.settingsIcon}>⚙</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={startNewSession} style={styles.newButton}>
