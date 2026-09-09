@@ -30,6 +30,7 @@ import type { MobileConnection } from '../connections/types'
 import { httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
+import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
 import { notify } from '../store/notifications'
 import { getActiveProfile } from '../store/profile'
 import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
@@ -62,6 +63,7 @@ let gateway: MobileGateway | null = null
 let reducerState: ReducerState = createReducerState()
 let scheduler: DeltaFlushScheduler | null = null
 let disposeEvents: (() => void) | null = null
+let disposeLiveSyncEvents: (() => void) | null = null
 
 const stateListeners = new Set<(state: ConnectionState) => void>()
 
@@ -304,6 +306,7 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   }
 
   disposeEvents?.()
+  disposeLiveSyncEvents?.()
   gateway?.close()
 
   const instance = new MobileGateway({
@@ -316,6 +319,21 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   })
 
   disposeEvents = instance.onAny(handleGatewayEvent)
+
+  // M10: global `*.changed` broadcasts (tui_gateway/change_watcher.py) have
+  // no session_id and nothing for the reducer to route them to — a plain
+  // tick per event, same shape as apps/desktop's store/live-sync.ts, is all
+  // the cron/webhooks/channels screens need to know "go refetch".
+  const offCron = instance.on('cron.changed', () => notifyCronChanged())
+  const offPlatforms = instance.on('platforms.changed', () => notifyPlatformsChanged())
+  const offPairing = instance.on('pairing.changed', () => notifyPairingChanged())
+
+  disposeLiveSyncEvents = () => {
+    offCron()
+    offPlatforms()
+    offPairing()
+  }
+
   instance.onState(state => {
     for (const listener of stateListeners) {
       listener(state)
@@ -336,6 +354,24 @@ function requireGateway(): MobileGateway {
   }
 
   return gateway
+}
+
+/**
+ * Generic RPC escape hatch for callers outside the chat screen that have no
+ * session to address — M10's `src/api/projects.ts` (`projects.*`,
+ * tui_gateway/methods_projects.py), which is per-profile, not per-session.
+ * Dials first if nothing is open yet (mirrors `createSession`'s own
+ * `ensureGatewayConnection()` call) rather than requiring a chat screen to
+ * have opened the socket first.
+ */
+export async function gatewayRequest<T>(
+  method: string,
+  params: Record<string, unknown> = {},
+  timeoutMs?: number
+): Promise<T> {
+  const client = await ensureGatewayConnection()
+
+  return client.request<T>(method, params, timeoutMs)
 }
 
 /**
@@ -739,6 +775,8 @@ export async function completePath(word: string): Promise<PathCompletionItem[]> 
 export function resetSessionConnectionForTests(): void {
   disposeEvents?.()
   disposeEvents = null
+  disposeLiveSyncEvents?.()
+  disposeLiveSyncEvents = null
   gateway?.close()
   gateway = null
   reducerState = createReducerState()

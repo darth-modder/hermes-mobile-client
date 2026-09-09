@@ -23,6 +23,7 @@ const config: ExpoConfig = {
     'expo-web-browser',
     'expo-document-picker',
     'expo-file-system',
+    'expo-sharing',
     [
       'expo-camera',
       {
