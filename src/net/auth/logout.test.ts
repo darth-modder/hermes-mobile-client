@@ -12,10 +12,28 @@ vi.mock('expo-secure-store', () => ({
   })
 }))
 
+// signOutConnection (M08 Defect 2) also touches the MMKV-backed connection
+// registry — mocked the same Map-backed way session-connection.test.ts does,
+// so upsertConnection's needsLogin flip is actually observable here instead
+// of silently no-op-ing through storage.ts's try/catch fail-safe.
+const mmkvBacking = new Map<string, string>()
+
+vi.mock('react-native-mmkv', () => ({
+  createMMKV: () => ({
+    getString: (key: string) => mmkvBacking.get(key),
+    set: (key: string, value: string) => {
+      mmkvBacking.set(key, value)
+    },
+    remove: (key: string) => mmkvBacking.delete(key)
+  })
+}))
+
+const { getConnection, setActiveConnection } = await import('../../connections/registry')
+
 const { getConnectionOAuth, getConnectionToken, setConnectionHeader, setConnectionOAuth, setConnectionToken } =
   await import('../../connections/secure')
 
-const { logoutConnection } = await import('./logout')
+const { logoutConnection, signOutConnection } = await import('./logout')
 
 function jsonResponse(status: number, body: unknown) {
   return {
@@ -30,6 +48,7 @@ describe('logoutConnection', () => {
 
   beforeEach(() => {
     secureStore.clear()
+    mmkvBacking.clear()
   })
 
   afterEach(() => {
@@ -99,5 +118,53 @@ describe('logoutConnection', () => {
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
 
     expect(init.credentials).toBe('include')
+  })
+})
+
+// M08 Defect 2: logoutConnection had no caller anywhere in the app. This is
+// the connections screen's actual "Sign out" button.
+describe('signOutConnection', () => {
+  const originalFetch = global.fetch
+
+  const connection = {
+    authMode: 'oauth' as const,
+    baseUrl: 'http://host',
+    id: 'conn-1',
+    kind: 'remote' as const,
+    label: 'test'
+  }
+
+  beforeEach(() => {
+    secureStore.clear()
+    mmkvBacking.clear()
+    setActiveConnection(connection)
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
+
+  it('runs the full logout (SecureStore cleared, best-effort POST sent) AND marks the registry entry needsLogin', async () => {
+    await setConnectionOAuth('conn-1', { accessToken: 'at', refreshToken: 'rt' })
+
+    const fetchMock = vi.fn(async () => jsonResponse(302, {}))
+
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await signOutConnection(connection)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(await getConnectionOAuth('conn-1')).toBeNull()
+    expect(getConnection('conn-1')?.needsLogin).toBe(true)
+  })
+
+  it('still marks needsLogin even when the best-effort /auth/logout request fails outright', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error('network down')
+    }) as unknown as typeof fetch
+
+    await signOutConnection(connection)
+
+    expect(getConnection('conn-1')?.needsLogin).toBe(true)
   })
 })

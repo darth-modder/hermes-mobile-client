@@ -27,32 +27,42 @@ vi.mock('react-native-mmkv', () => ({
   })
 }))
 
-// session-connection.ts imports connections/secure.ts (unused by the
-// functions under test here), which pulls in expo-secure-store ->
-// expo-modules-core -> a bare `__DEV__` reference that only exists under
-// React Native's own bundler global, not plain Node/vitest. Stub the whole
-// module so the import graph resolves; nothing in these tests calls it.
+// session-connection.ts imports connections/secure.ts, which pulls in
+// expo-secure-store -> expo-modules-core -> a bare `__DEV__` reference that
+// only exists under React Native's own bundler global, not plain Node/vitest.
+// Stub the whole module so the import graph resolves. Map-backed (not the
+// project's other files' bare vi.fn()s) so the M08 Defect 1 tests below can
+// round-trip a real stored OAuth session through connections/secure.ts's own
+// getConnectionOAuth/setConnectionOAuth/deleteConnectionOAuth.
+const secureStoreBacking = new Map<string, string>()
+
 vi.mock('expo-secure-store', () => ({
-  deleteItemAsync: vi.fn(),
-  getItemAsync: vi.fn(),
-  setItemAsync: vi.fn()
+  deleteItemAsync: vi.fn(async (key: string) => {
+    secureStoreBacking.delete(key)
+  }),
+  getItemAsync: vi.fn(async (key: string) => secureStoreBacking.get(key) ?? null),
+  setItemAsync: vi.fn(async (key: string, value: string) => {
+    secureStoreBacking.set(key, value)
+  })
 }))
 
 // M08: handleSocketClose's oauth branch calls refreshConnectionOAuth
 // directly — mocked here so the "on 4401, try refresh first" decision is
 // exercised without a real token-refresh HTTP round trip.
 const tokenRefresh = {
-  ensureFreshOAuthAccessToken: vi.fn(async () => null),
+  ensureFreshOAuthAccessToken: vi.fn(async (): Promise<null | string> => null),
   refreshConnectionOAuth: vi.fn(async () => false)
 }
 
 vi.mock('../net/auth/token-refresh', () => tokenRefresh)
 
 const { getActiveConnection, setActiveConnection } = await import('../connections/registry')
+const { deleteConnectionOAuth, setConnectionOAuth } = await import('../connections/secure')
 const { $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
 
 const {
+  ensureGatewayConnection,
   handleSocketClose,
   reconnectAndProbeGateway,
   resetSessionConnectionForTests,
@@ -280,6 +290,72 @@ describe('handleSocketClose: M08 — a 4401 on an oauth connection tries refresh
     // Synchronously, right after the call, nothing has flipped yet — the
     // oauth branch is async (it awaits a refresh attempt first), unlike the
     // token/password branch which sets needsLogin synchronously.
+    expect(getActiveConnection()?.needsLogin).toBeUndefined()
+  })
+})
+
+// M08 Defect 1 (verifier findings, 2026-09-09 device pass): a dead refresh
+// token never opens a socket at all — `resolveAuth`'s ws-ticket mint 401s
+// and `ensureGatewayConnection()` just rejects, so `handleSocketClose` (the
+// describe block above) never runs. Before the fix these three cases all
+// left `needsLogin` untouched; the middle one must STAY untouched even after
+// the fix (AGENTS.md: a transient failure must never trigger a login prompt).
+describe('resolveAuth (via ensureGatewayConnection): M08 Defect 1 — the pre-connect path must reach needsLogin too', () => {
+  const oauthConnection = {
+    authMode: 'oauth' as const,
+    baseUrl: 'http://127.0.0.1:9120',
+    id: 'conn-oauth',
+    kind: 'remote' as const,
+    label: 'test-oauth'
+  }
+
+  function unauthorizedResponse() {
+    return { ok: false, status: 401, text: async () => JSON.stringify({ error: 'unauthorized' }) } as Response
+  }
+
+  beforeEach(() => {
+    mmkvBacking.clear()
+    secureStoreBacking.clear()
+    setActiveConnection(oauthConnection)
+    tokenRefresh.ensureFreshOAuthAccessToken.mockReset()
+    resetSessionConnectionForTests()
+  })
+
+  it('a confirmed session_expired (doRefresh already cleared the stored session) sets needsLogin even though no socket ever opened', async () => {
+    // ensureFreshOAuthAccessToken already tried and failed the one silent
+    // refresh the ladder allows — token-refresh.ts's doRefresh cleared the
+    // stored session on its own confirmed 401, so nothing is left to read.
+    tokenRefresh.ensureFreshOAuthAccessToken.mockResolvedValue(null)
+    await deleteConnectionOAuth(oauthConnection.id)
+
+    global.fetch = vi.fn(async () => unauthorizedResponse()) as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBe(true)
+  })
+
+  it('a merely unreachable provider (RT not confirmed dead) must NOT set needsLogin', async () => {
+    tokenRefresh.ensureFreshOAuthAccessToken.mockResolvedValue(null)
+    // The stored session survives a transient (503/timeout) failure —
+    // doRefresh only clears it on a CONFIRMED session_expired.
+    await setConnectionOAuth(oauthConnection.id, { accessToken: 'stale-but-unconfirmed', refreshToken: 'rt-1' })
+
+    global.fetch = vi.fn(async () => unauthorizedResponse()) as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBeUndefined()
+  })
+
+  it('a valid access token that still draws a surprise 401 does not set needsLogin (the stored session is untouched)', async () => {
+    tokenRefresh.ensureFreshOAuthAccessToken.mockResolvedValue('fresh-access-token')
+    await setConnectionOAuth(oauthConnection.id, { accessToken: 'fresh-access-token', refreshToken: 'rt-1' })
+
+    global.fetch = vi.fn(async () => unauthorizedResponse()) as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow()
+
     expect(getActiveConnection()?.needsLogin).toBeUndefined()
   })
 })

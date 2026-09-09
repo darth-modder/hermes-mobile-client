@@ -14,6 +14,7 @@ import {
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
 import type { MobileConnection } from '../../../src/connections/types'
 import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
 
@@ -56,6 +57,7 @@ export default function ConnectionsSettings() {
   const [editingLabel, setEditingLabel] = useState('')
   const [testing, setTesting] = useState<null | string>(null)
   const [results, setResults] = useState<Record<string, ConnectionTestResult>>({})
+  const [signingOut, setSigningOut] = useState<null | string>(null)
 
   const refresh = useCallback(() => {
     setConnections(listConnections())
@@ -101,6 +103,23 @@ export default function ConnectionsSettings() {
 
     setResults(current => ({ ...current, [connection.id]: result }))
     setTesting(null)
+  }
+
+  const signOut = (connection: MobileConnection) => {
+    Alert.alert('Sign out?', connection.label, [
+      { style: 'cancel', text: 'Cancel' },
+      {
+        onPress: () => {
+          setSigningOut(connection.id)
+          void signOutConnection(connection).finally(() => {
+            setSigningOut(null)
+            refresh()
+          })
+        },
+        style: 'destructive',
+        text: 'Sign out'
+      }
+    ])
   }
 
   const remove = (connection: MobileConnection) => {
@@ -184,6 +203,15 @@ export default function ConnectionsSettings() {
                       <Text style={styles.actionText}>Set primary</Text>
                     </TouchableOpacity>
                   ) : null}
+                  <TouchableOpacity
+                    disabled={signingOut === connection.id}
+                    onPress={() => signOut(connection)}
+                    style={styles.actionButton}
+                  >
+                    <Text style={styles.destructiveText}>
+                      {signingOut === connection.id ? 'Signing out…' : 'Sign out'}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => remove(connection)} style={styles.actionButton}>
                     <Text style={styles.destructiveText}>Delete</Text>
                   </TouchableOpacity>

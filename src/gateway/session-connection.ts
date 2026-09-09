@@ -26,13 +26,19 @@
  * falling back to `needsLogin`, then redials on success so the reconnect
  * that already handles a plain dropped socket (M07) also covers "the token
  * just needed renewing".
+ *
+ * M08 Defect 1 fix: that WS-close branch requires a socket that was already
+ * open, which a dead refresh token never produces — `resolveAuth`'s ws-ticket
+ * mint 401s first and `ensureGatewayConnection()` just rejects. See
+ * `flagOauthSessionExpiredIfConfirmed` below for the pre-connect mirror of
+ * this same `needsLogin` decision.
  */
 
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
-import { getConnectionHeaders, getConnectionToken } from '../connections/secure'
+import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
 import type { MobileConnection } from '../connections/types'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
-import { httpRequest } from '../net/http'
+import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
 import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
@@ -304,17 +310,58 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
   const oauthAccessToken =
     connection.authMode === 'oauth' ? await ensureFreshOAuthAccessToken(connection.id, connection.baseUrl) : undefined
 
-  const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(
-    connection.baseUrl,
-    '/api/auth/ws-ticket',
-    {
-      credentials: 'include',
-      method: 'POST',
-      token: oauthAccessToken ?? undefined
-    }
-  )
+  try {
+    const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(
+      connection.baseUrl,
+      '/api/auth/ws-ticket',
+      {
+        credentials: 'include',
+        method: 'POST',
+        token: oauthAccessToken ?? undefined
+      }
+    )
 
-  return { mode: 'ticket', ticket }
+    return { mode: 'ticket', ticket }
+  } catch (error) {
+    await flagOauthSessionExpiredIfConfirmed(connection, error)
+
+    throw error
+  }
+}
+
+/**
+ * Pre-connect mirror of `handleSocketClose`'s 4401 oauth branch above — added
+ * for M08 Defect 1: when the refresh token is already dead, the proactive
+ * `ensureFreshOAuthAccessToken` call returns null, this ws-ticket mint 401s,
+ * `ensureGatewayConnection()` rejects, and **no socket ever opens** — so
+ * `handleSocketClose` never runs and `needsLogin` was never reached. This is
+ * the common path: a refresh token dies while the app is closed, and the
+ * user opens it later with nothing but a Retry button that can never
+ * succeed.
+ *
+ * Only flips `needsLogin` when the refresh attempt above already *confirmed*
+ * the session is gone — `token-refresh.ts`'s `doRefresh` clears the stored
+ * OAuth session on a confirmed 401 `session_expired`, but leaves it
+ * untouched on a merely unreachable provider (503/timeout). This function
+ * reads that same stored session back rather than trusting the ws-ticket
+ * call's own 401 (which fires either way once there is no bearer token to
+ * send) — AGENTS.md requires a transient failure never trigger a login
+ * prompt, and `nextReauthAction`'s "second unauthorized after refresh means
+ * the session is genuinely gone" only holds once the refresh itself is
+ * confirmed exhausted.
+ */
+async function flagOauthSessionExpiredIfConfirmed(connection: MobileConnection, error: unknown): Promise<void> {
+  if (connection.authMode !== 'oauth' || !(error instanceof HttpError) || error.status !== 401) {
+    return
+  }
+
+  const stillStored = await getConnectionOAuth(connection.id)
+
+  if (stillStored) {
+    return
+  }
+
+  await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 }
 
 /** Establish the one live gateway connection for the active `MobileConnection`.

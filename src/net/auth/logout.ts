@@ -15,6 +15,7 @@
 // route that accepts a bearer refresh token for revocation would only need this module's
 // `resolveLogoutAuth` extended, not a rewrite.
 
+import { upsertConnection } from '../../connections/registry'
 import { deleteAllConnectionSecrets, getConnectionOAuth, getConnectionToken } from '../../connections/secure'
 import type { MobileConnection } from '../../connections/types'
 import { httpRequest, type HttpRequestOptions } from '../http'
@@ -50,4 +51,21 @@ export async function logoutConnection(connection: MobileConnection): Promise<vo
   }).catch(() => undefined)
 
   await deleteAllConnectionSecrets(connection.id, connection.headerNames ?? [])
+}
+
+/**
+ * M08 Defect 2: `logoutConnection` above had no caller anywhere in the app —
+ * `Delete` on the connections screen clears secrets directly
+ * (`deleteAllConnectionSecrets`) without ever sending the best-effort
+ * `POST /auth/logout`, and there was no separate "sign out" affordance at
+ * all. This is the connections screen's actual "Sign out" button: run the
+ * full logout above, then flip `needsLogin` in the registry so the screen
+ * immediately shows the connection needs re-authentication — same flag
+ * `session-connection.ts` sets for an unauthorized close or a dead refresh
+ * token, reused here since the end state is identical (no usable
+ * credentials left for this connection).
+ */
+export async function signOutConnection(connection: MobileConnection): Promise<void> {
+  await logoutConnection(connection)
+  upsertConnection({ ...connection, needsLogin: true })
 }

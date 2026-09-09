@@ -1,6 +1,6 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (Opus device pass 2026-09-09: criterion 2 verified, criterion 4 partially verified, **criterion 3 fails** — see the Verifier findings at the end of this file; the `[physical]` criterion keeps its register row)
+**Status:** in-progress (Opus device pass 2026-09-09: criterion 2 verified, criterion 4 partially verified, **criterion 3 fails** — see the Verifier findings at the end of this file; the `[physical]` criterion keeps its register row. 2026-09-10 fix round addressed both findings — see that section at the end of the file — pending re-verification on device)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -507,6 +507,11 @@ Two things it does **not** get right, stated up front:
    that field before ever reading `/api/auth/providers` — so an unmodified backend cannot be driven
    into oauth mode at all. A genuinely Portal-gated backend would report `true`; the stub reports
    what such a backend would.
+   *Settled by D13 (2026-09-10): the real backend reported `false` because it was a loopback bind, which
+   is token mode by the server's own rule (`should_require_dashboard_auth`: any non-loopback bind or a
+   non-loopback `dashboard.public_url` engages the gate). A Portal-gated deployment is non-loopback and
+   reports `true`, so the app's detection is correct. Next pass: engage the gate the way the server does
+   (`--host 0.0.0.0`, or `dashboard.public_url` under D11 rule 1) instead of overriding the payload.*
 2. **`POST /api/auth/ws-ticket` returns 401 for the whole pass.** Not an app fault and not a stub
    bug: `hermes_cli/dashboard_auth/routes.py:449` gates it behind `_require_session(request)`, which
    wants a real backend Session. The stub is the identity provider, not the backend, so no such
@@ -711,3 +716,70 @@ Criterion 3 needs `needsLogin` set when a confirmed `session_expired` lands on t
 Criterion 4 needs `logoutConnection` wired to an affordance. Both are then re-verifiable on the
 emulator with the same harness in minutes — the stub's `/__ctl/kill_refresh` switch reproduces
 Finding 1 on demand.
+
+## 2026-09-10 — Fix round: Finding 1 and Finding 2
+
+### Finding 1 — `needsLogin` now reachable from the pre-connect path
+
+`resolveAuth` (`src/gateway/session-connection.ts`) already called `ensureFreshOAuthAccessToken`
+before minting the ws-ticket — the right design — but a confirmed-dead refresh token made that leg
+return `null`, the ticket POST 401 on nothing to open a socket, and `ensureGatewayConnection()` just
+rejected with no `needsLogin` setter ever running (both existing setters are downstream of
+`handleSocketClose`, which needs an already-open socket). The ws-ticket mint is now wrapped: on a 401,
+`flagOauthSessionExpiredIfConfirmed` checks whether `token-refresh.ts`'s `doRefresh` already cleared the
+stored OAuth session (its own confirmed-`session_expired` behavior, unchanged) — only then does it flip
+`needsLogin`, mirroring `handleSocketClose`'s oauth branch's own "second unauthorized after refresh means
+the session is genuinely gone" logic, just reached from the path that never opens a socket at all.
+
+**Why not just flip `needsLogin` on any ws-ticket 401:** a merely unreachable provider (503/timeout)
+also leaves `oauthAccessToken` null and also gets a 401 back from the ws-ticket endpoint (no bearer
+token to send either way) — but `doRefresh` does NOT clear the stored session for a transient failure,
+only for a confirmed one. Checking `getConnectionOAuth` after the failed mint is what distinguishes the
+two; guessing from the ws-ticket response alone would have violated AGENTS.md's "never reauth on a
+timeout/5xx" for the transient case. This is the same distinction `doRefresh`'s own header comment
+already draws; `resolveAuth` just now reads it back.
+
+Preserved exactly as the verifier's findings required: the refresh call itself only runs once per
+foreground cycle (`ensureFreshOAuthAccessToken`'s own early-return once the session is cleared — no
+change there), the stale RT is never replayed (still `doRefresh`'s job, untouched), and the rotation-
+persistence ordering for a live token is untouched (nothing in the success path changed).
+
+New tests in `src/gateway/session-connection.test.ts` (via `ensureGatewayConnection`, since `resolveAuth`
+itself isn't exported): confirmed-dead RT sets `needsLogin`; a transient failure (session still in
+SecureStore) does NOT; a valid access token that draws a surprise 401 anyway does NOT (session on disk
+untouched, so not confirmed). All three fail on the pre-fix code for the first case (verified manually —
+`needsLogin` stays `undefined` without the fix) and the third case guards the fix itself from being too
+broad.
+
+### Finding 2 — `logoutConnection` now reachable: a "Sign out" button
+
+`logoutConnection` (`src/net/auth/logout.ts`) had no caller anywhere in the app. Added
+`signOutConnection` in the same file — runs the existing best-effort `POST /auth/logout` + full
+SecureStore clear, then flips `needsLogin: true` on the registry entry via `upsertConnection` (the same
+flag Finding 1's fix and `handleSocketClose` both set, reused since the end state is identical: no usable
+credentials left). Wired to a new "Sign out" button on the connections screen
+(`app/(main)/settings/connections.tsx`), next to the existing "Delete" — same `Alert.alert` confirm
+pattern, disabled while in flight. Unlike "Delete", "Sign out" keeps the connection registered (just
+without credentials), which is exactly the affordance the verifier named: "the one deliverable a user
+would reach for after Finding 1 ('just sign me out and back in')."
+
+New tests in `src/net/auth/logout.test.ts` (`describe('signOutConnection', ...)`, with a Map-backed
+`react-native-mmkv` mock added to that file so the registry's `needsLogin` write is actually observable):
+confirms the full logout runs (SecureStore cleared, POST sent) AND `needsLogin` gets set, and that
+`needsLogin` still gets set when the best-effort POST fails outright (matching `logoutConnection`'s own
+"never let a network failure block the local sign-out" contract). No test harness exists for `app/**`
+screens in this repo (RNTL isn't a dependency, per M08's own prior round's note) — the button itself is
+therefore unverified beyond `tsc`/eslint, same convention this milestone already followed for
+`app/connect/index.tsx`'s oauth branch.
+
+### Verification
+
+`npm run check` (typecheck, 348 vitest tests / 45 files — up from 340/44, all green, 52 Python tests,
+eslint, Prettier) all clean from `D:\Stuff\Code\git\hermes-android`. No native module touched (pure
+TypeScript), no rebuild needed. No throwaway server started this round — both fixes and their tests are
+unit-level; the verifier's own harness (a Portal-shaped stub with a `kill_refresh` switch) is what
+re-proves Finding 1 live, and is described as reproducing it "in minutes" once this fix lands.
+
+**Status stays `in-progress`** — per handover rule 5 / D12.2, only Opus marks a tracker status `done`.
+Both findings from the 2026-09-09 device pass are addressed; re-verification on `emulator-5554` with the
+same harness is the next step.

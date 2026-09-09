@@ -1,6 +1,6 @@
 # M11 — Push plugin + voice
 
-**Status:** in-progress (Opus device pass 2026-09-09: no exit criterion can close on this host — see the Opus section and Verifier findings at the end of this file)
+**Status:** in-progress (Opus device pass 2026-09-09: no exit criterion can close on this host — see the Opus section and Verifier findings at the end of this file. 2026-09-10 fix round found and fixed Finding 1's root cause — see that section at the end of the file — pending re-verification on device)
 **Depends on:** M07
 **Goal:** Backgrounded approvals and finished turns arrive as push notifications; voice input and output work.
 
@@ -10,6 +10,11 @@ Hermes loads plugins from `~/.hermes/plugins/<name>/`. A plugin can observe
 `pre_approval_request` and `on_stream_end` (upstream `hermes_cli/plugins.py`, `VALID_HOOKS`)
 and can mount REST routes at `/api/plugins/<name>/` via `dashboard/manifest.json` with an `api`
 file (upstream `hermes_cli/web_server_dashboard.py`). Those routes sit behind the normal auth gate.
+
+*Correction (D13, 2026-09-10): `pre_approval_request` fires only in the CLI-interactive path of
+`tools/approval.py`; the gateway branch returns before it. It never fires for a mobile session. The
+plugin's poll-based watcher is the design that works; the paragraph above is kept as written for the
+record.*
 
 **Correction (2026-09-09, see Deviations below): `pre_approval_request` does not fire for
 gateway/mobile sessions.** The paragraph above is kept as originally written; the actual
@@ -648,3 +653,56 @@ Throwaway server on 9122 stopped **by PID**, never `--stop`. `config.yaml` compa
 backup — unchanged. `adb reverse tcp:9122` removed; the user's 9119/9121/8081 reverses untouched. The
 test connection and the session it created were deleted, and `SecureStore.xml` is back to its pre-pass
 key count (9). The scratch token was never written to disk.
+
+## 2026-09-10 — Fix round: Finding 1 (the speak control wedges permanently)
+
+**Root cause found.** `src/net/http.ts`'s `httpRequest` relied entirely on `AbortController.abort()`
+making the awaited `fetch()` promise reject once the timeout timer fired. On this RN/Hermes build,
+`fetch()` against a backend that accepted the connection and then never wrote a single byte does not
+reject when its `AbortSignal` aborts — the verifier's own elimination ("killing the server should have
+failed the request even if the abort misfired, and it did not") already narrowed this to somewhere
+inside `fetch` itself, not this app's own promise chain above it, and that holds: nothing between
+`speakText` and `httpRequest` swallows a rejection: `speak()` (`tts.ts`) `await`s `speakText` directly
+into its own `catch`/`finally` (`Composer.tsx`'s `speakLastReply`), so a rejection there was always
+going to surface as the "Speech failed" toast, and did in every other REST call in this app that has
+ever timed out. `/api/audio/speak`'s 180s window was simply the first request in this codebase long
+enough, against a hang realistic enough (an unconfigured `tts:` chain accepts the connection and never
+answers), to expose that `fetch`'s abort-driven rejection is not something this runtime can be trusted
+to deliver.
+
+This is not a defensive `finally` patch — it does not touch `Composer.tsx`/`tts.ts`/`speech-progress.ts`
+at all, and it does not change either timeout duration (`AUDIO_SPEAK_MIN/MAX_REQUEST_TIMEOUT_MS` and the
+per-char scaling in `src/voice/api.ts` are untouched, as instructed). The fix is in `httpRequest` itself:
+the timeout now races `fetch()` with its own `setTimeout`-backed rejection — mirroring
+`upstream/shared/json-rpc-gateway.ts`'s own RPC timeout, which already settles its pending promise
+itself rather than trusting the WebSocket transport to notice a cancellation. `controller.abort()` is
+still called at the deadline (best-effort, for the platforms/paths where it does release the underlying
+connection), but `httpRequest`'s own promise no longer depends on that call doing anything.
+
+The rejected error is a plain `Error` (`request timed out after Ns: <path>`), not an `HttpError` — same
+as an abort/network-failure error was before this fix (no `status` field either way) — so
+`classifyHttpError`/`classifyFailure` (`src/net/auth/ladder.ts`) still classify a timeout as `'other'`,
+never `'unauthorized'`; AGENTS.md's "never reauth on a timeout" holds exactly as before. Checked every
+existing `instanceof HttpError` call site (`connection-test.ts`, `push/api.ts`, `cloud-discovery.ts`,
+`native-login.ts`, `password-login.ts`, `token-refresh.ts`, `session-connection.ts`) — none of them
+match a plain `Error`, so none change behavior for this case.
+
+New test: `src/net/http.test.ts`. The first test reproduces the exact bug with a `fetch` mock that never
+settles and ignores its `AbortSignal` entirely (simulating the confirmed-live behavior above) — it fails
+on the pre-fix code (verified by temporarily reverting `http.ts` and re-running: the promise never
+settles within the fake-timer deadline). A second test confirms `controller.abort()` is still called at
+the deadline. A third is a happy-path regression check (a `fetch` that resolves normally still resolves
+`httpRequest` normally).
+
+`npm run check` (typecheck, 348 vitest tests / 45 files — up from 340/44, all green, 52 Python tests,
+eslint, Prettier) all clean from `D:\Stuff\Code\git\hermes-android`. No native module touched, no
+rebuild needed. No throwaway server was started this round — the fix and its test are both pure
+JS-runtime-timing, nothing server-facing to verify against.
+
+**Status stays `in-progress`** — this closes the one production defect Finding 1 raised on the
+`httpRequest` layer; the criterion itself is still gated on a real TTS provider being configured
+(the user's own machine/credentials, not the implementer's or verifier's call) and the `[physical]`-
+shaped parts of M11 untouched by this round. Re-verifiable on device with the same repro: point
+`/api/audio/speak` at a backend with no `tts:` section configured (the default state of a fresh Hermes
+install) and confirm the button now recovers with a "Speech failed" toast within `audioSpeakRequestTimeoutMs`
+instead of spinning forever.
