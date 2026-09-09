@@ -20,13 +20,18 @@
  * (401/4401 -> unauthorized, 403/4403 -> forbidden) is reused directly against
  * the close code instead. Token/password connections (M04) have no silent
  * refresh, so an unauthorized close always lands on `needsLogin` — matching
- * `nextReauthAction`'s "no refresh available" branch. M08's OAuth mode is the
- * first to have a real refresh to attempt before that.
+ * `nextReauthAction`'s "no refresh available" branch. M08 plugs in OAuth's
+ * real refresh (src/net/auth/token-refresh.ts) for exactly that branch: a
+ * 4401 on an oauth connection attempts one `refreshConnectionOAuth` before
+ * falling back to `needsLogin`, then redials on success so the reconnect
+ * that already handles a plain dropped socket (M07) also covers "the token
+ * just needed renewing".
  */
 
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
-import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { getConnectionHeaders, getConnectionToken } from '../connections/secure'
 import type { MobileConnection } from '../connections/types'
+import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
@@ -230,10 +235,13 @@ function handleGatewayEvent(event: RpcEvent): void {
  * AGENTS.md "Credentials and reauth", applied to the WS close code directly
  * (mirrors `src/net/auth/ladder.ts`'s HTTP 401/403 classification exactly —
  * 4401/4403 are that rule's WS-close spelling):
- *   - 4401 (confirmed unauthorized) -> mark the connection `needsLogin`.
- *     Token/password connections (M04) have no silent refresh, so this is
- *     the only correct outcome for either mode today (M08's OAuth mode is
- *     the first with a real `refresh()` to attempt before it).
+ *   - 4401 (confirmed unauthorized) on token/password connections (M04) ->
+ *     mark the connection `needsLogin` immediately — no silent refresh
+ *     exists for either mode.
+ *   - 4401 on an oauth connection (M08) -> `recoverOauthUnauthorizedClose`
+ *     attempts one `refreshConnectionOAuth` first; only a refresh that
+ *     fails (a confirmed dead refresh token, or one that can't be attempted
+ *     right now) falls through to `needsLogin`.
  *   - 4403 (confirmed forbidden) -> left as an ordinary closed state, no
  *     login prompt. Forbidden means the credentials are fine but the action
  *     isn't permitted; a login screen cannot fix that.
@@ -243,9 +251,36 @@ function handleGatewayEvent(event: RpcEvent): void {
  *     reconnect-backoff.ts) owns retrying those, not this function.
  */
 export function handleSocketClose(connection: MobileConnection, code: number): void {
-  if (code === 4401) {
-    void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  if (code !== 4401) {
+    return
   }
+
+  if (connection.authMode === 'oauth') {
+    void recoverOauthUnauthorizedClose(connection)
+
+    return
+  }
+
+  void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+}
+
+/** The oauth half of the 4401 branch above. A refresh that rotates the
+ *  token doesn't itself reopen the socket — this redials via
+ *  `ensureGatewayConnection()`, the same path M07's foreground-return probe
+ *  uses; a failed redial here is swallowed exactly like it already is for
+ *  that caller (the next foreground/network-restore event, or the user's
+ *  own retry, tries again — this function has no fresher signal to act on
+ *  than that one already does). */
+async function recoverOauthUnauthorizedClose(connection: MobileConnection): Promise<void> {
+  const refreshed = await refreshConnectionOAuth(connection.id, connection.baseUrl)
+
+  if (!refreshed) {
+    await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+
+    return
+  }
+
+  await ensureGatewayConnection().catch(() => undefined)
 }
 
 async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
@@ -262,7 +297,12 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
   // Password/OAuth (gated): mint a single-use WS ticket over the existing
   // cookie session (password) or bearer token (OAuth, M08) — browsers/RN
   // cannot set Authorization on a WebSocket upgrade, hence the ticket.
-  const oauth = connection.authMode === 'oauth' ? await getConnectionOAuth(connection.id) : null
+  // `ensureFreshOAuthAccessToken` is the proactive leg of M08's refresh
+  // (expires_at - 60s): a token about to expire is rotated here, before the
+  // ticket mint that would otherwise 401 and only then trigger the reactive
+  // path above.
+  const oauthAccessToken =
+    connection.authMode === 'oauth' ? await ensureFreshOAuthAccessToken(connection.id, connection.baseUrl) : undefined
 
   const { ticket } = await httpRequest<{ ticket: string; ttl_seconds: number }>(
     connection.baseUrl,
@@ -270,7 +310,7 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
     {
       credentials: 'include',
       method: 'POST',
-      token: oauth?.accessToken
+      token: oauthAccessToken ?? undefined
     }
   )
 

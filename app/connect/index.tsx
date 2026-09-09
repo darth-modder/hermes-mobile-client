@@ -5,10 +5,11 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
 import type { MobileConnection } from '../../src/connections/types'
+import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
 import { HttpError } from '../../src/net/http'
 
-type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth' }
+type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth'; provider?: string }
 
 function newConnectionId(): string {
   return `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -16,8 +17,9 @@ function newConnectionId(): string {
 
 /**
  * Add a connection: URL + label, auto-detects whether the backend is
- * ungated (token mode) or gated with a password provider (M04) — OAuth-gated
- * backends (M08) are detected but not yet completable here.
+ * ungated (token mode), gated with a password provider (M04), or gated with
+ * an OAuth provider such as Nous Portal (M08, via nativeLogin() and a
+ * Custom Tab).
  */
 export default function ConnectScreen() {
   const router = useRouter()
@@ -56,8 +58,14 @@ export default function ConnectScreen() {
         return
       }
 
-      setDetected({ mode: 'oauth' })
-      setStatus('Gated backend with no password provider — Nous Portal sign-in is not yet supported here.')
+      const oauthProvider = providers.find(p => !p.supports_password)
+
+      setDetected({ mode: 'oauth', provider: oauthProvider?.name })
+      setStatus(
+        oauthProvider
+          ? `Gated backend — sign in with ${oauthProvider.display_name ?? oauthProvider.name}.`
+          : 'Gated backend with no registered auth provider — cannot sign in yet.'
+      )
     } catch (error) {
       setStatus(`Could not reach ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -103,6 +111,59 @@ export default function ConnectScreen() {
             : String(error)
 
       setStatus(`Connect failed: ${message}`)
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  /**
+   * OAuth sign-in (M08): opens a Custom Tab via nativeLogin() straight from
+   * this screen — unlike password mode there's no form to fill first, so
+   * this doesn't route to a child screen the way goToPasswordLogin() does.
+   * Mirrors connectToken()'s persist-then-navigate shape: nativeLogin()
+   * itself already writes the bearer payload to SecureStore
+   * (setConnectionOAuth), this just records the connection metadata and
+   * verifies the fresh access token actually works before entering the app.
+   */
+  const connectOAuth = async () => {
+    if (detected?.mode !== 'oauth') {
+      return
+    }
+
+    setConnecting(true)
+    setStatus('Opening sign-in…')
+
+    const id = newConnectionId()
+
+    try {
+      const result = await nativeLogin(id, baseUrl, { provider: detected.provider })
+
+      const connection: MobileConnection = {
+        id,
+        kind: 'remote',
+        label: label.trim() || baseUrl,
+        baseUrl,
+        authMode: 'oauth',
+        provider: result.provider || detected.provider
+      }
+
+      const statusBody = await probeStatus(baseUrl, { token: result.accessToken })
+
+      setActiveConnection({
+        ...connection,
+        installId: typeof statusBody.install_id === 'string' ? statusBody.install_id : undefined,
+        lastUsedAt: Date.now()
+      })
+
+      setStatus(`Connected — install_id=${statusBody.install_id ?? '(none)'}`)
+      router.replace({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' })
+    } catch (error) {
+      // NativeLoginError's own message already distinguishes cancelled/timed-out/
+      // state-mismatch/invalid-code/provider-error/malformed-response — no need
+      // to remap it here, same as how PasswordLoginError is handled below.
+      const message = error instanceof NativeLoginError || error instanceof Error ? error.message : String(error)
+
+      setStatus(`Sign-in failed: ${message}`)
     } finally {
       setConnecting(false)
     }
@@ -161,6 +222,12 @@ export default function ConnectScreen() {
       {detected?.mode === 'password' ? (
         <TouchableOpacity onPress={goToPasswordLogin} style={styles.button}>
           <Text style={styles.buttonText}>Sign in</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {detected?.mode === 'oauth' ? (
+        <TouchableOpacity disabled={connecting} onPress={connectOAuth} style={styles.button}>
+          <Text style={styles.buttonText}>{connecting ? 'Signing in…' : 'Sign in with Portal'}</Text>
         </TouchableOpacity>
       ) : null}
     </ScrollView>
