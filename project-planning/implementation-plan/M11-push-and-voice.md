@@ -1,6 +1,6 @@
 # M11 — Push plugin + voice
 
-**Status:** in-progress
+**Status:** in-progress (Opus device pass 2026-09-09: no exit criterion can close on this host — see the Opus section and Verifier findings at the end of this file)
 **Depends on:** M07
 **Goal:** Backgrounded approvals and finished turns arrive as push notifications; voice input and output work.
 
@@ -528,3 +528,123 @@ part of a broader milestone, both of M11's remaining gaps sit on its two headlin
 actually arriving, dictation actually transcribing real speech), so `done` is reserved for the
 batched physical pass rather than claimed early under D9's general allowance. No worktree/branch
 opened for M11 this round.
+
+### 2026-09-09 — Opus device pass (D12.2)
+
+**Verdict: none of the four exit criteria can close on this host, and that is now established by
+running them rather than by reasoning about them.** Two were already known blocked and their register
+rows are correct. The third is blocked by the same missing `eas init`, now confirmed from the device's
+own log rather than inferred. The fourth — the spoken reply, the one criterion this milestone
+recorded as confirmed on the implementer's evidence and which I had explicitly not re-run — turns out
+to be **unrunnable on this machine**, and the attempt surfaced a defect. M11 stays `in-progress`.
+
+Run on `emulator-5554` against a throwaway gated `hermes serve` on **9122** (M11's port per D12.1).
+The session token was generated inside the launcher and typed straight into the app; it was never
+echoed, written to a file, or placed on a command line. The connect form's token field was located by
+walking the accessibility tree for the last of three `EditText` nodes and the focus was asserted empty
+before typing — a guard added after I mis-tapped a token into a visible label field earlier in this
+round.
+
+#### 1. `[physical]` Approval push after 30 minutes of doze — unchanged, register row stands
+
+Not attempted. D1 excludes it and the row already names the right blockers (device **and** an EAS
+project id).
+
+#### 2. No push is sent while the app is foregrounded — still blocked, now confirmed on-device
+
+The client never registers for push at all on this build, and says so itself. From `logcat` during
+this pass:
+
+```
+09-09 23:27:40.393  ReactNativeJS: [push] disabled: no EAS project id (extra.eas.projectId)
+                                   — run `eas init` to enable push
+```
+
+So there is no device token, nothing to deliver to, and the foregrounded-suppression path cannot be
+exercised end to end. The server-side gate (`backgrounded_tokens()`) is exhaustively unit-tested and I
+re-confirmed that in the gaps review; what remains unproven is the client-reports-presence →
+plugin-gates flow as one path. That is the same blocker as criterion 1 and belongs to the same
+`eas init` (D11.3), which is the user's call.
+
+#### 3. Dictation inserts transcribed text into the composer — unchanged, register row stands
+
+Not re-attempted. The empty-transcript path is already proven live and the non-empty path needs real
+speech the emulator cannot script; the register row states this accurately.
+
+#### 4. A reply is spoken via TTS — NOT verifiable on this host
+
+I set this criterion up properly: connected to a real backend, sent a prompt, and got a settled reply.
+
+```
+prompt:  "Reply with exactly one short sentence about lighthouses"
+reply:   "Lighthouses guide ships safely past dangerous shores."   (kimi-k3, opencode-go)
+```
+
+Then tapped the 🔊 control. It never produced audio, and the reason is environmental:
+**`~/AppData/Local/hermes/config.yaml` has no `tts:` section at all.** `POST /api/audio/speak`
+(`hermes_cli/web_routers/audio.py:250`) synthesizes through "the TTS provider chain configured under
+`tts.` in config.yaml", and there is no chain configured. The endpoint exists and is gated as
+expected — an unauthenticated probe returns 401, not 404 — so the app's authenticated request reached
+a real route that simply has no provider behind it.
+
+Configuring a TTS provider means editing the user's machine and, for most providers, their
+credentials. That is not the verifier's call, so this goes to the register rather than being forced.
+
+**This also corrects the standing record for this criterion.** M11's log reported TTS confirmed live
+with playback advancing 0→3745 ms; I did not re-run it at the time and recorded it as the
+implementer's evidence rather than mine. It cannot be reproduced on this host in this configuration.
+I am not calling the earlier observation wrong — a `tts:` section may well have been present then, or a
+different profile used — but it is not reproducible now, and the criterion should not be treated as
+closed on it.
+
+## Verifier findings — 2026-09-09, M11 device pass
+
+### Finding 1 — the speak control never recovers when `/api/audio/speak` does not answer
+
+Tapping 🔊 swaps the button for an `ActivityIndicator` (`src/chat/Composer.tsx:406-407`,
+`disabled={speaking}`). On this host it stayed a spinner indefinitely, with no error surfaced:
+
+```
+23:45:20   tapped the speaker; button becomes a spinner
+23:48:20   audioSpeakRequestTimeoutMs("Lighthouses guide ships safely past dangerous shores.")
+           = max(180_000, 52 chars x 35) = 180_000 ms  -> the AbortController deadline
+23:50:03   still spinning (280 s)
+23:50:05   backend on 9122 killed outright
+23:50:11   still spinning
+23:50:5x   screenshot: still a spinner, no toast, mic/image/doc buttons unaffected
+```
+
+`speakLastReply` has `finally { setSpeaking(false) }` and a `catch` that raises a "Speech failed"
+notification, so neither ran — the awaited promise never settled. The path narrows cleanly:
+`speakUnspokenReply` (`src/voice/speech-progress.ts:42`) has no wait of its own — it returns `false`
+immediately for a pending or already-spoken turn — and `speak` (`src/voice/tts.ts:40`) awaits only
+`speakText`, then writes a file and calls `player.play()` without awaiting playback. So the stall is
+inside `speakText`'s `httpRequest`, whose 180 s abort did not reject the promise.
+
+**What I did not establish:** why. Killing the server should have failed the request even if the
+abort misfired, and it did not, so I cannot distinguish "the AbortController never fires on this RN
+version" from something upstream of the fetch. I am reporting the observation and the elimination,
+not a root cause.
+
+Worth being fair about two things. The timeout design itself is *correct and deliberate* — `api.ts`'s
+header explains exactly why speak and transcribe need minutes rather than `http.ts`'s 15 s default,
+and scales it by payload so a short clip still fails fast. And the practical impact is bounded: a
+healthy TTS backend answers, and the control recovers. The failure mode is a backend that accepts the
+request and never responds — which is precisely what an unconfigured `tts:` chain produces, i.e. the
+default state of a fresh Hermes install. A user who taps the speaker before configuring TTS gets a
+permanently dead button in that session with nothing telling them why.
+
+### What this does not question
+
+- The reply path itself is healthy: connect → new session → prompt → settled reply, all live.
+- `audioSpeakRequestTimeoutMs` / `audioTranscribeRequestTimeoutMs` are well-reasoned and documented.
+- The push plugin's delivery gate remains exhaustively tested; nothing here touches it.
+- `speech-progress.ts`'s "mark spoken only after `speak()` resolves" ordering is right, and is why a
+  failed speak stays retryable.
+
+#### Environment
+
+Throwaway server on 9122 stopped **by PID**, never `--stop`. `config.yaml` compared against a pre-pass
+backup — unchanged. `adb reverse tcp:9122` removed; the user's 9119/9121/8081 reverses untouched. The
+test connection and the session it created were deleted, and `SecureStore.xml` is back to its pre-pass
+key count (9). The scratch token was never written to disk.
