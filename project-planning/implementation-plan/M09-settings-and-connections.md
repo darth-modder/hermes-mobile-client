@@ -1,6 +1,6 @@
 # M09 — Settings + connections UI
 
-**Status:** in-progress (all tasks and exit criteria closed this round; `done` is Opus's call per handover rule 5)
+**Status:** done
 **Depends on:** M06
 **Goal:** Manage providers, models, MCP, skills, plugins, profiles and connections from the phone.
 
@@ -194,3 +194,109 @@ decision and not something the verifier can authorise.
 One Opus pass per milestone, per D12.2: the exit criteria on `emulator-5554`, each with its command
 and output, `[physical]` ones to the register. The device passes serialize (D12.1) so they run one
 at a time. Nothing here needs re-implementing — it needs checking.
+
+### 2026-09-09 — Opus device pass (D12.2)
+
+**Verdict: all four exit criteria verified live on merged `main`. Status → `done`.**
+
+This is the first Opus pass over M09; the earlier `done` was self-assigned and reverted (see the
+Verifier findings section above). Nothing in this pass contradicts the implementation work — every
+criterion held.
+
+#### Blocker cleared first: merged `main` had never been built
+
+The pass could not start. The app crashed at launch with `Cannot find native module 'ExpoCrypto'`,
+and no existing APK could run the merged tree:
+
+| Tree | Native modules | Missing vs merged `main` |
+|---|---|---|
+| main (merged) | **29** | — |
+| m08 (APK 18:21) | 28 | `expo-sharing` |
+| m10 (APK 19:55) | 28 | `expo-crypto` |
+
+Installing m08's APK got past `ExpoCrypto` straight into `Cannot find native module 'ExpoSharing'`.
+Each branch built an APK containing only its own native additions; **no build of the union had ever
+existed**, so every prior live claim for M08/M09/M10 was made against a partial integration. I built
+merged `main` (`BUILD SUCCESSFUL in 20m 18s`, 816 tasks) and it runs correctly, with M10's drawer
+nav and M11's mic/speaker buttons both present.
+
+This is a gap in D12.1 rather than anyone's error: it assigns `android/` ownership and sequences
+merges, but never says who rebuilds after a merge lands. Worktrees do not share `android/` any more
+than they share `node_modules` — the round already noticed the second half and not the first.
+
+#### 1. A model switch is reflected in the next `session.info` — verified
+
+Settings › Models showed the live catalog and `CURRENT MODEL opencode-go · kimi-k3`. Tapped
+`mimo-v2.5`; the screen updated to `opencode-go · mimo-v2.5`. Created a **new** session; its header,
+which is fed by `session.info`, read:
+
+```
+opencode-go · mimo-v2.5 · medium
+```
+
+#### 2. MCP add and test succeed; skill toggle persists — verified
+
+Added a real remote server through the form (`deepwiki`, `https://mcp.deepwiki.com/mcp`). It listed
+as `http · https://mcp.deepwiki.com/mcp`, and **Test** returned:
+
+```
+3 tools found.
+```
+
+Skill toggle checked against the server rather than the screen. Before: `claude-code enabled=true`
+(independent `curl /api/skills`). Toggled it off in the UI — switch went `checked=true` →
+`checked=false` — and the same independent curl then returned:
+
+```
+claude-code enabled=false
+```
+
+Restored to `true` afterwards and re-confirmed.
+
+#### 3. A profile switch changes the sessions list — verified, as an A/B
+
+Created profile `opusverify` (reported `60 skills · mimo-v2.5`). Sessions list under it:
+
+```
+No sessions yet.
+```
+
+Switched back to `default` and the list repopulated (`Write detailed lighthouse story`,
+`M10 Artifact File Test`, …). Both directions, so the change is the profile scoping and not a
+loading artefact. Profile deleted afterwards.
+
+#### 4. A failing connection test shows the ladder's reason — verified
+
+Two of the three failure reasons driven live, each rendering distinctly:
+
+```
+Unauthorized — the stored credentials were rejected.        (stale token)
+Unreachable — fetch failed: java.io.IOException: unexpected end of stream on http://127.0.0.1:9119/...
+                                                            (server stopped by PID mid-test)
+```
+
+`forbidden` was not reachable: producing a 403 needs a gated backend that authenticates the caller
+and then denies the resource, which a loopback ungated server cannot do. It is covered by
+`connection-test.test.ts`'s `password mode: a 403 classifies as forbidden`, and the three
+classifications share one code path, so the gap is in the fixture rather than the logic.
+
+Worth recording that the implementation avoids the trap this criterion exists to catch — its own
+test says so: `token mode: GET /api/sessions with Bearer succeeds (never /api/status — it is on the
+public allowlist)`. A public endpoint would have made the test pass against a backend the app cannot
+actually use. Password/OAuth mode mints a real one-time WS ticket via `POST /api/auth/ws-ticket`.
+
+#### One usability finding
+
+`app/connect/index.tsx:199` sets `autoCapitalize="none"` on the backend-URL `TextInput` but not
+`autoCorrect={false}`. Android's IME rewrites `http://` to `https://` as you type a complete URL,
+and on a loopback address that produces `javax.net.ssl.SSLException: Unable to parse TLS packet
+header` — an error that reads like a server fault, not a typo. It cost me several attempts before I
+worked out what was happening, and a user following `docs/CONNECTING.md`'s `adb reverse` recipe would
+hit exactly the same wall. One prop.
+
+#### Environment
+
+`config.yaml` backed up before the pass and restored after — `diff` empty, so the model switch is
+reverted too. Test profile deleted, MCP server removed, skill restored to `enabled=true`, throwaway
+server stopped **by PID** (never `--stop`, per the new AGENTS.md rule), scratch token deleted and
+absent from git history.
