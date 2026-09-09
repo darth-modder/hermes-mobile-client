@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
+import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
@@ -185,13 +186,14 @@ export default function SessionListScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Sessions</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity hitSlop={12} onPress={openDrawer} style={styles.settingsButton}>
+            <Text style={styles.settingsIcon}>☰</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Sessions</Text>
+        </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            hitSlop={12}
-            onPress={() => router.push('/(main)/settings/index')}
-            style={styles.settingsButton}
-          >
+          <TouchableOpacity hitSlop={12} onPress={() => router.push('/(main)/settings')} style={styles.settingsButton}>
             <Text style={styles.settingsIcon}>⚙</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={startNewSession} style={styles.newButton}>
@@ -295,6 +297,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 10
+  },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8
   },
   list: {
     paddingBottom: 24
