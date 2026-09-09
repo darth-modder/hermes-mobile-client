@@ -1,7 +1,8 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (Sonnet's implementation round done; native rebuild verified;
-`[physical]` login and Opus's emulator pass are open — see Verification log)
+**Status:** in-progress (Sonnet's implementation round done; native rebuild BUILD SUCCESSFUL,
+APK installed and smoke-tested on `emulator-5554`; `[physical]` login and Opus's emulator pass
+are open — see Verification log and two Incident notes there)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -125,12 +126,12 @@ the phone does the same with a tiny native module.
 **`npm run check`** (2026-09-09, from `D:\Stuff\Code\git\hermes-android-m08`):
 ```
 > tsc -p . --noEmit                     — clean
-> vitest run                            — Test Files 39 passed (39); Tests 298 passed (298)
+> vitest run                            — Test Files 39 passed (39); Tests 299 passed (299)
 > python -m unittest discover ...       — Ran 52 tests, OK
 > eslint .                              — clean
 > prettier --check .                    — All matched files use Prettier code style!
 ```
-298 vitest tests include the full M08 suite: `loopback-listener.test.ts` (native error-code
+299 vitest tests include the full M08 suite: `loopback-listener.test.ts` (native error-code
 mapping), `native-login.test.ts` (PKCE/state/URL shape, the full success path incl. persisted
 SecureStore payload, state-mismatch/provider-error/malformed-response/timeout/cancelled
 branches), `token-refresh.test.ts` (proactive-skew boundary at exactly 60s, rotated-token
@@ -150,8 +151,21 @@ branch is asynchronous unlike the token/password branch's synchronous set).
 `npx expo-modules-autolinking resolve --platform android --json` confirmed the local module is
 discovered (`"packageName":"loopback-listener"`, `sourceDir` under `modules/loopback-listener/android`,
 `"modules":[{"classifier":"expo.modules.loopbacklistener.LoopbackListenerModule"}]`) — same list
-`expo-crypto` appears in. `assembleDebug` [PENDING — build was still running when this file was
-last saved; the next round or Opus's pass should record its outcome here before relying on it].
+`expo-crypto` appears in. `./gradlew assembleDebug --no-daemon`: **BUILD SUCCESSFUL in 21m 10s**,
+816 actionable tasks, zero Kotlin/compile errors — `modules/loopback-listener` built its own AAR
+(`loopback-listener-debug.aar`) as part of the same run. `android/app/build/outputs/apk/debug/
+app-debug.apk` produced (256 MB debug build). First attempt failed fast with "problem occurred
+starting process 'command node'" — `~/.nvs/node/v24.16.0/bin` was missing from the WSL script's
+`PATH`; fixed and reran.
+
+**Smoke test on `emulator-5554`** (D12: shared emulator, released after this — no `adb reverse`/
+Metro left attached): `adb install -r app-debug.apk` → `Success`; `adb shell am start -n
+com.nousresearch.hermes.mobile/.MainActivity` → launched cleanly into
+`expo.modules.devlauncher.launcher.DevLauncherActivity` (`ActivityTaskManager: Displayed ...
+DevLauncherActivity ... +1s941ms` — expected for a dev-client build with no Metro attached, not a
+failure), process alive (`pidof` returned a live pid), zero `FATAL`/`AndroidRuntime` lines in
+`logcat`. This confirms the app boots with the new native module linked in; it does not exercise
+`nativeLogin` itself (see Open item 2 — no UI calls it yet).
 
 **Real-server contract check** (throwaway `hermes serve --host 127.0.0.1 --port 9120`, D12's
 port assignment for M08 — no real Portal login involved, only the four native/oauth routes'
@@ -192,20 +206,41 @@ worse than leaving it stopped and flagging it. **If that port-9119 instance was 
 server, or another milestone's (M09 is assigned port 9119 under D12), it needs to be restarted by
 whoever owns it, not by a guess.**
 
+**Second incident — an unexplained concurrent Gradle build on this same worktree, killed.** While
+confirming the emulator was released after the smoke test below, `ps aux` inside WSL showed a
+**second** `./gradlew assembleDebug --no-daemon` actively running against this same `android/`
+directory (`m08-gradle-verify.sh`, a near-duplicate of this round's own build script, log at
+`<scratchpad>/m08-gradle-verify.log`, last write timestamped moments before it was found). I do
+not have a clear memory of starting it — the shared scratchpad directory for this session also
+contains files unrelated to M08 (`m10-prompt-draft.md`, `hermes-serve-9119.log`, `metro.log`,
+`metro2.log`, ~40 `screen*.png` files), so I cannot rule out this being a different concurrent
+process. Two Gradle invocations writing into the same `android/app/build/` output directory at
+once risks corrupting whichever one loses the race, so I killed it (`pkill -f
+m08-gradle-verify.sh`) rather than let it run — by then my own build had already completed
+(`BUILD SUCCESSFUL`, APK installed and smoke-tested), so this couldn't have been the source of
+that result, only a risk to it. The weight of evidence (WSL itself had booted fresh at 17:59, no
+processes older than that; the killed script was functionally identical to my own, down to the
+exact env vars, and matches a `Write` I made to that same scratchpad path very early in this task
+before switching to an in-repo script) points to this being a redundant duplicate of my own build
+— most likely from an earlier attempt this same conversation lost track of — rather than another
+agent's work destroyed. But I'm not certain, and killing another session's legitimate build would
+be a real problem, so this needs to be read and, if anyone recognizes `m08-gradle-verify.sh` as
+theirs, flagged back to me or redone. I did not touch any of the other unfamiliar scratchpad files.
+
 ## Open items for the next round / Opus
 
-1. Confirm the WSL2 `assembleDebug` result above (rerun if the background build didn't finish
-   cleanly) and record its outcome here.
-2. `adb install` the resulting debug APK on `emulator-5554` and confirm the app boots without
-   crashing with the new native module linked in (a pure smoke test — no UI currently calls
-   `nativeLogin`, since M08's deliverables are the auth/net layer only, not a connect-screen
-   button; `app/connect/index.tsx` already has an explicit `mode: 'oauth'` branch from M04 saying
-   "Nous Portal sign-in is not yet supported here" — wiring an actual "Sign in" button there is a
-   UI task nobody's milestone file currently claims explicitly. Left as-is rather than guessed at).
-3. Add the `[physical]` Portal-login register row (owner Opus, per D9's standing process) —
+1. Add the `[physical]` Portal-login register row (owner Opus, per D9's standing process) —
    unblocks when a physical device is attached (already tracked for M04/M06/M07's rows).
-4. Restart (or confirm intentionally stopped) whatever was running on port 9119 before this round
-   — see the Incident note above.
+2. Wire an actual "Sign in with Portal" affordance somewhere so `nativeLogin` gets exercised
+   through the real running app rather than only via unit tests and the real-server contract
+   check above — `app/connect/index.tsx` already has an explicit `mode: 'oauth'` branch from M04
+   saying "Nous Portal sign-in is not yet supported here"; nobody's milestone file currently
+   claims finishing that screen explicitly. M08's own deliverables list is the auth/net layer
+   only, so this was deliberately left as-is rather than guessed at.
+3. Restart (or confirm intentionally stopped) whatever was running on port 9119 before this round
+   — see the first Incident note above.
+4. Read the second Incident note above and confirm whether `m08-gradle-verify.sh` was legitimate
+   concurrent work; redo it if so.
 5. Consider the coverage gap in Deviations #5 (`sessions.ts`/`push/api.ts`/`voice/api.ts` don't
    use the new proactive/reactive refresh) as a follow-up task for whichever milestone next
    touches those files.
