@@ -97,3 +97,22 @@ npx expo export --platform android --output-dir <tmp>
 ## For M10
 
 **`src/api/*` is solid and ready to merge to `main`.** All nine files typecheck, lint, and pass `npm run check`; the shared `rest.ts` pattern (`requireActiveConnection`/`restAuthFor`/`restRequest`) is exercised live end-to-end by every screen in this milestone (models, skills, mcp, profiles, providers, plugins) against a real backend, not just unit-tested. `messaging.ts` in particular (webhooks/pairing/messaging platforms) has no UI in M09 by design — it's there specifically for M10's "channels" and "webhooks" screens per the task list's file mapping. M10 can start.
+
+### 2026-09-09 — Opus verification: `done`
+
+Independently reran `npm run check` from this worktree: **265** vitest tests / 35 files, **52**
+Python tests (`OK`), clean typecheck/eslint/Prettier — exact match to the write-up above.
+Reviewed the live-pass evidence (model switch, MCP add+test, skill toggle confirmed server-side
+via a direct `curl`, profile switch) and the two regression tests added for the bugs found along
+the way (`/api/status` false-positive, the pre-M09 connection backfill) — both are real,
+server-observed bugs with tests that reproduce the exact failure mode, not reconstructions.
+
+One thing worth naming rather than silently accepting: this round's own cleanup used `hermes
+serve --stop`, the same unscoped command M08's round used when it took down a concurrent
+process on this exact port (9119). No damage is reported this time — M09's server had already
+served its purpose by then — but it's the second independent hit on the same footgun in one
+round of parallel work, which is why `AGENTS.md` now carries a standing rule against it rather
+than relying on each session being told individually.
+
+No `[physical]` criteria in this milestone — all four exit criteria are closed and live-verified
+against a real backend, with no register row needed. **M09 is `done`.**
