@@ -1,8 +1,10 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (Sonnet's implementation round done; native rebuild BUILD SUCCESSFUL,
-APK installed and smoke-tested on `emulator-5554`; `[physical]` login and Opus's emulator pass
-are open — see Verification log and two Incident notes there)
+**Status:** in-progress (Sonnet's implementation round done and Opus-verified — `npm run check`
+independently reconfirmed, native rebuild BUILD SUCCESSFUL, APK smoke-tested on `emulator-5554`;
+both incidents resolved. Open before `done`: the login affordance itself — nothing in the running
+app calls `nativeLogin` yet — plus the `[physical]` Custom Tabs criterion, now a register row.
+See Verification log.)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -244,3 +246,54 @@ theirs, flagged back to me or redone. I did not touch any of the other unfamilia
 5. Consider the coverage gap in Deviations #5 (`sessions.ts`/`push/api.ts`/`voice/api.ts` don't
    use the new proactive/reactive refresh) as a follow-up task for whichever milestone next
    touches those files.
+
+### 2026-09-09 — Opus verification: `npm run check` reconfirmed; both incidents resolved; M08 stays in-progress
+
+Independently reran `npm run check` from this worktree rather than trusting the write-up alone:
+**299** vitest tests / 39 files, **52** Python tests (`OK`), clean typecheck, eslint, and
+Prettier — exact match to the numbers above. Reviewed the real-server contract check's five
+request/response pairs against the upstream route table in
+`project-planning/implementation-plan/README.md`'s "Auth routes" row; the shapes are consistent
+with what `hermes_cli/dashboard_auth/routes.py` exposes, and I accept that evidence by reference
+(D12.2) rather than re-running it — the machine's `hermes serve` is currently stopped (see
+below) and re-striking it purely to re-derive numbers already captured with real command output
+would just risk a third incident for no new information.
+
+**Incident 1 (port 9119) — resolved as far as it can be from here.** `hermes serve --status` now
+reports no processes running at all, confirming the write-up. Port 9119 is M09's assigned
+throwaway port under D12, and M09's own session was active concurrently in its sibling worktree
+at the time this happened — that is almost certainly whose process it was, not the user's own
+instance (D11 rule 1 already forbids testing against that, and nothing in this round touched
+`HERMES_HOME` outside the throwaway port). Not restarting it was the right call under D11 rule
+1's "never guess at another owner's state." I have no way to message M09's running session
+directly to confirm; I'll reconcile this against its own report when it lands. **New standing
+instruction for every worktree from now on: never call `hermes serve --stop` — it is
+unscoped by design (confirmed at the source: `hermes_cli/dashboard_procs.py`'s
+`_kill_stale_dashboard_processes` finds every stale dashboard PID on the machine, and the
+`--stop` help text says so plainly). Kill your own throwaway server by its own PID instead.**
+
+**Incident 2 (the mystery second Gradle build) — resolved. It was mine, not another session's.**
+After this round's agent reported "completed" and paused waiting on its WSL2 build, I
+misjudged that pause as the agent being stuck and dispatched a second, independent continuation
+agent into the *same* worktree to "check and finish" — not realizing the first agent had not
+actually stopped, only reached a checkpoint with no live children at that instant, and would
+resume and finish on its own. Both agents were then briefly live in the same `android/`
+directory; the second one had just reached "let me rerun `assembleDebug`" when I caught the
+duplication (from the first agent's own final report, which had by then already reported `BUILD
+SUCCESSFUL`) and killed it via `TaskStop`. That is `m08-gradle-verify.sh` — a coordination
+mistake on my end, not a stray build from anyone else. No corruption resulted (the first build
+had already completed and the APK was already smoke-tested before the second one started), and
+the worktree's git state is clean (4 commits, matches `git log` exactly as reported). Lesson for
+future rounds: a "completed" notification for an agent that mentioned a still-running background
+step should be read as a checkpoint, not necessarily a stop — worth a beat to check the
+worktree's actual state before dispatching a second session into it.
+
+**Status stays `in-progress`.** `npm run check` and the native build are solid; the three
+non-physical exit criteria (silent refresh, single sign-in prompt, logout) are closed at the
+unit-plus-contract level, which is as far as they can go without real Portal credentials (the
+user's own account, D11 rule 2) or a physical device. What's missing before `done`: the login
+affordance itself (open item 2 above) — the milestone's own Goal line is "Nous Portal ... login
+works," and today nothing in the running app can invoke it, `app/connect/index.tsx`'s oauth
+branch still being a stub from M04. That's a real gap against the milestone's own goal, not just
+a formality, so `done` waits for it rather than being claimed on the auth-layer plumbing alone.
+The `[physical]` Custom Tabs criterion is now a register row below regardless.
