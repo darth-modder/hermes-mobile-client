@@ -114,5 +114,15 @@ served its purpose by then — but it's the second independent hit on the same f
 round of parallel work, which is why `AGENTS.md` now carries a standing rule against it rather
 than relying on each session being told individually.
 
+**Merged to `main`** (`14710c7`, merge commit — branches had diverged, not a fast-forward). Two
+post-merge integration fixes, neither a logic bug in this round's work:
+`npm ci` was needed in the main checkout (each worktree has its own `node_modules`, and the new
+`@tanstack/react-query` dependency wasn't installed there yet), and
+`router.push('/(main)/settings')` in `session-list.tsx` — which typechecked fine inside this
+worktree's own isolated `expo-router` typegen — didn't typecheck against the freshly regenerated
+`.expo/types/router.d.ts` on `main` (a bare group+index alias that generation didn't emit the
+same way). Fixed to the unambiguous `/(main)/settings/index` (`1816cba`). `npm run check` is
+green on `main` post-merge: 265 vitest + 52 Python tests, clean typecheck/eslint/Prettier.
+
 No `[physical]` criteria in this milestone — all four exit criteria are closed and live-verified
 against a real backend, with no register row needed. **M09 is `done`.**
