@@ -1,6 +1,6 @@
 # M10 — Management screens
 
-**Status:** in-progress (set back by Opus 2026-09-09: marked `done` without an Opus verification pass — handover rule 5 / D12.2)
+**Status:** done (Opus 2026-09-09: all four exit criteria verified live on `emulator-5554` across two passes — see the two Opus sections at the end of this file)
 **Depends on:** M09
 **Goal:** Projects, cron, webhooks, artifacts and messaging channels at desktop parity.
 
@@ -183,9 +183,9 @@ at a time. Nothing here needs re-implementing — it needs checking.
 
 ### 2026-09-09 — Opus device pass (D12.2)
 
-**Verdict: three of four exit criteria verified live by me. Status stays `in-progress` on the
-fourth**, which I did not drive. Nothing found contradicts the implementation — the three I drove
-all passed first time, on merged `main` against a real backend.
+**Verdict: three of four exit criteria verified live by me in this pass; the fourth was closed in
+the follow-up pass recorded at the end of this file.** Nothing found contradicts the implementation —
+every criterion passed, on merged `main` against a real backend.
 
 Run on `emulator-5554` against a throwaway `hermes serve` on **9121** (M10's port per D12.1), on the
 merged-`main` build described in M09's Opus note.
@@ -211,7 +211,10 @@ shown behind a **Dismiss**. The enable switch round-tripped `checked=true → fa
 raised a confirm dialog; after **DELETE** the list returned to `No webhooks yet.` and the row was
 gone.
 
-#### 3. Pairing approve / revoke — NOT verified by me
+#### 3. Pairing approve / revoke — not verified in this pass
+
+> **Superseded.** Closed later the same day — see *Opus follow-up: criterion 3 closed* at the
+> end of this file. The account below is left intact as the record of why it was open.
 
 The Channels screen lists thirteen platforms, all `Not configured · disabled`, and no pairing
 surface exists without a configured platform. This milestone's own log is explicit that it used a
@@ -267,3 +270,65 @@ the D12.1 gap it points at.
 `config.yaml` backed up and restored (`diff` empty). Cron job deleted, webhook deleted, the two files
 I created removed, throwaway server on 9121 stopped **by PID** per the AGENTS.md rule, scratch token
 deleted and absent from git history.
+
+### 2026-09-09 — Opus follow-up: criterion 3 closed
+
+**Pairing approve / revoke verified live. All four exit criteria are now verified by me; status → `done`.**
+
+What blocked the earlier attempt was mechanical, not substantive: creating an authentic pending entry
+means calling `generate_code` through the server's own module, and the system Python cannot import it.
+Hermes ships its own interpreter, at
+`~/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe`. Using it, the entry was created through
+`PairingStore` itself rather than hand-crafted, so the salted-hash record under test is the store's own:
+
+```
+store dir: …\AppData\Local\hermes\platforms\pairing
+generate_code -> OK
+pending file: telegram-pending.json  exists=True
+  entry 7dacad35  user_id=900100200  user_name='Opus Verifier'
+```
+
+The reason the surface looked absent last time is that **Pairing renders below all thirteen platform
+cards** in the Channels `ScrollView` (`app/(main)/channels/index.tsx:234`), unconditionally — it is not
+gated on a configured platform, as I had assumed. Scrolling to the bottom showed it.
+
+#### Approve
+
+Independent `GET /api/pairing` on either side of the tap, app driven only by the tap:
+
+```
+before:  {"pending":[{"platform":"telegram","request_id":"7dacad35f6300e11",
+                      "user_id":"900100200","user_name":"Opus Verifier","age_minutes":7}],
+          "approved":[]}
+UI:      PAIRING · Opus Verifier · telegram · 4m ago · [Approve]     ← tap
+after:   {"pending":[],
+          "approved":[{"platform":"telegram","user_id":"900100200",
+                       "user_name":"Opus Verifier","approved_at":1788976439.75}]}
+```
+
+On disk the store moved the record between files, which is the real state change rather than a view
+filter: `telegram-pending.json` → `{}`, and `telegram-approved.json` gained
+`{"900100200": {"user_name": "Opus Verifier", "approved_at": …}}`.
+
+The list re-rendered without a manual refresh — `No pending pairing requests.` plus a new `APPROVED`
+section carrying the user and a `Revoke` action.
+
+#### Revoke
+
+```
+UI:      APPROVED · Opus Verifier · telegram · [Revoke]              ← tap
+after:   {"pending":[],"approved":[]}
+on disk: telegram-approved.json → {}
+UI:      'APPROVED' present: False   'Revoke' present: False
+```
+
+Both directions therefore round-trip against the server's own store, driven from the app, confirmed
+out-of-band by curl and by reading the store files directly.
+
+#### Environment
+
+Pairing artefacts I created removed (`telegram-pending.json`, `telegram-approved.json`,
+`_rate_limits.json`); the `platforms/pairing/` directories did not exist before this test and were
+removed too. `config.yaml` restored from backup, `diff` empty. Throwaway server on 9121 stopped **by
+PID** per the AGENTS.md rule — never `--stop`. Scratch token deleted; it was never written to any file
+that git tracks.
