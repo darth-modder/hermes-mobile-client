@@ -31,6 +31,7 @@ import { httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
 import { notify } from '../store/notifications'
+import { getActiveProfile } from '../store/profile'
 import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
@@ -409,10 +410,24 @@ function seedSessionMessages(storedSessionId: string, messages: SessionMessage[]
 
 /** Start a brand-new session (no session-list screen exists yet — M07 — so
  *  this is also today's only way to reach a chat). Binds it as the active
- *  session and returns its stored id for navigation. */
-export async function createSession(params: { cwd?: string; title?: string } = {}): Promise<string> {
+ *  session and returns its stored id for navigation.
+ *
+ *  `profile` defaults to the active profile atom (M09: "`session.create`'s
+ *  `profile`" — `tui_gateway/methods_session.py`'s `session.create` handler
+ *  reads `params["profile"]` independently of the socket's own dial-time
+ *  scope, exactly like a REST call's `?profile=` overrides that default for
+ *  one request) — an explicit `params.profile` (e.g. a caller creating a
+ *  session in a specific profile regardless of what's active) still wins. */
+export async function createSession(params: { cwd?: string; profile?: string; title?: string } = {}): Promise<string> {
   const client = await ensureGatewayConnection()
-  const response = await client.request<SessionCreateResponse>('session.create', { source: 'android', ...params })
+  const profile = params.profile ?? getActiveProfile()
+
+  const response = await client.request<SessionCreateResponse>('session.create', {
+    source: 'android',
+    ...params,
+    ...(profile ? { profile } : {})
+  })
+
   const storedId = response.stored_session_id ?? response.session_id
 
   reducerState = bindSession(reducerState, response.session_id, storedId, { makeActive: true })
