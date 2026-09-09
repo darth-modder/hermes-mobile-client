@@ -15,6 +15,7 @@
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 
+import { pushDataToRoute } from './handlers'
 import { ANDROID_NOTIFICATION_CHANNEL_ID } from './native-notifications'
 
 export function useNotifications(): void {
@@ -46,13 +47,24 @@ export function useNotifications(): void {
         await Notifications.requestPermissionsAsync()
       }
 
-      responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-        const storedSessionId = response.notification.request.content.data?.storedSessionId
+      const openFromResponse = (response: { notification: { request: { content: { data?: unknown } } } }) => {
+        const route = pushDataToRoute(response.notification.request.content.data)
 
-        if (typeof storedSessionId === 'string' && storedSessionId) {
-          router.push({ params: { id: storedSessionId }, pathname: '/(main)/sessions/[id]' })
+        if (route) {
+          router.push(route)
         }
-      })
+      }
+
+      // Cold start: the app process didn't exist when the notification (local or a remote
+      // push — M11) was tapped, so there's no `change` event to react to — the tap that
+      // launched the app is only visible here, once, on mount.
+      const lastResponse = await Notifications.getLastNotificationResponseAsync()
+
+      if (lastResponse) {
+        openFromResponse(lastResponse)
+      }
+
+      responseSubscription = Notifications.addNotificationResponseReceivedListener(openFromResponse)
     })()
 
     return () => {

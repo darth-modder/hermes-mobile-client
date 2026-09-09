@@ -1,7 +1,7 @@
 name: hermes-push
 version: 0.1.0
-description: "Expo push notifications for the Hermes Android/iOS client: backgrounded approvals and finished turns reach the phone. Publishes only { kind, session_id, title } to Expo — never message, approval, or reply content."
-author: "NousResearch (hermes-android)"
+description: 'Expo push notifications for the Hermes Android/iOS client: backgrounded approvals and finished turns reach the phone. Publishes only { kind, session_id, title } to Expo — never message, approval, or reply content.'
+author: 'NousResearch (hermes-android)'
 hooks:
   - on_session_start
   - on_session_end
