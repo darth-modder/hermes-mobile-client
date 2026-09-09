@@ -63,6 +63,7 @@ rows return to Fable as a policy escalation.
 | M07 | `[physical]` Airplane-mode toggle mid-turn on a real phone against a gated LAN backend | Real device | Opus | Device attached | Batched physical pass (D9) |
 | M07 | `[physical]` Screen off 15 minutes mid-turn (doze) | Real device | Opus | Device attached | Batched physical pass (D9) |
 | M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device (`expo-network` wiring landed 2026-09-08) | Opus | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
+| M11 | `[physical]` Screen off 30 minutes; an approval arrives as a push; tapping opens the card and responding succeeds | Real device + a real Expo push token (also needs an EAS project id, D11) | Opus | Device attached and `extra.eas.projectId` committed | Batched physical pass (D9) |
 
 ## Architecture
 
