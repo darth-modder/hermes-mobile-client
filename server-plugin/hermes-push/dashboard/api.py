@@ -42,6 +42,7 @@ def _load_sibling(name: str):
 
 
 registry = _load_sibling("registry")
+device_requests = _load_sibling("device_requests")
 
 router = APIRouter()
 
@@ -56,24 +57,19 @@ class PresenceBody(BaseModel):
     foreground: bool
 
 
-def _redact(device: dict) -> dict:
-    return {key: value for key, value in device.items() if key != "token"}
-
-
 @router.get("/devices")
 async def list_devices():
-    return {"devices": [_redact(d) for d in registry.list_devices()]}
+    return {"devices": [device_requests.redact_device(d) for d in registry.list_devices()]}
 
 
 @router.post("/devices")
 async def register_device(body: RegisterDeviceBody):
-    token = body.token.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="token is required")
-    if not body.platform.strip():
-        raise HTTPException(status_code=400, detail="platform is required")
-    device = registry.upsert_device(token, body.platform.strip(), body.label)
-    return {"ok": True, "device": _redact(device)}
+    try:
+        token, platform = device_requests.validate_register_device(body.token, body.platform)
+    except device_requests.InvalidDeviceRequest as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    device = registry.upsert_device(token, platform, body.label)
+    return {"ok": True, "device": device_requests.redact_device(device)}
 
 
 @router.delete("/devices/{device_id}")
@@ -88,4 +84,4 @@ async def update_presence(device_id: str, body: PresenceBody):
     device = registry.set_presence(device_id, body.foreground)
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
-    return {"ok": True, "device": _redact(device)}
+    return {"ok": True, "device": device_requests.redact_device(device)}

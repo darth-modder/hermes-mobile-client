@@ -22,8 +22,17 @@ from typing import Any, Dict, List, Optional
 
 _lock = threading.Lock()
 
+# Set by tests (directly, e.g. `registry._registry_dir_override = tmp_path`) to redirect
+# storage under a temp directory instead of the real Hermes home — `hermes_constants` is a
+# hermes-agent module this repo's plain-Python test environment doesn't have installed, and
+# nothing about this module's own logic needs the real one to be tested.
+_registry_dir_override: Optional[Path] = None
+
 
 def _registry_dir() -> Path:
+    if _registry_dir_override is not None:
+        return _registry_dir_override
+
     from hermes_constants import get_hermes_home
 
     return get_hermes_home() / "hermes-push"

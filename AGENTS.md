@@ -60,5 +60,8 @@ spawn/bootstrap/update, local fs/git, SSH connection kind, local models, and the
 
 ## Verification
 
-`npm run check` (typecheck + vitest + eslint) must be green at every milestone. On-device exit
-criteria are listed per milestone and get ticked in the milestone file when observed.
+`npm run check` (typecheck + vitest + `server-plugin/hermes-push`'s Python tests + eslint) must
+be green at every milestone. The Python half runs on stdlib `unittest`
+(`python -m unittest discover`, wired in as `npm run test:plugin`) — no pytest, no new
+dependency; see M11's Deviations for why. On-device exit criteria are listed per milestone and
+get ticked in the milestone file when observed.

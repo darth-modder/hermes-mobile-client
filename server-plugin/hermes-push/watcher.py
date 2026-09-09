@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, Optional, Set
+from typing import Callable, Dict, Optional, Set
 
 from .publisher import send_push
 from .registry import backgrounded_tokens
@@ -59,12 +59,23 @@ class ApprovalWatcher:
     """Polls ``has_blocking_approval`` for tracked sessions; pushes on each new pending
     approval. See the module docstring for why this exists instead of a hook."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        poll_interval_seconds: float = APPROVAL_POLL_INTERVAL_SECONDS,
+        has_blocking_approval: Optional[Callable[[str], bool]] = None,
+    ) -> None:
+        """``poll_interval_seconds`` and ``has_blocking_approval`` are injectable purely for
+        tests (a real fast poll interval, and a fake in place of ``tools.approval``) — the
+        production singleton at the bottom of this module uses the real defaults, and nothing
+        about run-time behavior changes."""
         self._tracked: Set[str] = set()
         self._pending_state: Dict[str, bool] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._poll_interval_seconds = poll_interval_seconds
+        self._has_blocking_approval = has_blocking_approval
 
     def track_session(self, session_id: str) -> None:
         if not session_id:
@@ -88,11 +99,16 @@ class ApprovalWatcher:
         self._stop.set()
 
     def _run(self) -> None:
-        # Imported lazily so importing this module (e.g. from a unit test) never requires the
-        # full hermes-agent runtime to be importable.
-        from tools.approval import has_blocking_approval
+        has_blocking_approval = self._has_blocking_approval
 
-        while not self._stop.wait(APPROVAL_POLL_INTERVAL_SECONDS):
+        if has_blocking_approval is None:
+            # Imported lazily so importing this module (e.g. from a unit test) never requires
+            # the full hermes-agent runtime to be importable.
+            from tools.approval import has_blocking_approval as _has_blocking_approval
+
+            has_blocking_approval = _has_blocking_approval
+
+        while not self._stop.wait(self._poll_interval_seconds):
             with self._lock:
                 session_ids = list(self._tracked)
 
