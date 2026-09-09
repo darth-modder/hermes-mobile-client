@@ -56,6 +56,7 @@ rows return to Fable as a policy escalation.
 | Milestone | Criterion | Blocker | Owner | Unblocks when | Target |
 |---|---|---|---|---|---|
 | M04 | `[physical]` Cookies survive app kill and relaunch | Real device (OEM WebView) | Opus | Device attached | Batched physical pass (D9) |
+| M08 | `[physical]` Portal login completes via Custom Tabs on a real device | Real device (OEM-dependent whether the browser redirects to `http://127.0.0.1:<port>`) | Opus | Device attached | Batched physical pass (D9) |
 | M06 | `[physical]` 2,000-message transcript frame rate | Real device | Opus | Device attached | Batched physical pass (D8, D9) |
 | M06 | PDF attachment via `pdf.attach` (page-rendering only — the shared picker/`file.attach` path it depended on was broken and is now fixed, 2026-09-08) | No `pdftoppm` (poppler) on the server host | Sonnet | Poppler on PATH for the `hermes serve` host (ask the user before installing) | Next throwaway server session, M07 verification (D8) |
 | M06 | Desktop-shaped payloads and `source: "desktop"` toolsets on a shared session | Concurrent edits in `../hermes-agent/apps/desktop/src/**` | Opus | `apps/desktop/**` has no uncommitted changes at build time; record the upstream commit | Opportunistic (D7) |
