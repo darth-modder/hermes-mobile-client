@@ -56,6 +56,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
         accessibilityLabel={`${part.toolName} tool call`}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
+        hitSlop={{ bottom: 14, top: 14 }}
         onPress={() => setExpanded(current => !current)}
         style={styles.header}
       >

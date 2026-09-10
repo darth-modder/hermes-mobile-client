@@ -67,6 +67,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    minHeight: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   }

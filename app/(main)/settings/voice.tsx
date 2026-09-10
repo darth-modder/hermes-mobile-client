@@ -76,9 +76,12 @@ export default function VoiceSettings() {
 
 const styles = StyleSheet.create({
   button: {
+    alignItems: 'center',
     borderRadius: 10,
+    justifyContent: 'center',
     marginBottom: 8,
     marginTop: 4,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 10
   },

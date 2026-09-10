@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
@@ -186,97 +187,108 @@ export default function ConnectScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: tokens.background }]}>
-      <Text style={[styles.title, { color: tokens.foreground }]}>Add a connection</Text>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: tokens.background }]}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={[styles.title, { color: tokens.foreground }]}>Add a connection</Text>
 
-      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Label (optional)</Text>
-      <TextInput
-        onChangeText={setLabel}
-        placeholder="My server"
-        placeholderTextColor={tokens.mutedForeground}
-        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
-        value={label}
-      />
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Label (optional)</Text>
+        <TextInput
+          onChangeText={setLabel}
+          placeholder="My server"
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={label}
+        />
 
-      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Backend URL</Text>
-      <TextInput
-        autoCapitalize="none"
-        onChangeText={setUrl}
-        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
-        value={url}
-      />
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Backend URL</Text>
+        <TextInput
+          autoCapitalize="none"
+          onChangeText={setUrl}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={url}
+        />
 
-      <View style={styles.row}>
-        <TouchableOpacity
-          disabled={detecting}
-          onPress={detect}
-          style={[styles.button, { backgroundColor: tokens.primary }]}
-        >
-          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
-            {detecting ? 'Checking…' : 'Detect auth mode'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push('/connect/scan')}
-          style={[styles.button, { backgroundColor: tokens.primary }]}
-        >
-          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Scan QR</Text>
-        </TouchableOpacity>
-      </View>
-
-      {status ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{status}</Text> : null}
-
-      {detected?.mode === 'token' ? (
-        <>
-          <Text style={[styles.label, { color: tokens.mutedForeground }]}>Session token</Text>
-          <TextInput
-            autoCapitalize="none"
-            onChangeText={setToken}
-            secureTextEntry
-            style={[
-              styles.input,
-              { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
-            ]}
-            value={token}
-          />
+        <View style={styles.row}>
           <TouchableOpacity
-            disabled={connecting || !token}
-            onPress={connectToken}
+            disabled={detecting}
+            onPress={detect}
             style={[styles.button, { backgroundColor: tokens.primary }]}
           >
             <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
-              {connecting ? 'Connecting…' : 'Connect'}
+              {detecting ? 'Checking…' : 'Detect auth mode'}
             </Text>
           </TouchableOpacity>
-        </>
-      ) : null}
+          <TouchableOpacity
+            onPress={() => router.push('/connect/scan')}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Scan QR</Text>
+          </TouchableOpacity>
+        </View>
 
-      {detected?.mode === 'password' ? (
-        <TouchableOpacity onPress={goToPasswordLogin} style={[styles.button, { backgroundColor: tokens.primary }]}>
-          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Sign in</Text>
-        </TouchableOpacity>
-      ) : null}
+        {status ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{status}</Text> : null}
 
-      {detected?.mode === 'oauth' ? (
-        <TouchableOpacity
-          disabled={connecting}
-          onPress={connectOAuth}
-          style={[styles.button, { backgroundColor: tokens.primary }]}
-        >
-          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
-            {connecting ? 'Signing in…' : 'Sign in with Portal'}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-    </ScrollView>
+        {detected?.mode === 'token' ? (
+          <>
+            <Text style={[styles.label, { color: tokens.mutedForeground }]}>Session token</Text>
+            <TextInput
+              autoCapitalize="none"
+              onChangeText={setToken}
+              secureTextEntry
+              style={[
+                styles.input,
+                { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+              ]}
+              value={token}
+            />
+            <TouchableOpacity
+              disabled={connecting || !token}
+              onPress={connectToken}
+              style={[styles.button, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+                {connecting ? 'Connecting…' : 'Connect'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+
+        {detected?.mode === 'password' ? (
+          <TouchableOpacity onPress={goToPasswordLogin} style={[styles.button, { backgroundColor: tokens.primary }]}>
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Sign in</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {detected?.mode === 'oauth' ? (
+          <TouchableOpacity
+            disabled={connecting}
+            onPress={connectOAuth}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+              {connecting ? 'Signing in…' : 'Sign in with Portal'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   button: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
     marginBottom: 12,
     marginRight: 8,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 10
   },
@@ -287,6 +299,9 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: 16
+  },
+  safeArea: {
+    flex: 1
   },
   input: {
     borderRadius: 6,

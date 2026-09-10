@@ -167,6 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    minHeight: 48,
     paddingVertical: 8
   },
   modelRowActive: {

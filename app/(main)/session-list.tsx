@@ -216,6 +216,7 @@ export default function SessionListScreen() {
           <TouchableOpacity
             accessibilityLabel="New session"
             accessibilityRole="button"
+            hitSlop={{ bottom: 8, top: 8 }}
             onPress={startNewSession}
             style={[styles.newButton, { backgroundColor: tokens.primary }]}
           >
@@ -284,7 +285,13 @@ export default function SessionListScreen() {
                   {item.model ? ` · ${item.model}` : ''}
                 </Text>
               </View>
-              <TouchableOpacity hitSlop={12} onPress={() => void togglePinned(item)} style={styles.pinButton}>
+              <TouchableOpacity
+                accessibilityLabel={item.pinned ? 'Unpin session' : 'Pin session'}
+                accessibilityRole="button"
+                hitSlop={12}
+                onPress={() => void togglePinned(item)}
+                style={styles.pinButton}
+              >
                 <Text
                   style={[
                     styles.pinIcon,
@@ -360,7 +367,11 @@ const styles = StyleSheet.create({
     ...type.title
   },
   retryButton: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 16,
     paddingVertical: 10
   },

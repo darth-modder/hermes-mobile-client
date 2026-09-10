@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useState } from 'react'
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { setActiveConnection } from '../../../src/connections/registry'
 import type { MobileConnection } from '../../../src/connections/types'
@@ -115,7 +116,7 @@ export default function PasswordLoginScreen() {
 
   if (connected) {
     return (
-      <View style={[styles.container, { backgroundColor: tokens.background }]}>
+      <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
         <Text style={[styles.title, { color: tokens.foreground }]}>Connected</Text>
         <Text style={[styles.status, { color: tokens.semantic.green }]}>{label || baseUrl}</Text>
         <TouchableOpacity onPress={testWsTicketDial} style={[styles.button, { backgroundColor: tokens.primary }]}>
@@ -128,54 +129,65 @@ export default function PasswordLoginScreen() {
         >
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Done</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     )
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: tokens.background }]}>
-      <Text style={[styles.title, { color: tokens.foreground }]}>Sign in</Text>
-      <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
-        {label || baseUrl} · {provider}
-      </Text>
-
-      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Username</Text>
-      <TextInput
-        autoCapitalize="none"
-        onChangeText={setUsername}
-        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
-        value={username}
-      />
-
-      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Password</Text>
-      <TextInput
-        autoCapitalize="none"
-        onChangeText={setPassword}
-        secureTextEntry
-        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
-        value={password}
-      />
-
-      {error ? <Text style={[styles.error, { color: tokens.destructive }]}>{error}</Text> : null}
-
-      <TouchableOpacity
-        disabled={submitting || !username || !password}
-        onPress={submit}
-        style={[styles.button, { backgroundColor: tokens.primary }]}
-      >
-        <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: tokens.background }]}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={[styles.title, { color: tokens.foreground }]}>Sign in</Text>
+        <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
+          {label || baseUrl} · {provider}
         </Text>
-      </TouchableOpacity>
-    </ScrollView>
+
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Username</Text>
+        <TextInput
+          autoCapitalize="none"
+          onChangeText={setUsername}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={username}
+        />
+
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Password</Text>
+        <TextInput
+          autoCapitalize="none"
+          onChangeText={setPassword}
+          secureTextEntry
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={password}
+        />
+
+        {error ? <Text style={[styles.error, { color: tokens.destructive }]}>{error}</Text> : null}
+
+        <TouchableOpacity
+          disabled={submitting || !username || !password}
+          onPress={submit}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   button: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
     marginBottom: 12,
     marginRight: 8,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 10
   },
@@ -186,6 +198,9 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: 16
+  },
+  safeArea: {
+    flex: 1
   },
   error: {
     ...type.mono,

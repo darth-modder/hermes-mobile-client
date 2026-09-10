@@ -23,6 +23,7 @@ export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityState={{ expanded }}
+        hitSlop={{ bottom: 14, top: 14 }}
         onPress={() => setExpanded(current => !current)}
         style={styles.header}
       >

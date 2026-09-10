@@ -100,11 +100,11 @@ Read these before designing anything; they are the source of truth, not a screen
       the machine-bound ones with a one-line reason each. Also routes `/skin` (Deviations).
 - [x] Wire `haptic` (via `expo-haptics`, a native module: batch it with the `react-native-svg` rebuild in task B) for send, approve, reject and errors;
       `sound` stays a no-op, documented.
-- [ ] Every list screen: loading, empty and error states, pull-to-refresh. Every destructive
+- [x] Every list screen: loading, empty and error states, pull-to-refresh. Every destructive
       action (delete session, revoke pairing, delete webhook) confirms.
-- [ ] Touch targets: nothing tappable under 48×48 dp. Icon-only controls carry labels for
+- [x] Touch targets: nothing tappable under 48×48 dp. Icon-only controls carry labels for
       TalkBack. Safe-area insets on every screen, including the keyboard-open composer.
-- [ ] Navigation: the drawer from M10 is the one way to move between areas; back always returns
+- [x] Navigation: the drawer from M10 is the one way to move between areas; back always returns
       to where the user came from; the session list is at most one tap from any screen.
 
 ## Deliverables
@@ -392,6 +392,14 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
    are un-built, not machine-bound, and their exact backend semantics weren't looked
    up (out of scope for a routing pass that only needed to know which commands have a
    mobile screen to go to).
+10. **`settings-header.tsx` grows a `headerRight` drawer hamburger, closing a real gap
+    in "the session list is at most one tap from any screen."** `app/(main)/settings/**`
+    screens use a native Stack header (`headerShown: true`) whose only affordance is the
+    default back arrow, which returns one screen up the stack — from a screen reached by
+    drilling in (Settings → Models, say), back does not reach the session list in one
+    tap, only `AppDrawer`'s hamburger does. Every M10 screen (`ScreenHeader.tsx`) and
+    `session-list.tsx` already had that hamburger; settings screens didn't. Renamed
+    `settings-header.ts` → `.tsx` to add it (JSX in `Stack.Screen`'s `headerRight`).
 
 ## Verification log
 

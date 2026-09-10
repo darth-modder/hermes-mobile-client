@@ -71,7 +71,11 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
 
 const styles = StyleSheet.create({
   button: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   },

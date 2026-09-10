@@ -104,7 +104,10 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
             value={editingTitle}
           />
         ) : (
-          <TouchableOpacity onPress={() => setEditingTitle(session.title || 'Untitled')}>
+          <TouchableOpacity
+            hitSlop={{ bottom: 12, left: 8, right: 8, top: 12 }}
+            onPress={() => setEditingTitle(session.title || 'Untitled')}
+          >
             <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
               {session.title || 'Untitled'}
             </Text>
@@ -117,7 +120,12 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
           <UsageChip usage={session.usage} />
         </View>
       </View>
-      <TouchableOpacity disabled={compressing} onPress={() => void compress()} style={styles.compressButton}>
+      <TouchableOpacity
+        disabled={compressing}
+        hitSlop={10}
+        onPress={() => void compress()}
+        style={styles.compressButton}
+      >
         {compressing ? (
           <ActivityIndicator color={tokens.mutedForeground} size="small" />
         ) : (

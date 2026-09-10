@@ -1,7 +1,8 @@
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { StyleSheet, Text, TouchableOpacity } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
@@ -84,38 +85,41 @@ export default function ScanScreen() {
   }
 
   if (!permission) {
-    return <View style={[styles.container, { backgroundColor: tokens.background }]} />
+    return <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]} />
   }
 
   if (!permission.granted) {
     return (
-      <View style={[styles.container, { backgroundColor: tokens.background }]}>
+      <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
         <Text style={[styles.status, { color: tokens.foreground }]}>
           Camera access is needed to scan a connect code.
         </Text>
         <TouchableOpacity onPress={requestPermission} style={[styles.button, { backgroundColor: tokens.primary }]}>
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Grant camera access</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     )
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: tokens.background }]}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <CameraView
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={handled ? undefined : onScanned}
         style={styles.camera}
       />
       <Text style={[styles.status, { color: tokens.foreground }]}>{status}</Text>
-    </View>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   button: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
     marginTop: 12,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 10
   },

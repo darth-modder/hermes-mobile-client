@@ -81,6 +81,7 @@ export function AppDrawer() {
           {
             backgroundColor: tokens.sidebar,
             borderRightColor: tokens.sidebarBorder,
+            paddingBottom: insets.bottom,
             paddingTop: insets.top + 12,
             transform: [{ translateX }]
           }

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { KeyboardStickyView } from 'react-native-keyboard-controller'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import {
   askBtw,
@@ -59,6 +60,7 @@ function activeAtWord(text: string): null | string {
 
 export function Composer({ storedSessionId }: ComposerProps) {
   const tokens = useTheme()
+  const insets = useSafeAreaInsets()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const busy = session?.busy ?? false
@@ -388,7 +390,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
   }
 
   return (
-    <KeyboardStickyView>
+    <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
       <View style={[styles.container, { backgroundColor: tokens.background, borderTopColor: tokens.border }]}>
         {atItems.length > 0 ? (
           <CompletionList onSelect={selectAtCompletion} rows={atItems} />
@@ -401,6 +403,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
               <TouchableOpacity
                 accessibilityLabel={`Remove ${attachment.label}`}
                 accessibilityRole="button"
+                hitSlop={12}
                 key={index}
                 onPress={() => removeAttachment(index)}
                 style={[styles.attachmentChip, { backgroundColor: tokens.muted, borderColor: tokens.border }]}
@@ -520,8 +523,8 @@ const styles = StyleSheet.create({
   iconButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
-    minWidth: 44,
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 6,
     paddingVertical: 8
   },
@@ -539,8 +542,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   sendButton: {
+    alignItems: 'center',
     borderRadius: 18,
+    justifyContent: 'center',
     marginLeft: 4,
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 14,
     paddingVertical: 9
   },

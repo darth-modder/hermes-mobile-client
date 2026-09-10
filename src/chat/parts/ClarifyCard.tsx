@@ -121,7 +121,11 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   choiceButton: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
@@ -158,7 +162,11 @@ const styles = StyleSheet.create({
     gap: 8
   },
   sendButton: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   },

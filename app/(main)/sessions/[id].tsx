@@ -105,7 +105,10 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   retryButton: {
+    alignItems: 'center',
     borderRadius: 6,
+    justifyContent: 'center',
+    minHeight: 48,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
