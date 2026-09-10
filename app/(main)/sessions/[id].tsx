@@ -10,6 +10,7 @@ import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { $sessionStates } from '../../../src/store/session-states'
+import { useTheme } from '../../../src/theme/provider'
 
 /**
  * The chat screen. No session-list screen exists yet (M07), so `id: "new"`
@@ -19,6 +20,7 @@ import { $sessionStates } from '../../../src/store/session-states'
  */
 export default function SessionScreen() {
   const router = useRouter()
+  const tokens = useTheme()
   const { id } = useLocalSearchParams<{ id: string }>()
   const [error, setError] = useState<null | string>(null)
   const [ready, setReady] = useState(false)
@@ -56,10 +58,13 @@ export default function SessionScreen() {
 
   if (error) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity onPress={() => router.replace('/connect')} style={styles.retryButton}>
-          <Text style={styles.retryText}>Back to connections</Text>
+      <SafeAreaView edges={['top', 'bottom']} style={[styles.center, { backgroundColor: tokens.background }]}>
+        <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
+        <TouchableOpacity
+          onPress={() => router.replace('/connect')}
+          style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Back to connections</Text>
         </TouchableOpacity>
       </SafeAreaView>
     )
@@ -67,14 +72,14 @@ export default function SessionScreen() {
 
   if (!ready || id === 'new' || !session) {
     return (
-      <SafeAreaView edges={['top', 'bottom']} style={styles.center}>
-        <ActivityIndicator color="#8a8a99" size="large" />
+      <SafeAreaView edges={['top', 'bottom']} style={[styles.center, { backgroundColor: tokens.background }]}>
+        <ActivityIndicator color={tokens.mutedForeground} size="large" />
       </SafeAreaView>
     )
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <SessionHeader storedSessionId={id} />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />
@@ -86,29 +91,24 @@ export default function SessionScreen() {
 const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
-    backgroundColor: '#0b0b0f',
     flex: 1,
     justifyContent: 'center',
     padding: 24
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center'
   },
   retryButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   retryText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   }

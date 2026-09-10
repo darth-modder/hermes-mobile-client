@@ -18,6 +18,7 @@ import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/s
 import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
+import { useTheme } from '../../src/theme/provider'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
 /** `session.started_at`/`last_active` are epoch seconds (REST, unlike the
@@ -64,6 +65,7 @@ function matchesQuery(session: SessionInfo, query: string): boolean {
  */
 export default function SessionListScreen() {
   const router = useRouter()
+  const tokens = useTheme()
   const [sessions, setSessions] = useState<null | SessionInfo[]>(null)
   const [error, setError] = useState<null | string>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -184,20 +186,20 @@ export default function SessionListScreen() {
   }, [sessions, query])
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity hitSlop={12} onPress={openDrawer} style={styles.settingsButton}>
-            <Text style={styles.settingsIcon}>☰</Text>
+            <Text style={[styles.settingsIcon, { color: tokens.textSecondary }]}>☰</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Sessions</Text>
+          <Text style={[styles.title, { color: tokens.foreground }]}>Sessions</Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity hitSlop={12} onPress={() => router.push('/(main)/settings')} style={styles.settingsButton}>
-            <Text style={styles.settingsIcon}>⚙</Text>
+            <Text style={[styles.settingsIcon, { color: tokens.textSecondary }]}>⚙</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={startNewSession} style={styles.newButton}>
-            <Text style={styles.newButtonText}>+ New</Text>
+          <TouchableOpacity onPress={startNewSession} style={[styles.newButton, { backgroundColor: tokens.primary }]}>
+            <Text style={[styles.newButtonText, { color: tokens.primaryForeground }]}>+ New</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -205,57 +207,72 @@ export default function SessionListScreen() {
       <TextInput
         onChangeText={setQuery}
         placeholder="Search sessions…"
-        placeholderTextColor="#5a5a66"
-        style={styles.search}
+        placeholderTextColor={tokens.mutedForeground}
+        style={[styles.search, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
         value={query}
       />
 
       {error ? (
         <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => void load()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
+          <TouchableOpacity
+            onPress={() => void load()}
+            style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : sessions === null ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#8a8a99" size="large" />
+          <ActivityIndicator color={tokens.textSecondary} size="large" />
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>{query ? 'No matching sessions.' : 'No sessions yet.'}</Text>
+          <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>
+            {query ? 'No matching sessions.' : 'No sessions yet.'}
+          </Text>
         </View>
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
           data={filtered}
           keyExtractor={session => session.id}
-          refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor="#8a8a99" />}
+          refreshControl={
+            <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.textSecondary} />
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               onLongPress={() => confirmDelete(item)}
               onPress={() => openSession(item.id)}
-              style={styles.row}
+              style={[styles.row, { borderBottomColor: tokens.border }]}
             >
               <View style={styles.rowMain}>
                 <View style={styles.rowTitleLine}>
-                  {item.unread ? <View style={styles.unreadDot} /> : null}
-                  <Text numberOfLines={1} style={styles.rowTitle}>
+                  {item.unread ? <View style={[styles.unreadDot, { backgroundColor: tokens.primary }]} /> : null}
+                  <Text numberOfLines={1} style={[styles.rowTitle, { color: tokens.foreground }]}>
                     {item.title || 'Untitled'}
                   </Text>
                 </View>
                 {item.preview ? (
-                  <Text numberOfLines={1} style={styles.rowPreview}>
+                  <Text numberOfLines={1} style={[styles.rowPreview, { color: tokens.textSecondary }]}>
                     {item.preview}
                   </Text>
                 ) : null}
-                <Text style={styles.rowMeta}>
+                <Text style={[styles.rowMeta, { color: tokens.mutedForeground }]}>
                   {relativeTime(item.last_active)}
                   {item.model ? ` · ${item.model}` : ''}
                 </Text>
               </View>
               <TouchableOpacity hitSlop={12} onPress={() => void togglePinned(item)} style={styles.pinButton}>
-                <Text style={[styles.pinIcon, item.pinned ? styles.pinIconActive : null]}>★</Text>
+                <Text
+                  style={[
+                    styles.pinIcon,
+                    { color: tokens.border },
+                    item.pinned ? { color: tokens.semantic.orange } : null
+                  ]}
+                >
+                  ★
+                </Text>
               </TouchableOpacity>
             </TouchableOpacity>
           )}
@@ -273,15 +290,12 @@ const styles = StyleSheet.create({
     padding: 24
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   emptyText: {
-    color: '#5a5a66',
     fontSize: 14
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center'
@@ -307,13 +321,11 @@ const styles = StyleSheet.create({
     paddingBottom: 24
   },
   newButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
   newButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -321,26 +333,19 @@ const styles = StyleSheet.create({
     paddingLeft: 12
   },
   pinIcon: {
-    color: '#2a2a33',
     fontSize: 20
   },
-  pinIconActive: {
-    color: '#d19a66'
-  },
   retryButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   retryText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#17171d',
     borderBottomWidth: 1,
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -350,17 +355,14 @@ const styles = StyleSheet.create({
     flex: 1
   },
   rowMeta: {
-    color: '#5a5a66',
     fontSize: 12,
     marginTop: 2
   },
   rowPreview: {
-    color: '#8a8a99',
     fontSize: 13,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     flexShrink: 1,
     fontSize: 15,
     fontWeight: '600'
@@ -371,11 +373,8 @@ const styles = StyleSheet.create({
     gap: 6
   },
   search: {
-    backgroundColor: '#14181c',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontSize: 14,
     marginHorizontal: 16,
     marginTop: 10,
@@ -386,16 +385,13 @@ const styles = StyleSheet.create({
     padding: 4
   },
   settingsIcon: {
-    color: '#8a8a99',
     fontSize: 20
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 20,
     fontWeight: '700'
   },
   unreadDot: {
-    backgroundColor: '#1f6feb',
     borderRadius: 4,
     height: 8,
     width: 8
