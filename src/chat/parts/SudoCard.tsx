@@ -4,7 +4,9 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondSudo } from '../../gateway/session-connection'
 import type { SudoRequest } from '../../gateway/session-stream-reducer'
+import { hapticSubmit } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 export interface SudoCardProps {
   storedSessionId: string
@@ -21,6 +23,7 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
   const [sending, setSending] = useState(false)
 
   const submit = async () => {
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -73,7 +76,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   buttonText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   container: {
@@ -95,7 +98,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   title: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 8
   }

@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { IconMenu2 } from '@tabler/icons-react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -15,10 +16,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
+import { Plus, Settings } from '../../src/lib/icons'
 import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import { useTheme } from '../../src/theme/provider'
+import { type } from '../../src/theme/type'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
 /** `session.started_at`/`last_active` are epoch seconds (REST, unlike the
@@ -189,17 +192,35 @@ export default function SessionListScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity hitSlop={12} onPress={openDrawer} style={styles.settingsButton}>
-            <Text style={[styles.settingsIcon, { color: tokens.textSecondary }]}>☰</Text>
+          <TouchableOpacity
+            accessibilityLabel="Open menu"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={openDrawer}
+            style={styles.settingsButton}
+          >
+            <IconMenu2 color={tokens.textSecondary} size={20} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: tokens.foreground }]}>Sessions</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity hitSlop={12} onPress={() => router.push('/(main)/settings')} style={styles.settingsButton}>
-            <Text style={[styles.settingsIcon, { color: tokens.textSecondary }]}>⚙</Text>
+          <TouchableOpacity
+            accessibilityLabel="Settings"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={() => router.push('/(main)/settings')}
+            style={styles.settingsButton}
+          >
+            <Settings color={tokens.textSecondary} size={20} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={startNewSession} style={[styles.newButton, { backgroundColor: tokens.primary }]}>
-            <Text style={[styles.newButtonText, { color: tokens.primaryForeground }]}>+ New</Text>
+          <TouchableOpacity
+            accessibilityLabel="New session"
+            accessibilityRole="button"
+            onPress={startNewSession}
+            style={[styles.newButton, { backgroundColor: tokens.primary }]}
+          >
+            <Plus color={tokens.primaryForeground} size={16} />
+            <Text style={[styles.newButtonText, { color: tokens.primaryForeground }]}>New</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -293,10 +314,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   emptyText: {
-    fontSize: 14
+    ...type.bodySmall
   },
   errorText: {
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 16,
     textAlign: 'center'
   },
@@ -321,19 +342,22 @@ const styles = StyleSheet.create({
     paddingBottom: 24
   },
   newButton: {
+    alignItems: 'center',
     borderRadius: 6,
+    flexDirection: 'row',
+    gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
   newButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   pinButton: {
     paddingLeft: 12
   },
   pinIcon: {
-    fontSize: 20
+    ...type.title
   },
   retryButton: {
     borderRadius: 6,
@@ -341,7 +365,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   retryText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   row: {
@@ -355,16 +379,16 @@ const styles = StyleSheet.create({
     flex: 1
   },
   rowMeta: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowPreview: {
-    fontSize: 13,
+    ...type.label,
     marginTop: 2
   },
   rowTitle: {
+    ...type.body,
     flexShrink: 1,
-    fontSize: 15,
     fontWeight: '600'
   },
   rowTitleLine: {
@@ -373,9 +397,9 @@ const styles = StyleSheet.create({
     gap: 6
   },
   search: {
+    ...type.bodySmall,
     borderRadius: 8,
     borderWidth: 1,
-    fontSize: 14,
     marginHorizontal: 16,
     marginTop: 10,
     paddingHorizontal: 12,
@@ -384,11 +408,8 @@ const styles = StyleSheet.create({
   settingsButton: {
     padding: 4
   },
-  settingsIcon: {
-    fontSize: 20
-  },
   title: {
-    fontSize: 20,
+    ...type.title,
     fontWeight: '700'
   },
   unreadDot: {

@@ -17,11 +17,14 @@ import {
   submitPrompt
 } from '../gateway/session-connection'
 import { pickAndAttachDocument, pickAndAttachImage } from '../lib/attachments'
+import { hapticSubmit } from '../lib/haptics'
+import { FileText, ImageIcon, Mic, MicOff, Volume2, X } from '../lib/icons'
 import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mobile-slash-commands'
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
 import { useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 import { cancelRecording, isRecording, startRecording, stopRecordingAndTranscribe } from '../voice/recorder'
 import { speakUnspokenReply } from '../voice/speech-progress'
 import { speak } from '../voice/tts'
@@ -213,6 +216,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
       return
     }
 
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -386,34 +390,63 @@ export function Composer({ storedSessionId }: ComposerProps) {
           <View style={styles.attachmentRow}>
             {attachments.map((attachment, index) => (
               <TouchableOpacity
+                accessibilityLabel={`Remove ${attachment.label}`}
+                accessibilityRole="button"
                 key={index}
                 onPress={() => removeAttachment(index)}
                 style={[styles.attachmentChip, { backgroundColor: tokens.muted, borderColor: tokens.border }]}
               >
-                <Text style={[styles.attachmentText, { color: tokens.mutedForeground }]}>{attachment.label} ✕</Text>
+                <Text style={[styles.attachmentText, { color: tokens.mutedForeground }]}>{attachment.label}</Text>
+                <X color={tokens.mutedForeground} size={12} />
               </TouchableOpacity>
             ))}
           </View>
         ) : null}
         <View style={styles.row}>
-          <TouchableOpacity disabled={attaching} onPress={() => void attachImage()} style={styles.iconButton}>
-            <Text style={styles.iconText}>🖼️</Text>
+          <TouchableOpacity
+            accessibilityLabel="Attach image"
+            accessibilityRole="button"
+            disabled={attaching}
+            onPress={() => void attachImage()}
+            style={styles.iconButton}
+          >
+            <ImageIcon color={tokens.foreground} size={20} />
           </TouchableOpacity>
-          <TouchableOpacity disabled={attaching} onPress={() => void attachDocument()} style={styles.iconButton}>
-            <Text style={styles.iconText}>📄</Text>
+          <TouchableOpacity
+            accessibilityLabel="Attach document"
+            accessibilityRole="button"
+            disabled={attaching}
+            onPress={() => void attachDocument()}
+            style={styles.iconButton}
+          >
+            <FileText color={tokens.foreground} size={20} />
           </TouchableOpacity>
-          <TouchableOpacity disabled={transcribing} onPress={() => void toggleRecording()} style={styles.iconButton}>
+          <TouchableOpacity
+            accessibilityLabel={recording ? 'Stop recording' : 'Record voice message'}
+            accessibilityRole="button"
+            disabled={transcribing}
+            onPress={() => void toggleRecording()}
+            style={styles.iconButton}
+          >
             {transcribing ? (
               <ActivityIndicator color={tokens.foreground} size="small" />
+            ) : recording ? (
+              <MicOff color={tokens.destructive} size={20} />
             ) : (
-              <Text style={[styles.iconText, recording ? styles.iconTextActive : null]}>🎤</Text>
+              <Mic color={tokens.foreground} size={20} />
             )}
           </TouchableOpacity>
-          <TouchableOpacity disabled={speaking} onPress={() => void speakLastReply()} style={styles.iconButton}>
+          <TouchableOpacity
+            accessibilityLabel="Read last reply aloud"
+            accessibilityRole="button"
+            disabled={speaking}
+            onPress={() => void speakLastReply()}
+            style={styles.iconButton}
+          >
             {speaking ? (
               <ActivityIndicator color={tokens.foreground} size="small" />
             ) : (
-              <Text style={styles.iconText}>🔊</Text>
+              <Volume2 color={tokens.foreground} size={20} />
             )}
           </TouchableOpacity>
           <TextInput
@@ -453,8 +486,11 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
 const styles = StyleSheet.create({
   attachmentChip: {
+    alignItems: 'center',
     borderRadius: 14,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
     marginBottom: 6,
     marginRight: 6,
     paddingHorizontal: 10,
@@ -467,24 +503,22 @@ const styles = StyleSheet.create({
     paddingTop: 6
   },
   attachmentText: {
-    fontSize: 12
+    ...type.caption
   },
   container: {
     borderTopWidth: StyleSheet.hairlineWidth
   },
   iconButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: 6,
     paddingVertical: 8
   },
-  iconText: {
-    fontSize: 18
-  },
-  iconTextActive: {
-    opacity: 0.5
-  },
   input: {
+    ...type.body,
     flex: 1,
-    fontSize: 15,
     maxHeight: 120,
     paddingHorizontal: 8,
     paddingVertical: 8
@@ -502,7 +536,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9
   },
   sendButtonText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   }
 })

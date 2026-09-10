@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
 import { compressSession, renameSession } from '../gateway/session-connection'
+import { ChevronLeft } from '../lib/icons'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
 import { useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 
 import { UsageChip } from './parts/UsageChip'
 
@@ -26,8 +28,14 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
   if (!session) {
     return (
       <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Text style={[styles.backText, { color: tokens.foreground }]}>‹</Text>
+        <TouchableOpacity
+          accessibilityLabel="Back"
+          accessibilityRole="button"
+          hitSlop={12}
+          onPress={() => router.back()}
+          style={styles.back}
+        >
+          <ChevronLeft color={tokens.foreground} size={26} />
         </TouchableOpacity>
         <ActivityIndicator color={tokens.mutedForeground} size="small" />
       </View>
@@ -76,8 +84,14 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-        <Text style={[styles.backText, { color: tokens.foreground }]}>‹</Text>
+      <TouchableOpacity
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        hitSlop={12}
+        onPress={() => router.back()}
+        style={styles.back}
+      >
+        <ChevronLeft color={tokens.foreground} size={26} />
       </TouchableOpacity>
       <View style={styles.titleColumn}>
         {editingTitle !== null ? (
@@ -118,16 +132,12 @@ const styles = StyleSheet.create({
   back: {
     paddingRight: 8
   },
-  backText: {
-    fontSize: 26,
-    fontWeight: '300'
-  },
   compressButton: {
     paddingHorizontal: 8,
     paddingVertical: 6
   },
   compressText: {
-    fontSize: 12
+    ...type.caption
   },
   container: {
     alignItems: 'center',
@@ -137,7 +147,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   subtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginRight: 6
   },
   subtitleRow: {
@@ -145,15 +155,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   title: {
-    fontSize: 16,
+    ...type.body,
     fontWeight: '600'
   },
   titleColumn: {
     flex: 1
   },
   titleInput: {
+    ...type.body,
     borderBottomWidth: 1,
-    fontSize: 16,
     fontWeight: '600',
     paddingVertical: 2
   }

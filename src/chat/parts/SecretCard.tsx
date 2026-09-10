@@ -4,7 +4,9 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondSecret } from '../../gateway/session-connection'
 import type { SecretRequest } from '../../gateway/session-stream-reducer'
+import { hapticSubmit } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 export interface SecretCardProps {
   storedSessionId: string
@@ -26,6 +28,7 @@ export function SecretCard({ storedSessionId, request }: SecretCardProps) {
   const [sending, setSending] = useState(false)
 
   const submit = async () => {
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -79,7 +82,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   buttonText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   container: {
@@ -96,7 +99,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   prompt: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   row: {
@@ -105,7 +108,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   title: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 4
   }

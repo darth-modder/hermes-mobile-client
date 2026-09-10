@@ -3,7 +3,9 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { respondApproval } from '../../gateway/session-connection'
 import type { ApprovalRequest } from '../../gateway/session-stream-reducer'
+import { hapticApprove, hapticReject } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 const CHOICE_LABELS: Record<string, string> = {
   once: 'Run',
@@ -25,6 +27,12 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
   const choices = request.choices?.length ? request.choices : ['once', 'deny']
 
   const respond = async (choice: string) => {
+    if (choice === 'deny') {
+      hapticReject()
+    } else {
+      hapticApprove()
+    }
+
     setPending(choice)
 
     try {
@@ -88,12 +96,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   buttonText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   command: {
-    fontFamily: 'monospace',
-    fontSize: 13,
+    ...type.mono,
     marginBottom: 4
   },
   container: {
@@ -103,7 +110,7 @@ const styles = StyleSheet.create({
     padding: 12
   },
   description: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   row: {
@@ -112,11 +119,11 @@ const styles = StyleSheet.create({
     gap: 8
   },
   smartDenied: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   title: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 6
   }

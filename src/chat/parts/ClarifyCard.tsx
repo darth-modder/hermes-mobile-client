@@ -3,7 +3,9 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondClarify } from '../../gateway/session-connection'
 import type { ClarifyQuestion, ClarifyRequest } from '../../gateway/session-stream-reducer'
+import { hapticSubmit } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 interface OneClarifyQuestionProps {
   storedSessionId: string
@@ -19,6 +21,7 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
   const locked = lockedAnswer !== undefined
 
   const respond = async (answer: string) => {
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -114,7 +117,7 @@ export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
 
 const styles = StyleSheet.create({
   buttonText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   choiceButton: {
@@ -123,7 +126,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   choiceText: {
-    fontSize: 13
+    ...type.label
   },
   container: {
     borderRadius: 8,
@@ -139,13 +142,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   lockedAnswer: {
-    fontSize: 13
+    ...type.label
   },
   question: {
     marginVertical: 4
   },
   questionText: {
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 6
   },
   row: {
@@ -160,7 +163,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   title: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 6
   }

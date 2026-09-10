@@ -4,15 +4,17 @@ import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { Clock, FileImage, FolderOpen, type IconComponent, Link, MessageCircle, Network, Settings } from '../lib/icons'
 import { $drawerOpen, closeDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 
 const DRAWER_WIDTH = 260
 
 interface DrawerRow {
   route: Href
   title: string
-  icon: string
+  Icon: IconComponent
 }
 
 // M10 task: "Drawer navigation in app/(main)/_layout.tsx: Sessions,
@@ -27,13 +29,13 @@ interface DrawerRow {
 // explicitly not to assume either form survives a merge. Flagged again here
 // in M10-management-screens.md's Deviations for Opus's re-verification pass.
 const ROWS: DrawerRow[] = [
-  { icon: '💬', route: '/(main)/session-list', title: 'Sessions' },
-  { icon: '📁', route: '/(main)/projects', title: 'Projects' },
-  { icon: '⏱', route: '/(main)/cron', title: 'Cron' },
-  { icon: '🔗', route: '/(main)/webhooks', title: 'Webhooks' },
-  { icon: '🖼', route: '/(main)/artifacts', title: 'Artifacts' },
-  { icon: '📡', route: '/(main)/channels', title: 'Channels' },
-  { icon: '⚙', route: '/(main)/settings', title: 'Settings' }
+  { Icon: MessageCircle, route: '/(main)/session-list', title: 'Sessions' },
+  { Icon: FolderOpen, route: '/(main)/projects', title: 'Projects' },
+  { Icon: Clock, route: '/(main)/cron', title: 'Cron' },
+  { Icon: Link, route: '/(main)/webhooks', title: 'Webhooks' },
+  { Icon: FileImage, route: '/(main)/artifacts', title: 'Artifacts' },
+  { Icon: Network, route: '/(main)/channels', title: 'Channels' },
+  { Icon: Settings, route: '/(main)/settings', title: 'Settings' }
 ]
 
 /** Slide-out navigation overlay, mounted once in `app/(main)/_layout.tsx`
@@ -87,7 +89,9 @@ export function AppDrawer() {
         <Text style={[styles.heading, { color: tokens.mutedForeground }]}>Hermes</Text>
         {ROWS.map(row => (
           <TouchableOpacity key={row.title} onPress={() => navigate(row.route)} style={styles.row}>
-            <Text style={styles.rowIcon}>{row.icon}</Text>
+            <View style={styles.rowIcon}>
+              <row.Icon color={tokens.mutedForeground} size={20} />
+            </View>
             <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{row.title}</Text>
           </TouchableOpacity>
         ))}
@@ -105,7 +109,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.667)'
   },
   heading: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '700',
     marginBottom: 10,
     paddingHorizontal: 20,
@@ -127,11 +131,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14
   },
   rowIcon: {
-    fontSize: 18,
+    alignItems: 'center',
     width: 22
   },
   rowTitle: {
-    fontSize: 15,
+    ...type.body,
     fontWeight: '600'
   }
 })

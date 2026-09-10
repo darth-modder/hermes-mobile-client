@@ -24,6 +24,7 @@ const config: ExpoConfig = {
     'expo-document-picker',
     'expo-file-system',
     'expo-sharing',
+    'expo-font',
     [
       'expo-camera',
       {

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
+import { ChevronDown, ChevronRight } from '../../lib/icons'
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 import { CodeBlock } from './CodeBlock'
 
@@ -50,7 +52,13 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
         }
       ]}
     >
-      <TouchableOpacity onPress={() => setExpanded(current => !current)} style={styles.header}>
+      <TouchableOpacity
+        accessibilityLabel={`${part.toolName} tool call`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(current => !current)}
+        style={styles.header}
+      >
         {running ? <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.spinner} /> : null}
         <Text style={[styles.name, { color: tokens.foreground }]}>{part.toolName}</Text>
         {part.isError ? (
@@ -60,7 +68,11 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
             error
           </Text>
         ) : null}
-        <Text style={[styles.chevron, { color: tokens.textTertiary }]}>{expanded ? '▾' : '▸'}</Text>
+        {expanded ? (
+          <ChevronDown color={tokens.textTertiary} size={14} />
+        ) : (
+          <ChevronRight color={tokens.textTertiary} size={14} />
+        )}
       </TouchableOpacity>
       {preview ? (
         <Text numberOfLines={expanded ? undefined : 2} style={[styles.preview, { color: tokens.mutedForeground }]}>
@@ -82,9 +94,6 @@ const styles = StyleSheet.create({
   body: {
     marginTop: 6
   },
-  chevron: {
-    fontSize: 12
-  },
   container: {
     borderRadius: 8,
     borderWidth: 1,
@@ -92,8 +101,8 @@ const styles = StyleSheet.create({
     padding: 10
   },
   errorBadge: {
+    ...type.caption,
     borderRadius: 4,
-    fontSize: 11,
     fontWeight: '700',
     paddingHorizontal: 6,
     paddingVertical: 1
@@ -104,20 +113,19 @@ const styles = StyleSheet.create({
     gap: 8
   },
   name: {
+    ...type.mono,
     flex: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     fontWeight: '600'
   },
   preview: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   spinner: {
     marginRight: 2
   },
   summary: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   }
 })

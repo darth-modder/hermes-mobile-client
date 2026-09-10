@@ -37,6 +37,7 @@
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
 import type { MobileConnection } from '../connections/types'
+import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
@@ -220,9 +221,16 @@ function dispatchEffects(effects: Effect[]): void {
 
         break
 
-      // Not in M06's task list (no haptics/sound dependency pulled in yet) — revisit later if wanted.
       case 'haptic':
+        if (effect.kind === 'streamStart') {
+          hapticStreamStart()
+        } else {
+          hapticSubmit()
+        }
 
+        break
+
+      // No sound asset this app ships (M13 Step 6/D) — stays a no-op, documented in docs/PARITY.md.
       case 'sound':
         break
     }
