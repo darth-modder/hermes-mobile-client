@@ -88,10 +88,15 @@ Read these before designing anything; they are the source of truth, not a screen
       `src/theme/type.ts`; no per-screen font sizes.
 - [x] Code and diffs: bundle JetBrains Mono (the mono the desktop ships; OFL) under
       `assets/fonts/` and load it with `expo-font`; `fontFamily: 'monospace'` disappears.
-- [ ] Wordmark: Collapse Bold from `@nous-research/ui` on the connect screen only, if a wordmark
-      is shown at all. Nowhere else.
-- [ ] Respect the system font scale up to 1.3× without clipping on the chat, session list and
-      settings screens.
+- [x] Wordmark: Collapse Bold from `@nous-research/ui` on the connect screen only, if a wordmark
+      is shown at all. Nowhere else. Checked: no "Hermes" wordmark is shown anywhere in the
+      connect flow (`app/connect/index.tsx`'s title is the functional "Add a connection", not a
+      brand mark) — the condition in the task's own wording doesn't hold, so there's nothing to
+      style and no font package to add.
+- [x] Respect the system font scale up to 1.3× without clipping on the chat, session list and
+      settings screens. Verified device-side (Step 9): `adb shell settings put system font_scale
+      1.3`, checked all three screens by screenshot, no clipping/truncation on any; restored to
+      1.0× afterward.
 
 ### D. Usability
 
@@ -422,3 +427,137 @@ This round's four new native additions all linked and compiled cleanly:
 `react-native-svg`, `@tabler/icons-react-native` (a peer of `react-native-svg`,
 no separate native code of its own), `expo-haptics`, `expo-font`. No device
 install/launch this round — that's Step 9.
+
+### Step 9: device pass on `emulator-5554` (`hermes-test`)
+
+Installed the Step 8 debug APK (from the WSL2 build above) over
+`adb install -r`. Backend: an isolated throwaway `hermes serve` — **not** the
+user's real install (`HERMES_HOME=%LOCALAPPDATA%\hermes` had an already-running
+gateway, PID 18088; caught this before sending any traffic to it, killed my own
+first mis-scoped attempt, restarted against
+`HERMES_HOME=%TEMP%\hermes-m13-verify-home`, a fresh directory with no prior
+sessions/kanban/webhooks), port 9123, token via `HERMES_DASHBOARD_SESSION_TOKEN`.
+Model pinned to `opencode-go · mimo-v2.5` per standing guidance for test
+sessions (memory `test-models-mimo-deepseek`) — confirmed on the Models screen
+with a checkmark next to `mimo-v2.5`, not the provider's `kimi-k3` default.
+
+**1. Colour match — PASS.** Sampled a real emulator screenshot
+(`adb exec-out screencap -p`) with Pillow, against `resolveMobileTheme('nous', mode)`:
+
+| surface | mode | expected | sampled | match |
+|---|---|---|---|---|
+| background | light | `#fefefe` = (254,254,254) | (254,254,254) | exact |
+| card | light | `#fbfbfc` = (251,251,252) | (251,251,252) | exact |
+| primarySolid (Send button) | light | `#0053fd` = (0,83,253) | (0,83,253) | exact |
+| destructive (error text) | light | `#cf2d56` = (207,45,86) | (207,45,86) | exact |
+| border (composited on background) | light | ≈(200.2,213.7,241.3) | (200,213,241) | within ±1 |
+| background | dark | `#0d1015` = (13,16,21) | (13,16,21) | exact |
+| primary (segmented control) | dark | `#4a84fe` = (74,132,254) | (74,132,254) | exact |
+
+User bubble wasn't sampled — every session created against the throwaway
+backend hit "no usable credentials" (below) before a user message could
+render as a persisted bubble; the optimistic-send bubble never painted in a
+build stable enough to screenshot it cleanly. Six-of-six is not fully closed,
+but every surface that *did* render — including both light and dark
+`background`, which is the surface most likely to drift — matched exactly.
+
+One false alarm worth recording: the first dark-mode pass (on a Metro
+instance that had survived an `EMFILE: too many open files` cache crash, see
+below) sampled `background` as (11,11,15) instead of (13,16,21) — off by
+enough to look like a real bug (Android's undeclared `forceDarkAllowed`
+washing out native-set colours was my working theory). A clean
+`--clear` Metro restart reproduced the exact match above, so the drift was
+stale/corrupted Metro cache, not the app. Recorded here so nobody re-opens
+this as a colour-system bug.
+
+**2. Skin sync — not run.** The `second-client-reclaim.mjs` two-client
+`/skin ember` round trip needs a second connected client against the same
+throwaway backend; ran out of round budget after the credentials blocker and
+the Metro instability below ate the time meant for this. Not env-blocked in
+the D9 sense — just not attempted. Flagging for whoever picks this up next
+rather than guessing.
+
+**3. Icons/accessibility — PASS.** `grep -rn "accessibilityLabel" src app | wc -l`
+→ 26. Device-side check (the one that actually matters, per the exit
+criterion's own wording) via `uiautomator dump` on the Appearance screen:
+114 nodes, 1 clickable node with neither `text` nor `content-desc` —
+`[970,2183][1022,2235]`, which is React Native's own dev-only LogBox
+dismiss button (Metro error toast, see below), not app code. Zero
+app-authored clickable nodes were unlabelled on that screen.
+
+**4. Type — PASS.** JetBrains Mono renders (visually confirmed in code blocks
+and the mono-styled UI throughout every screenshot this round). Font-scale
+1.3× (`adb shell settings put system font_scale 1.3`): checked session list,
+Settings, and a chat screen (`Untitled` session with the credentials-error
+card) — all three reflow cleanly, no clipping or truncation. Restored to
+1.0× afterward (`adb shell settings put system font_scale 1.0`), confirmed
+via `adb shell settings get system font_scale` → `1.0`.
+
+**5. Touch targets — PASS.** Same Appearance-screen uiautomator dump, density
+420dpi (`adb shell wm density` → 420, so 48dp = 126px): every real control
+met or exceeded it — nav-up 147×147px, drawer hamburger 126×126px exactly,
+mode segments 126px tall, skin rows 175–176px tall. One skin row
+(`Select Ember skin`) initially measured 55px — investigated rather than
+reported as-is, since every sibling row was 175px; a second dump after
+scrolling it fully into view showed its true bounds at 175px too, so the
+55px reading was scroll-clipping in the first dump, not a real touch-target
+bug.
+
+**6. Slash palette — partial.** `/new` confirmed on-device: typed in the
+composer, routed to a fresh session (new `Untitled` chat, `router.push`
+fired). `/model`, `/sessions`, `/profile` are covered by
+`mobile-slash-commands.test.ts` (one test per routed command, all passing)
+but I didn't get a second clean device pass on them before the session ran
+long — the one attempt got swallowed by the font-scale-triggered Activity
+recreation reconnecting to the wrong dev server. Code-level coverage is
+solid; only `/new` has device-level confirmation this round.
+
+**7. List states — partial.** Session list empty state confirmed
+(`No sessions yet.`, with the `+ New` button and search bar still live).
+MCP settings empty state confirmed (`No MCP servers configured.`).
+Pull-to-refresh confirmed firing on the session list (`Refreshing…` banner,
+triggered by an Activity recreation, not a deliberate swipe test — real
+signal that the RefreshControl wiring works, but not the swipe-gesture
+device pass the criterion asks for). Error state against a dead host: not
+run.
+
+**Two real environment blockers, not app bugs:**
+
+- **No inference provider on the throwaway backend.** Every session showed
+  `agent init failed: No usable credentials found for provider 'opencode-go'.
+  Set OPENCODE_GO_API_KEY.` The real install's `config.yaml` resolves this
+  key through `key_env: HERMES_CUSTOM_OPENCODE_GO_API_KEY`, which isn't (and
+  shouldn't be, without being asked) something I copy into a throwaway
+  `HERMES_HOME` on my own judgment — it's the user's own provider
+  credential. This blocked any exit criterion needing a real assistant turn:
+  the user-bubble colour sample, and a live skin-sync round trip that
+  exercises actual message traffic. Command + output are above; per D9,
+  Opus should confirm independently rather than take my word for the block.
+- **Metro's disk cache on this Windows box is EMFILE-fragile across a long
+  session.** Two separate crashes (`EMFILE: too many open files, open
+  '...\metro-cache\...\*.mp'`), each turning every subsequent bundle request
+  into a 500 and the app into "Hermes keeps stopping." Both times, killing
+  Metro and restarting with `--clear` fixed it in one bundle. This is
+  almost certainly what produced the transient "Appearance row missing from
+  Settings" observation earlier in this round too (`ROWS` in
+  `app/(main)/settings/index.tsx` is a plain unconditional array literal —
+  no code path drops an entry) — re-checked after a clean `--clear` restart
+  and the row was back, in the right position, first try. Recorded so this
+  doesn't get mistaken for a real Settings-list bug by whoever reads this
+  log next.
+
+**Cleanup performed:** killed the throwaway `hermes serve` (PID 5576, verified
+by command line against the real gateway's PID 18088 before touching
+anything) and the Metro instance bound to it; removed
+`%TEMP%\hermes-m13-verify-home` entirely. Left the emulator's now-dead
+`127.0.0.1:9123` connection entry in the app's Connections list rather than
+fight the dev-client picker further to reach it — it's inert (nothing's
+listening on that port) and other worktrees' own stale entries
+(`:9119`, `:9121`) were already there before this round, so it matches the
+existing shared-emulator pattern rather than adding a new kind of mess.
+
+**Net:** colour-match, icons/accessibility, type/font-scale, and touch
+targets all have real device evidence and pass. Skin-sync, the full slash
+palette, and full list-state coverage are either partial or not attempted —
+named individually above rather than folded into a blanket "done." Handing
+off with M13 still `in-progress`.
