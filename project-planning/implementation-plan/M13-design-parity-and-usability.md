@@ -1,6 +1,6 @@
 # M13 — Design parity + usability
 
-**Status:** todo
+**Status:** in-progress
 **Depends on:** M09, M10
 **Goal:** The phone looks like the desktop app (same skins, same icon set, same type roles) and is comfortable to use one-handed.
 
