@@ -1,7 +1,17 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import {
@@ -134,14 +144,31 @@ export default function CronScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Cron" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void jobsQuery.refetch()}
+            refreshing={jobsQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         {jobsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {jobsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
-          </Text>
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void jobsQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
-        {jobs.length === 0 && !jobsQuery.isLoading ? (
+        {jobs.length === 0 && !jobsQuery.isLoading && !jobsQuery.isError ? (
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No cron jobs yet.</Text>
         ) : null}
 
@@ -286,6 +313,9 @@ const styles = StyleSheet.create({
     ...type.label,
     fontWeight: '600'
   },
+  errorBlock: {
+    marginBottom: 6
+  },
   errorText: {
     ...type.caption,
     marginTop: 6
@@ -301,6 +331,17 @@ const styles = StyleSheet.create({
   multilineInput: {
     minHeight: 70,
     textAlignVertical: 'top'
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   rowPrompt: {
     ...type.caption,

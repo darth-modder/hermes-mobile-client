@@ -3,6 +3,8 @@ import { Stack } from 'expo-router'
 import { useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -62,6 +64,13 @@ export default function McpSettings() {
     onSuccess: invalidate
   })
 
+  const confirmRemove = (serverName: string) => {
+    Alert.alert('Remove MCP server?', serverName, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => removeMutation.mutate(serverName), style: 'destructive', text: 'Remove' }
+    ])
+  }
+
   const testMutation = useMutation({
     mutationFn: (serverName: string) => testMcpServer(serverName),
     onSuccess: (result, serverName) => {
@@ -79,13 +88,27 @@ export default function McpSettings() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'MCP' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void serversQuery.refetch()}
+            refreshing={serversQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Servers</Text>
         {serversQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {serversQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {serversQuery.error instanceof Error ? serversQuery.error.message : String(serversQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {serversQuery.error instanceof Error ? serversQuery.error.message : String(serversQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void serversQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(serversQuery.data?.servers ?? []).map((server: McpServerSummary) => (
           <View key={server.name} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
@@ -112,7 +135,7 @@ export default function McpSettings() {
                   {testMutation.isPending && testMutation.variables === server.name ? 'Testing…' : 'Test'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => removeMutation.mutate(server.name)} style={styles.actionButton}>
+              <TouchableOpacity onPress={() => confirmRemove(server.name)} style={styles.actionButton}>
                 <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Remove</Text>
               </TouchableOpacity>
             </View>
@@ -218,6 +241,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   rowSubtitle: {
     ...type.caption,

@@ -2,7 +2,17 @@ import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import {
@@ -118,29 +128,71 @@ export default function ProvidersSettings() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['custom-endpoints'] })
   })
 
+  const confirmDeleteEnvVar = (name: string) => {
+    Alert.alert('Clear API key?', name, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => deleteEnvMutation.mutate(name), style: 'destructive', text: 'Clear' }
+    ])
+  }
+
+  const confirmDisconnect = (providerId: string, providerName: string) => {
+    Alert.alert('Disconnect provider?', providerName, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => disconnectMutation.mutate(providerId), style: 'destructive', text: 'Disconnect' }
+    ])
+  }
+
+  const confirmDeleteEndpoint = (id: string, name: string) => {
+    Alert.alert('Delete custom endpoint?', name, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => deleteEndpointMutation.mutate(id), style: 'destructive', text: 'Delete' }
+    ])
+  }
+
+  const refreshing = envQuery.isRefetching || oauthQuery.isRefetching || endpointsQuery.isRefetching
+
+  const onRefresh = () => {
+    void envQuery.refetch()
+    void oauthQuery.refetch()
+    void endpointsQuery.refetch()
+  }
+
   const envEntries = Object.entries(envQuery.data ?? {}).filter(([, entry]) => !entry.channel_managed)
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Providers' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+        }
+      >
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>API keys</Text>
         {envQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {envQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {envQuery.error instanceof Error ? envQuery.error.message : String(envQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {envQuery.error instanceof Error ? envQuery.error.message : String(envQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void envQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {envEntries.map(([name, entry]) => (
           <EnvVarRow
             entry={entry}
             key={name}
             name={name}
-            onDelete={() => deleteEnvMutation.mutate(name)}
+            onDelete={() => confirmDeleteEnvVar(name)}
             onSet={value => setEnvMutation.mutate({ key: name, value })}
             saving={setEnvMutation.isPending}
           />
         ))}
+        {envQuery.data && envEntries.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No API keys configured.</Text>
+        ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>OAuth providers</Text>
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
@@ -148,9 +200,14 @@ export default function ProvidersSettings() {
         </Text>
         {oauthQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {oauthQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {oauthQuery.error instanceof Error ? oauthQuery.error.message : String(oauthQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {oauthQuery.error instanceof Error ? oauthQuery.error.message : String(oauthQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void oauthQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(oauthQuery.data?.providers ?? []).map(provider => (
           <View key={provider.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
@@ -161,19 +218,27 @@ export default function ProvidersSettings() {
               </Text>
             </View>
             {provider.status.logged_in && provider.disconnectable !== false ? (
-              <TouchableOpacity onPress={() => disconnectMutation.mutate(provider.id)}>
+              <TouchableOpacity onPress={() => confirmDisconnect(provider.id, provider.name)}>
                 <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Disconnect</Text>
               </TouchableOpacity>
             ) : null}
           </View>
         ))}
+        {oauthQuery.data?.providers.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No OAuth providers available.</Text>
+        ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Custom endpoints</Text>
         {endpointsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {endpointsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {endpointsQuery.error instanceof Error ? endpointsQuery.error.message : String(endpointsQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {endpointsQuery.error instanceof Error ? endpointsQuery.error.message : String(endpointsQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void endpointsQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(endpointsQuery.data?.endpoints ?? []).map(endpoint => (
           <View key={endpoint.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
@@ -186,7 +251,7 @@ export default function ProvidersSettings() {
                 {endpoint.base_url} · {endpoint.model}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => deleteEndpointMutation.mutate(endpoint.id)}>
+            <TouchableOpacity onPress={() => confirmDeleteEndpoint(endpoint.id, endpoint.name)}>
               <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -228,6 +293,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     width: 180
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   row: {
     alignItems: 'center',

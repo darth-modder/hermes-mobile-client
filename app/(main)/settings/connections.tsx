@@ -1,6 +1,16 @@
 import { Stack, useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import {
@@ -54,20 +64,34 @@ const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = {
 export default function ConnectionsSettings() {
   const tokens = useTheme()
   const router = useRouter()
-  const [connections, setConnections] = useState<MobileConnection[]>([])
+  const [connections, setConnections] = useState<MobileConnection[] | null>(null)
   const [activeId, setActiveId] = useState<null | string>(null)
   const [editingId, setEditingId] = useState<null | string>(null)
   const [editingLabel, setEditingLabel] = useState('')
   const [testing, setTesting] = useState<null | string>(null)
   const [results, setResults] = useState<Record<string, ConnectionTestResult>>({})
   const [signingOut, setSigningOut] = useState<null | string>(null)
+  const [error, setError] = useState<null | string>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const refresh = useCallback(() => {
-    setConnections(listConnections())
-    setActiveId(getActiveConnection()?.id ?? null)
+    try {
+      setConnections(listConnections())
+      setActiveId(getActiveConnection()?.id ?? null)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
   useFocusEffect(refresh)
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true)
+    refresh()
+  }, [refresh])
 
   const startEditing = (connection: MobileConnection) => {
     setEditingId(connection.id)
@@ -143,8 +167,27 @@ export default function ConnectionsSettings() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Connections' }} />
-      <ScrollView contentContainerStyle={styles.content}>
-        {connections.length === 0 ? (
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+        }
+      >
+        {error ? (
+          <View style={styles.center}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
+            <TouchableOpacity
+              onPress={() => refresh()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : connections === null ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={tokens.mutedForeground} size="large" />
+          </View>
+        ) : connections.length === 0 ? (
           <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>No saved connections yet.</Text>
         ) : (
           connections.map(connection => {
@@ -297,6 +340,10 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row'
   },
+  center: {
+    alignItems: 'center',
+    padding: 24
+  },
   container: {
     flex: 1
   },
@@ -310,6 +357,11 @@ const styles = StyleSheet.create({
   emptyText: {
     ...type.bodySmall,
     marginBottom: 16
+  },
+  errorText: {
+    ...type.bodySmall,
+    marginBottom: 16,
+    textAlign: 'center'
   },
   label: {
     ...type.body,
@@ -339,5 +391,14 @@ const styles = StyleSheet.create({
   resultText: {
     ...type.caption,
     marginTop: 6
+  },
+  retryButton: {
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  retryText: {
+    ...type.bodySmall,
+    fontWeight: '600'
   }
 })

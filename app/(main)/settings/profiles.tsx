@@ -2,7 +2,17 @@ import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { createProfile, deleteProfile, getProfiles } from '../../../src/api/profiles'
@@ -26,7 +36,10 @@ export default function ProfilesSettings() {
   const activeProfile = useStore($activeProfile)
   const [newName, setNewName] = useState('')
 
-  const { data, error, isLoading, refetch } = useQuery({ queryFn: () => getProfiles(), queryKey: ['profiles'] })
+  const { data, error, isLoading, isRefetching, refetch } = useQuery({
+    queryFn: () => getProfiles(),
+    queryKey: ['profiles']
+  })
 
   const createMutation = useMutation({
     mutationFn: (name: string) => createProfile({ name }),
@@ -66,7 +79,16 @@ export default function ProfilesSettings() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Profiles' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void refetch()}
+            refreshing={isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           A profile is a separate config, sessions, and skill set on the same backend. Switching scopes every settings
           screen and new sessions to it.
@@ -74,9 +96,14 @@ export default function ProfilesSettings() {
 
         {isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {error ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {error instanceof Error ? error.message : String(error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {error instanceof Error ? error.message : String(error)}
+            </Text>
+            <TouchableOpacity onPress={() => void refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         <TouchableOpacity
@@ -212,6 +239,14 @@ const styles = StyleSheet.create({
   },
   refreshText: {
     ...type.label
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   row: {
     alignItems: 'center',

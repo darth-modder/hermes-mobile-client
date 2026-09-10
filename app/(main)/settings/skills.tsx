@@ -1,7 +1,17 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import {
@@ -51,16 +61,40 @@ export default function SkillsSettings() {
     }
   })
 
+  const confirmUninstall = (skillName: string) => {
+    Alert.alert('Uninstall skill?', skillName, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => uninstallMutation.mutate(skillName), style: 'destructive', text: 'Uninstall' }
+    ])
+  }
+
+  const refreshing = skillsQuery.isRefetching || officialQuery.isRefetching
+
+  const onRefresh = () => {
+    void skillsQuery.refetch()
+    void officialQuery.refetch()
+  }
+
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Skills' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+        }
+      >
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Installed</Text>
         {skillsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {skillsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {skillsQuery.error instanceof Error ? skillsQuery.error.message : String(skillsQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {skillsQuery.error instanceof Error ? skillsQuery.error.message : String(skillsQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void skillsQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(skillsQuery.data ?? []).map(skill => (
           <View key={skill.name} style={[styles.row, { borderBottomColor: tokens.border }]}>
@@ -83,9 +117,14 @@ export default function SkillsSettings() {
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Available to install</Text>
         {officialQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {officialQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {officialQuery.error instanceof Error ? officialQuery.error.message : String(officialQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {officialQuery.error instanceof Error ? officialQuery.error.message : String(officialQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void officialQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(officialQuery.data?.skills ?? []).map(skill => (
           <View key={skill.identifier} style={[styles.row, { borderBottomColor: tokens.border }]}>
@@ -96,7 +135,7 @@ export default function SkillsSettings() {
               </Text>
             </View>
             {skill.installed ? (
-              <TouchableOpacity onPress={() => uninstallMutation.mutate(skill.name)}>
+              <TouchableOpacity onPress={() => confirmUninstall(skill.name)}>
                 <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Uninstall</Text>
               </TouchableOpacity>
             ) : (
@@ -111,6 +150,9 @@ export default function SkillsSettings() {
             )}
           </View>
         ))}
+        {officialQuery.data?.skills.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No skills available to install.</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   )
@@ -134,6 +176,14 @@ const styles = StyleSheet.create({
   errorText: {
     ...type.caption,
     marginBottom: 8
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 8
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   row: {
     alignItems: 'center',

@@ -1,7 +1,17 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { archiveProject, createProject, deleteProject, listProjects, setActiveProject } from '../../../src/api/projects'
@@ -77,15 +87,32 @@ export default function ProjectsScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Projects" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void projectsQuery.refetch()}
+            refreshing={projectsQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         {projectsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {projectsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {projectsQuery.error instanceof Error ? projectsQuery.error.message : String(projectsQuery.error)}
-          </Text>
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {projectsQuery.error instanceof Error ? projectsQuery.error.message : String(projectsQuery.error)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void projectsQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
-        {projects.length === 0 && !projectsQuery.isLoading ? (
+        {projects.length === 0 && !projectsQuery.isLoading && !projectsQuery.isError ? (
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
             No projects yet — create one below.
           </Text>
@@ -207,6 +234,9 @@ const styles = StyleSheet.create({
     ...type.label,
     fontWeight: '600'
   },
+  errorBlock: {
+    marginBottom: 6
+  },
   errorText: {
     ...type.caption,
     marginTop: 6
@@ -218,6 +248,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   rowSubtitle: {
     ...type.caption,

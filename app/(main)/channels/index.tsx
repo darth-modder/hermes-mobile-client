@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -136,6 +138,13 @@ export default function ChannelsScreen() {
     onSuccess: invalidatePairing
   })
 
+  const confirmRevoke = (user: PairingUser) => {
+    Alert.alert('Revoke pairing?', user.user_name || user.user_id, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: () => revokeMutation.mutate(user), style: 'destructive', text: 'Revoke' }
+    ])
+  }
+
   const saveEnv = (platform: MessagingPlatformInfo) => {
     const env: Record<string, string> = {}
 
@@ -158,16 +167,39 @@ export default function ChannelsScreen() {
   const pending = pairingQuery.data?.pending ?? []
   const approved = pairingQuery.data?.approved ?? []
 
+  const refreshing = platformsQuery.isRefetching || pairingQuery.isRefetching
+
+  const onRefresh = () => {
+    void platformsQuery.refetch()
+    void pairingQuery.refetch()
+  }
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Channels" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+        }
+      >
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Platforms</Text>
-        {platformsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
-        {platformsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {platformsQuery.error instanceof Error ? platformsQuery.error.message : String(platformsQuery.error)}
-          </Text>
+        {platformsQuery.isLoading ? (
+          <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} />
+        ) : platformsQuery.isError ? (
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {platformsQuery.error instanceof Error ? platformsQuery.error.message : String(platformsQuery.error)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void platformsQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : platforms.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No messaging platforms available.</Text>
         ) : null}
 
         {platforms.map(platform => {
@@ -245,13 +277,21 @@ export default function ChannelsScreen() {
         })}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Pairing</Text>
-        {pairingQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {pairingQuery.error instanceof Error ? pairingQuery.error.message : String(pairingQuery.error)}
-          </Text>
-        ) : null}
-
-        {pending.length === 0 ? (
+        {pairingQuery.isLoading ? (
+          <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} />
+        ) : pairingQuery.isError ? (
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {pairingQuery.error instanceof Error ? pairingQuery.error.message : String(pairingQuery.error)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void pairingQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : pending.length === 0 ? (
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No pending pairing requests.</Text>
         ) : (
           pending.map(user => (
@@ -284,7 +324,7 @@ export default function ChannelsScreen() {
                 <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{user.user_name || user.user_id}</Text>
                 <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{user.platform}</Text>
                 <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => revokeMutation.mutate(user)} style={styles.actionButton}>
+                  <TouchableOpacity onPress={() => confirmRevoke(user)} style={styles.actionButton}>
                     <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Revoke</Text>
                   </TouchableOpacity>
                 </View>
@@ -342,6 +382,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10
   },
+  errorBlock: {
+    marginTop: 6
+  },
   errorText: {
     ...type.caption,
     marginTop: 6
@@ -360,6 +403,17 @@ const styles = StyleSheet.create({
   rowSubtitle: {
     ...type.caption,
     marginTop: 2
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   rowTitle: {
     ...type.bodySmall,

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { listInstalledPlugins } from '../../../src/api/plugins'
@@ -22,16 +22,30 @@ export default function PluginsSettings() {
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Plugins' }} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void pluginsQuery.refetch()}
+            refreshing={pluginsQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Plugins installed on the backend. Per-plugin dashboards (a plugin's own web UI) aren&apos;t available on
           mobile yet — install and configure a plugin from the desktop app or CLI.
         </Text>
         {pluginsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {pluginsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
+            </Text>
+            <TouchableOpacity onPress={() => void pluginsQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(pluginsQuery.data ?? []).map(plugin => (
           <View key={plugin.name} style={[styles.row, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
@@ -64,6 +78,14 @@ const styles = StyleSheet.create({
   errorText: {
     ...type.label,
     marginTop: 8
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   row: {
     borderRadius: 10,

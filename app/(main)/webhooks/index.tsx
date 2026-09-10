@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -91,12 +92,29 @@ export default function WebhooksScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Webhooks" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void webhooksQuery.refetch()}
+            refreshing={webhooksQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
         {webhooksQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {webhooksQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {webhooksQuery.error instanceof Error ? webhooksQuery.error.message : String(webhooksQuery.error)}
-          </Text>
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {webhooksQuery.error instanceof Error ? webhooksQuery.error.message : String(webhooksQuery.error)}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void webhooksQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         {data && !data.enabled ? (
@@ -129,7 +147,7 @@ export default function WebhooksScreen() {
           </View>
         ) : null}
 
-        {subscriptions.length === 0 && !webhooksQuery.isLoading ? (
+        {subscriptions.length === 0 && !webhooksQuery.isLoading && !webhooksQuery.isError ? (
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No webhooks yet.</Text>
         ) : null}
 
@@ -269,6 +287,9 @@ const styles = StyleSheet.create({
     ...type.label,
     fontWeight: '600'
   },
+  errorBlock: {
+    marginBottom: 6
+  },
   errorText: {
     ...type.caption,
     marginTop: 6
@@ -280,6 +301,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 6,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
   },
   rowMeta: {
     ...type.caption,
