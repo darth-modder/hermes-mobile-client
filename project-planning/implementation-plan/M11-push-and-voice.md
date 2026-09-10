@@ -1,6 +1,6 @@
 # M11 — Push plugin + voice
 
-**Status:** in-progress (Opus device pass 2026-09-09: no exit criterion can close on this host — see the Opus section and Verifier findings at the end of this file. 2026-09-10 fix round found and fixed Finding 1's root cause — see that section at the end of the file — pending re-verification on device)
+**Status:** in-progress (Opus re-verification 2026-09-10: the speak-control finding is fixed and the spoken-reply criterion is verified; open on exactly two register-bound items — push delivery and non-empty dictation)
 **Depends on:** M07
 **Goal:** Backgrounded approvals and finished turns arrive as push notifications; voice input and output work.
 
@@ -706,3 +706,101 @@ shaped parts of M11 untouched by this round. Re-verifiable on device with the sa
 `/api/audio/speak` at a backend with no `tts:` section configured (the default state of a fresh Hermes
 install) and confirm the button now recovers with a "Speech failed" toast within `audioSpeakRequestTimeoutMs`
 instead of spinning forever.
+
+### 2026-09-10 — Opus re-verification of the fix round (D12.2)
+
+**Verdict: Finding 1 is fixed and verified, and the spoken-reply criterion now passes — which also
+means my own 2026-09-09 register row was misdiagnosed and is withdrawn.** M11 stays `in-progress` on
+exactly two register-bound items.
+
+Dev client: merged-`main` build from `e850b2a`; nothing native changed this round, so no rebuild is
+owed under D13.2.
+
+#### Finding 1 — the speak control now recovers. Verified against a deterministic stall
+
+The 2026-09-09 wedge could not be reproduced on demand: on this host `/api/audio/speak` now answers
+in about two seconds (see the correction below). So rather than wait for a stall to recur, I built
+the failure mode deliberately — a transparent proxy in front of a real `hermes serve` that forwards
+everything, including the WebSocket, except `POST /api/audio/speak`, which it accepts and never
+answers. That is the exact condition the fix exists for, and it is repeatable.
+
+```
+13:00:55  tapped 🔊
+          t+5s  spinner up: YES
+          [blackhole] POST /api/audio/speak -> accepted, never answering (by design)
+13:03:55  icon=0                     ← still spinning, exactly at the 180s deadline
+13:04:01  icon=1  BANNER: Speech failed | request timed out after 180s: /api/audio/speak
+```
+
+Both halves of the criterion: the control recovers, and it says why. Before the fix the same
+condition left it spinning past 280 s and past killing the backend outright.
+
+The fix itself is the right shape. `httpRequest` now races `fetch()` against a JS-owned timer that
+rejects on its own rather than trusting `AbortController.abort()` to make `fetch()` settle, and it
+mirrors `upstream/shared/json-rpc-gateway.ts`'s RPC timeout, which already settles its own pending
+promise instead of trusting the transport. `controller.abort()` is still called best-effort. The
+timeout durations are unchanged, which was the constraint. The regression test fails on the pre-fix
+source — I reverted `http.ts` and re-ran it (`× rejects at the deadline against a fetch that never
+settles, abort signal or not`).
+
+#### A reply is spoken via TTS — verified, and my earlier register row was wrong
+
+While setting the above up I found that `/api/audio/speak` **does** answer on this host, with no
+`tts:` section in `config.yaml`. Driven end to end on a real backend:
+
+```
+prompt   "Say the word harbour once"          reply  "harbour"
+13:10:16 tapped 🔊  → control settled within ~2s
+logcat   AudioTrack: stop(18): called with 37440 frames delivered
+         expo.modules.audio.AudioModule … abandonAudioFocus()
+device   cache/hermes-tts-1789027817996.mp3   9360 bytes, written 13:10
+re-tap   "Nothing to speak"   ← the reply is marked spoken, which only happens after speak() resolves
+```
+
+Frames delivered to the audio device, an mp3 written to the app's cache at the moment of the tap, and
+the reply marked spoken. **Criterion met.**
+
+**This corrects my own 2026-09-09 note.** I recorded the criterion as unverifiable here and wrote a
+register row blaming a missing `tts:` section — "the endpoint has no provider chain behind it and
+never answers". That diagnosis was wrong: the chain resolves without an explicit `tts:` section, and
+the cache holds `hermes-tts-*.mp3` files written on 2026-09-09 as well, including during the pass
+where I concluded it never answered. What I actually hit was a **transient stall**, not a
+configuration gap — which is the same class of failure Finding 1 is about, and is why the control
+appeared to wedge. The register row is withdrawn; the criterion is verified.
+
+Worth being explicit about what this does and does not excuse. The stall was real, the wedge was
+real, and the fix is real and needed. What I got wrong was the *cause* I attributed it to, and I
+attributed it confidently enough to write a register row and a blocker for someone else to clear.
+The lesson is the one this project keeps re-learning: an absent config section is a plausible story,
+not evidence, and I had the means to test it that day and did not.
+
+#### Nothing else is open
+
+Confirmed against the exit criteria:
+
+| Criterion | State |
+|---|---|
+| `[physical]` push after 30 min doze | register row — device **and** the user's `eas init` (D11.3) |
+| No push while foregrounded | same blocker; the client says so itself — `[push] disabled: no EAS project id (extra.eas.projectId)` |
+| Dictation inserts transcribed text | register row — emulator has no scriptable mic; needs real speech |
+| A reply is spoken via TTS | **verified above** |
+
+So M11's open set is exactly the two register-bound items, which is what D13's round expected. It
+stays `in-progress` on those.
+
+#### One deviation to declare
+
+The TTS check ran on the connection's default model (`kimi-k3`) rather than `mimo-v2.5`, contrary to
+the user's 2026-09-09 instruction to use mimo or deepseek v4 flash for testing. The Finding 1 runs
+were on `mimo-v2.5`. Switching models writes to `config.yaml`, which I had already restored, and the
+model has no bearing on the TTS path — but the instruction was explicit and I am recording the
+deviation rather than leaving it implicit.
+
+#### Environment
+
+Throwaway servers on 9122/9125 and the cleanup servers on 9126/9127/9128 all stopped **by PID**,
+never `--stop`. `config.yaml` restored from backup twice over (the `mimo-v2.5` switch is reverted),
+diff empty. Every test session deleted through the API rather than by editing `state.db`; every test
+connection deleted; `SecureStore.xml` back to its pre-pass key count (9); `adb reverse tcp:9122`
+removed. The emulator died mid-pass and was restarted from the `hermes-test` AVD; Metro was
+restarted with it. Session tokens never touched disk.

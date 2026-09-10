@@ -1,6 +1,6 @@
 # M08 — Portal OAuth
 
-**Status:** in-progress (Opus device pass 2026-09-09: criterion 2 verified, criterion 4 partially verified, **criterion 3 fails** — see the Verifier findings at the end of this file; the `[physical]` criterion keeps its register row. 2026-09-10 fix round addressed both findings — see that section at the end of the file — pending re-verification on device)
+**Status:** done (Opus re-verification 2026-09-10: all four exit criteria accounted for — criteria 3 and 4 now pass on device after the `dd19103` fix round; the `[physical]` Custom Tabs criterion keeps its register row)
 **Depends on:** M04
 **Goal:** Nous Portal (and any non-password provider) login works with no server change.
 
@@ -783,3 +783,139 @@ re-proves Finding 1 live, and is described as reproducing it "in minutes" once t
 **Status stays `in-progress`** — per handover rule 5 / D12.2, only Opus marks a tracker status `done`.
 Both findings from the 2026-09-09 device pass are addressed; re-verification on `emulator-5554` with the
 same harness is the next step.
+
+### 2026-09-10 — Opus re-verification of the fix round (D12.2, harness per D13.3)
+
+**Verdict: both findings are genuinely fixed and both criteria now pass on device. All four exit
+criteria are accounted for. Status → `done`**, with the `[physical]` Custom Tabs criterion keeping
+its register row.
+
+Dev client: the merged-`main` build from **`e850b2a`** (29 native modules, `BUILD SUCCESSFUL in
+20m 18s`). Checked rather than assumed — `git diff --name-only e850b2a..HEAD -- package.json
+package-lock.json app.config.ts android/` is empty, and the working tree adds nothing there either,
+so no rebuild is owed under D13.2.
+
+#### The harness, corrected per D13.3
+
+The `/api/health` override is gone. The backend engages its own gate: `dashboard.public_url` set to
+a non-loopback hostname under D11 rule 1, backed up and restored. One wrinkle worth recording,
+because the next person will hit it — **a `public_url` alone is refused at startup**:
+
+```
+Refusing to bind dashboard to 127.0.0.1 — dashboard.public_url is set to https://… — an
+operator-declared external URL engages the auth gate even on a loopback bind, but no auth
+providers are registered.
+```
+
+The server wants a registered provider. `hermes dashboard register` would bind the user's Nous
+account (D11: accounts and credentials are theirs), so I configured a throwaway
+`dashboard.basic_auth` instead — username `opus-verify`, a generated hash, the plaintext discarded
+and never used to log in. That satisfies the gate without touching anything of the user's.
+
+The result is what D13.3 asked for, from the real server with nothing overridden:
+
+```
+$ curl http://127.0.0.1:9130/api/health        # the real backend
+{"ok":true,"version":"0.21.0","auth_required":true}
+```
+
+and the app entered oauth mode on its own — `/api/health` (forwarded verbatim), then
+`/api/auth/providers` — showing *"Gated backend — sign in with Nous Portal."* The stub in front of
+it now owns only the five Portal endpoints M08's client contract names, which is the IdP's job.
+
+`POST /api/auth/ws-ticket` still 401s throughout, for the reason recorded in the 2026-09-09 pass
+(`routes.py:449` wants a real backend Session an external IdP cannot mint). That is no longer just a
+limitation — **it is the trigger the pre-connect path needs**, so it is what makes Finding 1
+testable at all.
+
+#### The tests fail on the pre-fix code — checked, not taken on trust
+
+Each fix's test was re-run against the reverted source:
+
+```
+http.ts reverted        × rejects at the deadline against a fetch that never settles, abort signal or not
+                          Tests  1 failed | 2 passed (3)
+session-connection.ts   × a confirmed session_expired (doRefresh already cleared the stored session)
+  reverted                sets needsLogin even though no socket ever opened
+                          Tests  1 failed | 22 passed (23)
+logout.ts reverted      × runs the full logout (SecureStore cleared, best-effort POST sent) AND marks
+                          the registry entry needsLogin
+                        × still marks needsLogin even when the best-effort /auth/logout request fails
+                          Tests  2 failed | 4 passed (6)
+```
+
+Each failing test names the actual defect. Defect 1's other two tests pass pre-fix — they are
+negative guards against over-triggering, which is the right shape for them but worth naming so the
+count is not mistaken for three regression tests.
+
+My own `npm run check`: **348 tests / 45 files**, 52 Python tests `OK`, typecheck, eslint and
+Prettier clean, exit 0.
+
+#### 3. Refresh-token expiry produces exactly one "sign in again" prompt — now passes
+
+Both directions, live:
+
+```
+healthy session, repeated ws-ticket 401s   →  'needs sign-in' occurrences: 0   ← does not over-trigger
+[stub] REFRESH #1 presented_current_rt=True kill=True
+[stub] POST /auth/native/refresh -> 401                                        ← confirmed session_expired
+[stub] POST /api/auth/ws-ticket -> 401
+Connections:  http://127.0.0.1:9120 · active · Nous Portal · used 5m ago · needs sign-in
+                                            'needs sign-in' occurrences: 1     ← exactly one
+```
+
+The negative case matters as much as the positive one and is the part a careless fix would have got
+wrong: the same 401, on the same screen, with a *live* session, leaves the row untouched. That is
+`flagOauthSessionExpiredIfConfirmed` reading the stored session back rather than trusting the 401,
+which is the correct reading of AGENTS.md — a transient provider failure must never raise a login
+prompt.
+
+Both invariants from the 2026-09-09 pass still hold afterwards:
+
+```
+foreground #1/#2/#3:  refresh_hits=1        ← one attempt on a dead RT, no retry loop
+REPLAY DETECTED:      0                     ← the stale RT is never replayed
+```
+
+#### 4. Logout clears every SecureStore entry for the connection — now passes
+
+The `Sign out` button exists and reaches `logoutConnection`, which `Delete` never did:
+
+```
+logout_hits        0 → 1            [stub] LOGOUT #1     ← POST /auth/logout actually sent
+SecureStore       10 → 9 keys
+removed                             name="key_v1-conn.conn-1788982796498-6zbq6k.oauth"
+diff(pre-login, post-signout)       identical
+row after                           Nous Portal · used 3m ago · needs sign-in
+```
+
+#### 2. Access-token expiry triggers a silent refresh — carried over
+
+Verified live on 2026-09-09 and not re-run, per the scope of this pass: no refresh at 61 s before
+expiry, one refresh at 48 s (skew is 60 s), silent, and `REFRESH #2` presented the token `REFRESH #1`
+rotated to — so the rotated RT is persisted before the promise resolves. Nothing in this round
+touches that path.
+
+#### 1. `[physical]` Portal login via Custom Tabs — register row stands
+
+Ran green twice more today (PKCE S256 verified server-side, tap to stored session in ~14 s). Still
+evidence rather than the criterion: D1's question is about OEM browsers, which Chrome-on-emulator
+cannot answer.
+
+#### One correction to the handoff prose
+
+Sonnet's handoff says criterion 3's failure "was a loopback-bind stub in token mode, not an app bug".
+That conflates two separate things. D13.3 settled the **`auth_required`** question — that part was my
+harness's fault. Criterion 3's failure was a real app defect: `needsLogin` was unreachable from the
+pre-connect path, which is precisely what `dd19103` had to change. The code is right; only that
+sentence is wrong, and it is worth correcting so the next reader does not conclude the fix was
+unnecessary.
+
+#### Environment
+
+Throwaway servers on 9120/9130 stopped **by PID**, never `--stop`. `config.yaml` restored from a
+pre-pass backup — `dashboard.public_url` and the throwaway `basic_auth` both gone, diff empty. Every
+test connection deleted; `SecureStore.xml` back to its pre-pass key count (9). `adb reverse tcp:9120`
+removed, the user's own reverses untouched. Both session tokens were generated inside their launcher
+scripts and reached only the child process and the app's masked field — never a file, a log, or a
+command line.

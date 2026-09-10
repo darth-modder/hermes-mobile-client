@@ -37,7 +37,7 @@ deferred by register entry under D9's standing rule. Rule changes are logged in
 | [M05](M05-session-stream-reducer.md) | Session stream reducer | Gateway events reduce to state; desktop fixtures pass | M02 | done |
 | [M06](M06-chat-screen.md) | Chat screen | Streaming chat with tool cards, approvals, attachments | M04, M05 | done |
 | [M07](M07-sessions-and-lifecycle.md) | Session management + lifecycle | Session list; survives background, doze, network switch | M06 | done |
-| [M08](M08-portal-oauth.md) | Portal OAuth | Nous Portal login via on-device loopback listener | M04 | in-progress |
+| [M08](M08-portal-oauth.md) | Portal OAuth | Nous Portal login via on-device loopback listener | M04 | done |
 | [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | done |
 | [M10](M10-management-screens.md) | Management screens | Projects, cron, webhooks, artifacts, channels | M09 | done |
 | [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | in-progress |
@@ -65,7 +65,6 @@ rows return to Fable as a policy escalation.
 | M07 | `[physical]` Screen off 15 minutes mid-turn (doze) | Real device | Opus | Device attached | Batched physical pass (D9) |
 | M07 | `[physical]` Wi-Fi to cellular switch reconnects within 10 seconds | Real device (`expo-network` wiring landed 2026-09-08) | Opus | Device attached and `expo-network` change-handling landed | Batched physical pass (D9) |
 | M11 | `[physical]` Screen off 30 minutes; an approval arrives as a push; tapping opens the card and responding succeeds | Real device + a real Expo push token (also needs an EAS project id, D11) | Opus | Device attached and `extra.eas.projectId` committed | Batched physical pass (D9) |
-| M11 | A reply is spoken via TTS | `hermes serve`'s host has no `tts:` section in `config.yaml`, so `POST /api/audio/speak` has no provider chain behind it and never answers (the route itself is present and gated — an unauthenticated probe returns 401, not 404); configuring one edits the user's machine and usually their provider credentials | Opus | A TTS provider is configured under `tts.` on the `hermes serve` host (ask the user before configuring) | Next throwaway server session (D9) |
 | M11 | Dictation inserts transcribed text into the composer (non-empty-transcript path; the mechanism itself — permission, native recording, upload, empty-transcript guard — is proven live on `emulator-5554`, 2026-09-09) | Emulator has no scriptable microphone input: no `adb emu` mic command, and the emulator's only audio-injection path ("Insert audio from file" under Extended Controls > Microphone) is a GUI control this headless workflow cannot drive; `emulator -help-audio` confirms nothing beyond backend selection | Opus | Device attached (real speech input) | Batched physical pass (D9) |
 
 ## Architecture
