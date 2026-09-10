@@ -8,6 +8,7 @@ import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gate
 import { mintWsTicket, passwordLogin, PasswordLoginError } from '../../../src/net/auth/password-login'
 import { probeStatus } from '../../../src/net/auth/probe'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 /**
  * Password sign-in for a gated backend (M04). `id`/`baseUrl`/`label`/
@@ -179,7 +180,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   container: {
@@ -187,35 +188,33 @@ const styles = StyleSheet.create({
     padding: 16
   },
   error: {
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginBottom: 12
   },
   input: {
     borderRadius: 6,
     borderWidth: 1,
-    fontFamily: 'monospace',
+    ...type.mono,
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   label: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 4,
     marginTop: 4,
     textTransform: 'uppercase'
   },
   status: {
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginBottom: 12
   },
   subtitle: {
-    fontSize: 13,
+    ...type.label,
     marginBottom: 16
   },
   title: {
-    fontSize: 20,
+    ...type.title,
     fontWeight: '600',
     marginBottom: 8
   }

@@ -14,6 +14,7 @@ import {
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 /**
  * Skills settings screen (M09). Exit criterion: "skill toggle persists" —
@@ -117,7 +118,7 @@ export default function SkillsSettings() {
 
 const styles = StyleSheet.create({
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   container: {
@@ -127,11 +128,11 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   row: {
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowText: {
@@ -150,15 +151,15 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 import type { UsageStats } from '../../upstream/types/hermes'
 
 function formatTokens(n: number): string {
@@ -48,6 +49,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   text: {
-    fontSize: 11
+    ...type.caption
   }
 })

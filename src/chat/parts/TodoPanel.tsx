@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 import type { TodoItem } from '../../upstream/lib/todos'
 
 const STATUS_GLYPH: Record<TodoItem['status'], string> = {
@@ -55,7 +56,7 @@ const styles = StyleSheet.create({
     padding: 10
   },
   item: {
-    fontSize: 13,
+    ...type.label,
     paddingVertical: 2
   },
   nested: {

@@ -22,6 +22,7 @@ import {
 } from '../../../src/api/messaging'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { WebhookRoute } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY = ['webhooks']
@@ -214,7 +215,7 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   actions: {
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   addButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   banner: {
@@ -244,8 +245,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8
   },
   bannerText: {
-    flex: 1,
-    fontSize: 13
+    ...type.label,
+    flex: 1
   },
   card: {
     borderRadius: 10,
@@ -265,32 +266,31 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   input: {
+    ...type.mono,
     borderRadius: 8,
     borderWidth: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
   rowMeta: {
-    fontSize: 11,
+    ...type.caption,
     marginTop: 4
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   secretCard: {
@@ -300,16 +300,15 @@ const styles = StyleSheet.create({
     padding: 12
   },
   secretText: {
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginTop: 6
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

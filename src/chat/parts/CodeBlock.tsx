@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { type MobileTokens, useTheme } from '../../theme/provider'
+import { MONO_BOLD_FONT_FAMILY, type as typeRoles } from '../../theme/type'
 
 import { highlightCode } from './highlight'
 
@@ -50,7 +51,7 @@ function classStyles(tokens: MobileTokens): Record<string, { color?: string; ita
 function styleForClasses(
   classColors: Record<string, { color?: string; italic?: boolean; bold?: boolean }>,
   classNames: string[]
-): { color?: string; fontStyle?: 'italic'; fontWeight?: 'bold' } | undefined {
+): { color?: string; fontStyle?: 'italic'; fontFamily?: string } | undefined {
   for (let i = classNames.length - 1; i >= 0; i--) {
     const match = classColors[classNames[i]]
 
@@ -58,7 +59,11 @@ function styleForClasses(
       return {
         color: match.color,
         ...(match.italic ? { fontStyle: 'italic' as const } : {}),
-        ...(match.bold ? { fontWeight: 'bold' as const } : {})
+        // Bold tokens (hljs-title/hljs-section/hljs-strong) need the bundled
+        // bold monospace face by name, not `fontWeight: 'bold'` — RN doesn't
+        // synthesise bold for a custom font, and every run in this component
+        // is already monospace (styles.text), so this is a clean 1:1 swap.
+        ...(match.bold ? { fontFamily: MONO_BOLD_FONT_FAMILY } : {})
       }
     }
   }
@@ -101,8 +106,6 @@ const styles = StyleSheet.create({
     padding: 10
   },
   text: {
-    fontFamily: 'monospace',
-    fontSize: 13,
-    lineHeight: 18
+    ...typeRoles.mono
   }
 })

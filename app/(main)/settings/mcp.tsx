@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { addMcpServer, listMcpServers, removeMcpServer, setMcpServerEnabled, testMcpServer } from '../../../src/api/mcp'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { McpServerSummary } from '../../../src/upstream/types/hermes'
 
 /**
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   actions: {
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   addButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   card: {
@@ -203,42 +204,41 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   input: {
+    ...type.mono,
     borderRadius: 8,
     borderWidth: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
   },
   testMessage: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   }
 })

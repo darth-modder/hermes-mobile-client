@@ -18,6 +18,7 @@ import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 function relativeTime(epochMs: number): string {
   const minutes = Math.floor((Date.now() - epochMs) / 60_000)
@@ -261,7 +262,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   actionText: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   },
   actions: {
@@ -269,7 +270,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   activeBadge: {
-    fontSize: 11,
+    ...type.caption,
     fontWeight: '700',
     marginLeft: 8
   },
@@ -280,12 +281,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   addButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   baseUrl: {
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginTop: 4
   },
   card: {
@@ -304,22 +304,22 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   },
   emptyText: {
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 16
   },
   label: {
+    ...type.body,
     flexShrink: 1,
-    fontSize: 15,
     fontWeight: '600'
   },
   labelInput: {
+    ...type.body,
     borderBottomWidth: 1,
     flex: 1,
-    fontSize: 15,
     paddingVertical: 2
   },
   labelRow: {
@@ -328,16 +328,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   meta: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   primaryBadge: {
-    fontSize: 11,
+    ...type.caption,
     fontWeight: '700',
     marginLeft: 8
   },
   resultText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   }
 })

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native'
 import Markdown, { type ASTNode, type RenderRules } from 'react-native-markdown-display'
 
 import { type MobileTokens, useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 import { CodeBlock } from './CodeBlock'
 import { splitMarkdownBlocks } from './markdown-blocks'
@@ -32,11 +33,11 @@ const markdownStyles = StyleSheet.create({
     paddingVertical: 4
   },
   body: {
-    fontSize: 15
+    ...type.body
   },
   code_inline: {
     borderRadius: 4,
-    fontFamily: 'monospace'
+    ...type.mono
   }
 })
 

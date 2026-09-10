@@ -13,6 +13,7 @@ import {
 } from '../../../src/push/native-notifications'
 import { $pushEnabled, setPushEnabled } from '../../../src/push/settings'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 const KIND_LABELS: Record<NativeNotificationKind, string> = {
   approval: 'Approval requests',
@@ -91,14 +92,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   rowLabel: {
-    fontSize: 15
+    ...type.body
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

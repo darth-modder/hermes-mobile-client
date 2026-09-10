@@ -8,6 +8,7 @@ import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prom
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
 import { type MobileTokens, useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
 import { ApprovalCard } from './parts/ApprovalCard'
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start'
   },
   attachments: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   bubble: {
@@ -187,7 +188,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   error: {
-    fontSize: 13,
+    ...type.label,
     marginTop: 4
   },
   pendingSpinner: {

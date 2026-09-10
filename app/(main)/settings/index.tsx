@@ -7,6 +7,7 @@ import { getActiveConnection } from '../../../src/connections/registry'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 interface SettingsRow {
   route: Href
@@ -69,7 +70,7 @@ export default function SettingsIndex() {
 
 const styles = StyleSheet.create({
   chevron: {
-    fontSize: 20
+    ...type.title
   },
   container: {
     flex: 1
@@ -86,14 +87,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowText: {
     flex: 1
   },
   rowTitle: {
-    fontSize: 15,
+    ...type.body,
     fontWeight: '600'
   },
   summary: {
@@ -103,15 +104,15 @@ const styles = StyleSheet.create({
     paddingTop: 8
   },
   summaryLabel: {
-    fontSize: 11,
+    ...type.caption,
     textTransform: 'uppercase'
   },
   summaryProfile: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   summaryValue: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600',
     marginTop: 2
   }

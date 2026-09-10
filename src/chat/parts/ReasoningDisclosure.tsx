@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { useTheme } from '../../theme/provider'
+import { type } from '../../theme/type'
 
 export interface ReasoningDisclosureProps {
   text: string
@@ -19,7 +20,12 @@ export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => setExpanded(current => !current)} style={styles.header}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(current => !current)}
+        style={styles.header}
+      >
         <Text style={[styles.headerText, { color: tokens.scaffoldText }]}>
           {expanded ? '▾ Reasoning' : '▸ Reasoning'}
         </Text>
@@ -31,7 +37,7 @@ export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
 
 const styles = StyleSheet.create({
   body: {
-    fontSize: 13,
+    ...type.label,
     fontStyle: 'italic',
     marginTop: 4,
     paddingHorizontal: 10,
@@ -44,7 +50,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2
   },
   headerText: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   }
 })

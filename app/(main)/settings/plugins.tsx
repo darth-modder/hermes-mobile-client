@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { listInstalledPlugins } from '../../../src/api/plugins'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
     padding: 16
   },
   errorText: {
-    fontSize: 13,
+    ...type.label,
     marginTop: 8
   },
   row: {
@@ -71,19 +72,19 @@ const styles = StyleSheet.create({
     padding: 12
   },
   rowMeta: {
-    fontSize: 11,
+    ...type.caption,
     marginTop: 4
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 12
   }
 })

@@ -15,6 +15,7 @@ import {
   setModeOverride,
   setSkinName
 } from '../../../src/theme/skin-selection'
+import { type } from '../../../src/theme/type'
 import type { DesktopTheme } from '../../../src/upstream/themes/types'
 
 const MODE_OPTIONS: { label: string; value: ModeOverride }[] = [
@@ -106,7 +107,7 @@ export default function AppearanceSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    fontSize: 18,
+    ...type.title,
     fontWeight: '700',
     marginLeft: 8
   },
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   modeOptionLabel: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   modeRow: {
@@ -139,22 +140,22 @@ const styles = StyleSheet.create({
     padding: 4
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 12
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 8,
     marginTop: 20,
     textTransform: 'uppercase'
   },
   skinDescription: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   skinLabel: {
-    fontSize: 15,
+    ...type.body,
     fontWeight: '600'
   },
   skinLabels: {

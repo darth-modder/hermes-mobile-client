@@ -4,6 +4,7 @@ import { StyleSheet, Text, TouchableOpacity } from 'react-native'
 
 import { $notifications, dismissNotification, type NotifyEffect } from '../store/notifications'
 import { type MobileTokens, useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 
 function borderForKind(tokens: MobileTokens, kind: NotifyEffect['kind']): string {
   switch (kind) {
@@ -77,11 +78,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   message: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   title: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700'
   }
 })

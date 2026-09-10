@@ -10,6 +10,7 @@ import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { HttpError } from '../../../src/net/http'
 import { $activeProfile, setActiveProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { ProfileInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -166,7 +167,7 @@ export default function ProfilesSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    fontSize: 16,
+    ...type.body,
     fontWeight: '700'
   },
   container: {
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14
   },
   createButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   createRow: {
@@ -190,18 +191,18 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 8
   },
   hint: {
-    fontSize: 11,
+    ...type.caption,
     marginTop: 10
   },
   input: {
+    ...type.bodySmall,
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
-    fontSize: 14,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     marginTop: 16
   },
   refreshText: {
-    fontSize: 13
+    ...type.label
   },
   row: {
     alignItems: 'center',
@@ -222,22 +223,22 @@ const styles = StyleSheet.create({
     padding: 12
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowText: {
     flex: 1
   },
   rowTitle: {
-    fontSize: 15,
+    ...type.body,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 12
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

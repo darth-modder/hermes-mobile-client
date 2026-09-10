@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 type PermissionState = 'checking' | 'denied' | 'granted' | 'undetermined'
 
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600',
     textAlign: 'center'
   },
@@ -101,20 +102,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   rowLabel: {
-    fontSize: 15
+    ...type.body
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
   },
   status: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   }
 })

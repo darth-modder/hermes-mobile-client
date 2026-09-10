@@ -11,6 +11,7 @@ import { Transcript } from '../../../src/chat/Transcript'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { $sessionStates } from '../../../src/store/session-states'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 /**
  * The chat screen. No session-list screen exists yet (M07), so `id: "new"`
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   errorText: {
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 16,
     textAlign: 'center'
   },
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   retryText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   }
 })

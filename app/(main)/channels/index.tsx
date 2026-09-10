@@ -25,6 +25,7 @@ import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $pairingChangeTick, $platformsChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { MessagingPlatformInfo, PairingUser } from '../../../src/upstream/types/hermes'
 
 const PLATFORMS_KEY = 'messaging-platforms'
@@ -301,7 +302,7 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   actions: {
@@ -326,11 +327,11 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   envLabel: {
-    fontSize: 11,
+    ...type.caption,
     marginBottom: 4
   },
   envRow: {
@@ -342,41 +343,40 @@ const styles = StyleSheet.create({
     paddingTop: 10
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   input: {
+    ...type.mono,
     borderRadius: 8,
     borderWidth: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
   rowMeta: {
-    fontSize: 11,
+    ...type.caption,
     marginTop: 4
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '700',
     marginTop: 12,
     textTransform: 'uppercase'
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   testMessage: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 8
   }
 })

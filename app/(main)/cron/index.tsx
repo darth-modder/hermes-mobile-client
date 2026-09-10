@@ -16,6 +16,7 @@ import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $cronChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import { createCronTriggerController } from '../../../src/upstream/shared/cron-trigger-controller'
 import type { CronJob } from '../../../src/upstream/types/hermes'
 
@@ -247,7 +248,7 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   actions: {
@@ -261,7 +262,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   addButtonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   card: {
@@ -282,18 +283,17 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   input: {
+    ...type.mono,
     borderRadius: 8,
     borderWidth: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
@@ -303,23 +303,23 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top'
   },
   rowPrompt: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
@@ -328,12 +328,12 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   statusEnabled: {
-    fontSize: 11,
+    ...type.caption,
     fontWeight: '600',
     textTransform: 'uppercase'
   },
   testMessage: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   }
 })

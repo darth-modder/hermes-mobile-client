@@ -8,6 +8,7 @@ import { setConnectionToken } from '../../src/connections/secure'
 import type { MobileConnection } from '../../src/connections/types'
 import { probeStatus } from '../../src/net/auth/probe'
 import { useTheme } from '../../src/theme/provider'
+import { type } from '../../src/theme/type'
 
 /** Scans a `hermes-android://connect?url=...&token=...` QR payload (the
  *  dashboard-generated connect code) and connects in token mode directly —
@@ -119,7 +120,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   camera: {
@@ -131,8 +132,7 @@ const styles = StyleSheet.create({
     padding: 16
   },
   status: {
-    fontFamily: 'monospace',
-    fontSize: 13,
+    ...type.mono,
     padding: 16,
     textAlign: 'center'
   }

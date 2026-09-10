@@ -9,6 +9,7 @@ import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -142,7 +143,7 @@ export default function ModelsSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    fontSize: 15,
+    ...type.bodySmall,
     fontWeight: '700'
   },
   container: {
@@ -152,15 +153,15 @@ const styles = StyleSheet.create({
     padding: 16
   },
   currentModel: {
-    fontSize: 16,
+    ...type.body,
     fontWeight: '700'
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   modelName: {
-    fontSize: 13
+    ...type.label
   },
   modelRow: {
     alignItems: 'center',
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
     opacity: 1
   },
   pendingText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   providerBlock: {
@@ -183,7 +184,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   providerName: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '700',
     marginBottom: 4,
     textTransform: 'uppercase'
@@ -196,7 +197,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowText: {
@@ -204,15 +205,15 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

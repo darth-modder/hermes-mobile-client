@@ -1,6 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 
 export interface CompletionRow {
   display: string
@@ -46,8 +47,7 @@ export function CompletionList({ rows, onSelect }: CompletionListProps) {
 
 const styles = StyleSheet.create({
   command: {
-    fontFamily: 'monospace',
-    fontSize: 13,
+    ...type.mono,
     fontWeight: '600'
   },
   container: {
@@ -58,8 +58,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden'
   },
   meta: {
+    ...type.caption,
     flexShrink: 1,
-    fontSize: 12,
     marginLeft: 8
   },
   row: {

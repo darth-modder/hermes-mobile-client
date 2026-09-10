@@ -17,6 +17,7 @@ import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { ARTIFACT_FILTERS, type ArtifactFilter, type ArtifactRecord } from '../../../src/lib/artifacts'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
 const FILTER_LABEL: Record<ArtifactFilter, string> = { all: 'All', file: 'Files', image: 'Images', link: 'Links' }
 
@@ -192,11 +193,11 @@ const styles = StyleSheet.create({
     flex: 1
   },
   emptyText: {
-    fontSize: 14,
+    ...type.bodySmall,
     textAlign: 'center'
   },
   errorText: {
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 16,
     textAlign: 'center'
   },
@@ -213,7 +214,7 @@ const styles = StyleSheet.create({
     paddingTop: 12
   },
   filterText: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   },
   list: {
@@ -225,26 +226,26 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   retryText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   rowMeta: {
-    fontSize: 11,
+    ...type.caption,
     marginTop: 4
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   shareButton: {
     marginTop: 8
   },
   shareText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   }
 })

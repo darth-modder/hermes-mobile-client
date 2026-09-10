@@ -17,6 +17,7 @@ import {
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 import type { EnvVarInfo } from '../../../src/upstream/types/hermes'
 
 function EnvVarRow({
@@ -200,7 +201,7 @@ export default function ProvidersSettings() {
 
 const styles = StyleSheet.create({
   actionText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   clearButton: {
@@ -213,13 +214,13 @@ const styles = StyleSheet.create({
     padding: 16
   },
   destructiveText: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   editInput: {
+    ...type.label,
     borderBottomWidth: 1,
     flex: 1,
-    fontSize: 13,
     marginRight: 10,
     paddingVertical: 2
   },
@@ -240,11 +241,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   rowSubtitle: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   errorText: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 8
   },
   rowText: {
@@ -252,15 +253,15 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

@@ -9,6 +9,7 @@ import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
 import { HttpError } from '../../src/net/http'
 import { useTheme } from '../../src/theme/provider'
+import { type } from '../../src/theme/type'
 
 type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth'; provider?: string }
 
@@ -280,7 +281,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   container: {
@@ -290,13 +291,13 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: 6,
     borderWidth: 1,
-    fontFamily: 'monospace',
+    ...type.mono,
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   label: {
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 4,
     marginTop: 4,
     textTransform: 'uppercase'
@@ -306,12 +307,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   status: {
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginBottom: 12
   },
   title: {
-    fontSize: 20,
+    ...type.title,
     fontWeight: '600',
     marginBottom: 16
   }
