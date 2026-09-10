@@ -21,6 +21,7 @@ import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mo
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
+import { useTheme } from '../theme/provider'
 import { cancelRecording, isRecording, startRecording, stopRecordingAndTranscribe } from '../voice/recorder'
 import { speakUnspokenReply } from '../voice/speech-progress'
 import { speak } from '../voice/tts'
@@ -53,6 +54,7 @@ function activeAtWord(text: string): null | string {
 }
 
 export function Composer({ storedSessionId }: ComposerProps) {
+  const tokens = useTheme()
   const session = useStore($sessionStates)[storedSessionId]
   const busy = session?.busy ?? false
 
@@ -374,7 +376,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
   return (
     <KeyboardStickyView>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: tokens.background, borderTopColor: tokens.border }]}>
         {atItems.length > 0 ? (
           <CompletionList onSelect={selectAtCompletion} rows={atItems} />
         ) : slashItems.length > 0 ? (
@@ -383,8 +385,12 @@ export function Composer({ storedSessionId }: ComposerProps) {
         {attachments.length > 0 ? (
           <View style={styles.attachmentRow}>
             {attachments.map((attachment, index) => (
-              <TouchableOpacity key={index} onPress={() => removeAttachment(index)} style={styles.attachmentChip}>
-                <Text style={styles.attachmentText}>{attachment.label} ✕</Text>
+              <TouchableOpacity
+                key={index}
+                onPress={() => removeAttachment(index)}
+                style={[styles.attachmentChip, { backgroundColor: tokens.muted, borderColor: tokens.border }]}
+              >
+                <Text style={[styles.attachmentText, { color: tokens.mutedForeground }]}>{attachment.label} ✕</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -398,36 +404,45 @@ export function Composer({ storedSessionId }: ComposerProps) {
           </TouchableOpacity>
           <TouchableOpacity disabled={transcribing} onPress={() => void toggleRecording()} style={styles.iconButton}>
             {transcribing ? (
-              <ActivityIndicator color="#f2f2f5" size="small" />
+              <ActivityIndicator color={tokens.foreground} size="small" />
             ) : (
               <Text style={[styles.iconText, recording ? styles.iconTextActive : null]}>🎤</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity disabled={speaking} onPress={() => void speakLastReply()} style={styles.iconButton}>
-            {speaking ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.iconText}>🔊</Text>}
+            {speaking ? (
+              <ActivityIndicator color={tokens.foreground} size="small" />
+            ) : (
+              <Text style={styles.iconText}>🔊</Text>
+            )}
           </TouchableOpacity>
           <TextInput
             multiline
             onChangeText={setText}
             placeholder="Message Hermes…"
-            placeholderTextColor="#5a5a66"
-            style={styles.input}
+            placeholderTextColor={tokens.mutedForeground}
+            style={[styles.input, { color: tokens.foreground }]}
             value={text}
           />
           {busy ? (
-            <TouchableOpacity onPress={() => void stop()} style={[styles.sendButton, styles.stopButton]}>
-              <Text style={styles.sendButtonText}>Stop</Text>
+            <TouchableOpacity
+              onPress={() => void stop()}
+              style={[styles.sendButton, { backgroundColor: tokens.diffRemoveBackground }]}
+            >
+              <Text style={[styles.sendButtonText, { color: tokens.destructive }]}>Stop</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
             disabled={sending || (!text.trim() && attachments.length === 0)}
             onPress={() => void send()}
-            style={styles.sendButton}
+            style={[styles.sendButton, { backgroundColor: tokens.primary }]}
           >
             {sending ? (
-              <ActivityIndicator color="#f2f2f5" size="small" />
+              <ActivityIndicator color={tokens.primaryForeground} size="small" />
             ) : (
-              <Text style={styles.sendButtonText}>{busy ? 'Steer' : 'Send'}</Text>
+              <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>
+                {busy ? 'Steer' : 'Send'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -438,8 +453,6 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
 const styles = StyleSheet.create({
   attachmentChip: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 6,
@@ -454,12 +467,9 @@ const styles = StyleSheet.create({
     paddingTop: 6
   },
   attachmentText: {
-    color: '#8a8a99',
     fontSize: 12
   },
   container: {
-    backgroundColor: '#0b0b0f',
-    borderTopColor: '#2a2a33',
     borderTopWidth: StyleSheet.hairlineWidth
   },
   iconButton: {
@@ -473,7 +483,6 @@ const styles = StyleSheet.create({
     opacity: 0.5
   },
   input: {
-    color: '#f2f2f5',
     flex: 1,
     fontSize: 15,
     maxHeight: 120,
@@ -487,18 +496,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   sendButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 18,
     marginLeft: 4,
     paddingHorizontal: 14,
     paddingVertical: 9
   },
   sendButtonText: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '600'
-  },
-  stopButton: {
-    backgroundColor: '#3a1f24'
   }
 })

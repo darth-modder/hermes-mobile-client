@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { compressSession, renameSession } from '../gateway/session-connection'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
+import { useTheme } from '../theme/provider'
 
 import { UsageChip } from './parts/UsageChip'
 
@@ -16,6 +17,7 @@ export interface SessionHeaderProps {
 /** Model/provider/effort + title edit + `session.compress` — the chat
  *  screen's top bar. */
 export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
+  const tokens = useTheme()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const [editingTitle, setEditingTitle] = useState<null | string>(null)
@@ -23,11 +25,11 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
 
   if (!session) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Text style={styles.backText}>‹</Text>
+          <Text style={[styles.backText, { color: tokens.foreground }]}>‹</Text>
         </TouchableOpacity>
-        <ActivityIndicator color="#8a8a99" size="small" />
+        <ActivityIndicator color={tokens.mutedForeground} size="small" />
       </View>
     )
   }
@@ -73,9 +75,9 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
       <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>‹</Text>
+        <Text style={[styles.backText, { color: tokens.foreground }]}>‹</Text>
       </TouchableOpacity>
       <View style={styles.titleColumn}>
         {editingTitle !== null ? (
@@ -84,18 +86,18 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
             onBlur={() => void commitTitle()}
             onChangeText={setEditingTitle}
             onSubmitEditing={() => void commitTitle()}
-            style={styles.titleInput}
+            style={[styles.titleInput, { borderBottomColor: tokens.primary, color: tokens.foreground }]}
             value={editingTitle}
           />
         ) : (
           <TouchableOpacity onPress={() => setEditingTitle(session.title || 'Untitled')}>
-            <Text numberOfLines={1} style={styles.title}>
+            <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
               {session.title || 'Untitled'}
             </Text>
           </TouchableOpacity>
         )}
         <View style={styles.subtitleRow}>
-          <Text numberOfLines={1} style={styles.subtitle}>
+          <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
             {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
           </Text>
           <UsageChip usage={session.usage} />
@@ -103,9 +105,9 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
       </View>
       <TouchableOpacity disabled={compressing} onPress={() => void compress()} style={styles.compressButton}>
         {compressing ? (
-          <ActivityIndicator color="#8a8a99" size="small" />
+          <ActivityIndicator color={tokens.mutedForeground} size="small" />
         ) : (
-          <Text style={styles.compressText}>Compress</Text>
+          <Text style={[styles.compressText, { color: tokens.primary }]}>Compress</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -117,7 +119,6 @@ const styles = StyleSheet.create({
     paddingRight: 8
   },
   backText: {
-    color: '#f2f2f5',
     fontSize: 26,
     fontWeight: '300'
   },
@@ -126,20 +127,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   compressText: {
-    color: '#58a6ff',
     fontSize: 12
   },
   container: {
     alignItems: 'center',
-    backgroundColor: '#0b0b0f',
-    borderBottomColor: '#2a2a33',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     paddingHorizontal: 10,
     paddingVertical: 10
   },
   subtitle: {
-    color: '#6a737d',
     fontSize: 12,
     marginRight: 6
   },
@@ -148,7 +145,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 16,
     fontWeight: '600'
   },
@@ -156,9 +152,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   titleInput: {
-    borderBottomColor: '#1f6feb',
     borderBottomWidth: 1,
-    color: '#f2f2f5',
     fontSize: 16,
     fontWeight: '600',
     paddingVertical: 2

@@ -7,6 +7,7 @@ import { $clarifyRequests } from '../store/clarify'
 import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
+import { type MobileTokens, useTheme } from '../theme/provider'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
 import { ApprovalCard } from './parts/ApprovalCard'
@@ -41,16 +42,16 @@ function MessagePart({ part }: { part: ChatMessagePart }) {
   return null
 }
 
-function roleStyleFor(role: ChatMessage['role']): { bubble: object; row: object } {
+function roleStyleFor(tokens: MobileTokens, role: ChatMessage['role']): { bubble: object; row: object } {
   if (role === 'user') {
-    return { bubble: styles.userBubble, row: styles.userRow }
+    return { bubble: { backgroundColor: tokens.userBubble }, row: styles.userRow }
   }
 
   if (role === 'system') {
     return { bubble: styles.systemBubble, row: styles.systemRow }
   }
 
-  return { bubble: styles.assistantBubble, row: styles.assistantRow }
+  return { bubble: { backgroundColor: tokens.card }, row: styles.assistantRow }
 }
 
 /**
@@ -81,7 +82,8 @@ export const messageRenderCounts: Record<string, number> = {}
 let nextRecycleSlotId = 0
 
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
-  const roleStyle = roleStyleFor(message.role)
+  const tokens = useTheme()
+  const roleStyle = roleStyleFor(tokens, message.role)
   const recycleSlotId = useRef<null | number>(null)
 
   if (__DEV__) {
@@ -101,10 +103,12 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
           <MessagePart key={index} part={part} />
         ))}
         {message.attachmentRefs?.length ? (
-          <Text style={styles.attachments}>{message.attachmentRefs.join('  ')}</Text>
+          <Text style={[styles.attachments, { color: tokens.primary }]}>{message.attachmentRefs.join('  ')}</Text>
         ) : null}
-        {message.pending ? <ActivityIndicator color="#8a8a99" size="small" style={styles.pendingSpinner} /> : null}
-        {message.error ? <Text style={styles.error}>{message.error}</Text> : null}
+        {message.pending ? (
+          <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.pendingSpinner} />
+        ) : null}
+        {message.error ? <Text style={[styles.error, { color: tokens.destructive }]}>{message.error}</Text> : null}
       </View>
     </View>
   )
@@ -166,14 +170,10 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
 }
 
 const styles = StyleSheet.create({
-  assistantBubble: {
-    backgroundColor: '#17171d'
-  },
   assistantRow: {
     alignItems: 'flex-start'
   },
   attachments: {
-    color: '#58a6ff',
     fontSize: 12,
     marginTop: 4
   },
@@ -187,7 +187,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   error: {
-    color: '#e06c75',
     fontSize: 13,
     marginTop: 4
   },
@@ -200,9 +199,6 @@ const styles = StyleSheet.create({
   },
   systemRow: {
     alignItems: 'center'
-  },
-  userBubble: {
-    backgroundColor: '#1f3a5f'
   },
   userRow: {
     alignItems: 'flex-end'
