@@ -5,6 +5,7 @@ import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { $drawerOpen, closeDrawer } from '../store/drawer'
+import { useTheme } from '../theme/provider'
 
 const DRAWER_WIDTH = 260
 
@@ -41,6 +42,7 @@ const ROWS: DrawerRow[] = [
  *  closed and settled, so it never eats touches meant for the screen under
  *  it. */
 export function AppDrawer() {
+  const tokens = useTheme()
   const open = useStore($drawerOpen)
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -71,12 +73,22 @@ export function AppDrawer() {
       <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
         <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill} />
       </Animated.View>
-      <Animated.View style={[styles.panel, { paddingTop: insets.top + 12, transform: [{ translateX }] }]}>
-        <Text style={styles.heading}>Hermes</Text>
+      <Animated.View
+        style={[
+          styles.panel,
+          {
+            backgroundColor: tokens.sidebar,
+            borderRightColor: tokens.sidebarBorder,
+            paddingTop: insets.top + 12,
+            transform: [{ translateX }]
+          }
+        ]}
+      >
+        <Text style={[styles.heading, { color: tokens.mutedForeground }]}>Hermes</Text>
         {ROWS.map(row => (
           <TouchableOpacity key={row.title} onPress={() => navigate(row.route)} style={styles.row}>
             <Text style={styles.rowIcon}>{row.icon}</Text>
-            <Text style={styles.rowTitle}>{row.title}</Text>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{row.title}</Text>
           </TouchableOpacity>
         ))}
       </Animated.View>
@@ -85,11 +97,14 @@ export function AppDrawer() {
 }
 
 const styles = StyleSheet.create({
+  // A modal scrim dims the whole screen uniformly regardless of the active
+  // skin — every platform's own scrim convention (Material Design's included)
+  // is a fixed black at a set opacity, not a theme colour, so this is
+  // intentionally not a token.
   backdrop: {
-    backgroundColor: '#000000aa'
+    backgroundColor: 'rgba(0, 0, 0, 0.667)'
   },
   heading: {
-    color: '#5a5a66',
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 10,
@@ -97,8 +112,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase'
   },
   panel: {
-    backgroundColor: '#111116',
-    borderRightColor: '#2a2a33',
     borderRightWidth: StyleSheet.hairlineWidth,
     bottom: 0,
     left: 0,
@@ -118,7 +131,6 @@ const styles = StyleSheet.create({
     width: 22
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 15,
     fontWeight: '600'
   }

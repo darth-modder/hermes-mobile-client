@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { openDrawer } from '../store/drawer'
+import { useTheme } from '../theme/provider'
 
 interface ScreenHeaderProps {
   title: string
@@ -13,13 +14,15 @@ interface ScreenHeaderProps {
  *  title, matching `session-list.tsx`'s own header shape/colors so the
  *  drawer's destinations look like one consistent set of top-level screens. */
 export function ScreenHeader({ right, title }: ScreenHeaderProps) {
+  const tokens = useTheme()
+
   return (
     <View style={styles.header}>
       <View style={styles.left}>
         <TouchableOpacity hitSlop={12} onPress={openDrawer} style={styles.iconButton}>
-          <Text style={styles.icon}>☰</Text>
+          <Text style={[styles.icon, { color: tokens.mutedForeground }]}>☰</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{title}</Text>
       </View>
       {right ? <View style={styles.right}>{right}</View> : null}
     </View>
@@ -35,7 +38,6 @@ const styles = StyleSheet.create({
     paddingTop: 12
   },
   icon: {
-    color: '#8a8a99',
     fontSize: 20
   },
   iconButton: {
@@ -52,7 +54,6 @@ const styles = StyleSheet.create({
     gap: 10
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 20,
     fontWeight: '700'
   }
