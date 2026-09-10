@@ -1,6 +1,6 @@
 # M13 — Design parity + usability
 
-**Status:** in-progress
+**Status:** in-progress (Opus re-verification 2026-09-10: six of eight exit criteria closed with device evidence; `done` blocked by a typecheck failure in `src/components/ToolIcon.tsx` — see Step 10 in the Verification log. Criteria 5 and 6 remain open and are named there.)
 **Depends on:** M09, M10
 **Goal:** The phone looks like the desktop app (same skins, same icon set, same type roles) and is comfortable to use one-handed.
 
@@ -121,17 +121,17 @@ Read these before designing anything; they are the source of truth, not a screen
 
 ## Exit criteria (emulator; none are `[physical]`)
 
-- [ ] `grep -rnE "#[0-9a-fA-F]{6}" src app --include=*.tsx --include=*.ts | grep -v "^src/theme\|^src/upstream"`
+- [x] `grep -rnE "#[0-9a-fA-F]{6}" src app --include=*.tsx --include=*.ts | grep -v "^src/theme\|^src/upstream"`
       returns nothing, and the ESLint rule fails a deliberately added literal.
-- [ ] Colour match: with the backend on the `nous` skin, six named surfaces (background, card,
+- [x] Colour match: with the backend on the `nous` skin, six named surfaces (background, card,
       primary button, border, user bubble, destructive) sampled from an emulator screenshot of
       the chat screen equal the values `resolveMobileTheme` produces for `nous`, in both light
       and dark, within ±1 per channel (screenshot quantisation), and the `nous` light values
       equal Appendix A.6.
-- [ ] Skin sync: `/skin ember` issued from a second client (`scripts/second-client-reclaim.mjs`
+- [x] *(`ember` does not exist in this build — `charizard` used; see Step 10)* Skin sync: `/skin ember` issued from a second client (`scripts/second-client-reclaim.mjs`
       pattern) repaints the phone without a restart; a fresh connect never overrides a persisted
       user pick (same rule as `backend-sync.ts`).
-- [ ] Icons: `grep -rn "accessibilityLabel" src app | wc -l` is at least the number of
+- [x] Icons: `grep -rn "accessibilityLabel" src app | wc -l` is at least the number of
       icon-only `Pressable`s, and a uiautomator dump of chat, session list and settings shows no
       clickable node without `content-desc` or text.
 - [ ] Type: code blocks render in JetBrains Mono (`Font.isLoaded('JetBrainsMono')` true and a
@@ -139,9 +139,9 @@ Read these before designing anything; they are the source of truth, not a screen
       font_scale 1.3`) no text is clipped on the three main screens.
 - [ ] Touch targets: a uiautomator dump of the three main screens shows no clickable node
       smaller than 48×48 dp at the emulator's density.
-- [ ] Slash palette: `/model` opens Settings > Models, `/sessions` opens the session list,
+- [x] Slash palette: `/model` opens Settings > Models, `/sessions` opens the session list,
       `/profile` opens Profiles, from the composer.
-- [ ] Every list screen shows its empty state against an empty backend and its error state
+- [x] Every list screen shows its empty state against an empty backend and its error state
       against a dead host, and pull-to-refresh re-fetches.
 
 ## Appendix A — how a skin becomes pixels on the desktop (port this, do not eyeball it)
@@ -561,3 +561,264 @@ targets all have real device evidence and pass. Skin-sync, the full slash
 palette, and full list-state coverage are either partial or not attempted —
 named individually above rather than folded into a blanket "done." Handing
 off with M13 still `in-progress`.
+
+### Step 10: Opus re-verification (D12.2) — 2026-09-10
+
+**Verdict: M13 stays `in-progress`, but not for any of the reasons Step 9 left open.** Six of the
+eight exit criteria are now closed with device evidence I gathered myself, including the four Step 9
+named as partial or untried. What blocks `done` is something Step 9 never reported: **the branch does
+not pass `npm run check`.**
+
+Run against the `m13-design` worktree at `3e8e922`, on `emulator-5554` (`hermes-test`, density 420),
+with Metro serving from `../hermes-android-m13` — worth stating because Metro was serving the **main**
+worktree when I started, so the app on the emulator was running JS with none of M13 in it. Any device
+observation made in that state is meaningless; I restarted Metro against the m13 worktree before
+touching anything.
+
+Backend: my own isolated throwaway `hermes serve` on port 9131, `HERMES_HOME=%TEMP%\hermes-m13-opus-home`,
+created for this pass and removed afterwards. The user's real gateway (PID 18088, started 12:36) was
+checked before I started anything and confirmed still alive and untouched at the end. Isolation proven
+rather than asserted: `GET /api/sessions` on the throwaway returned `{"sessions":[],"total":0}`.
+
+---
+
+#### BLOCKER — `npm run check` fails on this branch
+
+```
+$ npm run check
+src/components/ToolIcon.tsx(57,7): error TS2322: Type 'TextStyle | undefined' is not assignable to
+  type 'StyleProp<ViewStyle>'.
+    Types of property 'cursor' are incompatible.
+      Type 'string | undefined' is not assignable to type 'CursorValue | undefined'.
+  exit=2
+```
+
+`ToolIconProps extends Omit<CodiconProps, 'name'>`, and `CodiconProps.style` is `TextStyle` (right for
+`Codicon`, which renders `<Text>`). `ToolIcon` then forwards that same `style` to `<Svg>`, which wants
+`StyleProp<ViewStyle>`. One error, nothing else: `vitest` is green at **375 tests / 48 files**, and
+`eslint`/`prettier` pass.
+
+Ruled out as environment skew before calling it code: `typescript` 6.0.3, `react-native` 0.86.3 and
+`react-native-svg` 15.15.4 all match both `package.json` and `package-lock.json`, and `npm ls
+--depth=0` reports no invalid/missing/extraneous packages. So this reproduces for anyone who checks
+out the branch.
+
+I have **not** fixed it. The obvious one-liner is a cast, and a cast papers over a real modelling
+question — whether a prop shared by a `<Text>`-based and an `<Svg>`-based render path should be typed
+`TextStyle` at all. That is the implementer's call, not a verifier's one-line correction.
+
+This is also the one thing Step 9 didn't report. Its own log records a "pre-build check" at Step 6 but
+no `npm run check` at Step 9, and the Step 8 APK builds fine regardless (Metro strips types), so the
+device pass could and did succeed against code that doesn't typecheck.
+
+---
+
+#### Criteria closed this round
+
+**1. No hex literals; the ESLint rule fails a deliberate literal — PASS.**
+`grep -rnE "#[0-9a-fA-F]{6}" src app --include=*.tsx --include=*.ts | grep -v "^src/theme\|^src/upstream"`
+→ 0 results. I then injected `const opusDeliberateHexProbe = '#ff00ff'` into `app/connect/index.tsx`
+and ran eslint on it:
+
+```
+39:34  error  Hard-coded colour literal '#ff00ff' — use a token from useTheme()
+               (src/theme/resolve.ts) instead  local/no-hardcoded-hex-color   (exit 1)
+```
+
+Reverted immediately (`git checkout --`), tree clean.
+
+**2. Colour match, six surfaces, both modes — PASS, 12 of 12.** Step 9 got 7 of 12 and could not
+sample the user bubble. Sampled with Pillow from `adb exec-out screencap -p`, against the values
+pinned in `resolve.test.ts` (which is what `resolveMobileTheme` produces — those assertions pass):
+
+| surface | light expected | light sampled | dark expected | dark sampled |
+|---|---|---|---|---|
+| background | `#fefefe` (254,254,254) | (254,254,254) exact | `#0d1015` (13,16,21) | (13,16,21) exact |
+| card | `#fbfbfc` (251,251,252) | (251,251,252) exact | `#0e0f12` (14,15,18) | (14,15,18) exact |
+| primary button (Send) | `#0053fd` (0,83,253) | (0,83,253) exact | `#4a84fe` (74,132,254) | (74,132,254) exact |
+| border (over background) | (200.2,213.7,241.3) | (200,213,241) ±1 | (35.5,47.5,71.3) | (35,47,71) ±1 |
+| user bubble | `#fcfcfc` (252,252,252) | (252,252,252) exact | `#0f1621` (15,22,33) | (15,22,33) exact |
+| destructive | `#cf2d56` (207,45,86) | (207,45,86) exact | `#cf2d56` | (207,45,86) exact |
+
+Two notes. The "primary button" token is `tokens.primary`, not `primarySolid` — `Composer.tsx:483`
+sets `backgroundColor: tokens.primary` on the Send button. In light they are both `#0053fd` so it
+makes no difference; in dark they diverge (`primary #4a84fe` vs `primarySolid #3b6acb`) and the
+sampled Send button is `primary`. Step 9 sampled `#4a84fe` off a segmented control and labelled it
+"primary", which was the right value against the wrong element.
+
+And **the user bubble was never blocked by the credentials problem.** A user message renders from
+`role === 'user'` (`Transcript.tsx:47`) the moment it is sent; the assistant turn failing afterwards
+is irrelevant. I typed one message into the credential-less backend, the bubble painted, and I
+sampled it in both modes. Step 9's attribution of this gap to the missing provider was wrong — the
+real obstacle was the Metro instability it documents further down.
+
+**3. Skin sync — PASS in substance; see the wording note.** `/skin ember` cannot be run: **there is
+no `ember` skin in this build.** `hermes skin list` offers `default, ares, mono, slate, daylight,
+warm-lightmode, poseidon, sisyphus, charizard`. I used `charizard` ("Volcanic theme — burnt orange
+and ember"), which is almost certainly what the criterion meant.
+
+Second client = the Hermes CLI against the same throwaway `HERMES_HOME`, which is a genuinely
+separate client and drives the same server-side path the criterion cares about:
+
+```
+$ HERMES_HOME=…\hermes-m13-opus-home hermes skin use charizard
+  ✓ Set display.skin = charizard in …\config.yaml
+  ✓ active skin → charizard (live within ~1s)
+
+phone, no restart, no app interaction:
+  background (540,1000)  before (254,254,254)  after (59,40,32)   CHANGED
+  header     (540,120)   before (254,254,254)  after (59,40,32)   CHANGED
+  row        (120,300)   before (175,196,237)  after (118,83,52)  CHANGED
+```
+
+Then the other half — a fresh connect must not override a persisted user pick. Picked `Catppuccin`
+in the app, force-stopped, relaunched (fresh gateway connect) while the backend still said
+`skin: charizard`:
+
+```
+backend config at restart:  skin: charizard
+after fresh connect:        background (239,241,245)  = Catppuccin Latte
+                            reverted to charizard (59,40,32)? False
+```
+
+Exactly the `apply: false` / `apply: true` split `session-connection.ts:439-445` describes.
+
+**4. Icons / accessibility — PASS on all three named screens.** Step 9 dumped only the Appearance
+screen; the criterion names chat, session list and settings. `grep -rn "accessibilityLabel" src app |
+wc -l` → 26. Device dumps:
+
+```
+session list   4 clickable   0 unlabelled
+settings      12 clickable   0 unlabelled
+chat           8 clickable   0 unlabelled
+```
+
+Zero app-authored clickable nodes without `text` or `content-desc` on any of the three.
+
+**7. Slash palette — PASS, all three on device.** Step 9 had only `/new`. Typing the command in the
+composer and sending it (selecting the palette row only completes the text; the routing happens on
+send):
+
+```
+/model     → Settings ▸ Models     ("Models / CURRENT MODEL / CHOOSE A MODEL / ANTHROPIC …")
+/sessions  → session list          ("Sessions / New / Search sessions…")
+/profile   → Profiles              ("Profiles / … / default / NEW PROFILE")
+```
+
+**8. List states — PASS.** Empty states against my empty backend: session list `No sessions yet.`,
+Projects `No projects yet — create one below.`, Cron `No cron jobs yet.`, Webhooks `No webhooks yet.`,
+Artifacts `No artifacts found in recent sessions.`, MCP `No MCP servers configured.` (Skills and
+Plugins are never empty on a real backend — both ship built-ins.)
+
+Error states against a dead host, and the pull-to-refresh check, fell out of one action. I killed the
+throwaway backend by PID and then did a **deliberate** swipe-down on the session list — Step 9's
+pull-to-refresh was incidental, triggered by an Activity recreation:
+
+```
+before swipe:  Sessions | New | Search sessions… | Untitled          (cached, populated)
+after swipe:   fetch failed: java.io.IOException: unexpected end of stream
+               on http://127.0.0.1:9131/…   [Retry]
+```
+
+A cached list turning into a live failure is proof the swipe re-fetched rather than redrew. Walking
+the rest with the host still dead:
+
+```
+Projects   Could not connect to Hermes gateway   [Retry]
+Cron       fetch failed: …unexpected end of stream…   [Retry]
+Webhooks   fetch failed: …   [Retry]
+Artifacts  fetch failed: …   [Retry]
+Channels   fetch failed: …   [Retry]
+MCP        fetch failed: …   [Retry]
+```
+
+---
+
+#### Criteria still open
+
+**5. Type — partial, box left unchecked.** Step 9's font-scale 1.3× pass over session list, Settings
+and chat stands and I have no reason to doubt it; JetBrains Mono visibly renders. What neither of us
+did is the criterion's literal first clause — `Font.isLoaded('JetBrainsMono')` returning true. It is
+not called anywhere in app code (`src/lib/fonts.ts` loads the family; nothing asserts it), so closing
+this needs either a temporary probe or a rewording. Small, but not done.
+
+**6. Touch targets — FAILS as literally worded; one genuine defect.** The criterion's method
+(`uiautomator` dump, nothing under 48×48 dp) is **blind to `hitSlop`**, which is how this app actually
+meets the target on most controls. At 420 dpi, 48 dp = 126 px:
+
+| control | raw bounds | raw dp | hitSlop | effective |
+|---|---|---|---|---|
+| session list · Open menu | 74×74 | 28.2 | 12 | 52.2 ✓ |
+| session list · Settings | 73×74 | 27.8×28.2 | 12 | 51.8×52.2 ✓ |
+| session list · New session | 189×84 | 72×32 | top/bottom 8 | 72×48.0 ✓ |
+| **session list · search input** | **996×101** | **379×38.5** | **none** | **38.5 ✗** |
+| chat · Back | 90×68 | 34.3×25.9 | 12 | 58.3×49.9 ✓ |
+| chat · title | 749×63 | 285×24 | 12 | 285×48.0 ✓ |
+| chat · Compress | 189×74 | 72×28.2 | 12/8 | 88×52.2 ✓ |
+| settings · all 12 | ≥126 | ≥48 | — | ✓ |
+
+So every discrete control clears 48 dp once `hitSlop` is counted — several only *just* (48.0 exactly,
+three times). The one real gap is the session-list **search field at 38.5 dp tall with no `hitSlop`**.
+Whether a full-width text input needs to meet the same 48 dp floor as an icon button is a judgment
+call I am not going to make silently; it is named here so it gets made deliberately.
+
+Step 9 reported this criterion as a clean PASS on the strength of the Appearance screen alone, where
+the controls happen to have real 126 px bounds. That was a true observation generalised too far.
+
+---
+
+#### Step 9's two environment blockers — both confirmed independently, per D9
+
+**No inference provider.** Reproduced on my own fresh `HERMES_HOME`: every turn returns
+`agent init failed: No inference provider configured. Run 'hermes model' to choose a provider and
+model, or set an API key.` (My message differs from Step 9's `No usable credentials found for
+provider 'opencode-go'` because my home has no inherited config at all.) Real, and I did not source
+the user's provider key into a throwaway home — that is theirs (D11). **But it blocks less than Step 9
+thought**: the user bubble needed no model (above), and the skin-sync round trip needed no message
+traffic either. On this evidence nothing in M13's exit criteria actually requires a working model.
+
+**Metro EMFILE.** Reproduced verbatim, twice, same cache path shape:
+
+```
+ERROR  Error: EMFILE: too many open files, open
+       'C:\Users\COMPUT~1\AppData\Local\Temp\metro-cache\9a\80437c02…mp'
+```
+
+Killing Metro and restarting with `--clear` fixed it in one bundle, exactly as Step 9 records. I also
+hit a wedged `system_server` (adb `shell echo` fine, `dumpsys`/`screencap` hanging) that needed an
+emulator restart, and a dev-menu overlay that intercepted taps on the session list's New button. All
+environment, none of it app behaviour — recorded so the next round doesn't chase them.
+
+---
+
+#### Two findings worth fixing, neither blocking
+
+1. **`ToolIcon` typecheck error** — the blocker above.
+2. **The Appearance screen's hint text is factually wrong after a user pick.**
+   `app/(main)/settings/appearance.tsx:97` renders
+   *"The backend's active skin ({activeTheme.label}) applies automatically the first time it
+   changes"* — but `activeTheme` is the **device's** active theme, not the backend's. After I picked
+   Catppuccin locally while the backend sat on `charizard`, the screen read "The backend's active skin
+   (Catppuccin)", which is simply untrue; the backend's `config.yaml` still said `skin: charizard`.
+   Before a user pick the two coincide, which is why it reads correctly until someone overrides.
+
+---
+
+#### Environment / cleanup
+
+Throwaway backend stopped **by PID** (never `hermes serve --stop`); `%TEMP%\hermes-m13-opus-home`
+removed and verified gone; `adb reverse tcp:9131` removed. Every `:9131` connection I created deleted
+from the app — the list is back to the pre-existing `:9119`, `:9121` and Step 9's documented `:9123`.
+Appearance restored to the **Nous** skin and **System** mode (I had switched to Catppuccin/Light for
+the tests). My Metro instance stopped. The emulator was restarted once mid-pass and left running. The
+user's real gateway (PID 18088) verified alive and untouched at start and finish, and their
+`config.yaml` was never opened for writing. The throwaway session token was generated inside the
+launcher script and reached only the child process and the app's masked field — never a file, a log,
+or a command line; the launcher aborts before typing if the field under focus isn't an empty
+`EditText`, which is what caught a mis-targeted field early in this pass (M13 moved the connect form,
+so my inherited coordinates put the port into the *label* box — the guard stopped the token from
+following it).
+
+**Net:** six criteria closed with first-hand evidence, two left open and named precisely (the
+`Font.isLoaded` clause; the search field's 38.5 dp target). `done` is blocked on the typecheck error,
+which is a one-file fix plus a re-run of `npm run check`.
