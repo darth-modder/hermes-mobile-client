@@ -23,6 +23,10 @@
     "shared/skill-scaffold.ts",
     "shared/skin.ts",
     "shared/websocket-url.ts",
+    "themes/color.ts",
+    "themes/presets.ts",
+    "themes/retint.ts",
+    "themes/types.ts",
     "types/hermes.ts"
   ],
   "repo": "https://github.com/NousResearch/hermes-agent.git",
