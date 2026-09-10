@@ -108,16 +108,19 @@ export default [
     }
   },
   {
+    // app.config.ts configures native build-time resources (splash screen,
+    // notification icon tint) that exist before any JS runs and can never
+    // read useTheme() — not a themed UI file, so it's exempt the same way
+    // src/theme/** and src/upstream/** are.
     files: ['**/*.{ts,tsx}'],
-    ignores: ['src/theme/**', 'src/upstream/**'],
+    ignores: ['src/theme/**', 'src/upstream/**', 'app.config.ts'],
     plugins: { local: { rules: { 'no-hardcoded-hex-color': noHardcodedHexColor } } },
     rules: {
-      // M13 (D14) Step 4/5: 452 pre-existing hex literals across 39 files
-      // (Appendix B) are swept one group at a time, one commit per group.
-      // 'warn' keeps `npm run check` (which runs plain `eslint .`, no
-      // --max-warnings) green in the meantime — flip to 'error' once the
-      // sweep's last group lands, per the M13 task list.
-      'local/no-hardcoded-hex-color': 'warn'
+      // M13 (D14) Step 5's sweep is done — every hard-coded hex literal
+      // outside src/theme/** and src/upstream/** is gone (the one
+      // legitimate exception, a project's own user-picked rail colour in
+      // src/api/projects.test.ts, is inline-disabled with a reason).
+      'local/no-hardcoded-hex-color': 'error'
     }
   }
 ]

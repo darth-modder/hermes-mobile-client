@@ -61,12 +61,14 @@ Read these before designing anything; they are the source of truth, not a screen
       `backend-sync.ts` does), default `nous`; mode from `useColorScheme()` with a persisted
       override (system / light / dark) in Settings; tokens exposed as a typed object. Status bar
       and navigation bar colours follow the tokens (`expo-status-bar`, `expo-system-ui`).
-- [ ] Replace every hard-coded colour with a token (Step 5, the sweep — in progress). Ratchets
-      to `'error'` in `check` at the end of that sweep.
-- [x] Add an ESLint rule that fails on a `#rrggbb`/`#rgb` string literal outside `src/theme/**`
-      and `src/upstream/**` (`scripts/eslint-rules/no-hardcoded-hex-color.mjs`), so this cannot
-      drift back. `'warn'` for now (458 pre-existing violations across 42 files); confirmed it
-      fires as `'error'` and that zero violations are inside the exempted directories.
+- [x] Replace every hard-coded colour with a token (Step 5, the sweep). Ratcheted to
+      `'error'` in `check` at the end of the sweep; exit criterion 1's grep returns
+      nothing.
+- [x] Add an ESLint rule that fails on a `#rrggbb`/`#rgb` string literal outside `src/theme/**`,
+      `src/upstream/**`, and `app.config.ts` (native build-time config, Deviation #6)
+      (`scripts/eslint-rules/no-hardcoded-hex-color.mjs`), so this cannot drift back. Fired as
+      `'error'` from the moment the sweep landed with zero violations left (one line-level
+      exemption for non-UI data, Deviation #7).
 
 ### B. Icons
 
@@ -348,6 +350,33 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
    events the same way (seed on `gateway.ready`, apply on `skin.changed`); `config.get
    skin` is not called anywhere, matching the reference implementation rather than the
    task text's "gateway.ready, skin.changed, and config.get skin" list literally.
+4. **Step 5's sweep order adds a fifth group, "session screens", not named in the
+   task's list of four ("settings screens, management screens, connect screens, shared
+   components").** Appendix B's own "Screens:" inventory lists `session-list` (22) and
+   `sessions/[id]` (6) among the count-ordered list but they aren't M09 settings, M10
+   management (projects/cron/webhooks/artifacts/channels), or M08 connect screens —
+   they're the core session-list and chat-session routes. Swept as their own group,
+   ordered right after chat shell and before settings screens (matching Appendix B's
+   own listing order, where `session-list` sits between `cron` and `channels`).
+5. **`app/spike.tsx` and `app/runtime-check.tsx` were deleted, not tokened.** Per the
+   task's own instruction ("delete if nothing routes to them; otherwise token them").
+   Checked: no `Link`, `router.push`, or drawer entry anywhere in `app/` or
+   `src/components/AppDrawer.tsx` references either route; both are M02/M03 dev/debug
+   screens explicitly superseded by M06's real chat UI. Deleted in the shared-components
+   commit.
+6. **`eslint.config.mjs`'s rule gained a second exemption, `app.config.ts`**, alongside
+   `src/theme/**`/`src/upstream/**`. It configures native build-time resources (the
+   splash screen background, the notification icon tint) that exist before any JS runs
+   and can never read `useTheme()` — not a themed UI file. `app.config.ts` sits at the
+   repo root, outside both `src/` and `app/` (the routing directory), so exit criterion
+   1's own grep (`grep ... src app --include=...`) never scanned it either; only the
+   ESLint rule's repo-wide `**/*.{ts,tsx}` glob needed the explicit exclusion.
+7. **`src/api/projects.test.ts`'s two `'#fff'` literals are inline-disabled, not
+   retokenized.** They're a user-picked rail colour on a *project* record (`color?:
+   string` in `src/api/projects.ts`, sent verbatim to `projects.update`/`projects.create`)
+   — application data, not a UI style, so there is no `tokens.*` field it could
+   correctly map to. `// eslint-disable-next-line local/no-hardcoded-hex-color` with a
+   one-line reason on each.
 
 ## Verification log
 
