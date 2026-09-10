@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { archiveProject, createProject, deleteProject, listProjects, setActiveProject } from '../../../src/api/projects'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import type { ProjectInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -19,6 +20,7 @@ import type { ProjectInfo } from '../../../src/upstream/types/hermes'
  * `src/api/projects.ts`'s header for the exact upstream RPCs left unported.
  */
 export default function ProjectsScreen() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
@@ -72,81 +74,87 @@ export default function ProjectsScreen() {
   const activeId = projectsQuery.data?.active_id ?? null
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Projects" />
       <ScrollView contentContainerStyle={styles.content}>
-        {projectsQuery.isLoading ? <ActivityIndicator color="#8a8a99" style={styles.spinner} /> : null}
+        {projectsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {projectsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {projectsQuery.error instanceof Error ? projectsQuery.error.message : String(projectsQuery.error)}
           </Text>
         ) : null}
 
         {projects.length === 0 && !projectsQuery.isLoading ? (
-          <Text style={styles.sectionHint}>No projects yet — create one below.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+            No projects yet — create one below.
+          </Text>
         ) : null}
 
         {projects.map(project => {
           const isActive = project.id === activeId
 
           return (
-            <View key={project.id} style={styles.card}>
+            <View key={project.id} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
               <View style={styles.cardHeader}>
-                <Text style={styles.rowTitle}>
+                <Text style={[styles.rowTitle, { color: tokens.foreground }]}>
                   {project.name}
                   {isActive ? ' · active' : ''}
                   {project.archived ? ' · archived' : ''}
                 </Text>
               </View>
-              <Text numberOfLines={1} style={styles.rowSubtitle}>
+              <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {project.primary_path || project.folders[0]?.path || 'No folder'}
                 {project.folders.length > 1 ? ` (+${project.folders.length - 1} more)` : ''}
               </Text>
               <View style={styles.actions}>
                 {!isActive && !project.archived ? (
                   <TouchableOpacity onPress={() => activateMutation.mutate(project.id)} style={styles.actionButton}>
-                    <Text style={styles.actionText}>Set active</Text>
+                    <Text style={[styles.actionText, { color: tokens.primary }]}>Set active</Text>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
                   onPress={() => archiveMutation.mutate({ id: project.id, restore: Boolean(project.archived) })}
                   style={styles.actionButton}
                 >
-                  <Text style={styles.actionText}>{project.archived ? 'Restore' : 'Archive'}</Text>
+                  <Text style={[styles.actionText, { color: tokens.primary }]}>
+                    {project.archived ? 'Restore' : 'Archive'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => confirmDelete(project)} style={styles.actionButton}>
-                  <Text style={styles.destructiveText}>Delete</Text>
+                  <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )
         })}
 
-        <Text style={styles.sectionTitle}>New project</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New project</Text>
         <TextInput
           onChangeText={setName}
           placeholder="Project name"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[styles.input, { backgroundColor: tokens.card, borderColor: tokens.border, color: tokens.foreground }]}
           value={name}
         />
         <TextInput
           autoCapitalize="none"
           onChangeText={setFolder}
           placeholder="Primary folder path (on the server)"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[styles.input, { backgroundColor: tokens.card, borderColor: tokens.border, color: tokens.foreground }]}
           value={folder}
         />
         <TouchableOpacity
           disabled={createMutation.isPending || !name.trim() || !folder.trim()}
           onPress={() => createMutation.mutate()}
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
-          <Text style={styles.addButtonText}>{createMutation.isPending ? 'Creating…' : 'Create project'}</Text>
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            {createMutation.isPending ? 'Creating…' : 'Create project'}
+          </Text>
         </TouchableOpacity>
         {createMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof Error ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
@@ -160,7 +168,6 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
@@ -170,19 +177,15 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
     borderRadius: 8,
     marginTop: 4,
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
@@ -194,28 +197,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 6
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     fontSize: 13,
     marginBottom: 8,
@@ -223,22 +220,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

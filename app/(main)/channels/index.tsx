@@ -24,6 +24,7 @@ import {
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $pairingChangeTick, $platformsChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import type { MessagingPlatformInfo, PairingUser } from '../../../src/upstream/types/hermes'
 
 const PLATFORMS_KEY = 'messaging-platforms'
@@ -44,6 +45,7 @@ const PAIRING_KEY = 'pairing'
  * investment no exit criterion asks for.
  */
 export default function ChannelsScreen() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
@@ -156,13 +158,13 @@ export default function ChannelsScreen() {
   const approved = pairingQuery.data?.approved ?? []
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Channels" />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Platforms</Text>
-        {platformsQuery.isLoading ? <ActivityIndicator color="#8a8a99" style={styles.spinner} /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Platforms</Text>
+        {platformsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {platformsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {platformsQuery.error instanceof Error ? platformsQuery.error.message : String(platformsQuery.error)}
           </Text>
         ) : null}
@@ -171,19 +173,22 @@ export default function ChannelsScreen() {
           const isExpanded = expanded === platform.id
 
           return (
-            <View key={platform.id} style={styles.card}>
+            <View key={platform.id} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
               <TouchableOpacity onPress={() => setExpanded(isExpanded ? null : platform.id)}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.rowTitle}>{platform.name}</Text>
+                  <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{platform.name}</Text>
                   <Switch
                     onValueChange={value => toggleMutation.mutate({ enabled: value, id: platform.id })}
                     value={platform.enabled}
                   />
                 </View>
-                <Text numberOfLines={isExpanded ? undefined : 1} style={styles.rowSubtitle}>
+                <Text
+                  numberOfLines={isExpanded ? undefined : 1}
+                  style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}
+                >
                   {platform.description}
                 </Text>
-                <Text style={styles.rowMeta}>
+                <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
                   {platform.configured ? 'Configured' : 'Not configured'}
                   {platform.gateway_running ? ' · running' : ''}
                   {platform.state ? ` · ${platform.state}` : ''}
@@ -192,10 +197,10 @@ export default function ChannelsScreen() {
               </TouchableOpacity>
 
               {isExpanded ? (
-                <View style={styles.envSection}>
+                <View style={[styles.envSection, { borderTopColor: tokens.border }]}>
                   {platform.env_vars.map(envVar => (
                     <View key={envVar.key} style={styles.envRow}>
-                      <Text style={styles.envLabel}>
+                      <Text style={[styles.envLabel, { color: tokens.mutedForeground }]}>
                         {envVar.key}
                         {envVar.is_set ? ' (set)' : envVar.required ? ' (required)' : ''}
                       </Text>
@@ -205,22 +210,29 @@ export default function ChannelsScreen() {
                           setEnvDrafts(current => ({ ...current, [`${platform.id}:${envVar.key}`]: value }))
                         }
                         placeholder={envVar.redacted_value || envVar.prompt || envVar.key}
-                        placeholderTextColor="#5a5a66"
+                        placeholderTextColor={tokens.textTertiary}
                         secureTextEntry={envVar.is_password}
-                        style={styles.input}
+                        style={[
+                          styles.input,
+                          { backgroundColor: tokens.muted, borderColor: tokens.border, color: tokens.foreground }
+                        ]}
                         value={envDrafts[`${platform.id}:${envVar.key}`] ?? ''}
                       />
                     </View>
                   ))}
                   {testMessages[platform.id] ? (
-                    <Text style={styles.testMessage}>{testMessages[platform.id]}</Text>
+                    <Text style={[styles.testMessage, { color: tokens.mutedForeground }]}>
+                      {testMessages[platform.id]}
+                    </Text>
                   ) : null}
                   <View style={styles.actions}>
                     <TouchableOpacity onPress={() => saveEnv(platform)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>{saveEnvMutation.isPending ? 'Saving…' : 'Save'}</Text>
+                      <Text style={[styles.actionText, { color: tokens.primary }]}>
+                        {saveEnvMutation.isPending ? 'Saving…' : 'Save'}
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => testMutation.mutate(platform.id)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>
+                      <Text style={[styles.actionText, { color: tokens.primary }]}>
                         {testMutation.isPending && testMutation.variables === platform.id ? 'Testing…' : 'Test'}
                       </Text>
                     </TouchableOpacity>
@@ -231,26 +243,29 @@ export default function ChannelsScreen() {
           )
         })}
 
-        <Text style={styles.sectionTitle}>Pairing</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Pairing</Text>
         {pairingQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {pairingQuery.error instanceof Error ? pairingQuery.error.message : String(pairingQuery.error)}
           </Text>
         ) : null}
 
         {pending.length === 0 ? (
-          <Text style={styles.sectionHint}>No pending pairing requests.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No pending pairing requests.</Text>
         ) : (
           pending.map(user => (
-            <View key={`${user.platform}:${user.request_id ?? user.user_id}`} style={styles.card}>
-              <Text style={styles.rowTitle}>{user.user_name || user.user_id}</Text>
-              <Text style={styles.rowSubtitle}>
+            <View
+              key={`${user.platform}:${user.request_id ?? user.user_id}`}
+              style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+            >
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{user.user_name || user.user_id}</Text>
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {user.platform}
                 {typeof user.age_minutes === 'number' ? ` · ${Math.round(user.age_minutes)}m ago` : ''}
               </Text>
               <View style={styles.actions}>
                 <TouchableOpacity onPress={() => approveMutation.mutate(user)} style={styles.actionButton}>
-                  <Text style={styles.actionText}>Approve</Text>
+                  <Text style={[styles.actionText, { color: tokens.primary }]}>Approve</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -259,14 +274,17 @@ export default function ChannelsScreen() {
 
         {approved.length > 0 ? (
           <>
-            <Text style={styles.sectionSubtitle}>Approved</Text>
+            <Text style={[styles.sectionSubtitle, { color: tokens.mutedForeground }]}>Approved</Text>
             {approved.map(user => (
-              <View key={`${user.platform}:${user.user_id}`} style={styles.card}>
-                <Text style={styles.rowTitle}>{user.user_name || user.user_id}</Text>
-                <Text style={styles.rowSubtitle}>{user.platform}</Text>
+              <View
+                key={`${user.platform}:${user.user_id}`}
+                style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+              >
+                <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{user.user_name || user.user_id}</Text>
+                <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{user.platform}</Text>
                 <View style={styles.actions}>
                   <TouchableOpacity onPress={() => revokeMutation.mutate(user)} style={styles.actionButton}>
-                    <Text style={styles.destructiveText}>Revoke</Text>
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Revoke</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -283,7 +301,6 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
@@ -292,8 +309,6 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
@@ -305,19 +320,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   envLabel: {
-    color: '#8a8a99',
     fontSize: 11,
     marginBottom: 4
   },
@@ -325,56 +337,45 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   envSection: {
-    borderTopColor: '#2a2a33',
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 10,
     paddingTop: 10
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 6
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     fontSize: 13,
     paddingHorizontal: 12,
     paddingVertical: 10
   },
   rowMeta: {
-    color: '#5a5a66',
     fontSize: 11,
     marginTop: 4
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     fontWeight: '700',
     marginTop: 12,
     textTransform: 'uppercase'
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,
@@ -384,7 +385,6 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   testMessage: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 8
   }

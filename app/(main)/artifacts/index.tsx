@@ -16,6 +16,7 @@ import { loadRecentArtifacts, shareArtifact } from '../../../src/api/artifacts'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { ARTIFACT_FILTERS, type ArtifactFilter, type ArtifactRecord } from '../../../src/lib/artifacts'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 
 const FILTER_LABEL: Record<ArtifactFilter, string> = { all: 'All', file: 'Files', image: 'Images', link: 'Links' }
 
@@ -33,6 +34,7 @@ function formatTime(timestampMs: number): string {
  * calls `expo-sharing`.
  */
 export default function ArtifactsScreen() {
+  const tokens = useTheme()
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
 
@@ -92,7 +94,7 @@ export default function ArtifactsScreen() {
   }, [])
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Artifacts" />
 
       <View style={styles.filterRow}>
@@ -100,9 +102,19 @@ export default function ArtifactsScreen() {
           <TouchableOpacity
             key={item}
             onPress={() => setFilter(item)}
-            style={[styles.filterChip, filter === item ? styles.filterChipActive : null]}
+            style={[
+              styles.filterChip,
+              { backgroundColor: tokens.muted, borderColor: tokens.border },
+              filter === item ? { backgroundColor: tokens.primary, borderColor: tokens.primary } : null
+            ]}
           >
-            <Text style={[styles.filterText, filter === item ? styles.filterTextActive : null]}>
+            <Text
+              style={[
+                styles.filterText,
+                { color: tokens.mutedForeground },
+                filter === item ? { color: tokens.primaryForeground } : null
+              ]}
+            >
               {FILTER_LABEL[item]}
             </Text>
           </TouchableOpacity>
@@ -111,34 +123,39 @@ export default function ArtifactsScreen() {
 
       {error ? (
         <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => void load()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Retry</Text>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
+          <TouchableOpacity
+            onPress={() => void load()}
+            style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : artifacts === null ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#8a8a99" size="large" />
+          <ActivityIndicator color={tokens.mutedForeground} size="large" />
         </View>
       ) : visible.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>No artifacts found in recent sessions.</Text>
+          <Text style={[styles.emptyText, { color: tokens.textTertiary }]}>No artifacts found in recent sessions.</Text>
         </View>
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
           data={visible}
           keyExtractor={artifact => artifact.id}
-          refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor="#8a8a99" />}
+          refreshControl={
+            <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+          }
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text numberOfLines={1} style={styles.rowTitle}>
+            <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+              <Text numberOfLines={1} style={[styles.rowTitle, { color: tokens.foreground }]}>
                 {item.label}
               </Text>
-              <Text numberOfLines={1} style={styles.rowSubtitle}>
+              <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {item.value}
               </Text>
-              <Text style={styles.rowMeta}>
+              <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
                 {item.kind} · {item.sessionTitle} · {formatTime(item.timestamp)}
               </Text>
               <TouchableOpacity
@@ -146,7 +163,9 @@ export default function ArtifactsScreen() {
                 onPress={() => void onShare(item)}
                 style={styles.shareButton}
               >
-                <Text style={styles.shareText}>{sharingId === item.id ? 'Sharing…' : 'Share'}</Text>
+                <Text style={[styles.shareText, { color: tokens.primary }]}>
+                  {sharingId === item.id ? 'Sharing…' : 'Share'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -158,8 +177,6 @@ export default function ArtifactsScreen() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
@@ -172,31 +189,22 @@ const styles = StyleSheet.create({
     padding: 24
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   emptyText: {
-    color: '#5a5a66',
     fontSize: 14,
     textAlign: 'center'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center'
   },
   filterChip: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6
-  },
-  filterChipActive: {
-    backgroundColor: '#1f6feb',
-    borderColor: '#1f6feb'
   },
   filterRow: {
     flexDirection: 'row',
@@ -205,39 +213,30 @@ const styles = StyleSheet.create({
     paddingTop: 12
   },
   filterText: {
-    color: '#8a8a99',
     fontSize: 12,
     fontWeight: '600'
-  },
-  filterTextActive: {
-    color: '#f2f2f5'
   },
   list: {
     padding: 16
   },
   retryButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   retryText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   rowMeta: {
-    color: '#5a5a66',
     fontSize: 11,
     marginTop: 4
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -245,7 +244,6 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   shareText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   }

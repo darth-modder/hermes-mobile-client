@@ -15,6 +15,7 @@ import {
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $cronChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import { createCronTriggerController } from '../../../src/upstream/shared/cron-trigger-controller'
 import type { CronJob } from '../../../src/upstream/types/hermes'
 
@@ -31,6 +32,7 @@ const QUERY_KEY_ROOT = 'cron-jobs'
  * comment).
  */
 export default function CronScreen() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
@@ -129,59 +131,72 @@ export default function CronScreen() {
   const jobs = jobsQuery.data ?? []
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <ScreenHeader title="Cron" />
       <ScrollView contentContainerStyle={styles.content}>
-        {jobsQuery.isLoading ? <ActivityIndicator color="#8a8a99" style={styles.spinner} /> : null}
+        {jobsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {jobsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
           </Text>
         ) : null}
-        {jobs.length === 0 && !jobsQuery.isLoading ? <Text style={styles.sectionHint}>No cron jobs yet.</Text> : null}
+        {jobs.length === 0 && !jobsQuery.isLoading ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No cron jobs yet.</Text>
+        ) : null}
 
         {jobs.map(job => (
-          <View key={job.id} style={styles.card}>
+          <View key={job.id} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             <View style={styles.cardHeader}>
-              <Text style={styles.rowTitle}>{job.name || job.id}</Text>
-              <Text style={job.enabled ? styles.statusEnabled : styles.statusDisabled}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{job.name || job.id}</Text>
+              <Text
+                style={[styles.statusEnabled, { color: job.enabled ? tokens.semantic.green : tokens.mutedForeground }]}
+              >
                 {job.state || (job.enabled ? 'enabled' : 'paused')}
               </Text>
             </View>
-            <Text numberOfLines={1} style={styles.rowSubtitle}>
+            <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
               {job.schedule_display || job.schedule?.display || job.schedule?.expr || '—'}
             </Text>
             {job.prompt ? (
-              <Text numberOfLines={2} style={styles.rowPrompt}>
+              <Text numberOfLines={2} style={[styles.rowPrompt, { color: tokens.mutedForeground }]}>
                 {job.prompt}
               </Text>
             ) : null}
-            {job.last_error ? <Text style={styles.errorText}>{job.last_error}</Text> : null}
-            {triggerMessages[job.id] ? <Text style={styles.testMessage}>{triggerMessages[job.id]}</Text> : null}
+            {job.last_error ? (
+              <Text style={[styles.errorText, { color: tokens.destructive }]}>{job.last_error}</Text>
+            ) : null}
+            {triggerMessages[job.id] ? (
+              <Text style={[styles.testMessage, { color: tokens.mutedForeground }]}>{triggerMessages[job.id]}</Text>
+            ) : null}
             <View style={styles.actions}>
               <TouchableOpacity
                 disabled={runningIds.has(job.id)}
                 onPress={() => onTrigger(job)}
                 style={styles.actionButton}
               >
-                <Text style={styles.actionText}>{runningIds.has(job.id) ? 'Running…' : 'Trigger'}</Text>
+                <Text style={[styles.actionText, { color: tokens.primary }]}>
+                  {runningIds.has(job.id) ? 'Running…' : 'Trigger'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => pauseMutation.mutate(job)} style={styles.actionButton}>
-                <Text style={styles.actionText}>{job.enabled ? 'Pause' : 'Resume'}</Text>
+                <Text style={[styles.actionText, { color: tokens.primary }]}>{job.enabled ? 'Pause' : 'Resume'}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => confirmDelete(job)} style={styles.actionButton}>
-                <Text style={styles.destructiveText}>Delete</Text>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
 
-        <Text style={styles.sectionTitle}>New job</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New job</Text>
         <TextInput
           onChangeText={setName}
           placeholder="Name (optional)"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={name}
         />
         <TextInput
@@ -189,27 +204,36 @@ export default function CronScreen() {
           numberOfLines={3}
           onChangeText={setPrompt}
           placeholder="Prompt"
-          placeholderTextColor="#5a5a66"
-          style={[styles.input, styles.multilineInput]}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            styles.multilineInput,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={prompt}
         />
         <TextInput
           autoCapitalize="none"
           onChangeText={setSchedule}
           placeholder="Schedule (cron expr, e.g. 0 9 * * *)"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={schedule}
         />
         <TouchableOpacity
           disabled={createMutation.isPending || !prompt.trim() || !schedule.trim()}
           onPress={() => createMutation.mutate()}
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
-          <Text style={styles.addButtonText}>{createMutation.isPending ? 'Creating…' : 'Create job'}</Text>
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            {createMutation.isPending ? 'Creating…' : 'Create job'}
+          </Text>
         </TouchableOpacity>
         {createMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof Error ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
@@ -223,7 +247,6 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
@@ -233,19 +256,15 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
     borderRadius: 8,
     marginTop: 4,
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
@@ -257,28 +276,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 6
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     fontSize: 13,
     marginBottom: 8,
@@ -290,27 +303,22 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top'
   },
   rowPrompt: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 6
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,
@@ -319,20 +327,12 @@ const styles = StyleSheet.create({
   spinner: {
     marginBottom: 12
   },
-  statusDisabled: {
-    color: '#8a8a99',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase'
-  },
   statusEnabled: {
-    color: '#3fb950',
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase'
   },
   testMessage: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 6
   }
