@@ -48,10 +48,10 @@ Read these before designing anything; they are the source of truth, not a screen
 
 ### A. Theme tokens (vendor, do not re-author)
 
-- [ ] Add `apps/desktop/src/themes/{types,color,retint,presets}.ts` to the sync allow-list in
+- [x] Add `apps/desktop/src/themes/{types,color,retint,presets}.ts` to the sync allow-list in
       `scripts/sync-upstream.mjs` as `src/upstream/themes/*`. They are pure; no patch should be
       needed beyond path rewrites. Sync must stay idempotent.
-- [ ] `src/theme/resolve.ts`: port the surface-mix math from `context.tsx:201-205` and the
+- [x] `src/theme/resolve.ts`: port the surface-mix math from `context.tsx:201-205` and the
       `color-mix` rules in `styles.css` into a function
       `resolveMobileTheme(theme: DesktopTheme, mode: 'light' | 'dark'): MobileTokens`, with unit
       tests that pin the output for the `nous` skin in both modes against the worked values in
@@ -295,7 +295,45 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
 
 ## Deviations from the literal spec (and why)
 
-(none yet)
+1. **A.5's token table is followed literally, over A.1's "direct pass-throughs" list,
+   for the fields where they disagree.** Reading `apps/desktop/src/themes/context.tsx`
+   directly (`applyTheme`, the `palette` object around lines 249-271) shows it calling
+   `root.style.setProperty` for `--dt-primary-foreground`, `--dt-secondary-foreground`,
+   `--dt-accent-foreground`, `--dt-border`, `--dt-input`, `--dt-ring`, `--dt-muted`,
+   `--dt-destructive`, `--dt-destructive-foreground`, `--dt-composer-ring` and
+   `--dt-sidebar-border`/`--dt-user-bubble-border` with the theme's raw seed values
+   (`c.primaryForeground`, `c.border`, `c.destructive`, `c.composerRing ?? midground`,
+   etc.) — an inline style, which wins CSS cascade over the `:root { --dt-border:
+   var(--ui-stroke-secondary); ... }` computed-surface fallback in `styles.css` that
+   A.5's table describes. So by CSS specificity rules, the live desktop app likely
+   paints those particular fields from A.1's pass-through list, not A.4's derived
+   surfaces. But Appendix A.6's own worked example computes `border` via the
+   `strokeSecondary` mix formula and pins that value with a "faintly blue on white"
+   sanity check, and M13's task instructions explicitly say to pin "whatever `mix`
+   yields for `border`" — both point at A.5's computed-formula reading, not A.1's.
+   Since the two parts of the same appendix disagree and the task's own worked
+   example and instructions side with A.5, `resolveMobileTheme` implements A.5's
+   table as written (`border` = `strokeSecondary`, `destructive` = fixed `#cf2d56`,
+   `composerRing` = `base`, etc.) for every row, and this note is the record of the
+   conflict for whoever next touches `context.tsx`'s behaviour or re-derives the
+   appendix. Practically the two readings differ only on a handful of fields, several
+   of which are close in colour for `nous` regardless (e.g. `destructiveForeground` is
+   `#ffffff` under both readings for every built-in preset checked).
+2. **`retint.ts` does not synthesise a missing dark palette; `context.tsx`'s
+   `synthLightColors` does, and only for the missing LIGHT half of a dark-only
+   theme.** Appendix A.6 says "if [`darkColors`] absent, `retint.ts` synthesises it, so
+   call the vendored function" — there is no such function in `retint.ts` (it only
+   re-seeds the accent family of an existing palette). The actual synthesis
+   (`getBaseColors` in `context.tsx`) works the other way: a preset with no
+   `darkColors` (`midnight`, `ember`, `mono`, `cyberpunk`, `slate`) has its `colors`
+   field treated as the DARK palette, and a LIGHT variant is synthesised from it by
+   `synthLightColors` when light mode is requested; dark mode just reuses `colors`
+   unchanged. `nous` ships both palettes, so this path is never exercised by the
+   pinned test, but `resolveMobileTheme` needs it for the other five built-in presets
+   (Step 3's appearance screen lists all eleven). Since `context.tsx` itself isn't on
+   the vendor allow-list (D14 vendors only `types`/`color`/`retint`/`presets`),
+   `synthLightColors` is ported inline into `src/theme/resolve.ts`, built from the
+   vendored `mix`/`readableOn` in `color.ts` exactly as `context.tsx` uses them.
 
 ## Verification log
 

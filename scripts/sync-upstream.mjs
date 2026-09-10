@@ -77,7 +77,14 @@ const ALLOW_LIST = [
   { dest: 'lib/todos.ts', src: 'apps/desktop/src/lib/todos.ts' },
   { dest: 'lib/error-surface.ts', src: 'apps/desktop/src/lib/error-surface.ts' },
   { dest: 'lib/embedded-images.ts', src: 'apps/desktop/src/lib/embedded-images.ts' },
-  { dest: 'lib/generated-images.ts', src: 'apps/desktop/src/lib/generated-images.ts' }
+  { dest: 'lib/generated-images.ts', src: 'apps/desktop/src/lib/generated-images.ts' },
+  // M13: the desktop's theme model — pure TypeScript, no imports outside the
+  // directory (D14). resolveMobileTheme (src/theme/resolve.ts) is ported
+  // against these, not re-authored from a screenshot.
+  { dest: 'themes/types.ts', src: 'apps/desktop/src/themes/types.ts' },
+  { dest: 'themes/color.ts', src: 'apps/desktop/src/themes/color.ts' },
+  { dest: 'themes/retint.ts', src: 'apps/desktop/src/themes/retint.ts' },
+  { dest: 'themes/presets.ts', src: 'apps/desktop/src/themes/presets.ts' }
 ]
 
 function fail(message) {
