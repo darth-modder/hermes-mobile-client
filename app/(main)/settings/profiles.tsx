@@ -6,9 +6,10 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, Touc
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { createProfile, deleteProfile, getProfiles } from '../../../src/api/profiles'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { HttpError } from '../../../src/net/http'
 import { $activeProfile, setActiveProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import type { ProfileInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -19,6 +20,7 @@ import type { ProfileInfo } from '../../../src/upstream/types/hermes'
  * list").
  */
 export default function ProfilesSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const activeProfile = useStore($activeProfile)
   const [newName, setNewName] = useState('')
@@ -61,26 +63,35 @@ export default function ProfilesSettings() {
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Profiles' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Profiles' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           A profile is a separate config, sessions, and skill set on the same backend. Switching scopes every settings
           screen and new sessions to it.
         </Text>
 
-        {isLoading ? <ActivityIndicator color="#8a8a99" style={styles.spinner} /> : null}
-        {error ? <Text style={styles.errorText}>{error instanceof Error ? error.message : String(error)}</Text> : null}
+        {isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
+        {error ? (
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
+            {error instanceof Error ? error.message : String(error)}
+          </Text>
+        ) : null}
 
         <TouchableOpacity
           onPress={() => setActiveProfile('')}
-          style={[styles.row, activeProfile === '' ? styles.rowActive : null]}
+          style={[
+            styles.row,
+            { backgroundColor: tokens.card, borderColor: activeProfile === '' ? tokens.rowActive : tokens.border }
+          ]}
         >
           <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>default</Text>
-            <Text style={styles.rowSubtitle}>The connection&apos;s default profile</Text>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>default</Text>
+            <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
+              The connection&apos;s default profile
+            </Text>
           </View>
-          {activeProfile === '' ? <Text style={styles.checkmark}>✓</Text> : null}
+          {activeProfile === '' ? <Text style={[styles.checkmark, { color: tokens.semantic.green }]}>✓</Text> : null}
         </TouchableOpacity>
 
         {data?.profiles
@@ -90,46 +101,63 @@ export default function ProfilesSettings() {
               key={profile.name}
               onLongPress={() => confirmDelete(profile)}
               onPress={() => setActiveProfile(profile.name)}
-              style={[styles.row, activeProfile === profile.name ? styles.rowActive : null]}
+              style={[
+                styles.row,
+                {
+                  backgroundColor: tokens.card,
+                  borderColor: activeProfile === profile.name ? tokens.rowActive : tokens.border
+                }
+              ]}
             >
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>{profile.display_name || profile.name}</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, { color: tokens.foreground }]}>
+                  {profile.display_name || profile.name}
+                </Text>
+                <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                   {profile.skill_count} skill{profile.skill_count === 1 ? '' : 's'}
                   {profile.model ? ` · ${profile.model}` : ''}
                 </Text>
               </View>
-              {activeProfile === profile.name ? <Text style={styles.checkmark}>✓</Text> : null}
+              {activeProfile === profile.name ? (
+                <Text style={[styles.checkmark, { color: tokens.semantic.green }]}>✓</Text>
+              ) : null}
             </TouchableOpacity>
           ))}
 
-        <Text style={styles.sectionTitle}>New profile</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New profile</Text>
         <View style={styles.createRow}>
           <TextInput
             autoCapitalize="none"
             onChangeText={setNewName}
             onSubmitEditing={submitCreate}
             placeholder="profile name"
-            placeholderTextColor="#5a5a66"
-            style={styles.input}
+            placeholderTextColor={tokens.mutedForeground}
+            style={[
+              styles.input,
+              { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+            ]}
             value={newName}
           />
           <TouchableOpacity
             disabled={createMutation.isPending || !newName.trim()}
             onPress={submitCreate}
-            style={styles.createButton}
+            style={[styles.createButton, { backgroundColor: tokens.primary }]}
           >
-            <Text style={styles.createButtonText}>{createMutation.isPending ? '…' : 'Create'}</Text>
+            <Text style={[styles.createButtonText, { color: tokens.primaryForeground }]}>
+              {createMutation.isPending ? '…' : 'Create'}
+            </Text>
           </TouchableOpacity>
         </View>
         {createMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof HttpError ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
-        <Text style={styles.hint}>Long-press a profile to delete it. The default profile cannot be deleted.</Text>
+        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
+          Long-press a profile to delete it. The default profile cannot be deleted.
+        </Text>
         <TouchableOpacity onPress={() => void refetch()} style={styles.refreshButton}>
-          <Text style={styles.refreshText}>Refresh</Text>
+          <Text style={[styles.refreshText, { color: tokens.mutedForeground }]}>Refresh</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -138,25 +166,21 @@ export default function ProfilesSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    color: '#3fb950',
     fontSize: 16,
     fontWeight: '700'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   createButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 8,
     justifyContent: 'center',
     paddingHorizontal: 14
   },
   createButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -166,21 +190,16 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 8
   },
   hint: {
-    color: '#5a5a66',
     fontSize: 11,
     marginTop: 10
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     fontSize: 14,
     paddingHorizontal: 12,
@@ -191,13 +210,10 @@ const styles = StyleSheet.create({
     marginTop: 16
   },
   refreshText: {
-    color: '#8a8a99',
     fontSize: 13
   },
   row: {
     alignItems: 'center',
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
@@ -205,11 +221,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 12
   },
-  rowActive: {
-    borderColor: '#1f6feb'
-  },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
@@ -217,17 +229,14 @@ const styles = StyleSheet.create({
     flex: 1
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 15,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 12
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

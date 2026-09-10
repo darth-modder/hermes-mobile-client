@@ -13,10 +13,11 @@ import {
 } from '../../../src/connections/registry'
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
 import type { MobileConnection } from '../../../src/connections/types'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 
 function relativeTime(epochMs: number): string {
   const minutes = Math.floor((Date.now() - epochMs) / 60_000)
@@ -50,6 +51,7 @@ const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = {
  * a second add form — that screen already handles auth-mode detection.
  */
 export default function ConnectionsSettings() {
+  const tokens = useTheme()
   const router = useRouter()
   const [connections, setConnections] = useState<MobileConnection[]>([])
   const [activeId, setActiveId] = useState<null | string>(null)
@@ -138,82 +140,100 @@ export default function ConnectionsSettings() {
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Connections' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Connections' }} />
       <ScrollView contentContainerStyle={styles.content}>
         {connections.length === 0 ? (
-          <Text style={styles.emptyText}>No saved connections yet.</Text>
+          <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>No saved connections yet.</Text>
         ) : (
           connections.map(connection => {
             const result = results[connection.id]
             const isActive = connection.id === activeId
 
             return (
-              <View key={connection.id} style={styles.card}>
+              <View
+                key={connection.id}
+                style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+              >
                 <View style={styles.cardHeader}>
                   {editingId === connection.id ? (
                     <TextInput
                       autoFocus
                       onChangeText={setEditingLabel}
                       onSubmitEditing={() => saveLabel(connection)}
-                      style={styles.labelInput}
+                      style={[styles.labelInput, { borderBottomColor: tokens.primary, color: tokens.foreground }]}
                       value={editingLabel}
                     />
                   ) : (
                     <TouchableOpacity onPress={() => startEditing(connection)} style={styles.labelRow}>
-                      <Text numberOfLines={1} style={styles.label}>
+                      <Text numberOfLines={1} style={[styles.label, { color: tokens.foreground }]}>
                         {connection.label}
                       </Text>
-                      {connection.primary ? <Text style={styles.primaryBadge}>★ primary</Text> : null}
-                      {isActive ? <Text style={styles.activeBadge}>active</Text> : null}
+                      {connection.primary ? (
+                        <Text style={[styles.primaryBadge, { color: tokens.semantic.yellow }]}>★ primary</Text>
+                      ) : null}
+                      {isActive ? (
+                        <Text style={[styles.activeBadge, { color: tokens.semantic.green }]}>active</Text>
+                      ) : null}
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <Text numberOfLines={1} style={styles.baseUrl}>
+                <Text numberOfLines={1} style={[styles.baseUrl, { color: tokens.mutedForeground }]}>
                   {connection.baseUrl}
                 </Text>
-                <Text style={styles.meta}>
+                <Text style={[styles.meta, { color: tokens.mutedForeground }]}>
                   {AUTH_MODE_LABEL[connection.authMode]}
                   {connection.lastUsedAt ? ` · used ${relativeTime(connection.lastUsedAt)}` : ' · never used'}
                   {connection.needsLogin ? ' · needs sign-in' : ''}
                 </Text>
 
                 {result ? (
-                  <Text style={[styles.resultText, result.ok ? styles.resultOk : styles.resultFail]}>
+                  <Text style={[styles.resultText, { color: result.ok ? tokens.semantic.green : tokens.destructive }]}>
                     {result.message}
                   </Text>
                 ) : null}
 
                 <View style={styles.actions}>
                   {!isActive ? (
-                    <TouchableOpacity onPress={() => use(connection)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>Use</Text>
+                    <TouchableOpacity
+                      onPress={() => use(connection)}
+                      style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                    >
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>Use</Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={testing === connection.id}
                     onPress={() => void test(connection)}
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
-                    <Text style={styles.actionText}>{testing === connection.id ? 'Testing…' : 'Test'}</Text>
+                    <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                      {testing === connection.id ? 'Testing…' : 'Test'}
+                    </Text>
                   </TouchableOpacity>
                   {!connection.primary ? (
-                    <TouchableOpacity onPress={() => makePrimary(connection)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>Set primary</Text>
+                    <TouchableOpacity
+                      onPress={() => makePrimary(connection)}
+                      style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                    >
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>Set primary</Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={signingOut === connection.id}
                     onPress={() => signOut(connection)}
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
-                    <Text style={styles.destructiveText}>
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
                       {signingOut === connection.id ? 'Signing out…' : 'Sign out'}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => remove(connection)} style={styles.actionButton}>
-                    <Text style={styles.destructiveText}>Delete</Text>
+                  <TouchableOpacity
+                    onPress={() => remove(connection)}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                  >
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -221,8 +241,11 @@ export default function ConnectionsSettings() {
           })
         )}
 
-        <TouchableOpacity onPress={() => router.push('/connect')} style={styles.addButton}>
-          <Text style={styles.addButtonText}>+ Add connection</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/connect')}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>+ Add connection</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -231,7 +254,6 @@ export default function ConnectionsSettings() {
 
 const styles = StyleSheet.create({
   actionButton: {
-    backgroundColor: '#17171d',
     borderRadius: 6,
     marginRight: 8,
     marginTop: 8,
@@ -239,7 +261,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   actionText: {
-    color: '#f2f2f5',
     fontSize: 12,
     fontWeight: '600'
   },
@@ -248,32 +269,26 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   activeBadge: {
-    color: '#3fb950',
     fontSize: 11,
     fontWeight: '700',
     marginLeft: 8
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
     borderRadius: 8,
     marginTop: 4,
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   baseUrl: {
-    color: '#8a8a99',
     fontFamily: 'monospace',
     fontSize: 12,
     marginTop: 4
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 12,
@@ -283,32 +298,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 12,
     fontWeight: '600'
   },
   emptyText: {
-    color: '#5a5a66',
     fontSize: 14,
     marginBottom: 16
   },
   label: {
-    color: '#f2f2f5',
     flexShrink: 1,
     fontSize: 15,
     fontWeight: '600'
   },
   labelInput: {
-    borderBottomColor: '#1f6feb',
     borderBottomWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     fontSize: 15,
     paddingVertical: 2
@@ -319,21 +328,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   meta: {
-    color: '#5a5a66',
     fontSize: 12,
     marginTop: 4
   },
   primaryBadge: {
-    color: '#d19a66',
     fontSize: 11,
     fontWeight: '700',
     marginLeft: 8
-  },
-  resultFail: {
-    color: '#e06c75'
-  },
-  resultOk: {
-    color: '#3fb950'
   },
   resultText: {
     fontSize: 12,

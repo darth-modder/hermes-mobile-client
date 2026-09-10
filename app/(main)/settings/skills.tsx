@@ -11,8 +11,9 @@ import {
   setSkillEnabled,
   uninstallSkillFromHub
 } from '../../../src/api/skills'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 
 /**
  * Skills settings screen (M09). Exit criterion: "skill toggle persists" —
@@ -21,6 +22,7 @@ import { $activeProfile } from '../../../src/store/profile'
  * optimistic toggle can never look "persisted" when it wasn't.
  */
 export default function SkillsSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const profile = useStore($activeProfile) || undefined
 
@@ -49,21 +51,21 @@ export default function SkillsSettings() {
   })
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Skills' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Skills' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Installed</Text>
-        {skillsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Installed</Text>
+        {skillsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {skillsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {skillsQuery.error instanceof Error ? skillsQuery.error.message : String(skillsQuery.error)}
           </Text>
         ) : null}
         {(skillsQuery.data ?? []).map(skill => (
-          <View key={skill.name} style={styles.row}>
+          <View key={skill.name} style={[styles.row, { borderBottomColor: tokens.border }]}>
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{skill.name}</Text>
-              <Text numberOfLines={2} style={styles.rowSubtitle}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{skill.name}</Text>
+              <Text numberOfLines={2} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {skill.description}
               </Text>
             </View>
@@ -73,33 +75,35 @@ export default function SkillsSettings() {
             />
           </View>
         ))}
-        {skillsQuery.data?.length === 0 ? <Text style={styles.sectionHint}>No skills installed.</Text> : null}
+        {skillsQuery.data?.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No skills installed.</Text>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>Available to install</Text>
-        {officialQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Available to install</Text>
+        {officialQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {officialQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {officialQuery.error instanceof Error ? officialQuery.error.message : String(officialQuery.error)}
           </Text>
         ) : null}
         {(officialQuery.data?.skills ?? []).map(skill => (
-          <View key={skill.identifier} style={styles.row}>
+          <View key={skill.identifier} style={[styles.row, { borderBottomColor: tokens.border }]}>
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{skill.name}</Text>
-              <Text numberOfLines={2} style={styles.rowSubtitle}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{skill.name}</Text>
+              <Text numberOfLines={2} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {skill.description}
               </Text>
             </View>
             {skill.installed ? (
               <TouchableOpacity onPress={() => uninstallMutation.mutate(skill.name)}>
-                <Text style={styles.destructiveText}>Uninstall</Text>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Uninstall</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 disabled={installMutation.isPending && installMutation.variables === skill.identifier}
                 onPress={() => installMutation.mutate(skill.identifier)}
               >
-                <Text style={styles.actionText}>
+                <Text style={[styles.actionText, { color: tokens.primary }]}>
                   {installMutation.isPending && installMutation.variables === skill.identifier ? '…' : 'Install'}
                 </Text>
               </TouchableOpacity>
@@ -113,37 +117,31 @@ export default function SkillsSettings() {
 
 const styles = StyleSheet.create({
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginBottom: 8
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 10
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
@@ -152,17 +150,14 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

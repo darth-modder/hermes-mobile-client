@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { useTheme } from '../../../src/theme/provider'
 
 type PermissionState = 'checking' | 'denied' | 'granted' | 'undetermined'
 
@@ -15,6 +16,7 @@ async function checkMicrophonePermission(): Promise<PermissionState> {
 }
 
 export default function VoiceSettings() {
+  const tokens = useTheme()
   const [permission, setPermission] = useState<PermissionState>('checking')
 
   const refresh = useCallback(() => {
@@ -33,28 +35,36 @@ export default function VoiceSettings() {
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Voice' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Voice' }} />
       <View style={styles.content}>
-        <Text style={styles.sectionTitle}>Dictation</Text>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Dictation</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Tap the mic in the composer to record; releasing it sends the clip to the backend for transcription and
           inserts the text into your message.
         </Text>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Microphone access</Text>
-          <Text style={[styles.status, permission === 'granted' ? styles.statusGranted : styles.statusOther]}>
+        <View style={[styles.row, { borderBottomColor: tokens.border }]}>
+          <Text style={[styles.rowLabel, { color: tokens.foreground }]}>Microphone access</Text>
+          <Text
+            style={[
+              styles.status,
+              { color: permission === 'granted' ? tokens.semantic.green : tokens.semantic.yellow }
+            ]}
+          >
             {permission === 'checking' ? 'Checking…' : permission === 'granted' ? 'Granted' : 'Not granted'}
           </Text>
         </View>
         {permission !== 'granted' ? (
-          <TouchableOpacity onPress={() => void requestPermission()} style={styles.button}>
-            <Text style={styles.buttonText}>Grant microphone access</Text>
+          <TouchableOpacity
+            onPress={() => void requestPermission()}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Grant microphone access</Text>
           </TouchableOpacity>
         ) : null}
 
-        <Text style={styles.sectionTitle}>Spoken replies</Text>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Spoken replies</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Tap the speaker in the composer to hear the assistant's latest reply, synthesized by the backend and played
           back on this device.
         </Text>
@@ -65,7 +75,6 @@ export default function VoiceSettings() {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
     borderRadius: 10,
     marginBottom: 8,
     marginTop: 4,
@@ -73,13 +82,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
@@ -88,23 +95,19 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#2a2a33',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 12
   },
   rowLabel: {
-    color: '#f2f2f5',
     fontSize: 15
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 8
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,
@@ -113,11 +116,5 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 13,
     fontWeight: '600'
-  },
-  statusGranted: {
-    color: '#3fb950'
-  },
-  statusOther: {
-    color: '#e3b341'
   }
 })

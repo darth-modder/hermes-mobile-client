@@ -4,8 +4,9 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getActiveConnection } from '../../../src/connections/registry'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 
 interface SettingsRow {
   route: Href
@@ -30,28 +31,35 @@ const ROWS: SettingsRow[] = [
 ]
 
 export default function SettingsIndex() {
+  const tokens = useTheme()
   const router = useRouter()
   const connection = getActiveConnection()
   const activeProfile = useStore($activeProfile)
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Settings' }} />
-      <View style={styles.summary}>
-        <Text style={styles.summaryLabel}>Connected to</Text>
-        <Text numberOfLines={1} style={styles.summaryValue}>
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Settings' }} />
+      <View style={[styles.summary, { borderBottomColor: tokens.border }]}>
+        <Text style={[styles.summaryLabel, { color: tokens.textTertiary }]}>Connected to</Text>
+        <Text numberOfLines={1} style={[styles.summaryValue, { color: tokens.foreground }]}>
           {connection ? connection.label || connection.baseUrl : 'No active connection'}
         </Text>
-        {activeProfile ? <Text style={styles.summaryProfile}>Profile: {activeProfile}</Text> : null}
+        {activeProfile ? (
+          <Text style={[styles.summaryProfile, { color: tokens.mutedForeground }]}>Profile: {activeProfile}</Text>
+        ) : null}
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         {ROWS.map(row => (
-          <TouchableOpacity key={row.title} onPress={() => router.push(row.route)} style={styles.row}>
+          <TouchableOpacity
+            key={row.title}
+            onPress={() => router.push(row.route)}
+            style={[styles.row, { borderBottomColor: tokens.border }]}
+          >
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{row.title}</Text>
-              <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{row.title}</Text>
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{row.subtitle}</Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
+            <Text style={[styles.chevron, { color: tokens.textTertiary }]}>›</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -61,11 +69,9 @@ export default function SettingsIndex() {
 
 const styles = StyleSheet.create({
   chevron: {
-    color: '#5a5a66',
     fontSize: 20
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
@@ -73,7 +79,6 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -81,7 +86,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
@@ -89,29 +93,24 @@ const styles = StyleSheet.create({
     flex: 1
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 15,
     fontWeight: '600'
   },
   summary: {
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: 12,
     paddingHorizontal: 16,
     paddingTop: 8
   },
   summaryLabel: {
-    color: '#5a5a66',
     fontSize: 11,
     textTransform: 'uppercase'
   },
   summaryProfile: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   summaryValue: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600',
     marginTop: 2

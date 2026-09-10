@@ -14,8 +14,9 @@ import {
   listOAuthProviders,
   setEnvVar
 } from '../../../src/api/config'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import type { EnvVarInfo } from '../../../src/upstream/types/hermes'
 
 function EnvVarRow({
@@ -31,14 +32,15 @@ function EnvVarRow({
   onSet: (value: string) => void
   saving: boolean
 }) {
+  const tokens = useTheme()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { borderBottomColor: tokens.border }]}>
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{name}</Text>
-        <Text numberOfLines={1} style={styles.rowSubtitle}>
+        <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{name}</Text>
+        <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
           {entry.description || (entry.is_set ? (entry.redacted_value ?? 'set') : 'not set')}
         </Text>
       </View>
@@ -48,9 +50,9 @@ function EnvVarRow({
             autoFocus
             onChangeText={setValue}
             placeholder="value"
-            placeholderTextColor="#5a5a66"
+            placeholderTextColor={tokens.mutedForeground}
             secureTextEntry={entry.is_password}
-            style={styles.editInput}
+            style={[styles.editInput, { borderBottomColor: tokens.primary, color: tokens.foreground }]}
             value={value}
           />
           <TouchableOpacity
@@ -61,17 +63,17 @@ function EnvVarRow({
               setValue('')
             }}
           >
-            <Text style={styles.actionText}>Save</Text>
+            <Text style={[styles.actionText, { color: tokens.primary }]}>Save</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.rowActions}>
           <TouchableOpacity onPress={() => setEditing(true)}>
-            <Text style={styles.actionText}>{entry.is_set ? 'Change' : 'Set'}</Text>
+            <Text style={[styles.actionText, { color: tokens.primary }]}>{entry.is_set ? 'Change' : 'Set'}</Text>
           </TouchableOpacity>
           {entry.is_set ? (
             <TouchableOpacity onPress={onDelete} style={styles.clearButton}>
-              <Text style={styles.destructiveText}>Clear</Text>
+              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Clear</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -87,6 +89,7 @@ function EnvVarRow({
  * section is status + disconnect only.
  */
 export default function ProvidersSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const profile = useStore($activeProfile) || undefined
 
@@ -117,13 +120,13 @@ export default function ProvidersSettings() {
   const envEntries = Object.entries(envQuery.data ?? {}).filter(([, entry]) => !entry.channel_managed)
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Providers' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Providers' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>API keys</Text>
-        {envQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>API keys</Text>
+        {envQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {envQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {envQuery.error instanceof Error ? envQuery.error.message : String(envQuery.error)}
           </Text>
         ) : null}
@@ -138,53 +141,57 @@ export default function ProvidersSettings() {
           />
         ))}
 
-        <Text style={styles.sectionTitle}>OAuth providers</Text>
-        <Text style={styles.sectionHint}>Connecting a new provider needs the CLI (`hermes model`) for now.</Text>
-        {oauthQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>OAuth providers</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+          Connecting a new provider needs the CLI (`hermes model`) for now.
+        </Text>
+        {oauthQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {oauthQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {oauthQuery.error instanceof Error ? oauthQuery.error.message : String(oauthQuery.error)}
           </Text>
         ) : null}
         {(oauthQuery.data?.providers ?? []).map(provider => (
-          <View key={provider.id} style={styles.row}>
+          <View key={provider.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{provider.name}</Text>
-              <Text style={styles.rowSubtitle}>{provider.status.logged_in ? 'Connected' : 'Not connected'}</Text>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{provider.name}</Text>
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
+                {provider.status.logged_in ? 'Connected' : 'Not connected'}
+              </Text>
             </View>
             {provider.status.logged_in && provider.disconnectable !== false ? (
               <TouchableOpacity onPress={() => disconnectMutation.mutate(provider.id)}>
-                <Text style={styles.destructiveText}>Disconnect</Text>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Disconnect</Text>
               </TouchableOpacity>
             ) : null}
           </View>
         ))}
 
-        <Text style={styles.sectionTitle}>Custom endpoints</Text>
-        {endpointsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Custom endpoints</Text>
+        {endpointsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {endpointsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {endpointsQuery.error instanceof Error ? endpointsQuery.error.message : String(endpointsQuery.error)}
           </Text>
         ) : null}
         {(endpointsQuery.data?.endpoints ?? []).map(endpoint => (
-          <View key={endpoint.id} style={styles.row}>
+          <View key={endpoint.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>
                 {endpoint.name}
                 {endpoint.is_current ? ' (active)' : ''}
               </Text>
-              <Text numberOfLines={1} style={styles.rowSubtitle}>
+              <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {endpoint.base_url} · {endpoint.model}
               </Text>
             </View>
             <TouchableOpacity onPress={() => deleteEndpointMutation.mutate(endpoint.id)}>
-              <Text style={styles.destructiveText}>Delete</Text>
+              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
             </TouchableOpacity>
           </View>
         ))}
         {endpointsQuery.data?.endpoints.length === 0 ? (
-          <Text style={styles.sectionHint}>No custom endpoints configured.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No custom endpoints configured.</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -193,7 +200,6 @@ export default function ProvidersSettings() {
 
 const styles = StyleSheet.create({
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
@@ -201,21 +207,17 @@ const styles = StyleSheet.create({
     marginLeft: 12
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   editInput: {
-    borderBottomColor: '#1f6feb',
     borderBottomWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     fontSize: 13,
     marginRight: 10,
@@ -228,7 +230,6 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -239,12 +240,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginBottom: 8
   },
@@ -253,17 +252,14 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

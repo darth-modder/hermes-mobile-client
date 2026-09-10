@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { addMcpServer, listMcpServers, removeMcpServer, setMcpServerEnabled, testMcpServer } from '../../../src/api/mcp'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { useTheme } from '../../../src/theme/provider'
 import type { McpServerSummary } from '../../../src/upstream/types/hermes'
 
 /**
@@ -23,6 +24,7 @@ import type { McpServerSummary } from '../../../src/upstream/types/hermes'
  * catalog-browse UI (see `src/api/mcp.ts`'s header for what's cut).
  */
 export default function McpSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [target, setTarget] = useState('')
@@ -74,75 +76,85 @@ export default function McpSettings() {
   })
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'MCP' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'MCP' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Servers</Text>
-        {serversQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Servers</Text>
+        {serversQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {serversQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {serversQuery.error instanceof Error ? serversQuery.error.message : String(serversQuery.error)}
           </Text>
         ) : null}
         {(serversQuery.data?.servers ?? []).map((server: McpServerSummary) => (
-          <View key={server.name} style={styles.card}>
+          <View key={server.name} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             <View style={styles.cardHeader}>
-              <Text style={styles.rowTitle}>{server.name}</Text>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{server.name}</Text>
               <Switch
                 onValueChange={value => toggleMutation.mutate({ enabled: value, name: server.name })}
                 value={server.enabled}
               />
             </View>
-            <Text numberOfLines={1} style={styles.rowSubtitle}>
+            <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
               {server.transport} · {server.url ?? server.command ?? '—'}
             </Text>
-            {testMessages[server.name] ? <Text style={styles.testMessage}>{testMessages[server.name]}</Text> : null}
+            {testMessages[server.name] ? (
+              <Text style={[styles.testMessage, { color: tokens.mutedForeground }]}>{testMessages[server.name]}</Text>
+            ) : null}
             <View style={styles.actions}>
               <TouchableOpacity
                 disabled={testMutation.isPending && testMutation.variables === server.name}
                 onPress={() => testMutation.mutate(server.name)}
                 style={styles.actionButton}
               >
-                <Text style={styles.actionText}>
+                <Text style={[styles.actionText, { color: tokens.primary }]}>
                   {testMutation.isPending && testMutation.variables === server.name ? 'Testing…' : 'Test'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => removeMutation.mutate(server.name)} style={styles.actionButton}>
-                <Text style={styles.destructiveText}>Remove</Text>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Remove</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
         {serversQuery.data?.servers.length === 0 ? (
-          <Text style={styles.sectionHint}>No MCP servers configured.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No MCP servers configured.</Text>
         ) : null}
 
-        <Text style={styles.sectionTitle}>Add a server</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Add a server</Text>
         <TextInput
           autoCapitalize="none"
           onChangeText={setName}
           placeholder="name"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={name}
         />
         <TextInput
           autoCapitalize="none"
           onChangeText={setTarget}
           placeholder="command, or https:// url"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={target}
         />
         <TouchableOpacity
           disabled={addMutation.isPending || !name.trim() || !target.trim()}
           onPress={() => addMutation.mutate()}
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
-          <Text style={styles.addButtonText}>{addMutation.isPending ? 'Adding…' : 'Add server'}</Text>
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            {addMutation.isPending ? 'Adding…' : 'Add server'}
+          </Text>
         </TouchableOpacity>
         {addMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {addMutation.error instanceof Error ? addMutation.error.message : String(addMutation.error)}
           </Text>
         ) : null}
@@ -156,7 +168,6 @@ const styles = StyleSheet.create({
     marginRight: 16
   },
   actionText: {
-    color: '#1f6feb',
     fontSize: 13,
     fontWeight: '600'
   },
@@ -166,19 +177,15 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
     borderRadius: 8,
     marginTop: 4,
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
@@ -190,28 +197,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
     fontSize: 13,
     fontWeight: '600'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 6
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     fontSize: 13,
     marginBottom: 8,
@@ -219,29 +220,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
   },
   testMessage: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 6
   }

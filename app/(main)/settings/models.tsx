@@ -6,8 +6,9 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getGlobalModelInfo, getGlobalModelOptions, setGlobalModel } from '../../../src/api/models'
 import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
 import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -18,6 +19,7 @@ import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/typ
  * surfaces whatever the backend reports, unchanged by this milestone.
  */
 export default function ModelsSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const profile = useStore($activeProfile) || undefined
 
@@ -53,32 +55,39 @@ export default function ModelsSettings() {
   const current = infoQuery.data
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Models' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Models' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Current model</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Current model</Text>
         {infoQuery.isLoading ? (
-          <ActivityIndicator color="#8a8a99" />
+          <ActivityIndicator color={tokens.mutedForeground} />
         ) : current ? (
-          <Text style={styles.currentModel}>
+          <Text style={[styles.currentModel, { color: tokens.foreground }]}>
             {current.provider} · {current.model}
           </Text>
         ) : (
-          <Text style={styles.errorText}>{String(infoQuery.error)}</Text>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(infoQuery.error)}</Text>
         )}
-        {setModelMutation.isPending ? <Text style={styles.pendingText}>Switching…</Text> : null}
-        {setModelMutation.isError ? <Text style={styles.errorText}>{String(setModelMutation.error)}</Text> : null}
+        {setModelMutation.isPending ? (
+          <Text style={[styles.pendingText, { color: tokens.mutedForeground }]}>Switching…</Text>
+        ) : null}
+        {setModelMutation.isError ? (
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(setModelMutation.error)}</Text>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>Choose a model</Text>
-        {optionsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Choose a model</Text>
+        {optionsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {optionsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {optionsQuery.error instanceof Error ? optionsQuery.error.message : String(optionsQuery.error)}
           </Text>
         ) : null}
         {(optionsQuery.data?.providers ?? []).map((provider: ModelOptionProvider) => (
-          <View key={provider.slug} style={styles.providerBlock}>
-            <Text style={styles.providerName}>
+          <View
+            key={provider.slug}
+            style={[styles.providerBlock, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+          >
+            <Text style={[styles.providerName, { color: tokens.mutedForeground }]}>
               {provider.name}
               {provider.authenticated === false ? ' (not configured)' : ''}
             </Text>
@@ -93,8 +102,8 @@ export default function ModelsSettings() {
                     onPress={() => setModelMutation.mutate({ model, provider: provider.slug })}
                     style={[styles.modelRow, isCurrent ? styles.modelRowActive : null]}
                   >
-                    <Text style={styles.modelName}>{model}</Text>
-                    {isCurrent ? <Text style={styles.checkmark}>✓</Text> : null}
+                    <Text style={[styles.modelName, { color: tokens.foreground }]}>{model}</Text>
+                    {isCurrent ? <Text style={[styles.checkmark, { color: tokens.semantic.green }]}>✓</Text> : null}
                   </TouchableOpacity>
                 )
               }
@@ -102,21 +111,21 @@ export default function ModelsSettings() {
           </View>
         ))}
 
-        <Text style={styles.sectionTitle}>Toolsets</Text>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Toolsets</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Enable or disable a whole tool group. Per-tool provider setup is not on mobile yet.
         </Text>
-        {toolsetsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        {toolsetsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {toolsetsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {toolsetsQuery.error instanceof Error ? toolsetsQuery.error.message : String(toolsetsQuery.error)}
           </Text>
         ) : null}
         {(toolsetsQuery.data ?? []).map((toolset: ToolsetInfo) => (
-          <View key={toolset.name} style={styles.row}>
+          <View key={toolset.name} style={[styles.row, { borderBottomColor: tokens.border }]}>
             <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{toolset.label}</Text>
-              <Text numberOfLines={1} style={styles.rowSubtitle}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{toolset.label}</Text>
+              <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {toolset.description}
               </Text>
             </View>
@@ -133,29 +142,24 @@ export default function ModelsSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    color: '#3fb950',
     fontSize: 15,
     fontWeight: '700'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   currentModel: {
-    color: '#f2f2f5',
     fontSize: 16,
     fontWeight: '700'
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 12,
     marginTop: 4
   },
   modelName: {
-    color: '#f2f2f5',
     fontSize: 13
   },
   modelRow: {
@@ -168,13 +172,10 @@ const styles = StyleSheet.create({
     opacity: 1
   },
   pendingText: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 4
   },
   providerBlock: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
     marginBottom: 10,
@@ -182,7 +183,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   providerName: {
-    color: '#8a8a99',
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
@@ -190,14 +190,12 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 10
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
@@ -206,17 +204,14 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

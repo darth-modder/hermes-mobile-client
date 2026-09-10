@@ -3,7 +3,7 @@ import { Stack } from 'expo-router'
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $backendSkins } from '../../../src/theme/backend-skin'
 import { useTheme } from '../../../src/theme/provider'
 import {
@@ -65,7 +65,7 @@ export default function AppearanceSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Appearance' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Appearance' }} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>Appearance mode</Text>
         <View style={[styles.modeRow, { borderColor: tokens.border }]}>

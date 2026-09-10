@@ -3,7 +3,7 @@ import { Stack } from 'expo-router'
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import {
   $nativeNotifyPrefs,
   NATIVE_NOTIFICATION_KINDS,
@@ -12,6 +12,7 @@ import {
   setNativeNotifyKind
 } from '../../../src/push/native-notifications'
 import { $pushEnabled, setPushEnabled } from '../../../src/push/settings'
+import { useTheme } from '../../../src/theme/provider'
 
 const KIND_LABELS: Record<NativeNotificationKind, string> = {
   approval: 'Approval requests',
@@ -24,24 +25,27 @@ const KIND_LABELS: Record<NativeNotificationKind, string> = {
 }
 
 function Row({ children, label }: { children: React.ReactNode; label: string }) {
+  const tokens = useTheme()
+
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
+    <View style={[styles.row, { borderBottomColor: tokens.border }]}>
+      <Text style={[styles.rowLabel, { color: tokens.foreground }]}>{label}</Text>
       {children}
     </View>
   )
 }
 
 export default function NotificationsSettings() {
+  const tokens = useTheme()
   const pushEnabled = useStore($pushEnabled)
   const localPrefs = useStore($nativeNotifyPrefs)
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Notifications' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Notifications' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Push notifications</Text>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Push notifications</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Delivered by the server when this device is backgrounded — never while the app is open. Requires an
           EAS-published build and a server with the hermes-push plugin installed.
         </Text>
@@ -49,8 +53,10 @@ export default function NotificationsSettings() {
           <Switch onValueChange={setPushEnabled} value={pushEnabled} />
         </Row>
 
-        <Text style={styles.sectionTitle}>In-app notifications</Text>
-        <Text style={styles.sectionHint}>Shown locally while the app is running, for events on other sessions.</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>In-app notifications</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+          Shown locally while the app is running, for events on other sessions.
+        </Text>
         <Row label="Enable in-app notifications">
           <Switch onValueChange={setNativeNotifyEnabled} value={localPrefs.enabled} />
         </Row>
@@ -70,7 +76,6 @@ export default function NotificationsSettings() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
@@ -80,23 +85,19 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderBottomColor: '#2a2a33',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 12
   },
   rowLabel: {
-    color: '#f2f2f5',
     fontSize: 15
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 8
   },
   sectionTitle: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 20,

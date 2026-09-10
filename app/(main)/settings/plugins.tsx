@@ -4,7 +4,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { listInstalledPlugins } from '../../../src/api/plugins'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { useTheme } from '../../../src/theme/provider'
 
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
@@ -14,34 +15,39 @@ import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
  * plugin.
  */
 export default function PluginsSettings() {
+  const tokens = useTheme()
   const pluginsQuery = useQuery({ queryFn: () => listInstalledPlugins(), queryKey: ['installed-plugins'] })
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Plugins' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Plugins' }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionHint}>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
           Plugins installed on the backend. Per-plugin dashboards (a plugin's own web UI) aren&apos;t available on
           mobile yet — install and configure a plugin from the desktop app or CLI.
         </Text>
-        {pluginsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        {pluginsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {pluginsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
           </Text>
         ) : null}
         {(pluginsQuery.data ?? []).map(plugin => (
-          <View key={plugin.name} style={styles.row}>
-            <Text style={styles.rowTitle}>{plugin.label || plugin.name}</Text>
-            {plugin.description ? <Text style={styles.rowSubtitle}>{plugin.description}</Text> : null}
-            <Text style={styles.rowMeta}>
+          <View key={plugin.name} style={[styles.row, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{plugin.label || plugin.name}</Text>
+            {plugin.description ? (
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{plugin.description}</Text>
+            ) : null}
+            <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
               {plugin.name}
               {plugin.version ? ` · v${plugin.version}` : ''}
               {plugin.source ? ` · ${plugin.source}` : ''}
             </Text>
           </View>
         ))}
-        {pluginsQuery.data?.length === 0 ? <Text style={styles.sectionHint}>No plugins installed.</Text> : null}
+        {pluginsQuery.data?.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No plugins installed.</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   )
@@ -49,42 +55,34 @@ export default function PluginsSettings() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   errorText: {
-    color: '#e06c75',
     fontSize: 13,
     marginTop: 8
   },
   row: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
   },
   rowMeta: {
-    color: '#5a5a66',
     fontSize: 11,
     marginTop: 4
   },
   rowSubtitle: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 12
   }
