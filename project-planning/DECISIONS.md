@@ -370,3 +370,33 @@ did, independently. The rebuild gap was found the expensive way, by an APK missi
 other branch had added, and the rule now names the cost as the merger's. The `auth_required`
 question was the right one to raise at plan level, and the answer is in the server's gate rule
 rather than in any deployment we lack.
+
+## D14 — M13 added: design parity with the desktop and usability; M12 depends on it; parity documented (2026-09-10)
+
+**Decision.** Three parts.
+
+1. **New milestone M13, "Design parity + usability"**, file
+   `implementation-plan/M13-design-parity-and-usability.md`, depends on M09 and M10. M12 now
+   depends on M13 as well as M08 to M11: the release build ships the polished UI. M13 has no
+   `[physical]` criteria. The user's direction (2026-09-10): fonts, icons and colour scheme match
+   the desktop app; usability is in scope.
+2. **Parity is achieved by vendoring, not by imitation.** The desktop's skins live in four pure
+   TypeScript files (`apps/desktop/src/themes/{types,color,retint,presets}.ts`) and the backend
+   already pushes the active skin to every surface (`gateway.ready`, `skin.changed`, `config.get
+   skin`). M13 adds those files to the sync allow-list and reads the same skin the desktop shows,
+   so the two surfaces cannot drift. Icons come from the same Tabler set through an alias module
+   generated from the desktop's, plus codicons for tool and file icons. Type follows what the
+   desktop does: system sans for text, and the mono the desktop ships (JetBrains Mono, OFL) for
+   code, since Android has none of the desktop's system mono faces. The Collapse brand face is
+   for a wordmark only. Hard-coded colours become an ESLint failure outside `src/theme/**`.
+3. **Parity assessment recorded** in `docs/PARITY.md`: at parity, absent by design, thinner,
+   mobile-only. The thinner list is M13's usability backlog (slash-command routing, haptics) plus
+   items already owned elsewhere (register rows, M06 Deviation #7).
+
+**Reasoning.** The app was built milestone by milestone on placeholder styling with 452
+hard-coded colours and no icon set; that was the right order (behaviour first), and the cost of
+it is one focused pass now, before release, rather than a rewrite after. Reading the desktop's
+theme model rather than screenshots means "matches the desktop" is checkable: the exit criteria
+sample pixels against values produced by the vendored presets. Usability belongs in the same
+milestone because the fix for most of it (touch targets, labels, states, haptics) touches the
+same components the restyle does.

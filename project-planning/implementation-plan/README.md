@@ -41,10 +41,13 @@ deferred by register entry under D9's standing rule. Rule changes are logged in
 | [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | done |
 | [M10](M10-management-screens.md) | Management screens | Projects, cron, webhooks, artifacts, channels | M09 | done |
 | [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | in-progress |
-| [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11 | todo |
+| [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11, M13 | todo |
+| [M13](M13-design-parity-and-usability.md) | Design parity + usability | Same skins, icons and type roles as the desktop; comfortable one-handed | M09, M10 | todo |
 
 Critical path: M00 → M01/M02 → M03 → M04 → M06 → M07 → M11 → M12. M05 runs in parallel with
-M03/M04; M08, M09, M10 can run in parallel after M06.
+M03/M04; M08, M09, M10 can run in parallel after M06. M13 (added by D14) follows M09 and M10 and
+gates M12 alongside M08–M11. Functional parity with the desktop is assessed in
+[../../docs/PARITY.md](../../docs/PARITY.md).
 
 ## Deferred criteria register
 
