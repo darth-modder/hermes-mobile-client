@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
+import { useTheme } from '../../theme/provider'
+
 export interface ReasoningDisclosureProps {
   text: string
 }
@@ -8,6 +10,7 @@ export interface ReasoningDisclosureProps {
 /** Collapsed by default — reasoning is commentary, not the reply; matches
  *  the desktop's default-collapsed thinking block. */
 export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
+  const tokens = useTheme()
   const [expanded, setExpanded] = useState(false)
 
   if (!text.trim()) {
@@ -17,16 +20,17 @@ export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={() => setExpanded(current => !current)} style={styles.header}>
-        <Text style={styles.headerText}>{expanded ? '▾ Reasoning' : '▸ Reasoning'}</Text>
+        <Text style={[styles.headerText, { color: tokens.scaffoldText }]}>
+          {expanded ? '▾ Reasoning' : '▸ Reasoning'}
+        </Text>
       </TouchableOpacity>
-      {expanded ? <Text style={styles.body}>{text}</Text> : null}
+      {expanded ? <Text style={[styles.body, { color: tokens.mutedForeground }]}>{text}</Text> : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   body: {
-    color: '#8a8a99',
     fontSize: 13,
     fontStyle: 'italic',
     marginTop: 4,
@@ -40,7 +44,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2
   },
   headerText: {
-    color: '#6a737d',
     fontSize: 12,
     fontWeight: '600'
   }

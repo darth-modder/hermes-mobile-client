@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondSecret } from '../../gateway/session-connection'
 import type { SecretRequest } from '../../gateway/session-stream-reducer'
+import { useTheme } from '../../theme/provider'
 
 export interface SecretCardProps {
   storedSessionId: string
@@ -20,6 +21,7 @@ export interface SecretCardProps {
 export function SecretCard({ storedSessionId, request }: SecretCardProps) {
   usePreventScreenCapture('secret-card')
 
+  const tokens = useTheme()
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
 
@@ -35,9 +37,9 @@ export function SecretCard({ storedSessionId, request }: SecretCardProps) {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{request.envVar || 'Secret requested'}</Text>
-      {request.prompt ? <Text style={styles.prompt}>{request.prompt}</Text> : null}
+    <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{request.envVar || 'Secret requested'}</Text>
+      {request.prompt ? <Text style={[styles.prompt, { color: tokens.mutedForeground }]}>{request.prompt}</Text> : null}
       <View style={styles.row}>
         <TextInput
           autoCapitalize="none"
@@ -46,13 +48,24 @@ export function SecretCard({ storedSessionId, request }: SecretCardProps) {
           onChangeText={setValue}
           onSubmitEditing={() => void submit()}
           placeholder="Value"
-          placeholderTextColor="#5a5a66"
+          placeholderTextColor={tokens.textTertiary}
           secureTextEntry
-          style={styles.input}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={value}
         />
-        <TouchableOpacity disabled={sending || !value} onPress={() => void submit()} style={styles.button}>
-          {sending ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.buttonText}>Send</Text>}
+        <TouchableOpacity
+          disabled={sending || !value}
+          onPress={() => void submit()}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          {sending ? (
+            <ActivityIndicator color={tokens.primaryForeground} size="small" />
+          ) : (
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Send</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -61,36 +74,28 @@ export function SecretCard({ storedSessionId, request }: SecretCardProps) {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#14181c',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
     marginVertical: 6,
     padding: 12
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 6,
     borderWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   prompt: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 8
   },
@@ -100,7 +105,6 @@ const styles = StyleSheet.create({
     gap: 8
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 4

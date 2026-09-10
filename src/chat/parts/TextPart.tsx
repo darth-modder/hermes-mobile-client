@@ -2,6 +2,8 @@ import { memo, useMemo } from 'react'
 import { StyleSheet, View } from 'react-native'
 import Markdown, { type ASTNode, type RenderRules } from 'react-native-markdown-display'
 
+import { type MobileTokens, useTheme } from '../../theme/provider'
+
 import { CodeBlock } from './CodeBlock'
 import { splitMarkdownBlocks } from './markdown-blocks'
 
@@ -25,36 +27,56 @@ const renderRules: RenderRules = {
 
 const markdownStyles = StyleSheet.create({
   blockquote: {
-    backgroundColor: '#17171d',
-    borderLeftColor: '#2a2a33',
     borderLeftWidth: 3,
     paddingHorizontal: 10,
     paddingVertical: 4
   },
   body: {
-    color: '#f2f2f5',
     fontSize: 15
   },
   code_inline: {
-    backgroundColor: '#161b22',
     borderRadius: 4,
-    color: '#e5c07b',
     fontFamily: 'monospace'
-  },
-  link: {
-    color: '#58a6ff'
   }
 })
 
+function buildMarkdownStyles(tokens: MobileTokens) {
+  return {
+    blockquote: {
+      ...markdownStyles.blockquote,
+      backgroundColor: tokens.muted,
+      borderLeftColor: tokens.border
+    },
+    body: {
+      ...markdownStyles.body,
+      color: tokens.foreground
+    },
+    code_inline: {
+      ...markdownStyles.code_inline,
+      backgroundColor: tokens.inlineCodeBackground,
+      color: tokens.inlineCodeForeground
+    },
+    link: {
+      color: tokens.primary
+    }
+  }
+}
+
 const MarkdownBlock = memo(
-  function MarkdownBlock({ text }: { text: string }) {
+  function MarkdownBlock({
+    text,
+    themedStyles
+  }: {
+    text: string
+    themedStyles: ReturnType<typeof buildMarkdownStyles>
+  }) {
     return (
-      <Markdown rules={renderRules} style={markdownStyles}>
+      <Markdown rules={renderRules} style={themedStyles}>
         {text}
       </Markdown>
     )
   },
-  (prev, next) => prev.text === next.text
+  (prev, next) => prev.text === next.text && prev.themedStyles === next.themedStyles
 )
 
 export interface TextPartProps {
@@ -69,12 +91,14 @@ export interface TextPartProps {
  * tail re-parses").
  */
 export function TextPart({ text }: TextPartProps) {
+  const tokens = useTheme()
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
+  const themedStyles = useMemo(() => buildMarkdownStyles(tokens), [tokens])
 
   return (
     <View>
       {blocks.map((block, index) => (
-        <MarkdownBlock key={index} text={block} />
+        <MarkdownBlock key={index} text={block} themedStyles={themedStyles} />
       ))}
     </View>
   )

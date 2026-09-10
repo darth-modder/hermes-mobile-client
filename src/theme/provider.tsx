@@ -27,6 +27,7 @@ import { $backendSkins, $pendingSkinApply } from './backend-skin'
 import { type MobileTokens, resolveMobileTheme, type ThemeMode } from './resolve'
 import { $modeOverride, $skinName, resolveEffectiveMode, resolveSkinTheme, setSkinName } from './skin-selection'
 
+export type { MobileTokens, ThemeMode } from './resolve'
 export type { ModeOverride } from './skin-selection'
 export { listAllSkins, setModeOverride, setSkinName } from './skin-selection'
 

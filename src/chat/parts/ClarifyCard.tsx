@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondClarify } from '../../gateway/session-connection'
 import type { ClarifyQuestion, ClarifyRequest } from '../../gateway/session-stream-reducer'
+import { useTheme } from '../../theme/provider'
 
 interface OneClarifyQuestionProps {
   storedSessionId: string
@@ -12,6 +13,7 @@ interface OneClarifyQuestionProps {
 }
 
 function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer }: OneClarifyQuestionProps) {
+  const tokens = useTheme()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const locked = lockedAnswer !== undefined
@@ -28,9 +30,9 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
 
   return (
     <View style={styles.question}>
-      <Text style={styles.questionText}>{question.question}</Text>
+      <Text style={[styles.questionText, { color: tokens.foreground }]}>{question.question}</Text>
       {locked ? (
-        <Text style={styles.lockedAnswer}>✓ {lockedAnswer}</Text>
+        <Text style={[styles.lockedAnswer, { color: tokens.semantic.green }]}>✓ {lockedAnswer}</Text>
       ) : question.choices?.length ? (
         <View style={styles.row}>
           {question.choices.map(choice => (
@@ -38,9 +40,9 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
               disabled={sending}
               key={choice}
               onPress={() => void respond(choice)}
-              style={styles.choiceButton}
+              style={[styles.choiceButton, { backgroundColor: tokens.primary }]}
             >
-              <Text style={styles.choiceText}>{choice}</Text>
+              <Text style={[styles.choiceText, { color: tokens.primaryForeground }]}>{choice}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -51,16 +53,23 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
             onChangeText={setText}
             onSubmitEditing={() => text.trim() && void respond(text.trim())}
             placeholder="Type an answer…"
-            placeholderTextColor="#5a5a66"
-            style={styles.input}
+            placeholderTextColor={tokens.mutedForeground}
+            style={[
+              styles.input,
+              { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+            ]}
             value={text}
           />
           <TouchableOpacity
             disabled={sending || !text.trim()}
             onPress={() => void respond(text.trim())}
-            style={styles.sendButton}
+            style={[styles.sendButton, { backgroundColor: tokens.primary }]}
           >
-            {sending ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.buttonText}>Send</Text>}
+            {sending ? (
+              <ActivityIndicator color={tokens.primaryForeground} size="small" />
+            ) : (
+              <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Send</Text>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -76,11 +85,12 @@ export interface ClarifyCardProps {
 /** A clarify question (or batch of them) blocking the agent thread until
  *  `clarify.respond` answers every one. */
 export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
+  const tokens = useTheme()
   const isBatch = request.questions.length > 0
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{isBatch ? 'A few questions' : 'Question'}</Text>
+    <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{isBatch ? 'A few questions' : 'Question'}</Text>
       {isBatch ? (
         request.questions.map(question => (
           <OneClarifyQuestion
@@ -104,47 +114,37 @@ export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
 
 const styles = StyleSheet.create({
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '600'
   },
   choiceButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   choiceText: {
-    color: '#f2f2f5',
     fontSize: 13
   },
   container: {
-    backgroundColor: '#14181c',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
     marginVertical: 6,
     padding: 12
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 6,
     borderWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   lockedAnswer: {
-    color: '#3dd68c',
     fontSize: 13
   },
   question: {
     marginVertical: 4
   },
   questionText: {
-    color: '#f2f2f5',
     fontSize: 14,
     marginBottom: 6
   },
@@ -155,13 +155,11 @@ const styles = StyleSheet.create({
     gap: 8
   },
   sendButton: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 6

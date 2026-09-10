@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
+import { useTheme } from '../../theme/provider'
+
 import { CodeBlock } from './CodeBlock'
 
 export interface ToolCallPart {
@@ -31,6 +33,7 @@ function stringField(record: unknown, key: string): string | undefined {
  * stamped alongside a result/completedAt/isError, never on its own).
  */
 export function ToolCallCard({ part }: { part: ToolCallPart }) {
+  const tokens = useTheme()
   const [expanded, setExpanded] = useState(false)
   const running = part.completedAt === undefined
   const preview = stringField(part.args, 'preview') ?? stringField(part.args, 'context')
@@ -38,19 +41,33 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
   const inlineDiff = stringField(part.result, 'inline_diff')
 
   return (
-    <View style={[styles.container, part.isError ? styles.containerError : null]}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: tokens.widgetSurface,
+          borderColor: part.isError ? tokens.destructive : tokens.border
+        }
+      ]}
+    >
       <TouchableOpacity onPress={() => setExpanded(current => !current)} style={styles.header}>
-        {running ? <ActivityIndicator color="#8a8a99" size="small" style={styles.spinner} /> : null}
-        <Text style={styles.name}>{part.toolName}</Text>
-        {part.isError ? <Text style={styles.errorBadge}>error</Text> : null}
-        <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
+        {running ? <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.spinner} /> : null}
+        <Text style={[styles.name, { color: tokens.foreground }]}>{part.toolName}</Text>
+        {part.isError ? (
+          <Text
+            style={[styles.errorBadge, { backgroundColor: tokens.destructive, color: tokens.destructiveForeground }]}
+          >
+            error
+          </Text>
+        ) : null}
+        <Text style={[styles.chevron, { color: tokens.textTertiary }]}>{expanded ? '▾' : '▸'}</Text>
       </TouchableOpacity>
       {preview ? (
-        <Text numberOfLines={expanded ? undefined : 2} style={styles.preview}>
+        <Text numberOfLines={expanded ? undefined : 2} style={[styles.preview, { color: tokens.mutedForeground }]}>
           {preview}
         </Text>
       ) : null}
-      {summary ? <Text style={styles.summary}>{summary}</Text> : null}
+      {summary ? <Text style={[styles.summary, { color: tokens.mutedForeground }]}>{summary}</Text> : null}
       {expanded ? (
         <View style={styles.body}>
           {part.args ? <CodeBlock code={JSON.stringify(part.args, null, 2)} language="json" /> : null}
@@ -66,24 +83,16 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   chevron: {
-    color: '#6a737d',
     fontSize: 12
   },
   container: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
     borderRadius: 8,
     borderWidth: 1,
     marginVertical: 4,
     padding: 10
   },
-  containerError: {
-    borderColor: '#e06c75'
-  },
   errorBadge: {
-    backgroundColor: '#e06c75',
     borderRadius: 4,
-    color: '#0b0b0f',
     fontSize: 11,
     fontWeight: '700',
     paddingHorizontal: 6,
@@ -95,14 +104,12 @@ const styles = StyleSheet.create({
     gap: 8
   },
   name: {
-    color: '#f2f2f5',
     flex: 1,
     fontFamily: 'monospace',
     fontSize: 13,
     fontWeight: '600'
   },
   preview: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 4
   },
@@ -110,7 +117,6 @@ const styles = StyleSheet.create({
     marginRight: 2
   },
   summary: {
-    color: '#8a8a99',
     fontSize: 12,
     marginTop: 4
   }

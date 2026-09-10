@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native'
 
+import { useTheme } from '../../theme/provider'
 import type { UsageStats } from '../../upstream/types/hermes'
 
 function formatTokens(n: number): string {
@@ -20,6 +21,8 @@ export interface UsageChipProps {
 
 /** Token usage + context-window pressure for the session (`session.usage`). */
 export function UsageChip({ usage }: UsageChipProps) {
+  const tokens = useTheme()
+
   if (!usage || usage.total <= 0) {
     return null
   }
@@ -28,12 +31,12 @@ export function UsageChip({ usage }: UsageChipProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>{formatTokens(usage.total)} tok</Text>
+      <Text style={[styles.text, { color: tokens.mutedForeground }]}>{formatTokens(usage.total)} tok</Text>
       {typeof contextPercent === 'number' ? (
-        <Text style={styles.text}> · {Math.round(contextPercent)}% ctx</Text>
+        <Text style={[styles.text, { color: tokens.mutedForeground }]}> · {Math.round(contextPercent)}% ctx</Text>
       ) : null}
       {typeof usage.cost_usd === 'number' && usage.cost_usd > 0 ? (
-        <Text style={styles.text}> · ${usage.cost_usd.toFixed(3)}</Text>
+        <Text style={[styles.text, { color: tokens.mutedForeground }]}> · ${usage.cost_usd.toFixed(3)}</Text>
       ) : null}
     </View>
   )
@@ -45,7 +48,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   text: {
-    color: '#6a737d',
     fontSize: 11
   }
 })
