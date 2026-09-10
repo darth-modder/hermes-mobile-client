@@ -8,6 +8,7 @@ import type { MobileConnection } from '../../src/connections/types'
 import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
 import { HttpError } from '../../src/net/http'
+import { useTheme } from '../../src/theme/provider'
 
 type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth'; provider?: string }
 
@@ -23,6 +24,7 @@ function newConnectionId(): string {
  */
 export default function ConnectScreen() {
   const router = useRouter()
+  const tokens = useTheme()
   const [label, setLabel] = useState('')
   const [url, setUrl] = useState('http://127.0.0.1:9119')
   const [token, setToken] = useState('')
@@ -183,51 +185,86 @@ export default function ConnectScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Add a connection</Text>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: tokens.background }]}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>Add a connection</Text>
 
-      <Text style={styles.label}>Label (optional)</Text>
+      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Label (optional)</Text>
       <TextInput
         onChangeText={setLabel}
         placeholder="My server"
-        placeholderTextColor="#5a5a66"
-        style={styles.input}
+        placeholderTextColor={tokens.mutedForeground}
+        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
         value={label}
       />
 
-      <Text style={styles.label}>Backend URL</Text>
-      <TextInput autoCapitalize="none" onChangeText={setUrl} style={styles.input} value={url} />
+      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Backend URL</Text>
+      <TextInput
+        autoCapitalize="none"
+        onChangeText={setUrl}
+        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
+        value={url}
+      />
 
       <View style={styles.row}>
-        <TouchableOpacity disabled={detecting} onPress={detect} style={styles.button}>
-          <Text style={styles.buttonText}>{detecting ? 'Checking…' : 'Detect auth mode'}</Text>
+        <TouchableOpacity
+          disabled={detecting}
+          onPress={detect}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+            {detecting ? 'Checking…' : 'Detect auth mode'}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/connect/scan')} style={styles.button}>
-          <Text style={styles.buttonText}>Scan QR</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/connect/scan')}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Scan QR</Text>
         </TouchableOpacity>
       </View>
 
-      {status ? <Text style={styles.status}>{status}</Text> : null}
+      {status ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{status}</Text> : null}
 
       {detected?.mode === 'token' ? (
         <>
-          <Text style={styles.label}>Session token</Text>
-          <TextInput autoCapitalize="none" onChangeText={setToken} secureTextEntry style={styles.input} value={token} />
-          <TouchableOpacity disabled={connecting || !token} onPress={connectToken} style={styles.button}>
-            <Text style={styles.buttonText}>{connecting ? 'Connecting…' : 'Connect'}</Text>
+          <Text style={[styles.label, { color: tokens.mutedForeground }]}>Session token</Text>
+          <TextInput
+            autoCapitalize="none"
+            onChangeText={setToken}
+            secureTextEntry
+            style={[
+              styles.input,
+              { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+            ]}
+            value={token}
+          />
+          <TouchableOpacity
+            disabled={connecting || !token}
+            onPress={connectToken}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+              {connecting ? 'Connecting…' : 'Connect'}
+            </Text>
           </TouchableOpacity>
         </>
       ) : null}
 
       {detected?.mode === 'password' ? (
-        <TouchableOpacity onPress={goToPasswordLogin} style={styles.button}>
-          <Text style={styles.buttonText}>Sign in</Text>
+        <TouchableOpacity onPress={goToPasswordLogin} style={[styles.button, { backgroundColor: tokens.primary }]}>
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Sign in</Text>
         </TouchableOpacity>
       ) : null}
 
       {detected?.mode === 'oauth' ? (
-        <TouchableOpacity disabled={connecting} onPress={connectOAuth} style={styles.button}>
-          <Text style={styles.buttonText}>{connecting ? 'Signing in…' : 'Sign in with Portal'}</Text>
+        <TouchableOpacity
+          disabled={connecting}
+          onPress={connectOAuth}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+            {connecting ? 'Signing in…' : 'Sign in with Portal'}
+          </Text>
         </TouchableOpacity>
       ) : null}
     </ScrollView>
@@ -236,7 +273,6 @@ export default function ConnectScreen() {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     marginBottom: 12,
     marginRight: 8,
@@ -244,28 +280,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flexGrow: 1,
     padding: 16
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 6,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   label: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 4,
     marginTop: 4,
@@ -276,13 +306,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   status: {
-    color: '#3dd68c',
     fontFamily: 'monospace',
     fontSize: 12,
     marginBottom: 12
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 16

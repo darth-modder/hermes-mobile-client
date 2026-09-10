@@ -7,12 +7,14 @@ import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
 import type { MobileConnection } from '../../src/connections/types'
 import { probeStatus } from '../../src/net/auth/probe'
+import { useTheme } from '../../src/theme/provider'
 
 /** Scans a `hermes-android://connect?url=...&token=...` QR payload (the
  *  dashboard-generated connect code) and connects in token mode directly —
  *  the same shape app/connect/index.tsx's manual token flow produces. */
 export default function ScanScreen() {
   const router = useRouter()
+  const tokens = useTheme()
   const [permission, requestPermission] = useCameraPermissions()
   const [status, setStatus] = useState('Point the camera at a connection QR code.')
   const [handled, setHandled] = useState(false)
@@ -81,42 +83,42 @@ export default function ScanScreen() {
   }
 
   if (!permission) {
-    return <View style={styles.container} />
+    return <View style={[styles.container, { backgroundColor: tokens.background }]} />
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.status}>Camera access is needed to scan a connect code.</Text>
-        <TouchableOpacity onPress={requestPermission} style={styles.button}>
-          <Text style={styles.buttonText}>Grant camera access</Text>
+      <View style={[styles.container, { backgroundColor: tokens.background }]}>
+        <Text style={[styles.status, { color: tokens.foreground }]}>
+          Camera access is needed to scan a connect code.
+        </Text>
+        <TouchableOpacity onPress={requestPermission} style={[styles.button, { backgroundColor: tokens.primary }]}>
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Grant camera access</Text>
         </TouchableOpacity>
       </View>
     )
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.background }]}>
       <CameraView
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={handled ? undefined : onScanned}
         style={styles.camera}
       />
-      <Text style={styles.status}>{status}</Text>
+      <Text style={[styles.status, { color: tokens.foreground }]}>{status}</Text>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     marginTop: 12,
     paddingHorizontal: 14,
     paddingVertical: 10
   },
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -124,13 +126,11 @@ const styles = StyleSheet.create({
     flex: 1
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1,
     justifyContent: 'center',
     padding: 16
   },
   status: {
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     fontSize: 13,
     padding: 16,

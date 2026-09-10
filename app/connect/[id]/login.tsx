@@ -7,6 +7,7 @@ import type { MobileConnection } from '../../../src/connections/types'
 import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gateway/dial'
 import { mintWsTicket, passwordLogin, PasswordLoginError } from '../../../src/net/auth/password-login'
 import { probeStatus } from '../../../src/net/auth/probe'
+import { useTheme } from '../../../src/theme/provider'
 
 /**
  * Password sign-in for a gated backend (M04). `id`/`baseUrl`/`label`/
@@ -17,6 +18,7 @@ import { probeStatus } from '../../../src/net/auth/probe'
  */
 export default function PasswordLoginScreen() {
   const router = useRouter()
+  const tokens = useTheme()
 
   const { id, baseUrl, label, provider } = useLocalSearchParams<{
     id: string
@@ -112,43 +114,57 @@ export default function PasswordLoginScreen() {
 
   if (connected) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Connected</Text>
-        <Text style={styles.status}>{label || baseUrl}</Text>
-        <TouchableOpacity onPress={testWsTicketDial} style={styles.button}>
-          <Text style={styles.buttonText}>Test WS ticket dial</Text>
+      <View style={[styles.container, { backgroundColor: tokens.background }]}>
+        <Text style={[styles.title, { color: tokens.foreground }]}>Connected</Text>
+        <Text style={[styles.status, { color: tokens.semantic.green }]}>{label || baseUrl}</Text>
+        <TouchableOpacity onPress={testWsTicketDial} style={[styles.button, { backgroundColor: tokens.primary }]}>
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Test WS ticket dial</Text>
         </TouchableOpacity>
-        {wsResult ? <Text style={styles.status}>{wsResult}</Text> : null}
-        <TouchableOpacity onPress={() => router.replace('/')} style={styles.button}>
-          <Text style={styles.buttonText}>Done</Text>
+        {wsResult ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{wsResult}</Text> : null}
+        <TouchableOpacity
+          onPress={() => router.replace('/')}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Done</Text>
         </TouchableOpacity>
       </View>
     )
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Sign in</Text>
-      <Text style={styles.subtitle}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: tokens.background }]}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>Sign in</Text>
+      <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
         {label || baseUrl} · {provider}
       </Text>
 
-      <Text style={styles.label}>Username</Text>
-      <TextInput autoCapitalize="none" onChangeText={setUsername} style={styles.input} value={username} />
+      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Username</Text>
+      <TextInput
+        autoCapitalize="none"
+        onChangeText={setUsername}
+        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
+        value={username}
+      />
 
-      <Text style={styles.label}>Password</Text>
+      <Text style={[styles.label, { color: tokens.mutedForeground }]}>Password</Text>
       <TextInput
         autoCapitalize="none"
         onChangeText={setPassword}
         secureTextEntry
-        style={styles.input}
+        style={[styles.input, { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }]}
         value={password}
       />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: tokens.destructive }]}>{error}</Text> : null}
 
-      <TouchableOpacity disabled={submitting || !username || !password} onPress={submit} style={styles.button}>
-        <Text style={styles.buttonText}>{submitting ? 'Signing in…' : 'Sign in'}</Text>
+      <TouchableOpacity
+        disabled={submitting || !username || !password}
+        onPress={submit}
+        style={[styles.button, { backgroundColor: tokens.primary }]}
+      >
+        <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   )
@@ -156,7 +172,6 @@ export default function PasswordLoginScreen() {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
     borderRadius: 6,
     marginBottom: 12,
     marginRight: 8,
@@ -164,52 +179,42 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   buttonText: {
-    color: '#f2f2f5',
     fontSize: 14,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flexGrow: 1,
     padding: 16
   },
   error: {
-    color: '#ff6b6b',
     fontFamily: 'monospace',
     fontSize: 12,
     marginBottom: 12
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
     borderRadius: 6,
     borderWidth: 1,
-    color: '#f2f2f5',
     fontFamily: 'monospace',
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   label: {
-    color: '#8a8a99',
     fontSize: 12,
     marginBottom: 4,
     marginTop: 4,
     textTransform: 'uppercase'
   },
   status: {
-    color: '#3dd68c',
     fontFamily: 'monospace',
     fontSize: 12,
     marginBottom: 12
   },
   subtitle: {
-    color: '#8a8a99',
     fontSize: 13,
     marginBottom: 16
   },
   title: {
-    color: '#f2f2f5',
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 8
