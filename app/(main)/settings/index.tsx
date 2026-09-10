@@ -22,6 +22,7 @@ const ROWS: SettingsRow[] = [
   { route: '/(main)/settings/providers', subtitle: 'API keys, custom endpoints', title: 'Providers' },
   { route: '/(main)/settings/models', subtitle: 'Main model, auxiliary tasks, toolsets', title: 'Models' },
   { route: '/(main)/settings/mcp', subtitle: 'Add, test, enable MCP servers', title: 'MCP' },
+  { route: '/(main)/settings/appearance', subtitle: 'Skin and light/dark mode', title: 'Appearance' },
   { route: '/(main)/settings/skills', subtitle: 'Enable, install, uninstall', title: 'Skills' },
   { route: '/(main)/settings/plugins', subtitle: 'Installed plugin dashboards', title: 'Plugins' },
   { route: '/(main)/settings/notifications', subtitle: 'Push and in-app alerts', title: 'Notifications' },

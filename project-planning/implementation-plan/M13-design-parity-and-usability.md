@@ -56,7 +56,7 @@ Read these before designing anything; they are the source of truth, not a screen
       `resolveMobileTheme(theme: DesktopTheme, mode: 'light' | 'dark'): MobileTokens`, with unit
       tests that pin the output for the `nous` skin in both modes against the worked values in
       Appendix A.6 (computed from the same formulas; no desktop run needed).
-- [ ] `src/theme/provider.tsx` + `useTheme()`: skin from the backend (`gateway.ready`,
+- [x] `src/theme/provider.tsx` + `useTheme()`: skin from the backend (`gateway.ready`,
       `skin.changed`, `config.get skin`, converted with the vendored `skin.ts` the way
       `backend-sync.ts` does), default `nous`; mode from `useColorScheme()` with a persisted
       override (system / light / dark) in Settings; tokens exposed as a typed object. Status bar
@@ -334,6 +334,17 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
    the vendor allow-list (D14 vendors only `types`/`color`/`retint`/`presets`),
    `synthLightColors` is ported inline into `src/theme/resolve.ts`, built from the
    vendored `mix`/`readableOn` in `color.ts` exactly as `context.tsx` uses them.
+3. **`config.get skin` is not wired into the live skin-sync path.** Checked at
+   `tui_gateway/methods_config.py`'s `_CONFIG_GETTERS['skin']`: it returns
+   `{"value": <configured skin NAME string>}` from `display.skin`, not the full
+   resolved `HermesSkin` object `gateway.ready`/`skin.changed` carry (`resolve_skin()`).
+   The desktop's own reactive path (`apps/desktop/src/app/session/hooks/use-message-stream/
+   gateway-event/lifecycle.ts`) never calls `config.get skin` either — only
+   `gateway.ready`'s embedded `skin` field (seed) and `skin.changed`'s payload (apply)
+   feed `ingestBackendSkin`. `src/gateway/session-connection.ts` wires the same two
+   events the same way (seed on `gateway.ready`, apply on `skin.changed`); `config.get
+   skin` is not called anywhere, matching the reference implementation rather than the
+   task text's "gateway.ready, skin.changed, and config.get skin" list literally.
 
 ## Verification log
 

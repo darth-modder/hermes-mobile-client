@@ -49,10 +49,18 @@ import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
 import { requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
+import { ingestBackendSkin } from '../theme/backend-skin'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
 import { reconnectBackoffDelayMs } from '../upstream/lib/reconnect-backoff'
 import { type ConnectionState, JsonRpcGatewayError } from '../upstream/shared/json-rpc-gateway'
-import type { RpcEvent, SessionCreateResponse, SessionMessage, SessionResumeResponse } from '../upstream/types/hermes'
+import type { HermesSkin } from '../upstream/shared/skin'
+import type {
+  GatewayReadyPayload,
+  RpcEvent,
+  SessionCreateResponse,
+  SessionMessage,
+  SessionResumeResponse
+} from '../upstream/types/hermes'
 
 import { DeltaFlushScheduler } from './delta-flush-scheduler'
 import { buildGatewayWsUrl, createGatewaySocketFactory, type DialAuth, type DialTarget } from './dial'
@@ -415,10 +423,25 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   const offPlatforms = instance.on('platforms.changed', () => notifyPlatformsChanged())
   const offPairing = instance.on('pairing.changed', () => notifyPairingChanged())
 
+  // M13: skin sync (D14). `gateway.ready`'s embedded skin seeds the registry
+  // without repainting (a fresh connect must never override a persisted user
+  // pick); `skin.changed` is the live broadcast that does repaint. Mirrors
+  // apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/
+  // lifecycle.ts's two `ingestBackendSkin` calls.
+  const offReady = instance.on<GatewayReadyPayload>('gateway.ready', event => {
+    ingestBackendSkin(event.payload?.skin as HermesSkin | undefined, { apply: false })
+  })
+
+  const offSkinChanged = instance.on<HermesSkin>('skin.changed', event => {
+    ingestBackendSkin(event.payload, { apply: true })
+  })
+
   disposeLiveSyncEvents = () => {
     offCron()
     offPlatforms()
     offPairing()
+    offReady()
+    offSkinChanged()
   }
 
   instance.onState(state => {
