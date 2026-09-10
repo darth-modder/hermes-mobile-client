@@ -61,9 +61,12 @@ Read these before designing anything; they are the source of truth, not a screen
       `backend-sync.ts` does), default `nous`; mode from `useColorScheme()` with a persisted
       override (system / light / dark) in Settings; tokens exposed as a typed object. Status bar
       and navigation bar colours follow the tokens (`expo-status-bar`, `expo-system-ui`).
-- [ ] Replace every hard-coded colour with a token. Add an ESLint rule that fails on a hex
-      literal in any `StyleSheet.create` or inline style outside `src/theme/**` and
-      `src/upstream/**`, so this cannot drift back.
+- [ ] Replace every hard-coded colour with a token (Step 5, the sweep — in progress). Ratchets
+      to `'error'` in `check` at the end of that sweep.
+- [x] Add an ESLint rule that fails on a `#rrggbb`/`#rgb` string literal outside `src/theme/**`
+      and `src/upstream/**` (`scripts/eslint-rules/no-hardcoded-hex-color.mjs`), so this cannot
+      drift back. `'warn'` for now (458 pre-existing violations across 42 files); confirmed it
+      fires as `'error'` and that zero violations are inside the exempted directories.
 
 ### B. Icons
 

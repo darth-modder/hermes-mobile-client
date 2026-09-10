@@ -5,6 +5,8 @@ import hooksPlugin from 'eslint-plugin-react-hooks'
 import unusedImports from 'eslint-plugin-unused-imports'
 import globals from 'globals'
 
+import { noHardcodedHexColor } from './scripts/eslint-rules/no-hardcoded-hex-color.mjs'
+
 export default [
   {
     ignores: ['**/node_modules/**', '**/dist/**', '**/package-lock.json', 'android/**', 'ios/**', '.expo/**']
@@ -103,6 +105,19 @@ export default [
         },
         { message: 'This module is vendored/gateway code; it must not touch browser globals.', name: 'navigator' }
       ]
+    }
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    ignores: ['src/theme/**', 'src/upstream/**'],
+    plugins: { local: { rules: { 'no-hardcoded-hex-color': noHardcodedHexColor } } },
+    rules: {
+      // M13 (D14) Step 4/5: 452 pre-existing hex literals across 39 files
+      // (Appendix B) are swept one group at a time, one commit per group.
+      // 'warn' keeps `npm run check` (which runs plain `eslint .`, no
+      // --max-warnings) green in the meantime — flip to 'error' once the
+      // sweep's last group lands, per the M13 task list.
+      'local/no-hardcoded-hex-color': 'warn'
     }
   }
 ]
