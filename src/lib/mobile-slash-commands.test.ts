@@ -33,13 +33,51 @@ describe('mobileCommandSurface', () => {
     expect(mobileCommandSurface('/deny')).toEqual({ kind: 'unavailable', reason: 'messaging' })
   })
 
-  it('marks a desktop-picker command unavailable as no-mobile-ui', () => {
-    expect(mobileCommandSurface('/model')).toEqual({ kind: 'unavailable', reason: 'no-mobile-ui' })
-    expect(mobileCommandSurface('/resume')).toEqual({ kind: 'unavailable', reason: 'no-mobile-ui' })
+  it('marks a machine-bound command unavailable (AGENTS.md: pet overlay, embedded browser, the server-side mic)', () => {
+    expect(mobileCommandSurface('/pet')).toEqual({ kind: 'unavailable', reason: 'machine-bound' })
+    expect(mobileCommandSurface('/browser')).toEqual({ kind: 'unavailable', reason: 'machine-bound' })
+    expect(mobileCommandSurface('/wake')).toEqual({ kind: 'unavailable', reason: 'machine-bound' })
+  })
+
+  it('marks a command with no mobile screen to route to unavailable as no-mobile-ui', () => {
+    expect(mobileCommandSurface('/branch')).toEqual({ kind: 'unavailable', reason: 'no-mobile-ui' })
+    expect(mobileCommandSurface('/memory-graph')).toEqual({ kind: 'unavailable', reason: 'no-mobile-ui' })
   })
 
   it('falls through to exec for a command it does not special-case (skills, quick commands, plugins)', () => {
     expect(mobileCommandSurface('/some-skill')).toEqual({ kind: 'exec' })
+  })
+
+  // M13 Step 8 (task D): one test per command routed to a screen that now exists.
+  it('routes /new (and its alias /reset) to a fresh session draft', () => {
+    const expected = { kind: 'navigate', route: { params: { id: 'new' }, pathname: '/(main)/sessions/[id]' } }
+
+    expect(mobileCommandSurface('/new')).toEqual(expected)
+    expect(mobileCommandSurface('/reset')).toEqual(expected)
+  })
+
+  it('routes /resume, /sessions and /switch to the session list (the picker surface all three alias to on desktop)', () => {
+    const expected = { kind: 'navigate', route: '/(main)/session-list' }
+
+    expect(mobileCommandSurface('/resume')).toEqual(expected)
+    expect(mobileCommandSurface('/sessions')).toEqual(expected)
+    expect(mobileCommandSurface('/switch')).toEqual(expected)
+  })
+
+  it('routes /model to Settings > Models', () => {
+    expect(mobileCommandSurface('/model')).toEqual({ kind: 'navigate', route: '/(main)/settings/models' })
+  })
+
+  it('routes /profile to Settings > Profiles', () => {
+    expect(mobileCommandSurface('/profile')).toEqual({ kind: 'navigate', route: '/(main)/settings/profiles' })
+  })
+
+  it('routes /skills to Settings > Skills', () => {
+    expect(mobileCommandSurface('/skills')).toEqual({ kind: 'navigate', route: '/(main)/settings/skills' })
+  })
+
+  it('routes /skin to the appearance screen (not in the task list, but M13 built exactly this screen)', () => {
+    expect(mobileCommandSurface('/skin')).toEqual({ kind: 'navigate', route: '/(main)/settings/appearance' })
   })
 })
 

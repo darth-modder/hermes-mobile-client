@@ -72,21 +72,21 @@ Read these before designing anything; they are the source of truth, not a screen
 
 ### B. Icons
 
-- [ ] `@tabler/icons-react-native` (needs `react-native-svg`, a native module: one WSL2 rebuild,
+- [x] `@tabler/icons-react-native` (needs `react-native-svg`, a native module: one WSL2 rebuild,
       D13.2 applies; batch it with anything else native this round). `src/lib/icons.ts` with the
       same alias names as the desktop module, generated from it by a sync-script patch that
       rewrites the import source, so the two cannot diverge.
-- [ ] Codicons for tool and file-type icons: load `@vscode/codicons`' TTF with `expo-font`;
+- [x] Codicons for tool and file-type icons: load `@vscode/codicons`' TTF with `expo-font`;
       a `<Codicon name=... />` component mirroring `codicon.tsx`. Port `tool-icon` and
       `file-type-icon` mappings.
-- [ ] Every text glyph used as a control becomes an icon with an `accessibilityLabel`.
+- [x] Every text glyph used as a control becomes an icon with an `accessibilityLabel`.
 
 ### C. Type
 
-- [ ] Body: system sans (Roboto on Android, SF on iOS), which is what the desktop does. Size
+- [x] Body: system sans (Roboto on Android, SF on iOS), which is what the desktop does. Size
       and line-height roles ported from `styles.css` (`--dt-base-size`, `--dt-line-height`) into
       `src/theme/type.ts`; no per-screen font sizes.
-- [ ] Code and diffs: bundle JetBrains Mono (the mono the desktop ships; OFL) under
+- [x] Code and diffs: bundle JetBrains Mono (the mono the desktop ships; OFL) under
       `assets/fonts/` and load it with `expo-font`; `fontFamily: 'monospace'` disappears.
 - [ ] Wordmark: Collapse Bold from `@nous-research/ui` on the connect screen only, if a wordmark
       is shown at all. Nowhere else.
@@ -95,10 +95,10 @@ Read these before designing anything; they are the source of truth, not a screen
 
 ### D. Usability
 
-- [ ] Route `/new`, `/reset`, `/resume`, `/sessions`, `/switch`, `/model`, `/profile`, `/skills`
+- [x] Route `/new`, `/reset`, `/resume`, `/sessions`, `/switch`, `/model`, `/profile`, `/skills`
       to the screens that exist (`src/lib/mobile-slash-commands.ts`, M06 Deviation #4). Leave
-      the machine-bound ones with a one-line reason each.
-- [ ] Wire `haptic` (via `expo-haptics`, a native module: batch it with the `react-native-svg` rebuild in task B) for send, approve, reject and errors;
+      the machine-bound ones with a one-line reason each. Also routes `/skin` (Deviations).
+- [x] Wire `haptic` (via `expo-haptics`, a native module: batch it with the `react-native-svg` rebuild in task B) for send, approve, reject and errors;
       `sound` stays a no-op, documented.
 - [ ] Every list screen: loading, empty and error states, pull-to-refresh. Every destructive
       action (delete session, revoke pairing, delete webhook) confirms.
@@ -377,7 +377,40 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
    — application data, not a UI style, so there is no `tokens.*` field it could
    correctly map to. `// eslint-disable-next-line local/no-hardcoded-hex-color` with a
    one-line reason on each.
+8. **`/skin` is routed too, one command beyond the task's literal list of eight.**
+   Desktop's `/skin` picker is exactly what M13's own Step 3 appearance screen
+   (`app/(main)/settings/appearance.tsx`) does. Leaving it `no-mobile-ui` after
+   building that screen earlier in this same milestone would be an avoidable,
+   self-inflicted gap — routed to `/(main)/settings/appearance` alongside the eight,
+   with its own test.
+9. **The remaining `no-mobile-ui` commands got a new `machine-bound` reason, split out
+   for the subset AGENTS.md actually rules out** (`/pet`, `/pets`, `/hatch`,
+   `/generate-pet` — the pet overlay; `/browser` — the embedded browser/preview;
+   `/wake` — the server's own mic/speaker), rather than leaving all of them under the
+   generic "not available on mobile yet." The rest (`/branch`, `/fork`, `/handoff`,
+   `/journey`, `/learning`, `/memory-graph`, `/yolo`) keep that generic reason — they
+   are un-built, not machine-bound, and their exact backend semantics weren't looked
+   up (out of scope for a routing pass that only needed to know which commands have a
+   mobile screen to go to).
 
 ## Verification log
 
-(none yet)
+### Step 6 native round: WSL2 rebuild (D13.2)
+
+Built from `m13-design` commit `82508fe` (M13: type roles, JetBrains Mono — the
+tree as of landing react-native-svg, @tabler/icons-react-native, expo-haptics,
+expo-font, @vscode/codicons; Step 8's slash-command routing landed after this
+build started but touches no native module, so it doesn't invalidate the
+result). `npm ci` and `npx expo export --platform android` both exited 0
+before the rebuild, per the task's own pre-build check.
+
+```
+cd android && ./gradlew assembleDebug --no-daemon
+BUILD SUCCESSFUL in 21m 33s
+846 actionable tasks: 846 executed
+```
+
+This round's four new native additions all linked and compiled cleanly:
+`react-native-svg`, `@tabler/icons-react-native` (a peer of `react-native-svg`,
+no separate native code of its own), `expo-haptics`, `expo-font`. No device
+install/launch this round — that's Step 9.

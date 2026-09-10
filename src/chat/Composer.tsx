@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { KeyboardStickyView } from 'react-native-keyboard-controller'
@@ -58,6 +59,7 @@ function activeAtWord(text: string): null | string {
 
 export function Composer({ storedSessionId }: ComposerProps) {
   const tokens = useTheme()
+  const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const busy = session?.busy ?? false
 
@@ -173,6 +175,13 @@ export function Composer({ storedSessionId }: ComposerProps) {
         title: 'Not available',
         type: 'notify'
       })
+
+      return
+    }
+
+    if (surface.kind === 'navigate') {
+      clearComposer()
+      router.push(surface.route)
 
       return
     }
