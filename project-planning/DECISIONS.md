@@ -400,3 +400,56 @@ theme model rather than screenshots means "matches the desktop" is checkable: th
 sample pixels against values produced by the vendored presets. Usability belongs in the same
 milestone because the fix for most of it (touch targets, labels, states, haptics) touches the
 same components the restyle does.
+
+## D15 — Appendix A corrections (border family, radius), M13 close-out, and M14: screen layouts from the desktop prototypes (2026-09-12)
+
+**Decision.** Four parts.
+
+1. **Two corrections to M13 Appendix A, which Sonnet followed literally (M13 Deviation #1) and
+   which Opus's `docs/DESKTOP-DESIGN.md` §13.8 caught.** (a) `applyTheme` in
+   `apps/desktop/src/themes/context.tsx:249-256` overwrites four tokens with the skin's **solid**
+   palette values after the CSS defaults: `border = c.border`, `input = c.input`, `ring = c.ring`,
+   `muted = c.muted`. Appendix A.5 gave the stroke-mix formulas instead, so the phone today draws
+   `nous` borders as a translucent blue-tinted stroke where the desktop draws `#d0d7de` light and
+   `#30363d` dark. `resolveMobileTheme` changes those four lines, the pinned test values change with
+   them, and the M13 colour criterion is re-sampled for `border`. The stroke-mix tokens stay
+   available under their own names (`strokePrimary`…`strokeQuaternary`) for the surfaces that use
+   them on the desktop (sidebar edge, composer ring, hairlines). (b) Appendix C's "radius 12px" was
+   wrong: every desktop radius utility is multiplied by `--radius-scalar: 0.2`
+   (`styles.css:123-130, 464`), so the desktop is near-square (controls 2.5px, icon buttons 4px,
+   badges 3px, cards and menus 2–5px, dialogs 6.4px). Mobile adopts the same family in
+   `src/theme/type.ts`: `radius.control 3`, `radius.icon 4`, `radius.card 5`, `radius.sheet 8`,
+   `radius.full 999`, and nothing else; the 8/10/14/18 values on the branch are replaced. Both
+   corrections are applied on `m13-design` in the milestone file's appendix so the record stays
+   consistent.
+2. **M13 close-out, then `done` and merge.** Sonnet fixes, with a failing-first test where one is
+   possible: the `ToolIcon` typecheck error (split the prop types: `Codicon` takes `TextStyle`,
+   `ToolIcon` takes `StyleProp<ViewStyle>`, no cast); the session-list search field to 48 dp
+   min-height (a full-width text input meets the same floor as a button, since it is the first thing
+   a thumb reaches for); the Appearance hint text to name the backend's skin from the synced value,
+   not the device's active theme; and the type criterion is reworded to *"`src/lib/fonts.ts` logs
+   `Font.isLoaded('JetBrainsMono')` once at boot in `__DEV__`, and it reads true in logcat"*,
+   original wording kept. Then the border correction from part 1. Opus re-runs only criteria 1, 2
+   (border column), 5 and 6, cites its Step 10 pass for the rest, marks M13 `done`, and merges
+   `m13-design` into `main`. D13.2 applies: the merge adds native modules, so the merger rebuilds.
+3. **New milestone M14, "Screen layouts from the desktop prototypes"**, file
+   `implementation-plan/M14-screen-layouts.md`, depends on M13. M12 now depends on M14. Opus's
+   `docs/DESKTOP-SCREENS.md`, `docs/DESKTOP-DESIGN.md` and `docs/desktop-prototypes/` are committed
+   as the reference and are the source of truth for layout, order, labels and behaviour; the
+   milestone file carries the mobile adaptation rules and the screen-by-screen mapping. The
+   prototypes are desktop-shaped (1220×800, sidebar, titlebar, status bar, hover); M14 adapts, it
+   does not shrink. Where the screens inventory exposed settings sections the phone lacks and that
+   are not machine-bound (Chat, Safety, Memory & Context, Billing, Archived chats, About), M14 adds
+   them; `docs/PARITY.md` is updated to say so.
+4. **Labels are vendored, not retyped.** `apps/desktop/src/i18n/en.ts` joins the sync allow-list;
+   every visible string on a ported screen comes from it, so a label mismatch is a test failure, not
+   a review comment.
+
+**Reasoning.** The border error is mine: I read the CSS defaults and not the runtime override that
+replaces them, and the colour criterion's "border" row then passed against my wrong number. That is
+the kind of error a second reader catches, and Opus did. The radius error is the same shape. Both
+are cheap to fix now and expensive after M14 builds forty screens on them. M14 is a separate
+milestone rather than more M13 because M13's exit criteria are about tokens, icons, type and
+touch, all of which are closable now, while layout parity is per screen and needs the prototypes
+Opus has just produced. Vendoring `en.ts` is the same move as vendoring the theme model: parity by
+construction, checked by a test, instead of parity by inspection.
