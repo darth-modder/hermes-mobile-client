@@ -42,6 +42,14 @@ export interface MobileTokens {
   border: string
   input: string
   ring: string
+  /** The stroke-mix formula (A.4), kept under its own name for the surfaces
+   *  that use it directly on the desktop: sidebar edge, composer ring,
+   *  hairlines. `border`/`input`/`ring` above are the skin's solid palette
+   *  values instead (D15.1a) — `applyTheme` overwrites them post-mix. */
+  strokePrimary: string
+  strokeSecondary: string
+  strokeTertiary: string
+  strokeQuaternary: string
   midground: string
   midgroundForeground: string
   composerRing: string
@@ -384,7 +392,9 @@ export function resolveMobileTheme(theme: DesktopTheme, mode: ThemeMode): Mobile
     foreground: fmt(s.textPrimary),
     card: fmt(s.bgEditor),
     cardForeground: fmt(s.textPrimary),
-    muted: fmt(s.bgTertiary),
+    // D15.1a: applyTheme (context.tsx:249-256) overwrites these four with the
+    // skin's solid palette values after the color-mix() defaults.
+    muted: colors.muted,
     mutedForeground: fmt(s.textTertiary),
     popover: fmt(popover),
     popoverForeground: fmt(s.textPrimary),
@@ -396,9 +406,13 @@ export function resolveMobileTheme(theme: DesktopTheme, mode: ThemeMode): Mobile
     secondaryForeground: fmt(s.textSecondary),
     accent: s.seeds.accentSoft,
     accentForeground: fmt(s.textPrimary),
-    border: fmt(s.strokeSecondary),
-    input: fmt(s.strokePrimary),
-    ring: fmt(s.strokePrimary),
+    border: colors.border,
+    input: colors.input,
+    ring: colors.ring,
+    strokePrimary: fmt(s.strokePrimary),
+    strokeSecondary: fmt(s.strokeSecondary),
+    strokeTertiary: fmt(s.strokeTertiary),
+    strokeQuaternary: fmt(s.strokeQuaternary),
     midground: s.seeds.midground,
     midgroundForeground,
     composerRing: fmt(s.base),

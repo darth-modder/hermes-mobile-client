@@ -243,15 +243,16 @@ diffRemoveBg     = mix(uiRed,   transparent, 12%);  diffRemoveFg = mix(uiRed,   
 | `background` | `bgChrome` |
 | `foreground` | `textPrimary` |
 | `card` / `cardForeground` | `bgEditor` / `textPrimary` |
-| `muted` / `mutedForeground` | `bgTertiary` / `textTertiary` |
+| `muted` / `mutedForeground` | `muted` seed (D15.1a) / `textTertiary` |
 | `popover` / `popoverForeground` | `mix(bgElevated, transparent, 96%)` / `textPrimary` |
 | `primary` / `primaryForeground` | `primary` seed / `#fcfcfc` |
 | `primarySolid` / `primarySolidForeground` | `ensureContrast(primary, '#fcfcfc', 4.5)` / `#fcfcfc` |
 | `secondary` / `secondaryForeground` | `secondary` seed / `textSecondary` |
 | `accent` / `accentForeground` | `accentSoft` seed / `textPrimary` |
-| `border` | `strokeSecondary` |
-| `input` | `strokePrimary` |
-| `ring` | `strokePrimary` |
+| `border` | `border` seed, not `strokeSecondary` (D15.1a correction below) |
+| `input` | `input` seed, not `strokePrimary` (D15.1a correction below) |
+| `ring` | `ring` seed, not `strokePrimary` (D15.1a correction below) |
+| `strokePrimary`/`strokeSecondary`/`strokeTertiary`/`strokeQuaternary` | A.4's mix formulas, kept under their own names for sidebar edge, composer ring and hairlines |
 | `midground` / `midgroundForeground` | `midground` seed / `midgroundForeground` |
 | `composerRing` | `base` (the desktop outlines the composer in the text colour, not the accent) |
 | `destructive` / `destructiveForeground` | `#cf2d56` / `#ffffff` |
@@ -329,6 +330,19 @@ Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-s
    appendix. Practically the two readings differ only on a handful of fields, several
    of which are close in colour for `nous` regardless (e.g. `destructiveForeground` is
    `#ffffff` under both readings for every built-in preset checked).
+
+   **Correction (D15.1a, 2026-09-12).** This reasoning was wrong for `border`, `input`,
+   `ring` and `muted`. `applyTheme` (`context.tsx:249-256`) does not merely set an
+   inline style that CSS specificity happens to prefer over the computed fallback — it
+   is the ONLY assignment those four `--dt-*` slots ever get; there is no computed
+   fallback in `styles.css` for them to override. The A.6 "faintly blue on white" sanity
+   check was checking the wrong formula: the actual desktop `border` for `nous` is the
+   solid `#d0d7de` (light) / `#30363d` (dark), not a translucent accent-tinted stroke.
+   A.5's table is corrected above; `resolveMobileTheme` now reads `border`/`input`/
+   `ring`/`muted` straight from the theme's palette, and the `strokeSecondary`/
+   `strokePrimary` mix formulas that used to feed them are exposed under their own
+   token names instead, since the desktop does use them elsewhere (sidebar edge,
+   composer ring, hairlines) — just not for these four.
 2. **`retint.ts` does not synthesise a missing dark palette; `context.tsx`'s
    `synthLightColors` does, and only for the missing LIGHT half of a dark-only
    theme.** Appendix A.6 says "if [`darkColors`] absent, `retint.ts` synthesises it, so

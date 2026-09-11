@@ -1,8 +1,10 @@
 // Pins resolveMobileTheme's output for the `nous` skin, both modes, against
-// the worked values in M13 Appendix A.6 (background, card, foreground, and
-// border — the last computed by mix() and checked by eye there as "a 1px
-// border, faintly blue on white"). The rest of each object is pinned too so a
-// later edit to the port can't silently drift (Appendix A.6's own framing).
+// the worked values in M13 Appendix A.6 (background, card, foreground) and
+// the D15.1a correction for border (applyTheme overwrites border/input/ring/
+// muted with the skin's solid palette values post-mix; the mix formula
+// itself survives under strokePrimary…strokeQuaternary). The rest of each
+// object is pinned too so a later edit to the port can't silently drift
+// (Appendix A.6's own framing).
 
 import { describe, expect, it } from 'vitest'
 
@@ -18,7 +20,7 @@ describe('resolveMobileTheme', () => {
     expect(tokens.background).toBe('#fefefe')
     expect(tokens.card).toBe('#fbfbfc')
     expect(tokens.foreground).toBe('rgba(31, 35, 40, 0.94)')
-    expect(tokens.border).toBe('rgba(8, 70, 196, 0.2188)')
+    expect(tokens.border).toBe('#d0d7de')
 
     // Everything else, pinned.
     expect(tokens).toEqual({
@@ -26,7 +28,7 @@ describe('resolveMobileTheme', () => {
       foreground: 'rgba(31, 35, 40, 0.94)',
       card: '#fbfbfc',
       cardForeground: 'rgba(31, 35, 40, 0.94)',
-      muted: 'rgba(11, 65, 175, 0.126)',
+      muted: '#f6f6f6',
       mutedForeground: 'rgba(31, 35, 40, 0.54)',
       popover: 'rgba(253, 253, 253, 0.96)',
       popoverForeground: 'rgba(31, 35, 40, 0.94)',
@@ -38,9 +40,13 @@ describe('resolveMobileTheme', () => {
       secondaryForeground: 'rgba(31, 35, 40, 0.74)',
       accent: '#e3edff',
       accentForeground: 'rgba(31, 35, 40, 0.94)',
-      border: 'rgba(8, 70, 196, 0.2188)',
-      input: 'rgba(7, 71, 202, 0.316)',
-      ring: 'rgba(7, 71, 202, 0.316)',
+      border: '#d0d7de',
+      input: '#ffffff',
+      ring: '#0053fd',
+      strokePrimary: 'rgba(7, 71, 202, 0.316)',
+      strokeSecondary: 'rgba(8, 70, 196, 0.2188)',
+      strokeTertiary: 'rgba(10, 68, 187, 0.145)',
+      strokeQuaternary: 'rgba(10, 68, 185, 0.0882)',
       midground: '#0053fd',
       midgroundForeground: '#ffffff',
       composerRing: '#1f2328',
@@ -87,7 +93,7 @@ describe('resolveMobileTheme', () => {
       foreground: 'rgba(230, 237, 243, 0.94)',
       card: '#0e0f12',
       cardForeground: 'rgba(230, 237, 243, 0.94)',
-      muted: 'rgba(131, 170, 250, 0.126)',
+      muted: '#1a1e24',
       mutedForeground: 'rgba(230, 237, 243, 0.54)',
       popover: 'rgba(22, 24, 29, 0.96)',
       popoverForeground: 'rgba(230, 237, 243, 0.94)',
@@ -99,9 +105,13 @@ describe('resolveMobileTheme', () => {
       secondaryForeground: 'rgba(230, 237, 243, 0.74)',
       accent: '#17243a',
       accentForeground: 'rgba(230, 237, 243, 0.94)',
-      border: 'rgba(116, 160, 251, 0.2188)',
-      input: 'rgba(112, 157, 251, 0.316)',
-      ring: 'rgba(112, 157, 251, 0.316)',
+      border: '#30363d',
+      input: '#0d1117',
+      ring: '#4a84fe',
+      strokePrimary: 'rgba(112, 157, 251, 0.316)',
+      strokeSecondary: 'rgba(116, 160, 251, 0.2188)',
+      strokeTertiary: 'rgba(122, 165, 251, 0.145)',
+      strokeQuaternary: 'rgba(124, 166, 250, 0.0882)',
       midground: '#4a84fe',
       midgroundForeground: '#161616',
       composerRing: '#e6edf3',
