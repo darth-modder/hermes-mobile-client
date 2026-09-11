@@ -1,0 +1,238 @@
+<!doctype html>
+<!--
+  Screen:      HUD (D · always-on-top window)   renderer `?win=hud[&profile=…]#/<sessionId>`,
+               opened from the titlebar "HUD mode" button (openHudWindow / spawnHudWindow)
+  Replicates:  apps/desktop/src/app/hud/{hud-shell.tsx, layout.ts, transcript-band.ts, glass.ts,
+               resize-handle.ts, composer-drag.ts}, src/styles.css l.2642-3572 (HUD block),
+               src/app/chat/composer/controls.tsx (reset/exit HUD buttons), control-classes.ts,
+               electron/main.ts l.14147-14257 (spawnHudWindow), electron/hud-geometry.ts
+  Views:       #hud=idle (the bar alone) | #hud=engaged (caret in the composer) | #hud=busy (turn streaming, unfocused)
+  Measurements:
+    - BrowserWindow: frameless, transparent, alwaysOnTop, NOT resizable (renderer handles resize),
+      default 620×320 (HUD_WIDTH/HUD_HEIGHT), min 380×160; centred on the work area, 72px above its
+      bottom (HUD_BOTTOM_MARGIN); remembered position restored if still on a live display
+    - layout: HUD_THREAD_ALWAYS_BELOW = true → data-hud-edge="top": the composer sits flush with the
+      window's TOP edge and the transcript band hangs BELOW it
+    - composer bar: full window width, 1px --ui-stroke-secondary, radius 0.75rem, bg --dt-card (opaque,
+      never translucent), shadow 0 2px 2px -1px black/12; focused → border --dt-primary
+    - controls: 24px ghost icon buttons (GHOST_ICON_BTN), send/stop 26px circle bg --dt-foreground /
+      ink --dt-background (PRIMARY_ICON_BTN; disabled = foreground/30); HUD adds Reset (codicon discard)
+      and Exit HUD (codicon screen-normal)
+    - band: inset 0.5rem each side (0.375rem under Glass), top = bar height, height = window − bar once
+      there is any transcript; corners 0 0 .75rem .75rem
+    - sheet ([data-hud-glass]) is FOCUS-ONLY: --hud-scrim (12 14 18 / .62) at rest, .82 when the caret is
+      in the composer (.55 / .72 under Glass)
+    - ink: always --hud-ink (white) with text-shadow 0 1px 2px black/.9, 0 0 6px black/.55; your own
+      lines --hud-user-ink (gold); no user bubble; tool rows, diffs, system notices, header hidden
+    - viewport mask: linear-gradient(to bottom, transparent 0, black 3.5rem) (not flipped for edge=top)
+    - thread content: width 92%, padding .35rem .6rem .25rem; turn gap .1875rem, block gap .375rem,
+      paragraph gap .4rem
+    - resize frame: 4 edges 0.625rem thick (inset 1.25rem from corners) + 4 corners 1.25rem, invisible,
+      native resize cursors; Wayland gets only e / se / s
+  Behaviour (not visible statically):
+    - timings: reveal 110ms, fade 180ms, dim 270ms, collapse 119ms; ease-enter cubic-bezier(.16,1,.3,1),
+      ease-exit cubic-bezier(.4,0,.7,.2); hold 1100ms after a turn lands / after you let go
+    - band visible while data-hud-recent (activity within the hold, busy + 1100ms grace, a pending
+      approval/clarify, or a fullscreen game underneath) or the caret is in the composer
+    - band exits by sliding 2.5rem toward the bar (translate) while fading; the sheet leaves first
+    - pointer: the shell is pointer-events:none; only the bar, a focused/held band, links and inline
+      approval/clarify widgets take clicks — the rest of the window is click-through to the desktop
+    - native frost (macOS vibrancy / Win11 DWM) only when the band fills the window AND the caret is in
+      the composer AND no completion drawer is open
+    - completion drawer (/, @) goes opaque; the band drops to 25% opacity, scale .97, blur 1.5px
+    - game overlay (fullscreen app under the HUD): idle bar drops to 35% opacity, returns on hover/focus
+    - drag: press-and-hold on the bar then move (composer-drag.ts); Wayland uses a native drag grip pill
+    - main window hides while the HUD is up and comes back when it closes (Exit, ⌘W)
+  Mobile:      HUD is absent on mobile by design (docs/PARITY.md).
+  Unsure:      order of Reset / Exit inside the control row (placed before send here).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>HUD · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      /* Some other app the user is working in (the HUD floats over it). */
+      .mock-app { position: absolute; overflow: hidden; border-radius: 8px; background: var(--ui-bg-editor); box-shadow: var(--shadow-md); }
+      .mock-app__bar { height: 30px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-sidebar); }
+      .mock-app__body { display: grid; grid-template-columns: 200px 1fr; height: calc(100% - 30px); }
+      .mock-app__side { border-right: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-sidebar); padding: 14px; display: grid; gap: 8px; align-content: start; }
+      .mock-app__main { padding: 28px 36px; display: grid; gap: 11px; align-content: start; }
+      .mock-app i.line { display: block; height: 8px; border-radius: 2px; background: var(--ui-bg-secondary); font-style: normal; }
+      .mock-app i.line.h { height: 16px; width: 40%; background: var(--ui-bg-primary); margin-bottom: 8px; }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+      .win-bounds { position: absolute; outline: 1px dashed color-mix(in srgb, var(--ui-text-quaternary) 70%, transparent); outline-offset: 0; pointer-events: none; }
+
+      /* ── HUD window (620×320, transparent) ─────────────────────────────── */
+      .hud {
+        --bar-h: 38px;
+        --hud-band-inset: 0.5rem;
+        --hud-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+        position: absolute;
+        left: 300px;
+        top: 360px;
+        width: 620px;
+        height: 320px;
+      }
+      .hud__bar {
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 2;
+        display: flex;
+        align-items: flex-end;
+        gap: var(--composer-control-gap);
+        padding: var(--composer-surface-pad-y) var(--composer-surface-pad-x);
+        border: 1px solid var(--ui-stroke-secondary);
+        border-radius: 0.75rem;
+        background: var(--dt-card);
+        box-shadow: 0 2px 2px -1px color-mix(in srgb, var(--black) 12%, transparent);
+      }
+      .hud.is-focused .hud__bar { border-color: var(--dt-primary); }
+      .hud__input { flex: 1; min-width: 8rem; min-height: var(--composer-input-min-height); padding: 0.25rem 0.25rem 0.25rem 0; color: var(--dt-foreground); font-size: var(--conversation-text-font-size); line-height: 1.5; }
+      .hud__input.is-placeholder { color: var(--ui-text-quaternary); }
+      .caret { display: inline-block; width: 1px; height: 1.05em; margin-left: 1px; vertical-align: -0.15em; background: var(--dt-foreground); animation: caret 1s steps(1) infinite; }
+      @keyframes caret { 50% { opacity: 0; } }
+      .hud__primary { display: grid; place-items: center; width: var(--composer-control-primary-size); height: var(--composer-control-primary-size); flex-shrink: 0; border: 0; border-radius: var(--radius-full); padding: 0; background: var(--dt-foreground); color: var(--dt-background); cursor: pointer; }
+      .hud__primary:disabled { background: color-mix(in srgb, var(--dt-foreground) 30%, transparent); }
+      .hud__primary .ti { font-size: 0.875rem; }
+
+      /* Sheet behind the band — focus-only. */
+      .hud__glass { position: absolute; top: var(--bar-h); left: var(--hud-band-inset); right: var(--hud-band-inset); height: calc(100% - var(--bar-h)); border-radius: 0 0 0.75rem 0.75rem; background: color-mix(in srgb, var(--hud-scrim) 47%, var(--black)); /* ≈ rgb(12 14 18 / .82) */ }
+
+      /* The band: bare white text over whatever is behind the window. */
+      .hud__band {
+        position: absolute;
+        top: var(--bar-h);
+        left: var(--hud-band-inset);
+        right: var(--hud-band-inset);
+        height: calc(100% - var(--bar-h));
+        overflow: hidden;
+        color: var(--hud-ink);
+        text-shadow: 0 1px 2px color-mix(in srgb, var(--black) 90%, transparent), 0 0 6px color-mix(in srgb, var(--black) 55%, transparent);
+      }
+      .hud__viewport { height: 100%; -webkit-mask-image: linear-gradient(to bottom, transparent 0, var(--black) 3.5rem); mask-image: linear-gradient(to bottom, transparent 0, var(--black) 3.5rem); }
+      /* Scrolled to the newest line (stick-to-bottom), so overflow is the older turns above. */
+      .hud__content { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.1875rem; width: 92%; min-height: 100%; height: 100%; margin-inline: auto; padding: 0.35rem 0.6rem 0.25rem; font-size: var(--conversation-text-font-size); line-height: var(--dt-line-height); }
+      .hud__content .u { color: var(--hud-user-ink); padding: 0.25rem 0.75rem; }
+      .hud__content .a { padding: 0 var(--message-text-indent); }
+      .hud__content .a p { margin: 0 0 0.4rem; }
+      .hud__content .a p:last-child { margin: 0; }
+      .hud__content .code-inline { background: color-mix(in srgb, var(--white) 14%, transparent); color: var(--hud-ink); }
+      .hud__cursor { display: inline-block; width: 0.45em; height: 0.9em; margin-left: 2px; vertical-align: -0.1em; background: var(--hud-ink); opacity: 0.8; animation: caret 1s steps(1) infinite; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="mock-app" style="left:70px;top:28px;width:1080px;height:670px" aria-hidden="true">
+              <div class="mock-app__bar"></div>
+              <div class="mock-app__body">
+                <div class="mock-app__side"><i class="line" style="width:80%"></i><i class="line" style="width:60%"></i><i class="line" style="width:70%"></i><i class="line" style="width:50%"></i><i class="line" style="width:65%"></i></div>
+                <div class="mock-app__main">
+                  <i class="line h"></i>
+                  <i class="line" style="width:92%"></i><i class="line" style="width:88%"></i><i class="line" style="width:95%"></i><i class="line" style="width:60%"></i>
+                  <i class="line" style="width:0;height:10px;background:none"></i>
+                  <i class="line" style="width:90%"></i><i class="line" style="width:84%"></i><i class="line" style="width:93%"></i><i class="line" style="width:71%"></i>
+                  <i class="line" style="width:0;height:10px;background:none"></i>
+                  <i class="line" style="width:89%"></i><i class="line" style="width:94%"></i><i class="line" style="width:80%"></i><i class="line" style="width:86%"></i><i class="line" style="width:52%"></i>
+                  <i class="line" style="width:0;height:10px;background:none"></i>
+                  <i class="line" style="width:91%"></i><i class="line" style="width:77%"></i><i class="line" style="width:90%"></i><i class="line" style="width:66%"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="win-bounds" style="left:300px;top:360px;width:620px;height:320px"></div>
+            <div class="proto-note" style="left:300px;top:684px">HUD window 620×320 · transparent, frameless, always on top · dashed = window bounds (not drawn)</div>
+
+            <section data-views="hud">
+              <!-- ── View: idle — the Spotlight bar is the whole interface ── -->
+              <div data-view="idle">
+                <div class="hud" data-hud-edge="top">
+                  <div class="hud__bar">
+                    <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                    <div class="hud__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                    <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                    <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                    <button class="composer__ctl" aria-label="Reset HUD size and position"><i class="codicon codicon-discard"></i></button>
+                    <button class="composer__ctl" aria-label="Exit HUD mode"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="hud__primary" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: engaged — caret in the composer: sheet up, border in accent ── -->
+              <div data-view="engaged" hidden>
+                <div class="hud is-focused" data-hud-edge="top">
+                  <div class="hud__glass" aria-hidden="true"></div>
+                  <div class="hud__band">
+                    <div class="hud__viewport">
+                      <div class="hud__content">
+                        <div class="a"><p>I checked the three reconnect paths. Only the websocket boot retries on auth failures.</p></div>
+                        <div class="u">Which file owns the backoff?</div>
+                        <div class="a"><p><span class="code-inline">use-gateway-boot.ts</span> — the <span class="code-inline">scheduleReconnect</span> call around line 212.</p></div>
+                        <div class="u">Make revoked tokens fail fast and show the sign-in card.</div>
+                        <div class="a"><p>Done. A revoked token now stops the loop on the first <span class="code-inline">auth_required</span> event and raises the sign-in prompt. Network errors keep the backoff.</p><p>Want an e2e spec that revokes the token mid-session?</p></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="hud__bar">
+                    <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                    <div class="hud__input">Yes, use the mock backend fixture<span class="caret"></span></div>
+                    <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                    <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                    <button class="composer__ctl" aria-label="Reset HUD size and position"><i class="codicon codicon-discard"></i></button>
+                    <button class="composer__ctl" aria-label="Exit HUD mode"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="hud__primary" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: busy — a turn is streaming, composer unfocused: text only, no sheet ── -->
+              <div data-view="busy" hidden>
+                <div class="hud" data-hud-edge="top" data-hud-held>
+                  <div class="hud__band">
+                    <div class="hud__viewport">
+                      <!-- Short transcript: packs to the top (edge=top), so the unflipped 3.5rem top mask fades the first row. -->
+                      <div class="hud__content" style="justify-content:flex-start">
+                        <div class="a"><p>Done. A revoked token now stops the loop on the first <span class="code-inline">auth_required</span> event and raises the sign-in prompt.</p></div>
+                        <div class="u">Yes, add the spec. Use the mock backend fixture.</div>
+                        <div class="a"><p>Creating <span class="code-inline">e2e/auth-revoked.spec.ts</span>. It boots against the mock backend, revokes the session token, and waits for the sign-in card<span class="hud__cursor"></span></p></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="hud__bar">
+                    <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                    <div class="hud__input is-placeholder">Queue a follow-up…</div>
+                    <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                    <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                    <button class="composer__ctl" aria-label="Reset HUD size and position"><i class="codicon codicon-discard"></i></button>
+                    <button class="composer__ctl" aria-label="Exit HUD mode"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="hud__primary" aria-label="Stop"><i class="codicon codicon-primitive-square"></i></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="hud:idle">Idle bar</button>
+        <button class="btn btn--secondary btn--sm" data-show="hud:engaged">Engaged (focused)</button>
+        <button class="btn btn--secondary btn--sm" data-show="hud:busy">Busy (streaming)</button>
+      </nav>
+    </div>
+  </body>
+</html>

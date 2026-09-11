@@ -1,0 +1,162 @@
+<!doctype html>
+<!--
+  Screen:      Pet overlay (D · always-on-top window)   renderer `?win=overlay#/`; shift-click the
+               in-window pet to pop it out (spawnPetOverlayWindow), shift-click again to pop it back in
+  Replicates:  apps/desktop/src/app/pet-overlay/{pet-overlay-app.tsx, overlay-root.tsx},
+               src/components/pet/{pet-sprite.tsx, pet-bubble.tsx, floating-pet.tsx},
+               src/store/pet-overlay.ts (overlayWindowSize), electron/main.ts l.13703-13760
+  Views:       #pet=idle | #pet=working | #pet=waiting | #pet=failed | #pet=composer | #pet=unread
+  Measurements:
+    - BrowserWindow: frameless, transparent (bg fully transparent), no shadow, not resizable, movable,
+      alwaysOnTop (macOS NSPanel), non-focusable except while the mini composer is open
+    - size = overlayWindowSize(frameW, frameH, scale) = max(240, frameW·scale + 100) ×
+      max(300, frameH·scale + 200) → 240×300 at the defaults (frame 192×208, scale 0.33)
+    - layout: column, centred, justify flex-end, padding-bottom 24px
+    - sprite: frame 192×208 × 0.33 = 63×69px, 6 frames per state row, 1100ms loop (petdex sheet;
+      drawn here as a CSS pixel placeholder, NOT the real art)
+    - bubble (above the sprite, margin-bottom 4px): bg --ui-bg-elevated, 1px --ui-stroke-secondary,
+      radius 10px (999px when glyph-only), shadow 0 4px 14px black/.22, 11px / 500 / line-height 1,
+      padding 5px 8px, gap 5px, glyph 13×13 (waiting = clock in --ui-yellow, failed = alert-circle in --ui-red)
+    - mini composer (above everything, margin-bottom 8px): 184px wide input, 12px, padding 4px 8px,
+      radius 2px, bg --ui-bg-elevated, 1px --ui-stroke-secondary, shadow 0 6px 18px black/.28, "Message…"
+    - unread mail button: 24×24 circle at the sprite's top-right, same surface as the bubble, mail glyph 13px
+  Behaviour (not visible statically):
+    - the window is click-through except over opaque sprite pixels (alpha ≥ 16) or the open composer
+    - drag the pet to move the window anywhere (3px click slop); shift-click = pop back into the app;
+      click = toggle mini composer (after a 250ms double-click window); double-click = minimize/restore app
+    - composer: Enter sends to the app's active chat, Esc closes; clicking the empty backdrop closes it
+    - wheel / pinch on the pet rescales it about its bottom-centre (window resizes to match)
+    - bubble lines rotate at random every 2.6s while working/thinking; hidden at plain idle
+    - working lines: working… on it… crunching… tinkering… cooking…; thinking lines: thinking… reading…
+      reviewing… pondering…; failed: hit a snag / welp / oof; waiting: your turn / all yours / over to you
+    - vibe reactions play floating hearts (--vibe-heart) around the sprite
+    - pure puppet: no gateway; the main renderer pushes pet state over IPC
+  Mobile:      Pet overlay is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pet overlay · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      .mock-app { position: absolute; overflow: hidden; border-radius: 8px; background: var(--ui-bg-editor); box-shadow: var(--shadow-md); }
+      .mock-app__bar { height: 30px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-sidebar); }
+      .mock-app__main { padding: 28px 36px; display: grid; gap: 11px; align-content: start; }
+      .mock-app i.line { display: block; height: 8px; border-radius: 2px; background: var(--ui-bg-secondary); }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+      .win-bounds { position: absolute; outline: 1px dashed color-mix(in srgb, var(--ui-text-quaternary) 70%, transparent); pointer-events: none; }
+
+      /* ── Pet overlay window (240×300, transparent) ─────────────────────── */
+      .pet-win { position: absolute; left: 930px; top: 440px; width: 240px; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 24px; user-select: none; }
+      .pet-composer { width: 184px; margin-bottom: 8px; border: 1px solid var(--ui-stroke-secondary); border-radius: 2px; padding: 4px 8px; background: var(--ui-bg-elevated); box-shadow: 0 6px 18px color-mix(in srgb, var(--black) 28%, transparent); color: var(--dt-foreground); font: inherit; font-size: 12px; outline: none; }
+      .pet-composer::placeholder { color: var(--dt-muted-foreground); }
+      .pet { position: relative; display: flex; flex-direction: column; align-items: center; cursor: grab; touch-action: none; }
+      .pet__bubble-slot { margin-bottom: 4px; }
+      .bubble { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--ui-stroke-secondary); border-radius: 10px; background: var(--ui-bg-elevated); box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 22%, transparent); color: var(--dt-foreground); font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; pointer-events: none; }
+      .bubble .ti { font-size: 13px; }
+      .bubble--wait .ti { color: var(--ui-yellow); }
+      .bubble--error .ti { color: var(--ui-red); }
+      .pet__sprite { position: relative; width: 63px; height: 69px; line-height: 0; }
+      .pet__mail { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--ui-stroke-secondary); border-radius: 999px; padding: 0; background: var(--ui-bg-elevated); box-shadow: 0 4px 14px color-mix(in srgb, var(--black) 22%, transparent); color: var(--dt-foreground); cursor: pointer; }
+      .pet__mail .ti { font-size: 13px; }
+
+      /* Placeholder mascot: 12×13 pixel grid in token colours (the real sprite is a petdex PNG sheet). */
+      .mascot { display: grid; grid-template-columns: repeat(12, 5px); grid-auto-rows: 5px; width: 60px; margin: 2px auto 0; image-rendering: pixelated; }
+      .mascot i { display: block; }
+      .mascot .X { background: var(--ui-base); }
+      .mascot .P { background: var(--ui-purple); }
+      .mascot .E { background: var(--ui-base); }
+      .mascot .W { background: var(--brand-tile); }
+      .mascot .C { background: var(--vibe-heart); }
+      .mascot.is-bob { animation: bob 1.1s steps(6) infinite; }
+      @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="mock-app" style="left:60px;top:40px;width:840px;height:620px" aria-hidden="true">
+              <div class="mock-app__bar"></div>
+              <div class="mock-app__main">
+                <i class="line" style="width:34%;height:16px"></i><i class="line" style="width:92%"></i><i class="line" style="width:88%"></i><i class="line" style="width:95%"></i><i class="line" style="width:60%"></i>
+                <i class="line" style="width:90%;margin-top:14px"></i><i class="line" style="width:84%"></i><i class="line" style="width:93%"></i><i class="line" style="width:71%"></i>
+              </div>
+            </div>
+
+            <div class="win-bounds" style="left:930px;top:440px;width:240px;height:300px"></div>
+            <div class="proto-note" style="left:930px;top:426px">Pet overlay 240×300 · transparent</div>
+
+            <section data-views="pet">
+              <div data-view="idle">
+                <div class="pet-win"><div class="pet"><div class="pet__bubble-slot"></div><div class="pet__sprite"><div class="mascot" data-mascot></div></div></div></div>
+              </div>
+              <div data-view="working" hidden>
+                <div class="pet-win"><div class="pet"><div class="pet__bubble-slot"><span class="bubble">crunching…</span></div><div class="pet__sprite"><div class="mascot is-bob" data-mascot></div></div></div></div>
+              </div>
+              <div data-view="waiting" hidden>
+                <div class="pet-win"><div class="pet"><div class="pet__bubble-slot"><span class="bubble bubble--wait"><i class="ti ti-clock"></i>your turn</span></div><div class="pet__sprite"><div class="mascot" data-mascot></div></div></div></div>
+              </div>
+              <div data-view="failed" hidden>
+                <div class="pet-win"><div class="pet"><div class="pet__bubble-slot"><span class="bubble bubble--error"><i class="ti ti-alert-circle"></i>hit a snag</span></div><div class="pet__sprite"><div class="mascot" data-mascot></div></div></div></div>
+              </div>
+              <div data-view="composer" hidden>
+                <div class="pet-win">
+                  <input class="pet-composer" placeholder="Message…" aria-label="Message" />
+                  <div class="pet"><div class="pet__bubble-slot"></div><div class="pet__sprite"><div class="mascot" data-mascot></div></div></div>
+                </div>
+              </div>
+              <div data-view="unread" hidden>
+                <div class="pet-win"><div class="pet"><div class="pet__bubble-slot"></div><div class="pet__sprite"><div class="mascot" data-mascot></div><button class="pet__mail" type="button" aria-label="Open in Hermes" title="Open in Hermes"><i class="ti ti-mail"></i></button></div></div></div>
+              </div>
+            </section>
+
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="pet:idle">Idle</button>
+        <button class="btn btn--secondary btn--sm" data-show="pet:working">Working</button>
+        <button class="btn btn--secondary btn--sm" data-show="pet:waiting">Waiting on you</button>
+        <button class="btn btn--secondary btn--sm" data-show="pet:failed">Failed</button>
+        <button class="btn btn--secondary btn--sm" data-show="pet:composer">Mini composer</button>
+        <button class="btn btn--secondary btn--sm" data-show="pet:unread">Unread mail</button>
+      </nav>
+    </div>
+    <script>
+      // Placeholder mascot. X outline · P body · E eyes · W belly · C cheeks · . empty.
+      ;(function () {
+        var MAP = [
+          '....XXXX....',
+          '..XXPPPPXX..',
+          '.XPPPPPPPPX.',
+          '.XPPPPPPPPX.',
+          'XPPEPPPPEPPX',
+          'XPPEPPPPEPPX',
+          'XPCPPPPPPCPX',
+          'XPPPPWWPPPPX',
+          '.XPPWWWWPPX.',
+          '.XPPPPPPPPX.',
+          '..XPPXXPPX..',
+          '..XXX..XXX..',
+          '............'
+        ]
+        var html = ''
+        for (var r = 0; r < MAP.length; r++)
+          for (var c = 0; c < MAP[r].length; c++) html += '<i class="' + (MAP[r][c] === '.' ? '' : MAP[r][c]) + '"></i>'
+        document.querySelectorAll('[data-mascot]').forEach(function (el) { el.innerHTML = html })
+      })()
+    </script>
+  </body>
+</html>

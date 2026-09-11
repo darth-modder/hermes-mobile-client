@@ -1,0 +1,170 @@
+<!doctype html>
+<!--
+  Screen:      Browser pop-out (D · window)   electron/main.ts createBrowserWindow(tabId) → spawnBrowserWindow;
+               renderer URL `?win=browser` (the "Pop out" glyph on a docked Browser preview tab)
+  Replicates:  apps/desktop/src/app/chat/browser-popout-shell.tsx,
+               src/app/chat/right-rail/preview-browser-bar.tsx (PreviewBrowserBar),
+               src/components/ui/pane-tab.tsx (PaneStripGlyph), electron/browser-windows.ts, electron/main.ts l.13512-13574
+  Views:       #bp=page (page loaded) | #bp=loading | #bp=blank (no tab / nothing loaded)
+  Measurements:
+    - BrowserWindow 960×720 (min 480×400), title 'Hermes', titleBarStyle 'hidden' + titleBarOverlay
+    - shell: full window, bg --ui-bg-chrome; an EMPTY 34px drag strip on top (TITLEBAR_HEIGHT), carved
+      around the OS caption buttons; no session sidebar, no layout tree
+    - browser bar: min-height = titlebar height (34px), gap .25rem, padding .25rem .375rem,
+      border-bottom 1px --dt-border at 60%, bg --dt-background
+    - glyphs: Button ghost icon-xs (24×24, radius 4px), codicon 13px (0.8125rem), opacity .6 → 1 on
+      hover / when active (aria-pressed)
+    - address: Input size xs (pad .125rem .5rem, 11px), pr-7 for the inline copy icon, pl-6 while loading
+      (a spinning codicon-loading 12px sits at left .5rem)
+    - blank: PanelEmpty, globe icon + "Type an address above to browse, or ask Hermes to open a page."
+  Behaviour (not visible statically):
+    - address field shows the page's CURRENT url; focusing selects all and takes a draft; Enter commits
+      (bare hosts get https://, loopback gets http://; javascript:/data: are refused), Esc reverts
+    - invalid draft paints the field aria-invalid (destructive border)
+    - one window per tab id (re-open focuses); closing it broadcasts hermes:browser-popout:closed so the
+      tab can dock again; the docked bar shows "Pop out" (empty-window) instead of "Pop in" (screen-normal)
+    - terminal glyph toggles the preview console, bug glyph opens the page's DevTools
+    - Annotate mode (comment glyph) adds a blue "Commenting" pill and an "Add N comments" button
+  Mobile:      Browser pop-out is absent on mobile by design (docs/PARITY.md).
+  Note:        the page area is a <webview>; everything under the bar is the website's own content
+               (drawn here as a neutral mock site, not themed by Hermes).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Browser pop-out · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      .os-win { position: absolute; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: 8px; background: var(--ui-bg-chrome); color: var(--ui-text-primary); box-shadow: var(--shadow-lg); }
+
+      /* browser-popout-shell.tsx: empty drag strip, TITLEBAR_HEIGHT tall */
+      .bp-strip { position: relative; flex-shrink: 0; height: var(--titlebar-height); background: var(--ui-bg-chrome); }
+      .bp-strip .win-controls { position: absolute; top: 0; right: 0; margin: 0; }
+      .bp-body { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+
+      /* preview-browser-bar.tsx */
+      .bbar { display: flex; flex-shrink: 0; align-items: center; gap: 0.25rem; min-height: var(--titlebar-height); padding: 0.25rem 0.375rem; border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 60%, transparent); background: var(--dt-background); }
+      .glyph { align-self: center; background: transparent; opacity: 0.6; }
+      .glyph:hover, .glyph.is-active { opacity: 1; }
+      .glyph .codicon { font-size: 0.8125rem !important; }
+      .bbar__field { position: relative; flex: 1; min-width: 0; }
+      .bbar__field .control { padding-right: 1.75rem; }
+      .bbar__field.is-loading .control { padding-left: 1.5rem; }
+      .bbar__spin { position: absolute; left: 0.5rem; top: 50%; transform: translateY(-50%); color: var(--dt-muted-foreground); font-size: 0.75rem !important; }
+      .bbar__copy { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); padding: 0.25rem; background: transparent; color: var(--dt-muted-foreground); opacity: 0.6; cursor: pointer; }
+      .bbar__copy .codicon { font-size: 0.75rem !important; }
+
+      /* The website inside the <webview> — external content, not Hermes UI. */
+      .site { flex: 1; min-height: 0; overflow: hidden; background: var(--white); color: color-mix(in srgb, var(--black) 85%, transparent); font-family: system-ui, sans-serif; }
+      .site__nav { display: flex; align-items: center; gap: 1.5rem; height: 56px; padding: 0 2.5rem; border-bottom: 1px solid color-mix(in srgb, var(--black) 8%, transparent); font-size: 14px; }
+      .site__logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
+      .site__logo span { width: 22px; height: 22px; border-radius: 6px; background: var(--ui-blue); }
+      .site__hero { padding: 4rem 2.5rem 2rem; max-width: 44rem; }
+      .site__hero h1 { margin: 0 0 0.75rem; font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; }
+      .site__hero p { margin: 0 0 1.5rem; font-size: 16px; line-height: 1.5; color: color-mix(in srgb, var(--black) 60%, transparent); }
+      .site__cta { display: inline-block; border-radius: 8px; padding: 0.625rem 1.125rem; background: var(--ui-blue); color: var(--white); font-size: 14px; font-weight: 600; }
+      .site__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; padding: 0 2.5rem; }
+      .site__cards div { height: 120px; border-radius: 10px; background: color-mix(in srgb, var(--black) 4%, transparent); border: 1px solid color-mix(in srgb, var(--black) 7%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="os-win" style="left:130px;top:12px;width:960px;height:720px">
+              <div class="bp-strip" aria-hidden="true">
+                <div class="win-controls"><span><i class="codicon codicon-chrome-minimize"></i></span><span><i class="codicon codicon-chrome-maximize"></i></span><span><i class="codicon codicon-chrome-close"></i></span></div>
+              </div>
+              <section data-views="bp" class="bp-body">
+                <!-- ── View: page loaded ─────────────────────────────── -->
+                <div data-view="page" class="bp-body">
+                  <div class="bbar">
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Back"><i class="codicon codicon-arrow-left"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Forward" disabled><i class="codicon codicon-arrow-right"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Reload page"><i class="codicon codicon-refresh"></i></button>
+                    <div class="bbar__field">
+                      <input class="control control--xs" aria-label="Address" value="http://localhost:5173/pricing" spellcheck="false" />
+                      <button class="bbar__copy" aria-label="Copy URL"><i class="codicon codicon-copy"></i></button>
+                    </div>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Annotate"><i class="codicon codicon-comment"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Pop in"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Show preview console"><i class="codicon codicon-terminal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Open preview DevTools"><i class="codicon codicon-bug"></i></button>
+                  </div>
+                  <div class="site">
+                    <div class="site__nav"><span class="site__logo"><span></span>Pocket Planner</span><span>Features</span><span>Pricing</span><span>Docs</span></div>
+                    <div class="site__hero">
+                      <h1>Plans that grow with your team</h1>
+                      <p>Start free, upgrade when you need shared boards and history. This is the dev server running in the user's project.</p>
+                      <span class="site__cta">Get started</span>
+                    </div>
+                    <div class="site__cards"><div></div><div></div><div></div></div>
+                  </div>
+                </div>
+
+                <!-- ── View: loading ─────────────────────────────────── -->
+                <div data-view="loading" class="bp-body" hidden>
+                  <div class="bbar">
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Back"><i class="codicon codicon-arrow-left"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Forward" disabled><i class="codicon codicon-arrow-right"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Reload page"><i class="codicon codicon-refresh codicon-modifier-spin"></i></button>
+                    <div class="bbar__field is-loading">
+                      <i class="codicon codicon-loading codicon-modifier-spin bbar__spin"></i>
+                      <input class="control control--xs" aria-label="Address" value="https://docs.pocketplanner.dev/getting-started" spellcheck="false" />
+                      <button class="bbar__copy" aria-label="Copy URL"><i class="codicon codicon-copy"></i></button>
+                    </div>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Annotate"><i class="codicon codicon-comment"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Pop in"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph is-active" aria-label="Hide preview console" aria-pressed="true"><i class="codicon codicon-terminal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Open preview DevTools"><i class="codicon codicon-bug"></i></button>
+                  </div>
+                  <div class="site" style="opacity:.55">
+                    <div class="site__nav"><span class="site__logo"><span></span>Pocket Planner</span><span>Features</span><span>Pricing</span><span>Docs</span></div>
+                    <div class="site__hero"><h1>Plans that grow with your team</h1></div>
+                  </div>
+                </div>
+
+                <!-- ── View: blank (PanelEmpty) ──────────────────────── -->
+                <div data-view="blank" class="bp-body" hidden>
+                  <div class="bbar">
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Back" disabled><i class="codicon codicon-arrow-left"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Forward" disabled><i class="codicon codicon-arrow-right"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Reload page"><i class="codicon codicon-refresh"></i></button>
+                    <div class="bbar__field">
+                      <input class="control control--xs" aria-label="Address" placeholder="Enter address" spellcheck="false" />
+                      <button class="bbar__copy" aria-label="Copy URL"><i class="codicon codicon-copy"></i></button>
+                    </div>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Pop in"><i class="codicon codicon-screen-normal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Show preview console"><i class="codicon codicon-terminal"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs glyph" aria-label="Open preview DevTools"><i class="codicon codicon-bug"></i></button>
+                  </div>
+                  <div class="center" style="flex:1;background:var(--ui-bg-chrome)">
+                    <div class="empty-state" style="min-height:0">
+                      <div><i class="ti ti-world empty-state__icon"></i><div class="empty-state__desc">Type an address above to browse, or ask Hermes to open a page.</div></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="bp:page">Page loaded</button>
+        <button class="btn btn--secondary btn--sm" data-show="bp:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="bp:blank">Blank</button>
+      </nav>
+    </div>
+  </body>
+</html>

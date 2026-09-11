@@ -1,0 +1,101 @@
+<!doctype html>
+<!--
+  Screen:      Session switcher (E · app-wide overlay, floating HUD)   Ctrl+Tab / Ctrl+Shift+Tab (also Ctrl+PageDown / PageUp)
+  Replicates:  apps/desktop/src/app/session-switcher.tsx, app/floating-hud.ts, app/chat/session-status-dot.tsx, store/session-switcher.ts
+  Views:       #switcher=open | cycling
+  Measurements:
+    - HUD: top-3 (0.75rem) centred, w-[min(19rem,100vw-2rem)], max-h min(22rem, 64vh), p-1, overflow-y auto, rounded-xl (3.2px),
+      1px --stroke-nous, bg --ui-chat-bubble-background, shadow-nous; no dim, no blur
+    - row: rounded (sm), gap-2 px-2 py-1, 12px, tight leading; selected = bg --dt-accent + accent-foreground, others --ui-text-secondary
+    - status dot (6px): working = --ui-accent, unread = --ui-success, needs input = amber-500, stalled = hollow accent,
+      background process = hollow tertiary, draft = hollow quaternary, idle = 4px quaternary
+    - title truncates; shortcut hint "⌃1".."⌃9" mono 10px tabular, --ui-text-quaternary (selected: accent-foreground/70); rows 10+ have none
+  Behaviour:
+    - z rungs: transparent click-catcher var(--z-switcher-backdrop) 219, HUD var(--z-switcher) 220
+    - most-recently-used order; Ctrl+Tab opens it with the previous session selected, each further Tab moves down (Shift+Tab up),
+      releasing Ctrl opens the selected session and closes. The selected row scrolls into view
+    - rows open on mousedown (Ctrl+click on macOS); clicking outside closes without switching. No Dialog: Tab stays global
+    - rows get the row-hover fade (lands instantly, fades out 100ms)
+  Mobile:      No keyboard switcher on mobile; switching sessions from the list is at parity (Sessions, M07 in docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Session switcher · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .sw-catcher { position: absolute; inset: 0; z-index: var(--z-switcher-backdrop); }
+      .sw { position: absolute; left: 50%; top: 0.75rem; z-index: var(--z-switcher); width: min(19rem, calc(100% - 2rem)); max-height: 22rem; overflow-y: auto; padding: 0.25rem; transform: translateX(-50%); user-select: none;
+        border: 1px solid var(--stroke-nous); border-radius: var(--radius-xl); background: var(--ui-chat-bubble-background); box-shadow: var(--shadow-nous); }
+      .sw-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; line-height: 1.25; color: var(--ui-text-secondary); cursor: default; }
+      .sw-row.is-selected, .sw-row.is-selected:hover { background: var(--dt-accent); color: var(--dt-accent-foreground); }
+      .sw-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sw-row__key { flex-shrink: 0; font-family: var(--dt-font-mono); font-size: 0.625rem; font-variant-numeric: tabular-nums; color: var(--ui-text-quaternary); }
+      .sw-row.is-selected .sw-row__key { color: color-mix(in srgb, var(--dt-accent-foreground) 70%, transparent); }
+      .sdot { flex-shrink: 0; width: 0.375rem; height: 0.375rem; border-radius: 50%; }
+      .sdot--working { background: var(--ui-accent); }
+      .sdot--unread { background: var(--ui-success); }
+      .sdot--needs-input { background: var(--tw-amber-500); }
+      .sdot--stalled { border: 1px solid var(--ui-accent); }
+      .sdot--background { border: 1px solid var(--ui-text-tertiary); }
+      .sdot--draft { border: 1px solid var(--ui-text-quaternary); }
+      .sdot--idle { width: 0.25rem; height: 0.25rem; margin: 0 1px; background: var(--ui-text-quaternary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="turn"><div class="scaffold"><div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div></div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div></div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <div class="sw-catcher"></div>
+          <section data-views="switcher">
+            <!-- ── First Ctrl+Tab: previous session selected ── -->
+            <div data-view="open" class="sw" role="listbox" aria-label="Switch session">
+              <div class="sw-row row-hover"><span class="sdot sdot--working"></span><span class="sw-row__title">Refactor gateway auth handshake</span><span class="sw-row__key">⌃1</span></div>
+              <div class="sw-row row-hover is-selected"><span class="sdot sdot--unread"></span><span class="sw-row__title">Why is the e2e suite flaky on Windows?</span><span class="sw-row__key">⌃2</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--needs-input"></span><span class="sw-row__title">Draft README for the Android client</span><span class="sw-row__key">⌃3</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Summarize inbox every morning</span><span class="sw-row__key">⌃4</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--background"></span><span class="sw-row__title">SQLite FTS for session search</span><span class="sw-row__key">⌃5</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Port nous theme tokens to mobile</span><span class="sw-row__key">⌃6</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--draft"></span><span class="sw-row__title">Benchmark streaming throttle</span><span class="sw-row__key">⌃7</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--stalled"></span><span class="sw-row__title">Kanban board orchestration ideas</span><span class="sw-row__key">⌃8</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Voice mode latency notes</span><span class="sw-row__key">⌃9</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">SSH remote backend setup</span></div>
+            </div>
+            <!-- ── Ctrl held, Tab pressed three more times ── -->
+            <div data-view="cycling" class="sw" role="listbox" aria-label="Switch session" hidden>
+              <div class="sw-row row-hover"><span class="sdot sdot--working"></span><span class="sw-row__title">Refactor gateway auth handshake</span><span class="sw-row__key">⌃1</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--unread"></span><span class="sw-row__title">Why is the e2e suite flaky on Windows?</span><span class="sw-row__key">⌃2</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--needs-input"></span><span class="sw-row__title">Draft README for the Android client</span><span class="sw-row__key">⌃3</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Summarize inbox every morning</span><span class="sw-row__key">⌃4</span></div>
+              <div class="sw-row row-hover is-selected"><span class="sdot sdot--background"></span><span class="sw-row__title">SQLite FTS for session search</span><span class="sw-row__key">⌃5</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Port nous theme tokens to mobile</span><span class="sw-row__key">⌃6</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--draft"></span><span class="sw-row__title">Benchmark streaming throttle</span><span class="sw-row__key">⌃7</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--stalled"></span><span class="sw-row__title">Kanban board orchestration ideas</span><span class="sw-row__key">⌃8</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">Voice mode latency notes</span><span class="sw-row__key">⌃9</span></div>
+              <div class="sw-row row-hover"><span class="sdot sdot--idle"></span><span class="sw-row__title">SSH remote backend setup</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="switcher:open">Opened (Ctrl+Tab)</button>
+        <button class="btn btn--secondary btn--sm" data-show="switcher:cycling">Cycling (Tab ×3)</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  Screen:      Attach a URL dialog (F · dialogs), opened from the composer's add-context menu
+  Replicates:  apps/desktop/src/app/chat/composer/url-dialog.tsx, components/ui/{dialog,input,button}.tsx
+  Views:       #dlg=empty | #dlg=hint | #dlg=valid
+  Measurements:
+    - DialogContent "max-w-md" → 28rem, bodyClassName "gap-5" → 1.25rem between header and form
+    - title with Globe icon (size-4, --dt-primary), .9375rem semibold; description 12px/16px tertiary
+    - form grid gap-4; input block grid gap-1.5; Input = control default (px-2.5 py-1.5, 12px/16px, radius 2.5px),
+      inputMode url, autocomplete/autocorrect/spellcheck off
+    - hint line: 12px, --dt-muted-foreground at 85%, "https://…" in the mono face
+    - footer: Cancel ghost + Attach default
+  Behaviour:
+    - Attach enabled only when the trimmed value starts with http:// or https:// (case-insensitive).
+    - The hint appears once something is typed that does not start with a scheme.
+    - Enter submits the form (no-op while Attach is disabled); Esc / X / backdrop close. The input is focused
+      on open (the composer passes its ref). Hermes fetches the page and adds it as context for this turn.
+  Mobile:      Chat is at parity on mobile (docs/PARITY.md, M06); URL attach is not listed there, so treat it as
+               unverified.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Attach URL · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; gap: 1.25rem; }
+      .form { display: grid; gap: 1rem; }
+      .url-hint { margin: 0; font-size: 0.75rem; line-height: 1rem; color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="bench">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Benchmark the streaming throttle: how many deltas per second before the transcript janks?</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran</span><span class="tool-row__meta">node scripts/bench-stream.mjs --rate 240</span><span class="t-success">done</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Frames stay under 16ms up to about 180 deltas/s. Past that, the markdown re-parse dominates. Batching deltas into 50ms windows keeps it smooth at 400/s.</p></div>
+                </div>
+              </div>
+            </div>
+            <div class="composer-dock">
+              <div class="composer">
+                <div class="composer__row">
+                  <button class="composer__ctl" aria-label="Add context" style="background:var(--chrome-action-hover);color:var(--dt-foreground)"><i class="codicon codicon-add"></i></button>
+                  <div class="composer__input">Compare with the approach in this post</div>
+                  <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                  <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Empty ── -->
+            <div data-view="empty">
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-globe"></i>Attach a URL</h2>
+                  <p class="dialog__desc">Hermes will fetch the page and include it as context for this turn.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <input class="control is-focused" inputmode="url" placeholder="https://example.com/post" value="" />
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default" disabled>Attach</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Typed without a scheme: hint, Attach disabled ── -->
+            <div data-view="hint" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-globe"></i>Attach a URL</h2>
+                  <p class="dialog__desc">Hermes will fetch the page and include it as context for this turn.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <input class="control is-focused" inputmode="url" placeholder="https://example.com/post" value="blog.chromium.org/2024/raf-batching" />
+                    <p class="url-hint">Include the full URL, e.g. <span class="t-mono">https://…</span></p>
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default" disabled>Attach</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Valid ── -->
+            <div data-view="valid" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-globe"></i>Attach a URL</h2>
+                  <p class="dialog__desc">Hermes will fetch the page and include it as context for this turn.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <input class="control is-focused" inputmode="url" placeholder="https://example.com/post" value="https://blog.chromium.org/2024/raf-batching" />
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default">Attach</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:hint">No scheme (hint)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:valid">Valid URL</button>
+      </nav>
+    </div>
+  </body>
+</html>

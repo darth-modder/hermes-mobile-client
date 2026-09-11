@@ -1,0 +1,382 @@
+<!doctype html>
+<!--
+  Screen:      Bots tab (C · Bot Mode plugin, left sidebar)   no route; the "Bots" pane docked as the second tab
+               of the sessions zone (SESSIONS | BOTS tab strip). Bot Mode is on by default.
+  Replicates:  apps/desktop/src/plugins/hermes-bots/plugin.tsx (pane registration l.364-402),
+               roster-pane.tsx (BotsPane l.253-1086), roster-sections.tsx (RosterSectionHeader l.240-295),
+               bot-row.tsx (BotRow l.93-447, GroupRow l.461-572), avatar.tsx (BotFace l.951-1078),
+               user-sections-ui.tsx (UserSectionHeader l.130-225, SectionDropZone l.265-344), i18n.ts (en.roster/sections)
+  Views:       #tab=roster (default) | #tab=menu (right-click a bot: context menu + "Move to section" submenu)
+               | #tab=add (the pane header "+" dropdown) | #tab=empty (no bots yet)
+  Measurements:
+    - pane registered 260px wide but docks CENTER into the sessions zone, so it takes the sidebar width (237px)
+    - header: px-2.5 pt-2.5 pb-1.5 (10/10/6px); "BOTS" 11px semibold uppercase tracking-wider (0.05em), --ui-text-quaternary;
+      right cluster gap-0.5: bell / bell-slash + add, Button size icon-xs (24px) ghost rounded-md, --ui-text-tertiary
+    - tools row: px-2.5 pb-1.5 gap-1; SearchField flex-1 at opacity .5 (1 on focus / when filled), input 12px,
+      placeholder --ui-text-tertiary; filter button size-7 (28px), turns --ui-accent when filters are active
+    - list: px-1.5 pb-2, rows gap-0.5 (2px), overflow-y auto
+    - bot row: flex gap-2.5 (10px), rounded-md (2px), px-2 py-2; hover --chrome-action-hover; selected --ui-row-active-background;
+      face 34px; name 13px medium; age 11px --ui-text-quaternary; detail line text-xs (12px) --ui-text-tertiary,
+      handle mono 11px quaternary (only when two rows share a display name), preview italic when a bot wrote it (A2A prefix stripped);
+      lead cell size-3.5 (14px) with the session status dot size-1.5 (6px): working = --ui-accent, needs-input = amber-500;
+      pinned / eye-closed marks 11px quaternary; attention = codicon warning 11px amber-600 (dark amber-300)
+    - group row: same shell; 34px lead column holding a size-8 (32px) rounded-md tile, --chrome-action-hover fill,
+      codicon organization (or the room picture, ring-1 --ui-stroke-tertiary); offline badge size-4 circle bottom-right,
+      --ui-bg-primary fill, ring-1 stroke-tertiary, codicon debug-disconnect 10px amber; needs-you = codicon question --ui-accent;
+      preview "@handle: text" or "You: text", else "N bots"
+    - section heading (RosterSectionHeader): rounded-md px-2 py-1.5, 11px semibold uppercase tracking-wider quaternary,
+      gap-1.5: chevron-right 12px (rotates 90deg open, 150ms) + folder / inbox icon + label + count (font-normal tabular-nums);
+      hover --chrome-action-hover + --ui-text-secondary; user sections add a ⋯ button (opacity 0 until the row hovers)
+    - empty user section: mx-1 mb-1 rounded-md 1px dashed --ui-stroke-secondary, px-2 py-2, 11px centered quaternary
+    - hidden block: mt-1 border-t --ui-stroke-tertiary pt-1; toggle row px-2 py-1.5 11px medium tertiary
+    - context menu / dropdown: popover surface, items 12px px-2 py-1, rounded-md; destructive item --dt-destructive
+  Behaviour (not visible statically):
+    - click a bot row: opens that bot's canonical "Bot Chat" (created and pinned when the bot was born); tabs stay open beside it
+    - hovering a row pre-warms the bot's gateway (warmProfile / warmAgent)
+    - rows sort pinned first, then newest activity (max of bot created, last message in any session, live worker)
+    - drag a row onto a section block: every valid block gets a 1px inset ring (--ui-stroke-secondary) while dragging,
+      the hovered block lights --ui-accent/10 + ring --ui-accent; the dragged row fades to .4; Esc cancels the drag
+    - section heading: click folds, double-click renames, right-click = same menu as ⋯ (Rename… / Move up / Move down / Delete);
+      deleting a section never deletes bots, it toasts "Deleted “X” — N bots moved to Unassigned" with Undo (8s)
+    - search appears once the roster reaches a size threshold or spans more than one gateway; the filter menu has
+      Bots and group chats / Bots only / Group chats only, Any activity / Active now / Recently active / Older,
+      per-gateway rows when several gateways exist, and "Clear filters"
+    - with several gateways the roster buckets by gateway heading (kind glyph + label + count, debug-disconnect when down);
+      user sections then nest under each gateway (ml-2.5 border-l --ui-stroke-tertiary pl-1)
+    - hidden bots collect in the "Hidden" block at the bottom (click to expand); they keep working and never toast
+    - "New group chat" is disabled until at least 2 local bots exist; bell toggles activity toasts (default off)
+    - the Routines (Scheduled jobs) pane is registered only while this tab is showing AND a bot chat owns the workspace;
+      switching back to Sessions unregisters it
+  Mobile:      Bot Mode (Bots tab, group chat, routines) is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bots tab · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── Bot Mode page-local styles: tokens only ─────────────────────────── */
+      /* Bot face (avatar.tsx BotFace): body = --face, eyes dark with a light catchlight */
+      .bot-face { display: block; flex-shrink: 0; overflow: visible; --face-eye: color-mix(in srgb, var(--black) 85%, transparent); --face-hl: color-mix(in srgb, var(--white) 85%, transparent); }
+
+      /* The stamped sidebar slot hosts the whole Bots pane */
+      [data-slot="bots-pane"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+      .bots-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-inline: -0.625rem; }
+      .bp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.625rem 0.625rem 0.375rem; }
+      .bp-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .bp-actions { display: flex; align-items: center; gap: 0.125rem; }
+      .bp-ico { border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .bp-ico:hover { color: var(--dt-foreground); }
+      .bp-tools { display: flex; align-items: center; gap: 0.25rem; min-width: 0; padding: 0 0.625rem 0.375rem; }
+      .bp-tools .search-field { flex: 1; min-width: 0; opacity: 0.5; }
+      .bp-tools .search-field:focus-within { opacity: 1; }
+      .bp-tools .search-field input::placeholder { color: var(--ui-text-tertiary); }
+      .bp-filter { width: 1.75rem; height: 1.75rem; }
+      .bp-list { display: grid; flex: 1; align-content: start; gap: 0.125rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 0.375rem 0.5rem; }
+
+      /* Bot / group row (bot-row.tsx) */
+      .bot-row { display: flex; align-items: center; gap: 0.625rem; width: 100%; min-width: 0; overflow: hidden; border: 0; border-radius: var(--radius-md); padding: 0.5rem; background: transparent; color: var(--dt-foreground); text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .bot-row:hover { background: var(--chrome-action-hover); }
+      .bot-row.is-active { background: var(--ui-row-active-background); }
+      .bot-row__body { flex: 1; min-width: 0; }
+      .bot-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .bot-row__id { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .bot-row__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .bot-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; }
+      .bot-row__age { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .bot-row__sub { display: flex; align-items: center; gap: 0.375rem; min-width: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .bot-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bot-row__preview.is-from-bot { font-style: italic; }
+      .bot-row__handle { flex-shrink: 0; font-family: var(--dt-font-mono); font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .frame .bot-row__mark { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .frame .bot-row__warn { flex-shrink: 0; font-size: 0.6875rem; color: var(--tw-amber-600); }
+      :root.dark .frame .bot-row__warn { color: var(--tw-amber-300); }
+      .bot-row__ask { flex-shrink: 0; color: var(--ui-accent); }
+      .dot { display: block; width: 0.375rem; height: 0.375rem; border-radius: 50%; }
+      .dot--working { background: var(--ui-accent); }
+      .dot--needs { background: var(--tw-amber-500); }
+      .dot--idle { width: 0.3125rem; height: 0.3125rem; }
+      .group-lead { position: relative; display: flex; align-items: center; justify-content: center; width: 34px; flex-shrink: 0; }
+      .group-tile { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-md); background: var(--chrome-action-hover); color: var(--ui-text-tertiary); }
+      .group-badge { position: absolute; right: -0.125rem; bottom: -0.125rem; display: grid; place-items: center; width: 1rem; height: 1rem; border-radius: 50%; background: var(--ui-bg-primary); box-shadow: 0 0 0 1px var(--ui-stroke-tertiary); color: var(--tw-amber-600); }
+      .frame .group-badge .codicon { font-size: 0.625rem; }
+      :root.dark .group-badge { color: var(--tw-amber-300); }
+
+      /* Section headings (RosterSectionHeader / UserSectionHeader) */
+      .sec-head { display: flex; align-items: center; gap: 0.375rem; width: 100%; min-width: 0; margin-top: 0.25rem; border: 0; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; color: var(--ui-text-quaternary); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; cursor: pointer; transition: color 150ms, background-color 150ms; }
+      .sec-head:hover { background: var(--chrome-action-hover); color: var(--ui-text-secondary); }
+      .frame .sec-head .caret { font-size: 0.75rem; transition: transform 150ms; }
+      .sec-head .caret.is-open { transform: rotate(90deg); }
+      .sec-head__count { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
+      .sec-row { display: flex; align-items: center; gap: 0.25rem; width: 100%; min-width: 0; margin-top: 0.25rem; padding-right: 0.25rem; }
+      .sec-row .sec-head { flex: 1; margin-top: 0; }
+      .sec-more { flex-shrink: 0; border: 0; border-radius: var(--radius-md); padding: 0.125rem; background: transparent; color: var(--ui-text-quaternary); opacity: 0; cursor: pointer; transition: opacity 150ms; }
+      .sec-row:hover .sec-more { opacity: 1; }
+      .sec-more:hover { color: var(--dt-foreground); }
+      .sec-rows { display: grid; gap: 0.125rem; min-width: 0; }
+      .sec-empty { margin: 0 0.25rem 0.25rem; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.5rem; color: var(--ui-text-quaternary); font-size: 0.6875rem; text-align: center; }
+      .bp-hidden { margin-top: 0.25rem; border-top: 1px solid var(--ui-stroke-tertiary); padding-top: 0.25rem; }
+      .hidden-toggle { display: flex; align-items: center; gap: 0.25rem; width: 100%; border: 0; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; color: var(--ui-text-tertiary); font-size: 0.6875rem; font-weight: 500; text-align: left; cursor: pointer; }
+      .hidden-toggle:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .frame .hidden-toggle .caret { font-size: 0.75rem; }
+
+      /* PanelEmpty (app/overlays/panel.tsx) */
+      .panel-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .panel-empty__in { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .frame .panel-empty .codicon { font-size: 1.25rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .panel-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .panel-empty__desc { margin: 0; max-width: 24rem; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+
+      /* Workspace: main zone + the collapsed Routines rail on the right edge */
+      .ws-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-chat-surface-background); }
+      .rail { display: flex; flex-direction: column; width: 1.75rem; min-width: 1.75rem; height: 100%; flex-shrink: 0; background: var(--ui-sidebar-surface-background); box-shadow: inset 1px 0 0 var(--ui-stroke-tertiary); cursor: pointer; }
+      .rail-tab { display: flex; justify-content: center; width: 100%; max-height: 12rem; padding: 0.5rem 0; border-left: 1px solid var(--ui-stroke-tertiary); color: var(--ui-text-tertiary); font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; writing-mode: vertical-rl; }
+      .rail-tab:hover { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--black) var(--ui-tab-hover-darken), transparent); color: var(--ui-text-secondary); }
+
+      /* Menus: disabled item */
+      .menu__item.is-disabled { opacity: 0.5; pointer-events: none; }
+
+      /* View helpers: empty roster hides the list; the menu view marks the right-clicked row */
+      .frame:has(.bp-empty:not([hidden])) .bp-tools,
+      .frame:has(.bp-empty:not([hidden])) .bp-list { display: none; }
+      .bp-empty { display: flex; flex: 1; flex-direction: column; }
+      .frame:has([data-view="menu"]:not([hidden])) .bot-row[data-key="coder"] { background: var(--chrome-action-hover); }
+    </style>
+  </head>
+  <body>
+    <!-- Face shapes (avatar.tsx: legacy math faces, viewBox 0 0 40 44). Body = var(--face). -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="face-hexagon" viewBox="0 0 40 44"><path d="M20 3.5 L34.5 11.8 L34.5 28.2 L20 36.5 L5.5 28.2 L5.5 11.8Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-squircle" viewBox="0 0 40 44"><rect x="4" y="4" width="32" height="32" rx="11" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-cloud" viewBox="0 0 40 44"><path d="M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-drop" viewBox="0 0 40 44"><path d="M20 3 C27 12 34 18.5 34 25.5 A14 14 0 0 1 6 25.5 C6 18.5 13 12 20 3Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="25" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="25" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="24.3" r=".65"/><circle cx="24" cy="24.3" r=".65"/></g></symbol>
+        <symbol id="face-circle" viewBox="0 0 40 44"><circle cx="20" cy="20" r="16" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <!-- Working mood: three bouncing dots under the face -->
+        <symbol id="face-dots" viewBox="0 0 40 44"><g style="fill:var(--face)"><circle cx="16.4" cy="41.2" r="1.15"/><circle cx="20" cy="41.2" r="1.15" opacity=".6"/><circle cx="23.6" cy="41.2" r="1.15" opacity=".3"/></g></symbol>
+      </defs>
+    </svg>
+
+    <!-- The roster proto.js injects into the sidebar's Bots tab (data-sidebar="bots") -->
+    <template id="bots-pane">
+      <div class="bots-pane">
+        <div class="bp-head">
+          <span class="bp-title">Bots</span>
+          <div class="bp-actions">
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="Activity toasts off — click to enable"><i class="codicon codicon-bell-slash"></i></button>
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="New bot or group chat"><i class="codicon codicon-add"></i></button>
+          </div>
+        </div>
+        <div class="bp-tools">
+          <label class="search-field"><i class="codicon codicon-search i-xs"></i><input aria-label="Search bots and group chats" placeholder="Search bots and group chats…" /></label>
+          <button class="btn btn--ghost btn--icon-xs bp-ico bp-filter" type="button" aria-label="Filter roster"><i class="codicon codicon-list-filter"></i></button>
+        </div>
+
+        <div class="bp-list" data-slot="bots-roster">
+          <!-- User section: Team -->
+          <div class="sec">
+            <div class="sec-row">
+              <button class="sec-head" type="button" aria-expanded="true" title="Drop bots here · double-click to rename"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-folder"></i><span class="t-truncate">Team</span><span class="sec-head__count">3</span></button>
+              <button class="sec-more" type="button" aria-label="Team section options"><i class="codicon codicon-ellipsis"></i></button>
+            </div>
+            <div class="sec-rows">
+              <button class="bot-row is-active" data-key="researcher" type="button" aria-label="Research Lead · @researcher · This device · Ready">
+                <svg class="bot-face" width="34" height="34" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/><use href="#face-dots" width="100%" height="100%"/></svg>
+                <span class="bot-row__body">
+                  <span class="bot-row__top">
+                    <span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--working" role="status" aria-label="Session running"></span></span><i class="codicon codicon-pinned bot-row__mark" title="Pinned"></i><span class="bot-row__name">Research Lead</span></span>
+                    <span class="bot-row__age">now</span>
+                  </span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">Pulling the 2026 speculative-decoding numbers…</span></span>
+                </span>
+              </button>
+              <button class="bot-row" data-key="coder" type="button" aria-label="coder · @coder · This device · Ready">
+                <svg class="bot-face" width="34" height="34" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+                <span class="bot-row__body">
+                  <span class="bot-row__top">
+                    <span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">coder</span></span>
+                    <span class="bot-row__age">12m</span>
+                  </span>
+                  <span class="bot-row__sub"><span class="bot-row__preview is-from-bot">Can you review the reconnect patch before I push?</span></span>
+                </span>
+              </button>
+              <button class="bot-row" data-key="inbox-butler" type="button" aria-label="inbox-butler · @inbox-butler · This device · Ready">
+                <svg class="bot-face" width="34" height="34" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+                <span class="bot-row__body">
+                  <span class="bot-row__top">
+                    <span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">inbox-butler</span></span>
+                    <i class="codicon codicon-warning bot-row__warn" aria-label="needs attention" title="Provider rate limit — retry later"></i>
+                    <span class="bot-row__age">1h</span>
+                  </span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">Morning digest: 14 new, 3 need a reply</span></span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- User section: Clients -->
+          <div class="sec">
+            <div class="sec-row">
+              <button class="sec-head" type="button" aria-expanded="true"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-folder"></i><span class="t-truncate">Clients</span><span class="sec-head__count">1</span></button>
+              <button class="sec-more" type="button" aria-label="Clients section options"><i class="codicon codicon-ellipsis"></i></button>
+            </div>
+            <div class="sec-rows">
+              <button class="bot-row" data-key="acme-support" type="button" aria-label="acme-support · @acme-support · This device · Ready">
+                <svg class="bot-face" width="34" height="34" style="--face:var(--ui-green)"><use href="#face-drop" width="100%" height="100%"/></svg>
+                <span class="bot-row__body">
+                  <span class="bot-row__top">
+                    <span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">acme-support</span></span>
+                    <span class="bot-row__age">3h</span>
+                  </span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">Drafted the refund reply for ticket #4821.</span></span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- User section with no bots: dashed drop slot -->
+          <div class="sec">
+            <div class="sec-row">
+              <button class="sec-head" type="button" aria-expanded="true"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-folder"></i><span class="t-truncate">Side projects</span><span class="sec-head__count">0</span></button>
+              <button class="sec-more" type="button" aria-label="Side projects section options"><i class="codicon codicon-ellipsis"></i></button>
+            </div>
+            <div class="sec-empty">Drag bots here</div>
+          </div>
+
+          <!-- Unassigned: plain heading, no menu -->
+          <div class="sec">
+            <button class="sec-head" type="button" aria-expanded="true"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-inbox"></i><span class="t-truncate">Unassigned</span><span class="sec-head__count">3</span></button>
+            <div class="sec-rows">
+              <button class="bot-row" data-key="launch-crew" type="button" aria-label="Launch crew, 3 bots, 3 of 3 available">
+                <span class="group-lead"><span class="group-tile"><i class="codicon codicon-organization"></i></span></span>
+                <span class="bot-row__body">
+                  <span class="bot-row__top"><span class="bot-row__name" style="flex:1">Launch crew</span><i class="codicon codicon-question bot-row__ask" aria-label="Needs your input" title="A bot in this group chat needs your input"></i><span class="bot-row__age">5m</span></span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">@coder: Ship behind a flag or wait for the fix? @user</span></span>
+                </span>
+              </button>
+              <button class="bot-row" data-key="default" type="button" aria-label="Hermes · @hermes · This device · Ready">
+                <svg class="bot-face" width="34" height="34" style="--face:var(--ui-purple)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+                <span class="bot-row__body">
+                  <span class="bot-row__top">
+                    <span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">Hermes</span></span>
+                    <span class="bot-row__age">1d</span>
+                  </span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">Release notes are in docs/CHANGELOG.md.</span></span>
+                </span>
+              </button>
+              <button class="bot-row" data-key="research-council" type="button" aria-label="Research council, 3 bots, 2 of 3 available">
+                <span class="group-lead"><span class="group-tile"><i class="codicon codicon-organization"></i></span><span class="group-badge" title="2 of 3 available"><i class="codicon codicon-debug-disconnect"></i></span></span>
+                <span class="bot-row__body">
+                  <span class="bot-row__top"><span class="bot-row__name" style="flex:1">Research council</span><span class="bot-row__age">2d</span></span>
+                  <span class="bot-row__sub"><span class="bot-row__preview">You: Compare the two eval runs side by side</span></span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Hidden bots, collapsed -->
+          <div class="bp-hidden">
+            <button class="hidden-toggle" type="button" aria-expanded="false"><i class="codicon codicon-chevron-right caret"></i><span>Hidden</span><span class="t-quaternary">1</span></button>
+          </div>
+        </div>
+
+        <!-- View: empty roster (PanelEmpty icon="hubot") -->
+        <div class="bp-empty" data-view="empty" hidden>
+          <div class="panel-empty"><div class="panel-empty__in"><i class="codicon codicon-hubot"></i><p class="panel-empty__title">No bots yet</p><p class="panel-empty__desc">Create your first bot.</p></div></div>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <!-- The frame is the views host: panels live both in the sidebar slot and over the window. -->
+        <div class="frame" data-views="tab" data-default="roster">
+          <div data-shell="app" data-sidebar="bots" data-title="Bot Chat">
+            <div class="ws-row">
+              <div class="zone">
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-time">Today 09:12</div>
+                    <div class="msg-user">Message from 🤖 coder (@coder): Can you find current speculative-decoding speedups for 7B models? I need two solid numbers for the README.</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-globe"></i><span>Searched the web</span><span class="tool-row__meta">“speculative decoding 7B speedup 2026” · 8 results</span></div>
+                        <div class="tool-row" style="opacity:1"><span class="loader" style="width:.7rem;height:.7rem"></span><span>Reading</span><span class="tool-row__meta">arxiv.org/abs/2607.01182</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                      <button class="model-pill" type="button">deepseek-v4-flash<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Routines pane, collapsed (defaultCollapsed): a 28px vertical rail -->
+              <div class="rail" title="Restore" role="tablist"><div class="rail-tab" role="tab">Scheduled jobs</div></div>
+            </div>
+          </div>
+
+          <!-- View marker: plain roster -->
+          <div data-view="roster" hidden></div>
+
+          <!-- View: right-click on the "coder" row (ContextMenu) with "Move to section" open -->
+          <div data-view="menu" hidden>
+            <div class="menu" role="menu" style="left:132px;top:382px;width:13.5rem">
+              <button class="menu__item" type="button">Open Bot Chat</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item" type="button">Pin to top</button>
+              <button class="menu__item" type="button">Hide</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item" type="button">Edit…</button>
+              <button class="menu__item" type="button">Groups: Launch crew…</button>
+              <button class="menu__item" type="button">Duplicate</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item" type="button">New chat with this bot</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item is-focused" type="button">Move to section<i class="codicon codicon-chevron-right" style="margin-left:auto"></i></button>
+              <div class="menu__sep"></div>
+              <button class="menu__item is-danger" type="button">Delete</button>
+            </div>
+            <div class="menu" role="menu" style="left:344px;top:600px;width:11rem">
+              <button class="menu__item is-disabled" type="button"><i class="codicon codicon-folder"></i>Team</button>
+              <button class="menu__item" type="button"><i class="codicon codicon-folder"></i>Clients</button>
+              <button class="menu__item" type="button"><i class="codicon codicon-folder"></i>Side projects</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item" type="button"><i class="codicon codicon-new-folder"></i>New section…</button>
+              <button class="menu__item" type="button"><i class="codicon codicon-inbox"></i>Remove from section</button>
+            </div>
+          </div>
+
+          <!-- View: the header "+" dropdown (align end) -->
+          <div data-view="add" hidden>
+            <div class="menu" role="menu" style="left:59px;top:229px;width:10.5rem">
+              <button class="menu__item" type="button"><i class="codicon codicon-hubot"></i>New bot</button>
+              <button class="menu__item" type="button"><i class="codicon codicon-organization"></i>New group chat</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item" type="button"><i class="codicon codicon-new-folder"></i>New section</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="tab:roster">Roster</button>
+        <button class="btn btn--secondary btn--sm" data-show="tab:menu">Right-click menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="tab:add">“+” menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="tab:empty">No bots yet</button>
+      </nav>
+    </div>
+  </body>
+</html>

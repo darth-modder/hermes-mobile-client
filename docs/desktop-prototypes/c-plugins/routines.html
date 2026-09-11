@@ -1,0 +1,400 @@
+<!doctype html>
+<!--
+  Screen:      Routines / Scheduled jobs pane (C · Bot Mode plugin)   no route; a workspace pane docked at the
+               workspace's right edge, registered only while the Bots tab is showing and a bot chat owns the workspace.
+  Replicates:  apps/desktop/src/plugins/hermes-bots/cron.tsx (RoutinesPane l.1188-1327, RoutineRow l.480-589,
+               SchedulePicker l.755-914, CreateRoutineDialog l.940-1118, RoutineDetailDialog l.418-470),
+               plugin.tsx l.404-440 (title = core cron.title "Scheduled jobs", placement main, dock {pane: workspace,
+               pos: right}, defaultCollapsed, width 250px), dialog-parts.tsx (labeled), i18n.ts en.cron + core en.ts cron
+  Views:       pane group:   #pane=jobs (default) | #pane=empty
+               dialog group: #dialog=none (default) | #dialog=picker (New cron job with the structured schedule picker)
+                             | #dialog=freq (its frequency Select open) | #dialog=detail (read-only job inspector)
+  Measurements:
+    - pane 250px, restored from the collapsed 28px rail (see bot-chat.html); a lone pane in its zone, so the tab strip is
+      hidden under the default "Auto" tab-strip setting
+    - header: px-3 pt-3 pb-2 gap-2; bot face 22px; name 12px semibold; @handle mono 10.4px quaternary (only when the display
+      name differs from the handle); "SCHEDULED JOBS" 10.4px uppercase tracking-wider quaternary; "New cron" icon-xs ghost
+    - rule: mx-3 1px --ui-stroke-secondary; list px-2.5 py-2 gap-1.5, overflow-y auto
+    - job card: rounded-lg (2.4px) 1px --ui-stroke-secondary, p-2.5, gap-1.5; hover border --ui-stroke-primary;
+      status dot size-1.5: active --ui-success, paused --ui-text-quaternary; title 12px medium (paused: tertiary);
+      Switch; trash icon-xs ghost at opacity 0 until the card hovers
+    - meta line pl-3.5: schedule pill rounded-full 1px stroke-secondary px-1.5 py-0.5 10.4px tertiary with calendar 11.2px;
+      right side 10.4px quaternary "Next: in 14 hr" or "paused"
+    - legacy card note: rounded-md 1px stroke-secondary px-2 py-1.5 10.4px/16px --ui-accent
+    - dialogs max-w-md (28rem); fields = label 12px medium --ui-text-secondary over the control, gap-1.5; body gap-3.5;
+      Selects h-8 rounded-md; prompt Textarea min-h-20; summary line 10.4px quaternary
+  Behaviour (not visible statically):
+    - lists `cron.manage {action:list, include_disabled, profile:<bot>}` every 20s (staleTime 8s); a failed refresh keeps
+      the last list with "Could not refresh scheduled jobs. Showing the last list we had."
+    - jobs are namespaced "[bot:<name>] <title>"; the title strips the tag; on older gateways only tagged jobs show and the
+      empty state explains "Scheduled jobs exist in this profile but none are tagged for this bot…"
+    - the switch pauses/resumes optimistically (reverts on error); trash removes immediately (no confirm);
+      clicking the card title opens the inspector, which follows the live row across polls
+    - legacy delegated jobs are auto-paused and their switch is disabled until deleted and recreated
+    - schedule picker: frequency first, then only the detail that frequency needs (time for daily / weekdays / weekly / monthly,
+      weekday for weekly, day of month for monthly, N + unit for once / interval, raw string for Advanced);
+      "Stop after N runs" for repeating frequencies; the summary line reads back the plan plus the Hermes schedule string
+      (daily = "M H * * *", weekdays = "M H * * 1-5", weekly = "M H * * D", monthly = "M H DOM * *", interval = "every Nh",
+      once = "30m"); times are every 30 minutes, 12-hour labels
+    - "Send results to": Run history only (default) or "<bot>’s chat (bot responds)" (deliver: bot-chat, costs one turn per run)
+    - Create is disabled until name, instruction and schedule are all set; errors show inline in an accent-bordered box
+  Mobile:      Bot Mode (Bots tab, group chat, routines) is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Routines · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── Bot Mode page-local styles: tokens only (roster block shared with bots-tab.html) ── */
+      .bot-face { display: block; flex-shrink: 0; overflow: visible; --face-eye: color-mix(in srgb, var(--black) 85%, transparent); --face-hl: color-mix(in srgb, var(--white) 85%, transparent); }
+      [data-slot="bots-pane"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+      .bots-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-inline: -0.625rem; }
+      .bp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.625rem 0.625rem 0.375rem; }
+      .bp-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .bp-actions { display: flex; align-items: center; gap: 0.125rem; }
+      .bp-ico { border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .bp-list { display: grid; flex: 1; align-content: start; gap: 0.125rem; min-height: 0; overflow-y: auto; padding: 0 0.375rem 0.5rem; }
+      .bot-row { display: flex; align-items: center; gap: 0.625rem; width: 100%; min-width: 0; overflow: hidden; border: 0; border-radius: var(--radius-md); padding: 0.5rem; background: transparent; color: var(--dt-foreground); text-align: left; cursor: pointer; }
+      .bot-row:hover { background: var(--chrome-action-hover); }
+      .bot-row.is-active { background: var(--ui-row-active-background); }
+      .bot-row__body { flex: 1; min-width: 0; }
+      .bot-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .bot-row__id { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .bot-row__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .bot-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; }
+      .bot-row__age { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .bot-row__sub { display: flex; min-width: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .bot-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .frame .bot-row__mark { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .dot { display: block; width: 0.375rem; height: 0.375rem; border-radius: 50%; }
+      .dot--working { background: var(--ui-accent); }
+      .dot--idle { width: 0.3125rem; height: 0.3125rem; }
+
+      /* Workspace */
+      .ws-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-chat-surface-background); }
+      .zone-tabs .pane-tab { padding: 0; }
+      .zone-tabs .pane-tab + .pane-tab { border-left: 1px solid var(--ui-stroke-quaternary); }
+      .ptl { display: flex; align-items: center; height: 100%; padding: 0 0.5rem; font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; }
+      .frame .pane-tab .pane-tab__close { margin-right: 0.375rem; }
+
+      /* Routines pane (cron.tsx RoutinesPane) */
+      .routines { display: flex; flex-direction: column; width: 250px; flex-shrink: 0; min-height: 0; background: var(--ui-chat-surface-background); box-shadow: inset 1px 0 0 var(--ui-stroke-tertiary); }
+      .rt-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 0.75rem 0.5rem; }
+      .rt-who { flex: 1; min-width: 0; }
+      .rt-name-line { display: flex; align-items: baseline; gap: 0.375rem; min-width: 0; overflow: hidden; }
+      .rt-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; font-weight: 600; }
+      .rt-handle { flex-shrink: 0; font-family: var(--dt-font-mono); font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .rt-sub { font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .rt-rule { margin: 0 0.75rem; border-top: 1px solid var(--ui-stroke-secondary); }
+      .rt-list { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 0.375rem; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 0.625rem; }
+      .rt-list > [data-view] { min-width: 0; }
+      .rt-jobs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.375rem; }
+      .rt-card { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+      .rt-card { display: grid; gap: 0.375rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-lg); padding: 0.625rem; transition: border-color 150ms; }
+      .rt-card:hover { border-color: var(--ui-stroke-primary); }
+      .rt-top { display: flex; align-items: center; gap: 0.5rem; }
+      .rt-open { display: flex; flex: 1; min-width: 0; align-items: center; gap: 0.5rem; border: 0; padding: 0; background: transparent; color: var(--dt-foreground); text-align: left; cursor: pointer; }
+      .rt-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: 50%; background: var(--ui-success); }
+      .rt-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; font-weight: 500; }
+      .rt-card.is-off .rt-dot { background: var(--ui-text-quaternary); }
+      .rt-card.is-off .rt-title { color: var(--ui-text-tertiary); }
+      .rt-del { opacity: 0; transition: opacity 150ms; }
+      .rt-card:hover .rt-del { opacity: 1; }
+      .rt-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-left: 0.875rem; }
+      .rt-pill { display: inline-flex; align-items: center; gap: 0.25rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-full); padding: 0.125rem 0.375rem; color: var(--ui-text-tertiary); font-size: 0.65rem; white-space: nowrap; }
+      .frame .rt-pill .codicon { font-size: 0.7rem; }
+      .rt-next { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .rt-legacy { border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.375rem 0.5rem; color: var(--ui-accent); font-size: 0.65rem; line-height: 1rem; }
+      .switch.is-disabled { opacity: 0.5; cursor: default; }
+      .panel-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .panel-empty__in { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .frame .panel-empty .codicon { font-size: 1.25rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .panel-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .panel-empty__desc { margin: 0; max-width: 24rem; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+
+      /* Dialog bits */
+      .stack { display: grid; gap: 0.875rem; }
+      .h8 { height: 2rem; border-radius: var(--radius-md); }
+      .sp { display: grid; gap: 0.5rem; }
+      .sp-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+      .sp-stop { display: flex; align-items: center; gap: 0.5rem; color: var(--ui-text-tertiary); font-size: 0.75rem; }
+      .sp-summary { color: var(--ui-text-quaternary); font-size: 0.65rem; }
+      .check-row { display: flex; align-items: center; gap: 0.5rem; color: var(--ui-text-tertiary); font-size: 0.75rem; cursor: pointer; }
+      .sel-wrap { position: relative; }
+      .sel-pop { top: calc(100% + 4px); left: 0; z-index: var(--z-modal-popover); min-width: 100%; }
+      .kv { display: grid; gap: 0.375rem; }
+      .kv > div { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: 0.75rem; }
+      .kv dt { flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .kv dd { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+      .boxed { border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; font-size: 0.75rem; line-height: 1.25rem; }
+      .boxed--issue { color: var(--ui-accent); }
+      .boxed--text { max-height: 12rem; overflow-y: auto; color: var(--ui-text-secondary); white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="face-hexagon" viewBox="0 0 40 44"><path d="M20 3.5 L34.5 11.8 L34.5 28.2 L20 36.5 L5.5 28.2 L5.5 11.8Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-squircle" viewBox="0 0 40 44"><rect x="4" y="4" width="32" height="32" rx="11" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-cloud" viewBox="0 0 40 44"><path d="M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-dots" viewBox="0 0 40 44"><g style="fill:var(--face)"><circle cx="16.4" cy="41.2" r="1.15"/><circle cx="20" cy="41.2" r="1.15" opacity=".6"/><circle cx="23.6" cy="41.2" r="1.15" opacity=".3"/></g></symbol>
+      </defs>
+    </svg>
+
+    <!-- Bots roster (abridged from bots-tab.html) -->
+    <template id="bots-pane">
+      <div class="bots-pane">
+        <div class="bp-head">
+          <span class="bp-title">Bots</span>
+          <div class="bp-actions">
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="Activity toasts off — click to enable"><i class="codicon codicon-bell-slash"></i></button>
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="New bot or group chat"><i class="codicon codicon-add"></i></button>
+          </div>
+        </div>
+        <div class="bp-list">
+          <button class="bot-row is-active" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><i class="codicon codicon-pinned bot-row__mark"></i><span class="bot-row__name">Research Lead</span></span><span class="bot-row__age">2m</span></span><span class="bot-row__sub"><span class="bot-row__preview">Sent @coder two figures with sources.</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/><use href="#face-dots" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--working"></span></span><span class="bot-row__name">coder</span></span><span class="bot-row__age">now</span></span><span class="bot-row__sub"><span class="bot-row__preview">Adding the numbers to README.md…</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">inbox-butler</span></span><span class="bot-row__age">1h</span></span><span class="bot-row__sub"><span class="bot-row__preview">Morning digest: 14 new, 3 need a reply</span></span></span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="bots" data-title="Bot Chat">
+            <div class="ws-row">
+              <!-- Main zone: the bot's canonical chat -->
+              <div class="zone">
+                <div class="zone-tabs" role="tablist">
+                  <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  <div class="pane-tab" role="tab"><span class="ptl">coder</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                </div>
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-time">Today 06:00</div>
+                    <div class="msg-user">[Scheduled routine] Scan arXiv for new speculative-decoding papers and list anything with 7B results.</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-globe"></i><span>Searched the web</span><span class="tool-row__meta">arxiv.org listing cs.CL · 3 new</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Three new papers overnight. One reports 7B numbers: <strong>2.4×</strong> tokens/s with a 160M draft model. I sent the figures to @coder for the README.</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                      <button class="model-pill" type="button">deepseek-v4-flash<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Routines pane, expanded (250px) -->
+              <aside class="routines" aria-label="Scheduled jobs">
+                <div class="rt-head">
+                  <svg class="bot-face" width="22" height="22" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+                  <div class="rt-who">
+                    <div class="rt-name-line"><span class="rt-name">Research Lead</span><span class="rt-handle">@researcher</span></div>
+                    <div class="rt-sub">Scheduled jobs</div>
+                  </div>
+                  <button class="btn btn--ghost btn--icon-xs" type="button" aria-label="New cron" title="New cron" data-show="dialog:picker"><i class="codicon codicon-add"></i></button>
+                </div>
+                <div class="rt-rule"></div>
+
+                <section data-views="pane" class="rt-list">
+                  <!-- ── Pane view: jobs ── -->
+                  <div data-view="jobs" class="rt-jobs">
+                    <div class="rt-card">
+                      <div class="rt-top">
+                        <button class="rt-open" type="button" title="Manage" data-show="dialog:detail"><span class="rt-dot"></span><span class="rt-title">Morning paper digest</span></button>
+                        <span class="switch is-on" role="switch" aria-checked="true"></span>
+                        <button class="btn btn--ghost btn--icon-xs rt-del" type="button" aria-label="Delete"><i class="codicon codicon-trash"></i></button>
+                      </div>
+                      <div class="rt-meta"><span class="rt-pill"><i class="codicon codicon-calendar"></i>Daily</span><span class="rt-next">Next: in 14 hr</span></div>
+                    </div>
+                    <div class="rt-card">
+                      <div class="rt-top">
+                        <button class="rt-open" type="button" title="Manage" data-show="dialog:detail"><span class="rt-dot"></span><span class="rt-title">Scan arXiv for speculative decoding</span></button>
+                        <span class="switch is-on" role="switch" aria-checked="true"></span>
+                        <button class="btn btn--ghost btn--icon-xs rt-del" type="button" aria-label="Delete"><i class="codicon codicon-trash"></i></button>
+                      </div>
+                      <div class="rt-meta"><span class="rt-pill"><i class="codicon codicon-calendar"></i>Every 6h</span><span class="rt-next">Next: in 2 hr</span></div>
+                    </div>
+                    <div class="rt-card is-off">
+                      <div class="rt-top">
+                        <button class="rt-open" type="button" title="Manage"><span class="rt-dot"></span><span class="rt-title">Weekly eval report</span></button>
+                        <span class="switch" role="switch" aria-checked="false"></span>
+                        <button class="btn btn--ghost btn--icon-xs rt-del" type="button" aria-label="Delete"><i class="codicon codicon-trash"></i></button>
+                      </div>
+                      <div class="rt-meta"><span class="rt-pill"><i class="codicon codicon-calendar"></i>0 9 * * 1</span><span class="rt-next">paused</span></div>
+                    </div>
+                    <div class="rt-card is-off">
+                      <div class="rt-top">
+                        <button class="rt-open" type="button" title="Manage"><span class="rt-dot"></span><span class="rt-title">Friday benchmark roundup</span></button>
+                        <span class="switch is-disabled" role="switch" aria-checked="false" aria-disabled="true"></span>
+                        <button class="btn btn--ghost btn--icon-xs rt-del" type="button" aria-label="Delete"><i class="codicon codicon-trash"></i></button>
+                      </div>
+                      <div class="rt-meta"><span class="rt-pill"><i class="codicon codicon-calendar"></i>0 16 * * 5</span><span class="rt-next">paused</span></div>
+                      <div class="rt-legacy">Paused for security: delete and recreate this legacy job before running it again.</div>
+                    </div>
+                  </div>
+
+                  <!-- ── Pane view: empty (PanelEmpty icon="watch") ── -->
+                  <div data-view="empty" class="panel-empty" hidden>
+                    <div class="panel-empty__in">
+                      <i class="codicon codicon-watch"></i>
+                      <p class="panel-empty__title">No scheduled jobs yet</p>
+                      <p class="panel-empty__desc">Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.</p>
+                      <div style="margin-top:.5rem"><button class="btn btn--default btn--sm" type="button" data-show="dialog:picker">New cron</button></div>
+                    </div>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </div>
+
+          <section data-views="dialog">
+            <div data-view="none"></div>
+
+            <!-- ── Dialog: New cron job (CreateRoutineDialog) with the structured schedule picker ── -->
+            <div data-view="picker" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" style="max-width:28rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close" data-show="dialog:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New cron job</h2>
+                  <p class="dialog__desc">A recurring task Research Lead runs on a schedule. Runs land in its own chat history.</p>
+                </div>
+                <div class="stack">
+                  <div class="field"><label class="field__label">Name</label><input class="control is-focused" value="Weekly eval report" placeholder="Morning briefing" /></div>
+                  <div class="field"><label class="field__label">Prompt</label><textarea class="control" style="min-height:5rem" placeholder="Summarize my unread Slack threads and email me the top 5...">Compare this week's eval runs against last week's and flag any regression over 2%.</textarea></div>
+                  <div class="field">
+                    <label class="field__label">When to run</label>
+                    <div class="sp">
+                      <div class="sp-2">
+                        <button class="control select-trigger h8" type="button">Every week</button>
+                        <button class="control select-trigger h8" type="button">9:00 AM</button>
+                      </div>
+                      <button class="control select-trigger h8" type="button">Monday</button>
+                      <div class="sp-stop"><span>Stop after</span><input class="control" style="height:1.75rem;width:4rem" placeholder="∞" /><span>runs (blank = forever)</span></div>
+                      <div class="sp-summary">Runs every Monday at 9:00 AM · 0 9 * * 1</div>
+                    </div>
+                  </div>
+                  <div class="field"><label class="field__label">Send results to</label><button class="control select-trigger h8" type="button">Research Lead’s chat (bot responds)</button></div>
+                  <label class="check-row"><span class="checkbox is-on"></span>Continuity: each run sees the previous run’s output (dedupe, continue where it left off)</label>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button" data-show="dialog:none">Cancel</button>
+                  <button class="btn btn--default" type="button">Create cron</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Dialog: same, with the frequency Select open ── -->
+            <div data-view="freq" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" style="max-width:28rem;overflow:visible">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close" data-show="dialog:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New cron job</h2>
+                  <p class="dialog__desc">A recurring task Research Lead runs on a schedule. Runs land in its own chat history.</p>
+                </div>
+                <div class="stack">
+                  <div class="field"><label class="field__label">Name</label><input class="control" value="Weekly eval report" /></div>
+                  <div class="field"><label class="field__label">Prompt</label><textarea class="control" style="min-height:5rem">Compare this week's eval runs against last week's and flag any regression over 2%.</textarea></div>
+                  <div class="field">
+                    <label class="field__label">When to run</label>
+                    <div class="sp">
+                      <div class="sp-2">
+                        <div class="sel-wrap">
+                          <button class="control select-trigger h8" data-state="open" type="button">Every week</button>
+                          <div class="menu sel-pop" role="listbox">
+                            <button class="menu__item" type="button">Once, in…</button>
+                            <button class="menu__item" type="button">Every hour</button>
+                            <button class="menu__item" type="button">Every day</button>
+                            <button class="menu__item" type="button">Weekdays</button>
+                            <button class="menu__item is-checked is-focused" type="button">Every week</button>
+                            <button class="menu__item" type="button">Every month</button>
+                            <button class="menu__item" type="button">Interval</button>
+                            <button class="menu__item" type="button">Advanced…</button>
+                          </div>
+                        </div>
+                        <button class="control select-trigger h8" type="button">9:00 AM</button>
+                      </div>
+                      <button class="control select-trigger h8" type="button">Monday</button>
+                      <div class="sp-stop"><span>Stop after</span><input class="control" style="height:1.75rem;width:4rem" placeholder="∞" /><span>runs (blank = forever)</span></div>
+                      <div class="sp-summary">Runs every Monday at 9:00 AM · 0 9 * * 1</div>
+                    </div>
+                  </div>
+                  <div class="field"><label class="field__label">Send results to</label><button class="control select-trigger h8" type="button">Research Lead’s chat (bot responds)</button></div>
+                  <label class="check-row"><span class="checkbox is-on"></span>Continuity: each run sees the previous run’s output (dedupe, continue where it left off)</label>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button" data-show="dialog:none">Cancel</button>
+                  <button class="btn btn--default" type="button">Create cron</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Dialog: job inspector (RoutineDetailDialog) ── -->
+            <div data-view="detail" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" style="max-width:28rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close" data-show="dialog:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title t-truncate">Scan arXiv for speculative decoding</h2>
+                  <p class="dialog__desc">What this job runs, and when it runs next.</p>
+                </div>
+                <div class="stack">
+                  <div class="boxed boxed--issue">Delivery to bot-chat failed: provider rate limit (429). The next run retries.</div>
+                  <dl class="kv" style="margin:0">
+                    <div><dt>Status</dt><dd>Active</dd></div>
+                    <div><dt>Schedule</dt><dd>Every 6h</dd></div>
+                    <div><dt>Schedule (raw)</dt><dd>every 360m</dd></div>
+                    <div><dt>Next run</dt><dd>in 2 hr · 9/11/2026, 12:00:00 PM</dd></div>
+                    <div><dt>Last run</dt><dd>4 hr ago · 9/11/2026, 6:00:02 AM</dd></div>
+                    <div><dt>Last result</dt><dd>Ran, but delivery failed</dd></div>
+                    <div><dt>Delivers to</dt><dd>bot-chat</dd></div>
+                    <div><dt>Model</dt><dd>deepseek-v4-flash</dd></div>
+                  </dl>
+                  <div class="field"><label class="field__label">Instruction</label><div class="boxed boxed--text">Scan arXiv for new speculative-decoding papers and list anything with 7B results. Include the speedup, the draft model and the hardware. Skip papers you already reported.</div></div>
+                </div>
+                <div class="dialog__footer"><button class="btn btn--secondary" type="button" data-show="dialog:none">Close</button></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="pane:jobs">Jobs</button>
+        <button class="btn btn--secondary btn--sm" data-show="pane:empty">Empty pane</button>
+        <span style="width:12px"></span>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:none">No dialog</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:picker">New job (schedule picker)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:freq">Frequency menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:detail">Job details</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,283 @@
+<!doctype html>
+<!--
+  Screen:      Files (B · panel inside Chat)   pane id `files` (placement right, collapsible, ⌘J)
+  Replicates:  apps/desktop/src/app/right-sidebar/index.tsx (RightSidebarPane, FilesystemTab, FileTreeBody,
+               PaneEmptyState, EmptyState), right-sidebar/files/tree.tsx (ProjectTree, ProjectTreeRow),
+               right-sidebar/file-actions.tsx (FileEntryContextMenu, InlineRenameInput, FileActionDialogs),
+               right-sidebar/files/remote-picker.tsx (RemoteFolderPicker), app/contrib/panes.tsx (FilesPane),
+               shell/sidebar-label.tsx, components/chat/skeletons.tsx (TreeSkeleton)
+  Views:       #files=tree | #files=menu | #files=rename | #files=loading | #files=error | #files=none | #files=remote
+  Measurements:
+    - pane width 237px default (FILE_BROWSER_DEFAULT_WIDTH), min 10rem, max 20rem; --ui-sidebar-surface-background
+    - header (RightSidebarSectionHeader): h-7 (28px), px-2.5; SidebarPanelLabel = .64rem semibold uppercase
+      tracking .16em --theme-primary with an 8px dither square; actions ghost icon-xs (24px), codicons .8125rem
+    - tree rows 22px (ROW_HEIGHT, --file-tree-row-height 1.375rem), indent 10px per level + fixed 17px inset,
+      px-3, gap-1, 12px, --ui-text-secondary (hover foreground); icon column w-3.5, folder/folder-opened/file .875rem
+      in --ui-text-tertiary; no chevron column (the folder glyph carries open state)
+    - selected row: --ui-row-active-background + foreground
+    - git tint on the name: modified --ui-yellow, added --ui-green, conflicted --ui-red
+    - empty/error: title .7rem semibold uppercase tracking .07em muted/75, body .68rem relaxed muted/65,
+      "Try again" .68rem medium
+    - PaneEmptyState: the panel label, pl-0, --ui-text-quaternary, centered
+    - rename input: rounded-sm, 1px border composer-ring 55%, --ui-bg-elevated, px-1 py-0, 12px; stem pre-selected
+    - remote picker dialog: max-w-lg, h min(36rem, 100vh-4rem), p-0; header px-4 py-3 border-b; crumbs px-3 py-2
+      12px muted; folder rows px-2 py-1.5 gap-2 radius-md; footer px-4 py-3 with Cancel (ghost sm) / Select folder (sm)
+  Behaviour:
+    - click a folder toggles it (lazy-loads children, spinner placeholder rows while loading); click a file selects;
+      double-click / Enter previews it in a preview tile docked beside the tree; Shift-click attaches to the composer
+    - rows drag out as application/x-hermes-paths (drop on the composer to attach)
+    - F2 / Enter on a selected row starts the inline rename (Enter commits, Esc cancels, blur commits)
+    - header: refresh reveals on header hover (spins while loading); collapse-all hides when nothing is open
+    - "Reveal in filetree" from any file menu expands ancestors top-down and scrolls the file to the top
+    - skeleton appears only after a short delay (fast project switches just blank → content)
+    - on a remote backend: Reveal / Rename / Delete are hidden, Download appears; folder picking uses the remote picker
+  Mobile:      Absent on mobile by design (docs/PARITY.md): local filesystem and git are machine-bound.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Files · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ws-row { display: flex; flex: 1; min-height: 0; }
+      .chat { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+      .side { width: 237px; flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .side > [data-view] { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .panel-label { display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding-left: 0.5rem; color: var(--theme-primary);
+        font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+      .panel-label::before { content: ''; flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 1px;
+        background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      .panel-label--muted { padding-left: 0; color: var(--ui-text-quaternary); }
+      .rs-head { display: flex; align-items: center; height: 1.75rem; flex-shrink: 0; padding: 0 0.625rem; }
+      .rs-head .btn { color: var(--ui-text-secondary); }
+      .rs-head .codicon { font-size: 0.8125rem; }
+      .reveal { opacity: 0; transition: opacity 150ms; }
+      .rs-head:hover .reveal { opacity: 1; }
+      /* ProjectTree rows (tree.tsx) */
+      .ftree { flex: 1; min-height: 0; overflow: hidden; font-size: 0.75rem; }
+      .frow { display: flex; align-items: center; gap: 0.25rem; height: 22px; padding-right: 0.75rem; border: 1px solid transparent; color: var(--ui-text-secondary); white-space: nowrap; cursor: default; }
+      .frow:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .frow.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .frow__icon { display: flex; align-items: center; justify-content: center; width: 0.875rem; flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .frow__icon .codicon { font-size: 0.875rem; }
+      .frow__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .frow--ph { pointer-events: none; font-style: italic; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .frow--ph .codicon { font-size: 0.75rem; }
+      .spin { animation: proto-spin 1s linear infinite; }
+      .d0 { padding-left: 17px; } .d1 { padding-left: 27px; } .d2 { padding-left: 37px; } .d3 { padding-left: 47px; }
+      .git-m { color: var(--ui-yellow); } .git-a { color: var(--ui-green); } .git-c { color: var(--ui-red); }
+      .rename { flex: 1; min-width: 0; border: 1px solid color-mix(in srgb, var(--dt-composer-ring) 55%, transparent); border-radius: var(--radius-sm);
+        background: var(--ui-bg-elevated); padding: 0 0.25rem; font-size: 0.75rem; color: var(--dt-foreground); outline: none; }
+      .rename::selection { background: var(--ui-selection-background); }
+      .empty2 { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; padding: 0 1rem; text-align: center; }
+      .empty2__title { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 75%, transparent); }
+      .empty2__body { font-size: 0.68rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 65%, transparent); }
+      .try { margin-top: 0.25rem; border: 0; background: transparent; font-size: 0.68rem; font-weight: 500; color: var(--dt-muted-foreground); cursor: pointer; }
+      .try:hover { color: var(--dt-foreground); }
+      .skel-tree { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.625rem 0.75rem; }
+      .skel-row { display: flex; align-items: center; gap: 0.5rem; }
+      /* Remote picker (remote-picker.tsx) */
+      .rp { display: flex; flex-direction: column; gap: 0; height: min(36rem, 100% - 4rem); padding: 0; overflow: hidden; }
+      .rp__head { flex-shrink: 0; padding: 0.75rem 1rem; border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent); }
+      .rp__crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; flex-shrink: 0; padding: 0.5rem 0.75rem; border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent); font-size: 0.75rem; color: var(--dt-muted-foreground); }
+      .rp__crumbs button { border: 0; border-radius: 4px; padding: 0.125rem 0.375rem; background: transparent; cursor: pointer; }
+      .rp__crumbs button:hover { background: var(--dt-muted); color: var(--dt-foreground); }
+      .rp__crumbs button.is-current { color: var(--dt-foreground); }
+      .rp__list { flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem; }
+      .rp__row { display: flex; align-items: center; gap: 0.5rem; width: 100%; border: 0; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; font-size: 0.75rem; color: var(--ui-text-secondary); text-align: left; cursor: pointer; }
+      .rp__row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .rp__row:disabled { opacity: 0.4; pointer-events: none; }
+      .rp__foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-shrink: 0; padding: 0.75rem 1rem; border-top: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth" data-title="">
+            <div class="ws-row">
+              <div class="chat">
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">tui_gateway/server.py</span></div>
+                        <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div>
+                </div>
+              </div>
+              <div class="sash"></div>
+              <aside class="pane pane--side side" aria-label="Right sidebar" data-views="files">
+
+                <!-- ═══ View: tree ═══ -->
+                <div data-view="tree">
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">hermes-android</span></div>
+                    <button class="btn btn--ghost btn--icon-xs reveal" aria-label="Refresh tree"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs" aria-label="Collapse all folders"><i class="codicon codicon-collapse-all"></i></button>
+                  </div>
+                  <div class="ftree" role="tree">
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">.claude</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">android</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">docs</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">desktop-prototypes</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">CONNECTING.md</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-a">DESKTOP-SCREENS.md</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-m">PARITY.md</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">src</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">gateway</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">__tests__</span></div>
+                    <div class="frow d2 is-active" aria-selected="true"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-m">use-gateway-boot.ts</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">ws-ticket.ts</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-c">reconnect.ts</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">screens</span></div>
+                    <div class="frow d2 frow--ph"><span class="frow__icon"><i class="codicon codicon-loading spin"></i></span><span class="frow__name">Loading…</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">theme</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">e2e</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">AGENTS.md</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">app.json</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-m">package.json</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">README.md</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">tsconfig.json</span></div>
+                  </div>
+                </div>
+
+                <!-- ═══ View: menu — right-click a file (FileEntryContextMenu, local backend) ═══ -->
+                <div data-view="menu" hidden>
+                  <div class="rs-head"><div class="flex grow"><span class="panel-label">hermes-android</span></div><button class="btn btn--ghost btn--icon-xs" aria-label="Collapse all folders"><i class="codicon codicon-collapse-all"></i></button></div>
+                  <div class="ftree">
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">src</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">gateway</span></div>
+                    <div class="frow d2 is-active"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-m">use-gateway-boot.ts</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">ws-ticket.ts</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-c">reconnect.ts</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">README.md</span></div>
+                  </div>
+                  <div class="menu" style="left:800px;top:78px;min-width:12rem" role="menu">
+                    <button class="menu__item">Reveal in File Explorer</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item is-focused">Copy path</button>
+                    <button class="menu__item">Copy relative path</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item">Rename…</button>
+                    <button class="menu__item is-danger">Delete</button>
+                  </div>
+                </div>
+
+                <!-- ═══ View: rename — inline rename after F2 ═══ -->
+                <div data-view="rename" hidden>
+                  <div class="rs-head"><div class="flex grow"><span class="panel-label">hermes-android</span></div><button class="btn btn--ghost btn--icon-xs"><i class="codicon codicon-collapse-all"></i></button></div>
+                  <div class="ftree">
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">src</span></div>
+                    <div class="frow d1"><span class="frow__icon"><i class="codicon codicon-folder-opened"></i></span><span class="frow__name">gateway</span></div>
+                    <div class="frow d2 is-active"><span class="frow__icon"><i class="codicon codicon-file"></i></span><input class="rename" aria-label="New name" value="use-gateway-boot.ts" /></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">ws-ticket.ts</span></div>
+                    <div class="frow d2"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name git-c">reconnect.ts</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-file"></i></span><span class="frow__name">README.md</span></div>
+                  </div>
+                </div>
+
+                <!-- ═══ View: loading — delayed TreeSkeleton ═══ -->
+                <div data-view="loading" hidden>
+                  <div class="rs-head"><div class="flex grow"><span class="panel-label">hermes-agent</span></div><button class="btn btn--ghost btn--icon-xs" aria-label="Refresh tree" disabled><i class="codicon codicon-refresh spin"></i></button></div>
+                  <div class="skel-tree" role="status" aria-label="Loading file tree">
+                    <div class="skel-row"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:58%"></span></div>
+                    <div class="skel-row"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:40%"></span></div>
+                    <div class="skel-row" style="padding-left:12px"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:66%"></span></div>
+                    <div class="skel-row" style="padding-left:12px"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:48%"></span></div>
+                    <div class="skel-row" style="padding-left:24px"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:52%"></span></div>
+                    <div class="skel-row"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:36%"></span></div>
+                    <div class="skel-row"><span class="skeleton" style="width:.875rem;height:.875rem;border-radius:3px"></span><span class="skeleton" style="height:.75rem;width:62%"></span></div>
+                  </div>
+                </div>
+
+                <!-- ═══ View: error — unreadable folder ═══ -->
+                <div data-view="error" hidden>
+                  <div class="rs-head"><div class="flex grow"><span class="panel-label">hermes-android</span></div><button class="btn btn--ghost btn--icon-xs reveal"><i class="codicon codicon-refresh"></i></button></div>
+                  <div class="empty2">
+                    <div class="empty2__title">Unreadable</div>
+                    <div class="empty2__body">Could not read this folder (EACCES: permission denied).</div>
+                    <button class="try" type="button">Try again</button>
+                  </div>
+                </div>
+
+                <!-- ═══ View: none — detached chat, no project ═══ -->
+                <div data-view="none" hidden>
+                  <div class="empty2"><span class="panel-label panel-label--muted">No project open</span></div>
+                </div>
+
+                <!-- ═══ View: remote — the remote folder picker dialog (remote backend) ═══ -->
+                <div data-view="remote" hidden>
+                  <div class="rs-head"><div class="flex grow"><span class="panel-label">hermes-android</span></div></div>
+                  <div class="ftree">
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">android</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">docs</span></div>
+                    <div class="frow d0"><span class="frow__icon"><i class="codicon codicon-folder"></i></span><span class="frow__name">src</span></div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- Remote picker dialog (shown with #files=remote) -->
+          <section data-views="dlg" data-default="off">
+            <div data-view="off"></div>
+            <div data-view="on" hidden>
+              <div class="scrim"></div>
+              <div class="dialog rp" role="dialog" aria-label="Choose remote folder">
+                <div class="rp__head">
+                  <h2 class="dialog__title" style="font-size:.875rem">Choose remote folder</h2>
+                  <p class="dialog__desc" style="margin-top:.25rem">Browse folders on the connected backend.</p>
+                </div>
+                <div class="rp__crumbs"><button>/</button><button>home</button><button>ahmed</button><button class="is-current">code</button></div>
+                <div class="rp__list">
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">..</span></button>
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">hermes-agent</span></button>
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">hermes-android</span></button>
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">nous-ui</span></button>
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">scratch</span></button>
+                  <button class="rp__row"><i class="codicon codicon-folder i-sm"></i><span class="t-truncate">skunkworks</span></button>
+                </div>
+                <div class="rp__foot">
+                  <div class="t-truncate t-muted" style="font-size:.75rem">~/code</div>
+                  <div class="flex items-center gap-2"><button class="btn btn--ghost btn--sm">Cancel</button><button class="btn btn--default btn--sm">Select folder</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="files:tree">Tree</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:menu">Context menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:rename">Inline rename</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:error">Unreadable</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:none">No project</button>
+        <button class="btn btn--secondary btn--sm" data-show="files:remote" onclick="HDProto.showView('dlg','on')">Remote picker</button>
+      </nav>
+    </div>
+    <script>
+      // Keep the remote-picker dialog in step with the files view (it lives outside the pane).
+      document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-show^="files:"]')
+        if (t) HDProto.showView('dlg', t.dataset.show === 'files:remote' ? 'on' : 'off')
+      })
+      document.addEventListener('DOMContentLoaded', function () {
+        if (/files=remote/.test(location.hash)) HDProto.showView('dlg', 'on')
+      })
+    </script>
+  </body>
+</html>

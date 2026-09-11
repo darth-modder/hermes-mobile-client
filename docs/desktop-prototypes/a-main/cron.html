@@ -1,0 +1,449 @@
+<!doctype html>
+<!--
+  Screen:      Cron (A · overlay screen)   route `/cron`
+  Replicates:  apps/desktop/src/app/cron/index.tsx (CronView, CronJobListRow, CronJobDetail, CronJobRuns,
+               DeliverCheckboxes, CronEditorDialog), cron/blueprints.tsx (BlueprintSlotControl, slot help),
+               cron/cron-job-model.ts (validation, delivery targets), cron/job-state.ts (STATE_DOT, jobState, jobTitle),
+               app/overlays/panel.tsx (Panel, PanelHeader, PanelBody, PanelList, PanelListRow, PanelRowMenu,
+               PanelAddButton, PanelDetail, PanelMeta, PanelPill, PanelBlock, PanelAction, PanelEmpty, PanelSectionLabel)
+  Views:       #cronv=list | #cronv=empty | #cronv=loading
+               #job=inbox | #job=audit (last_error) | #job=release (paused) | #job=nightly (running) | #job=weekly
+               #crondlg=create | #crondlg=blueprint | #crondlg=delete | #crondlg=menu (row kebab / right-click menu)
+  Measurements:
+    - Panel content: px-5 pb-4, pt calc(titlebar/2 - 0.4375rem); header mb-3, title text-sm (14px) semibold,
+      subtitle text-xs muted/80
+    - PanelBody: flex row gap-5 (1.25rem); PanelList w-52 (13rem); list search SearchField mb-1 (h-7, 12px, 30% opacity at rest)
+    - PanelListRow h-7 radius-md text .78rem; dot size-1.5 (6px); title medium fg/85; kebab size-5 (20px) radius 4px,
+      hidden until row hover; codicon icon .85rem muted/55 for blueprint rows
+    - PanelAddButton h-7 full width ghost sm, codicon add 14px, muted/70
+    - PanelSectionLabel .6rem medium uppercase tracking-wider muted/50 (Blueprints: mt-3 px-2)
+    - Detail: space-y-4 pb-6 pl-1 pr-2; h3 .95rem semibold tracking-tight; PanelPill rounded-full px-1.5 py-0.5 .62rem capitalize
+      (good = primary/10 primary, warn = amber-500/10 amber-600 [dark amber-300], bad = destructive/10, muted = fg/10)
+    - PanelAction sm: ghost muted (hover row-hover bg) / primary = default filled; codicon 14px
+    - PanelMeta grid [5rem | 1fr] gap-x-2 gap-y-1 .7rem; dt muted/55, dd fg/85
+    - last_error: rounded bg destructive/10 p-2 .7rem destructive, alert-triangle size-3
+    - PanelBlock: max-h-48 rounded bg fg/5 p-2.5 .68rem relaxed fg/80 (pre, mono)
+    - run rows: px-2 py-1 radius-md text-xs, time .62rem muted/55 tabular
+    - editor dialog max-w-lg; fields grid gap-4 (Field: label text-xs medium + optional tag .65rem muted, gap-1.5);
+      selects h-9 radius-md; deliver group rounded-md border-input px-3 py-2.5 gap-2, rows text-sm;
+      schedule summary rounded-md bg-quinary px-3 py-2 text-xs; FieldHint .66rem/16px muted
+  Behaviour:
+    - list is the shared $cronJobs atom (sidebar + overlay never drift), scoped to the sidebar profile scope;
+      sorted by title; the detail always shows the selected job or else the first visible one
+    - search filters title, prompt, schedule display/expr and deliver; placeholder rotates "Try “<job title>”" hints
+    - row kebab and right-click open the same menu (Edit cron / Delete); opening from the sidebar scrolls the row into view
+    - Pause/Resume and Trigger now disable while a mutation for that job is in flight; toasts on success
+      ("Cron paused", "Cron triggered"…); run history polls every 8s (60s backstop when change events exist)
+    - clicking a run opens its session; clicking a Blueprint row opens the create dialog pre-set to that recipe
+    - editor: Frequency presets fill the cron expr; "Custom" swaps the summary box for a raw schedule input;
+      validation errors (schedule / prompt required) render in a destructive banner above the footer
+    - deliver checkboxes never allow unchecking the last target; platforms without a home channel read
+      "<name> — set a home channel first"
+    - F5 / Cmd-R refreshes; Esc or X closes
+  Mobile:      Cron is at parity on mobile (docs/PARITY.md, Management · M10).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cron · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Panel primitives (overlays/panel.tsx), exact to source — see report for deltas vs shared .panel-* */
+      .panel { padding-bottom: 1rem; }
+      .pn-fill { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .pn-body { display: flex; flex: 1; gap: 1.25rem; min-height: 0; overflow: hidden; }
+      .pn-list { display: flex; flex-direction: column; flex-shrink: 0; width: 13rem; min-height: 0; }
+      .pn-list > .search-field { flex-shrink: 0; width: 100%; margin-bottom: 0.25rem; padding: 0 0.125rem; }
+      .pn-list__scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; }
+      .pn-row { position: relative; display: flex; flex-shrink: 0; align-items: center; width: 100%; height: 1.75rem; border-radius: var(--radius-md); color: var(--ui-text-secondary); font-size: 0.78rem; cursor: pointer; transition: background-color 100ms ease-out; }
+      .pn-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .pn-row.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .pn-row__main { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; height: 100%; padding: 0 0.25rem 0 0.5rem; }
+      .pn-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-row__icon { flex-shrink: 0; font-size: 0.85rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .pn-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: 50%; }
+      .pn-dot--primary { background: var(--dt-primary); }
+      .pn-dot--amber { background: var(--tw-amber-500); }
+      .pn-dot--destructive { background: var(--dt-destructive); }
+      .pn-dot--quaternary { background: var(--ui-text-quaternary); }
+      .pn-kebab { display: grid; flex-shrink: 0; place-items: center; width: 1.25rem; height: 1.25rem; margin-right: 0.25rem; border: 0; border-radius: 4px; background: transparent; color: var(--ui-text-tertiary); opacity: 0; cursor: pointer; transition: color 100ms, background-color 100ms; }
+      .pn-row:hover .pn-kebab, .pn-kebab.is-open { opacity: 1; }
+      .pn-kebab:hover, .pn-kebab.is-open { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .pn-add { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 100%; height: 1.75rem; border: 0; border-radius: 2.5px; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); cursor: pointer; }
+      .pn-add:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .pn-section-label { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-detail { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+      .pn-detail__inner { display: flex; flex-direction: column; gap: 1rem; padding: 0 0.5rem 1.5rem 0.25rem; }
+      .pn-h3 { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.025em; color: var(--dt-foreground); }
+      .pn-meta { display: grid; grid-template-columns: 5rem 1fr; gap: 0.25rem 0.5rem; margin: 0; font-size: 0.7rem; }
+      .pn-meta dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .pn-meta dd { min-width: 0; margin: 0; overflow-wrap: break-word; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-block { max-height: 12rem; margin: 0; overflow: auto; border-radius: var(--radius-sm); padding: 0.625rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-family: var(--dt-font-mono); font-size: 0.68rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-foreground) 80%, transparent); white-space: pre-wrap; word-break: break-word; }
+      .pn-pill { display: inline-flex; align-items: center; border-radius: var(--radius-full); padding: 0.125rem 0.375rem; font-size: 0.62rem; font-weight: 500; text-transform: capitalize; }
+      .pn-pill--good { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+      .pn-pill--muted { background: color-mix(in srgb, var(--dt-foreground) 10%, transparent); color: var(--dt-muted-foreground); }
+      .pn-pill--warn { background: color-mix(in srgb, var(--tw-amber-500) 10%, transparent); color: var(--tw-amber-600); }
+      :root.dark .pn-pill--warn { color: var(--tw-amber-300); }
+      .pn-pill--bad { background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); }
+      .pn-action { color: var(--dt-muted-foreground); }
+      .pn-action:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .pn-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .pn-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .pn-empty__icon { font-size: 1.25rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .pn-empty__desc { max-width: 24rem; margin: 0; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pn-loader { display: grid; flex: 1; place-items: center; }
+      .pn-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; border-top-color: color-mix(in srgb, var(--dt-primary) 70%, transparent); }
+
+      /* Cron-specific */
+      .cron-error { display: flex; align-items: flex-start; gap: 0.375rem; border-radius: var(--radius-sm); padding: 0.5rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.7rem; }
+      .cron-run { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; width: 100%; border: 0; border-radius: var(--radius-md); padding: 0.25rem 0.5rem; background: transparent; font-size: 0.75rem; text-align: left; cursor: pointer; }
+      .cron-run span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .cron-run span:last-child { flex-shrink: 0; font-size: 0.62rem; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .fld { display: grid; gap: 0.375rem; }
+      .fld__label { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.75rem; font-weight: 500; color: var(--dt-foreground); }
+      .fld__opt { font-size: 0.65rem; font-weight: 400; color: var(--dt-muted-foreground); }
+      .fld__hint { margin: 0; font-size: 0.66rem; line-height: 1rem; color: var(--dt-muted-foreground); }
+      .fld-select { height: 2.25rem; border-radius: var(--radius-md); }
+      .deliver { display: grid; gap: 0.5rem; border: 1px solid var(--dt-input); border-radius: var(--radius-md); padding: 0.625rem 0.75rem; }
+      :root:not(.dark) .deliver { border-color: var(--dt-border); }
+      .deliver label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+      .deliver .checkbox { border-color: var(--dt-border); }
+      .sched-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: var(--ui-bg-quinary); font-size: 0.75rem; }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="cron">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">Summarize my inbox every morning at 8 and send it here.</div><div class="msg-ai"><p>Scheduled “Inbox digest” for 8:00 AM daily, delivered to this desktop.</p></div></div></div>
+          </div>
+
+          <!-- ═══ Cron overlay (Panel) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close cron"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <div class="panel">
+                  <header class="panel__header">
+                    <div class="grow"><h2 class="panel__title">Scheduled jobs</h2><p class="panel__subtitle" style="margin:0">5 jobs</p></div>
+                  </header>
+
+                  <section data-views="cronv" class="pn-fill">
+                    <!-- ── Jobs + detail ── -->
+                    <div data-view="list" class="pn-body">
+                      <div class="pn-list">
+                        <label class="search-field"><i class="ti ti-search" style="color:color-mix(in srgb,var(--dt-muted-foreground) 70%,transparent)"></i><input placeholder="Try “Inbox digest”" aria-label="Search cron jobs..." /></label>
+                        <div class="pn-list__scroll">
+                          <div class="pn-row" data-show="job:audit"><div class="pn-row__main"><span class="pn-dot pn-dot--destructive"></span><span class="pn-row__title">Dependency audit</span></div><button class="pn-kebab" aria-label="Manage" data-show="crondlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="job:inbox"><div class="pn-row__main"><span class="pn-dot pn-dot--primary"></span><span class="pn-row__title">Inbox digest</span></div><button class="pn-kebab" aria-label="Manage" data-show="crondlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="job:nightly"><div class="pn-row__main"><span class="pn-dot pn-dot--primary"></span><span class="pn-row__title">Nightly e2e on Windows</span></div><button class="pn-kebab" aria-label="Manage" data-show="crondlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="job:release"><div class="pn-row__main"><span class="pn-dot pn-dot--amber"></span><span class="pn-row__title">Release notes draft</span></div><button class="pn-kebab" aria-label="Manage" data-show="crondlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="job:weekly"><div class="pn-row__main"><span class="pn-dot pn-dot--primary"></span><span class="pn-row__title">Weekly usage report</span></div><button class="pn-kebab" aria-label="Manage" data-show="crondlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <button class="pn-add" aria-label="New cron" title="New cron" data-show="crondlg:create"><i class="codicon codicon-add"></i></button>
+                          <div class="pn-section-label" style="margin-top:.75rem;padding:0 .5rem">Blueprints</div>
+                          <div class="pn-row" data-show="crondlg:blueprint"><div class="pn-row__main"><i class="codicon codicon-rocket pn-row__icon"></i><span class="pn-row__title">Morning briefing</span></div></div>
+                          <div class="pn-row" data-show="crondlg:blueprint"><div class="pn-row__main"><i class="codicon codicon-rocket pn-row__icon"></i><span class="pn-row__title">Daily standup summary</span></div></div>
+                          <div class="pn-row" data-show="crondlg:blueprint"><div class="pn-row__main"><i class="codicon codicon-rocket pn-row__icon"></i><span class="pn-row__title">Weekly repo digest</span></div></div>
+                          <div class="pn-row" data-show="crondlg:blueprint"><div class="pn-row__main"><i class="codicon codicon-rocket pn-row__icon"></i><span class="pn-row__title">Price watch</span></div></div>
+                        </div>
+                      </div>
+
+                      <section data-views="job" data-default="inbox" class="pn-fill" style="min-width:0">
+                        <!-- Inbox digest: scheduled -->
+                        <div data-view="inbox" class="pn-detail">
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex justify-between gap-3" style="flex-wrap:wrap;align-items:flex-start">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">Inbox digest</h3><span class="pn-pill pn-pill--good">scheduled</span></div>
+                                <div class="flex items-center shrink-0" style="gap:.125rem">
+                                  <button class="btn btn--ghost btn--sm pn-action"><i class="codicon codicon-debug-pause"></i>Pause</button>
+                                  <button class="btn btn--default btn--sm"><i class="codicon codicon-zap"></i>Trigger now</button>
+                                </div>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Frequency</dt><dd>0 8 * * *</dd>
+                                <dt>Last</dt><dd>9/11/2026, 8:00:02 AM</dd>
+                                <dt>Next</dt><dd>9/12/2026, 8:00:00 AM</dd>
+                                <dt>Deliver to</dt><dd>This desktop</dd>
+                                <dt>Model</dt><dd>deepseek-v4-flash</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">Summarize my unread email from the last 24 hours. Group by sender, flag anything that needs a reply today, and list calendar invites separately. Keep it under 200 words.</pre>
+                            </section>
+                            <div>
+                              <div class="pn-section-label" style="margin-bottom:.375rem">Run history · 5</div>
+                              <div class="col" style="gap:1px">
+                                <button class="cron-run row-hover"><span>Inbox digest — 12 unread, 2 need a reply today</span><span>9/11/2026, 8:00:41 AM</span></button>
+                                <button class="cron-run row-hover"><span>Inbox digest — 7 unread, nothing urgent</span><span>9/10/2026, 8:00:37 AM</span></button>
+                                <button class="cron-run row-hover"><span>Inbox digest — 19 unread, invoice from Hetzner</span><span>9/9/2026, 8:00:52 AM</span></button>
+                                <button class="cron-run row-hover"><span>Inbox digest — 4 unread</span><span>9/8/2026, 8:00:29 AM</span></button>
+                                <button class="cron-run row-hover"><span>Inbox digest — 23 unread, 3 calendar invites</span><span>9/7/2026, 8:01:03 AM</span></button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Dependency audit: error with last_error -->
+                        <div data-view="audit" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex justify-between gap-3" style="flex-wrap:wrap;align-items:flex-start">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">Dependency audit</h3><span class="pn-pill pn-pill--bad">error</span></div>
+                                <div class="flex items-center shrink-0" style="gap:.125rem">
+                                  <button class="btn btn--ghost btn--sm pn-action"><i class="codicon codicon-debug-pause"></i>Pause</button>
+                                  <button class="btn btn--default btn--sm"><i class="codicon codicon-zap"></i>Trigger now</button>
+                                </div>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Frequency</dt><dd>0 6 * * 1</dd>
+                                <dt>Last</dt><dd>9/7/2026, 6:00:03 AM</dd>
+                                <dt>Next</dt><dd>9/14/2026, 6:00:00 AM</dd>
+                                <dt>Deliver to</dt><dd>Telegram</dd>
+                              </dl>
+                              <div class="cron-error"><i class="ti ti-alert-triangle" style="font-size:.75rem;margin-top:1px;flex-shrink:0"></i><span style="min-width:0;overflow-wrap:break-word">Provider returned 429: rate limit exceeded for deepseek-v4-flash. The job will retry on its next scheduled run.</span></div>
+                            </header>
+                            <section class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">Run `npm outdated` and `npm audit --omit=dev` in hermes-android. List anything with a known CVE first, then majors we are more than one release behind. Suggest the smallest safe upgrade set.</pre>
+                            </section>
+                            <div>
+                              <div class="pn-section-label" style="margin-bottom:.375rem">Run history · 3</div>
+                              <div class="col" style="gap:1px">
+                                <button class="cron-run row-hover"><span>Dependency audit — failed (rate limited)</span><span>9/7/2026, 6:00:09 AM</span></button>
+                                <button class="cron-run row-hover"><span>Dependency audit — 2 high, 5 moderate</span><span>8/31/2026, 6:01:12 AM</span></button>
+                                <button class="cron-run row-hover"><span>Dependency audit — clean</span><span>8/24/2026, 6:00:58 AM</span></button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Release notes draft: paused (Resume with play icon) -->
+                        <div data-view="release" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex justify-between gap-3" style="flex-wrap:wrap;align-items:flex-start">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">Release notes draft</h3><span class="pn-pill pn-pill--warn">paused</span></div>
+                                <div class="flex items-center shrink-0" style="gap:.125rem">
+                                  <button class="btn btn--ghost btn--sm pn-action"><i class="codicon codicon-play"></i>Resume</button>
+                                  <button class="btn btn--default btn--sm"><i class="codicon codicon-zap"></i>Trigger now</button>
+                                </div>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Frequency</dt><dd>0 17 * * 5</dd>
+                                <dt>Last</dt><dd>8/29/2026, 5:00:04 PM</dd>
+                                <dt>Next</dt><dd>—</dd>
+                                <dt>Deliver to</dt><dd>Slack</dd>
+                                <dt>Model</dt><dd>claude-opus-5</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">Draft release notes from the merged PRs on main since the last tag. Group into Features, Fixes and Internal. Link each PR.</pre>
+                            </section>
+                            <div>
+                              <div class="pn-section-label" style="margin-bottom:.375rem">Run history · 1</div>
+                              <div class="col" style="gap:1px"><button class="cron-run row-hover"><span>Release notes — v0.9.1</span><span>8/29/2026, 5:02:18 PM</span></button></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Nightly e2e: running (runs still loading → spinner) -->
+                        <div data-view="nightly" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex justify-between gap-3" style="flex-wrap:wrap;align-items:flex-start">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">Nightly e2e on Windows</h3><span class="pn-pill pn-pill--good">running</span></div>
+                                <div class="flex items-center shrink-0" style="gap:.125rem">
+                                  <button class="btn btn--ghost btn--sm pn-action"><i class="codicon codicon-debug-pause"></i>Pause</button>
+                                  <button class="btn btn--default btn--sm is-disabled"><i class="codicon codicon-zap"></i>Trigger now</button>
+                                </div>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Frequency</dt><dd>30 2 * * *</dd>
+                                <dt>Last</dt><dd>9/11/2026, 2:30:00 AM</dd>
+                                <dt>Next</dt><dd>9/12/2026, 2:30:00 AM</dd>
+                                <dt>Deliver to</dt><dd>This desktop</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">Run the Playwright e2e suite three times against the mock backend. Report any test that fails at least once, with its trace.</pre>
+                            </section>
+                            <div>
+                              <div class="pn-section-label" style="margin-bottom:.375rem">Run history</div>
+                              <div class="flex items-center gap-1-5 t-muted" style="padding:.25rem 0;font-size:.75rem"><i class="codicon codicon-loading codicon-modifier-spin" style="font-size:.75rem"></i></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Weekly usage report: scheduled, no runs yet -->
+                        <div data-view="weekly" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex justify-between gap-3" style="flex-wrap:wrap;align-items:flex-start">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">Weekly usage report</h3><span class="pn-pill pn-pill--good">scheduled</span></div>
+                                <div class="flex items-center shrink-0" style="gap:.125rem">
+                                  <button class="btn btn--ghost btn--sm pn-action"><i class="codicon codicon-debug-pause"></i>Pause</button>
+                                  <button class="btn btn--default btn--sm"><i class="codicon codicon-zap"></i>Trigger now</button>
+                                </div>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Frequency</dt><dd>0 9 * * 1</dd>
+                                <dt>Last</dt><dd>—</dd>
+                                <dt>Next</dt><dd>9/14/2026, 9:00:00 AM</dd>
+                                <dt>Deliver to</dt><dd>local,telegram</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">Summarize last week's token usage by model and the top five skills. Compare with the week before.</pre>
+                            </section>
+                            <div>
+                              <div class="pn-section-label" style="margin-bottom:.375rem">Run history</div>
+                              <div class="t-muted" style="padding:.25rem 0;font-size:.75rem">No runs yet</div>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+
+                    <!-- ── Empty: no jobs and no blueprints ── -->
+                    <div data-view="empty" class="pn-empty" hidden>
+                      <div class="pn-empty__inner">
+                        <i class="codicon codicon-watch pn-empty__icon"></i>
+                        <p class="pn-empty__title">No scheduled jobs yet</p>
+                        <p class="pn-empty__desc">Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.</p>
+                        <div style="margin-top:.5rem"><button class="btn btn--default btn--sm" data-show="crondlg:create">New cron</button></div>
+                      </div>
+                    </div>
+
+                    <!-- ── Loading (first paint before the atom fills) ── -->
+                    <div data-view="loading" class="pn-loader" role="status" aria-label="Loading cron jobs..." hidden><span class="loader"></span></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Dialogs + row menu ═══ -->
+          <section data-views="crondlg">
+            <div data-view="none"></div>
+
+            <!-- Row kebab / right-click menu (ActionsMenu, w-40) -->
+            <div data-view="menu" hidden>
+              <div class="menu" style="left:232px;top:196px;width:10rem">
+                <button class="menu__item" data-show="crondlg:none"><i class="codicon codicon-edit"></i>Edit cron</button>
+                <button class="menu__item is-danger" data-show="crondlg:delete"><i class="codicon codicon-trash"></i>Delete</button>
+              </div>
+            </div>
+
+            <!-- New cron job: manual editor (Start from = Custom) -->
+            <div data-view="create" hidden>
+              <div class="scrim" data-show="crondlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" data-show="crondlg:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New cron job</h2>
+                  <p class="dialog__desc">Schedule a prompt to run automatically. Use cron syntax or a natural phrase like "every 15 minutes".</p>
+                </div>
+                <div class="fld"><label class="fld__label">Start from</label><button class="control select-trigger fld-select">Custom</button></div>
+                <form class="col gap-4" onsubmit="return false">
+                  <div class="fld"><label class="fld__label">Name <span class="fld__opt">Optional</span></label><input class="control is-focused" placeholder="Morning briefing" /></div>
+                  <div class="fld"><label class="fld__label">Prompt</label><textarea class="control t-mono" style="min-height:6rem" placeholder="Summarize my unread Slack threads and email me the top 5..."></textarea></div>
+                  <div class="grid-2">
+                    <div class="fld"><label class="fld__label">Frequency</label><button class="control select-trigger fld-select">Daily</button></div>
+                    <div class="fld"><label class="fld__label">Deliver to</label>
+                      <div class="deliver" role="group">
+                        <label><span class="checkbox is-on"></span><span>This desktop</span></label>
+                        <label><span class="checkbox"></span><span>Telegram</span></label>
+                        <label><span class="checkbox"></span><span>Slack — set a home channel first</span></label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="fld"><label class="fld__label">Model <span class="fld__opt">Optional</span></label><button class="control select-trigger fld-select">Default (global model)</button></div>
+                  <div class="sched-box"><span class="t-medium" style="color:var(--dt-foreground)">Every day at 9:00 AM</span><span class="t-mono t-muted">0 9 * * *</span></div>
+                  <div class="dialog__footer">
+                    <button class="btn btn--outline" type="button" data-show="crondlg:none">Cancel</button>
+                    <button class="btn btn--default" type="submit">Create cron</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- New cron job from a blueprint (typed slots replace the raw fields) -->
+            <div data-view="blueprint" hidden>
+              <div class="scrim" data-show="crondlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" data-show="crondlg:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New cron job</h2>
+                  <p class="dialog__desc">Schedule a prompt to run automatically. Use cron syntax or a natural phrase like "every 15 minutes".</p>
+                </div>
+                <div class="fld"><label class="fld__label">Start from</label><button class="control select-trigger fld-select">Morning briefing</button><p class="fld__hint">A short daily digest of your calendar, inbox and the topics you follow, at the time you pick.</p></div>
+                <form class="col gap-4" onsubmit="return false">
+                  <div class="fld"><label class="fld__label">Time</label><input class="control" type="time" value="08:00" /><p class="fld__hint">Local time the briefing runs.</p></div>
+                  <div class="fld"><label class="fld__label">Days</label><button class="control select-trigger fld-select">weekdays</button><p class="fld__hint">Which days to run.</p></div>
+                  <div class="fld"><label class="fld__label">Topics</label><input class="control" placeholder="Comma-separated topics to cover" value="android, react native, llm pricing" /></div>
+                  <div class="fld"><label class="fld__label">Deliver to</label>
+                    <div class="deliver" role="group">
+                      <label><span class="checkbox is-on"></span><span>This desktop</span></label>
+                      <label><span class="checkbox is-on"></span><span>Telegram</span></label>
+                      <label><span class="checkbox"></span><span>Slack — set a home channel first</span></label>
+                    </div>
+                  </div>
+                  <div class="dialog__footer">
+                    <button class="btn btn--outline" type="button" data-show="crondlg:none">Cancel</button>
+                    <button class="btn btn--default" type="submit">Schedule it</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Delete ConfirmDialog -->
+            <div data-view="delete" hidden>
+              <div class="scrim" data-show="crondlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete cron job?</h2>
+                  <p class="dialog__desc">This will remove <span class="t-medium" style="color:var(--dt-foreground)">Inbox digest</span> permanently. It will stop firing immediately.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" data-show="crondlg:none">Cancel</button>
+                  <button class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="cronv:list">Jobs</button>
+        <button class="btn btn--secondary btn--sm" data-show="cronv:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="cronv:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="job:inbox">Job: scheduled</button>
+        <button class="btn btn--secondary btn--sm" data-show="job:audit">Job: error</button>
+        <button class="btn btn--secondary btn--sm" data-show="job:release">Job: paused</button>
+        <button class="btn btn--secondary btn--sm" data-show="job:nightly">Job: running</button>
+        <button class="btn btn--secondary btn--sm" data-show="crondlg:menu">Row menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="crondlg:create">New cron</button>
+        <button class="btn btn--secondary btn--sm" data-show="crondlg:blueprint">From blueprint</button>
+        <button class="btn btn--secondary btn--sm" data-show="crondlg:delete">Delete</button>
+        <button class="btn btn--secondary btn--sm" data-show="crondlg:none">No dialog</button>
+      </nav>
+    </div>
+  </body>
+</html>

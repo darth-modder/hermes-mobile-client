@@ -1,0 +1,113 @@
+<!doctype html>
+<!--
+  Screen:      Renderer load-error page (D · window content)   loaded into the main window by
+               loadRendererLoadErrorPage(win, details) when the renderer bundle fails to load
+  Replicates:  apps/desktop/electron/renderer-load-error-page.ts (buildRendererLoadErrorPage),
+               callers in electron/main.ts l.14730-14780
+  Views:       #err=torn (bundle incomplete after an update) | #err=failed (renderer failed to load repeatedly)
+  Measurements:
+    - a self-contained data:text/html page (no stylesheets, images or network) that REPLACES the whole
+      window's content; always dark (color-scheme: dark), never themed
+    - body: flex centre, full height; font system-ui, -apple-system, "Segoe UI", sans-serif
+    - card <main>: max-width 560px, padding 32px, 1px border, radius 12px
+    - h1 18px, margin 0 0 12px · p 14px / 1.5, margin 8px 0 · ul 13px, margin 8px 0, padding-left 20px
+    - code: ui-monospace, "Cascadia Code", Consolas; 12px; padding 2px 6px; radius 4px; word-break: break-all
+    - Reload button: margin-top 16px, padding 8px 18px, no border, radius 6px, 14px, white ink
+    - source literals (page bg / card bg / border / code bg / ink / button / button hover) are all
+      near-black blue-greys plus one blue; reproduced here as mixes of --black, --white and --ui-blue
+  Behaviour (not visible statically):
+    - Reload navigates to the real renderer URL (location.replace(reloadUrl)); without a reloadUrl it
+      reloads in place, and the caller's load-failure policy shows the page again
+    - at most 5 missing assets are listed; the count in the sentence is the full count
+    - the window keeps its OS caption buttons (titleBarOverlay) over the top-right
+  Mobile:      Not applicable: mobile ships as one native bundle, no torn-renderer state (docs/PARITY.md).
+  Unsure:      caption-button colours over this page (shown in the theme's secondary ink).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Load error · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Fixed dark palette of the data: page, derived from tokens that do not change with the theme. */
+      .le {
+        --le-bg: color-mix(in srgb, color-mix(in srgb, var(--white) 5%, var(--black)) 96%, var(--ui-blue));
+        --le-card: color-mix(in srgb, color-mix(in srgb, var(--white) 7%, var(--black)) 95%, var(--ui-blue));
+        --le-border: color-mix(in srgb, color-mix(in srgb, var(--white) 17%, var(--black)) 94%, var(--ui-blue));
+        --le-code: color-mix(in srgb, color-mix(in srgb, var(--white) 10%, var(--black)) 94%, var(--ui-blue));
+        --le-ink: color-mix(in srgb, var(--white) 90%, var(--black));
+        --le-btn: color-mix(in srgb, var(--ui-blue) 75%, var(--white));
+        --le-btn-hover: color-mix(in srgb, var(--ui-blue) 60%, var(--white));
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color-scheme: dark;
+        background: var(--le-bg);
+        color: var(--le-ink);
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        user-select: text;
+      }
+      .le .win-controls { position: absolute; top: 0; right: 0; margin: 0; }
+      .le main { max-width: 560px; padding: 32px; border: 1px solid var(--le-border); border-radius: 12px; background: var(--le-card); }
+      .le h1 { margin: 0 0 12px; font-size: 18px; }
+      .le p { margin: 8px 0; font-size: 14px; line-height: 1.5; }
+      .le code { padding: 2px 6px; border-radius: 4px; background: var(--le-code); font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 12px; word-break: break-all; }
+      .le ul { margin: 8px 0; padding-left: 20px; font-size: 13px; }
+      .le li + li { margin-top: 2px; }
+      .le button { margin-top: 16px; padding: 8px 18px; border: 0; border-radius: 6px; background: var(--le-btn); color: var(--white); font-size: 14px; cursor: pointer; }
+      .le button:hover { background: var(--le-btn-hover); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="le">
+            <div class="win-controls" aria-hidden="true"><span><i class="codicon codicon-chrome-minimize"></i></span><span><i class="codicon codicon-chrome-maximize"></i></span><span><i class="codicon codicon-chrome-close"></i></span></div>
+            <section data-views="err">
+              <!-- ── View: torn bundle ─────────────────────────────────── -->
+              <main data-view="torn">
+                <h1>Hermes couldn’t start the desktop UI</h1>
+                <p>The desktop renderer bundle is incomplete after the last update (7 missing file(s)). (ERR_FILE_NOT_FOUND)</p>
+                <p>The renderer bundle is missing 7 module file(s) (first 5 shown) — the last update replaced the app while its files were locked.</p>
+                <ul>
+                  <li><code>assets/chat-DkP2a9Qe.js</code></li>
+                  <li><code>assets/settings-B81xVh3c.js</code></li>
+                  <li><code>assets/command-palette-Cq7w1LmN.js</code></li>
+                  <li><code>assets/hud-shell-9fTzR0aa.js</code></li>
+                  <li><code>assets/markdown-Ze4uKd2P.js</code></li>
+                </ul>
+                <p>Repair with: <code>hermes desktop --force-build</code></p>
+                <p>If this keeps happening, check <code>logs/desktop.log</code> and try
+                <code>hermes desktop --force-build</code>, then restart the app.</p>
+                <button type="button">Reload</button>
+              </main>
+
+              <!-- ── View: load failed repeatedly ──────────────────────── -->
+              <main data-view="failed" hidden>
+                <h1>Hermes couldn’t start the desktop UI</h1>
+                <p>The desktop renderer failed to load repeatedly after the update. (-6)</p>
+                <p><code>file:///C:/Users/dev/AppData/Local/Programs/Hermes/resources/app.asar/dist/index.html</code></p>
+                <p>Repair with: <code>hermes desktop --force-build</code></p>
+                <p>If this keeps happening, check <code>logs/desktop.log</code> and try
+                <code>hermes desktop --force-build</code>, then restart the app.</p>
+                <button type="button">Reload</button>
+              </main>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="err:torn">Torn bundle</button>
+        <button class="btn btn--secondary btn--sm" data-show="err:failed">Failed to load</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,484 @@
+<!doctype html>
+<!--
+  Screen:      Messaging (A · full page)   route `/messaging` (?platform=<id>)
+  Replicates:  apps/desktop/src/app/messaging/index.tsx (MessagingView, PlatformRow, PlatformDetail,
+               PlatformActionBar, MessagingField, StatePill/SetupPill), messaging/platform-icon.tsx,
+               app/page-search-shell.tsx, app/master-detail.tsx (MasterDetail rail, ListColumn, DetailColumn),
+               app/settings/profile-scope.tsx (SettingsProfileScope), app/settings/primitives.tsx (ListRow),
+               components/ui/{avatar-chip,confirm-dialog,error-state,disclosure-caret}.tsx, components/status-dot.tsx
+  Views:       #msg=telegram (connected, 1 pending pairing request, approved users)
+               #msg=slack (unconfigured + unsaved edits; "Applies to" override on the "work" profile)
+               #msg=signal (startup failed, error banner)
+               #msg=loading (first load: PageLoader, header hidden)
+               #dlg=revoke (ConfirmDialog opened from an approved user's Revoke button)
+  Measurements:
+    - page header (PageSearchShell): grid [1fr | auto | 1fr], gap .75rem, px .75rem, pb .5rem; real pt is
+      titlebar-height + .5rem because the titlebar floats over the page (here the stamped titlebar takes the 34px).
+      No tabs on this page. SearchField: h-7, 12px text, 14px search glyph, opacity .3 until focused/filled,
+      max-width 45vw; placeholder is a random data hint "Try “<platform>”".
+    - "Applies to" scope (SettingsProfileScope): border-b stroke-secondary, px .75rem py .5rem, grid gap .5rem;
+      label 12px medium secondary; chips rounded-full, 1px border, px .75rem py .25rem, 12px; active chip =
+      stroke-secondary border + bg-tertiary + text-primary. Hidden when the user has fewer than 2 profiles.
+    - MasterDetail split="rail": grid [14rem | 1fr]. List column p-2, rows gap .25rem.
+    - PlatformRow: rounded-md (2px), px .5rem py .375rem, gap .5rem; AvatarChip 24px rounded-md, glyph 58% (≈14px),
+      brand colour at 16% tint behind the brand-coloured glyph; name 13px regular; pending count pill
+      min-w-4 rounded-full px .25rem 10.5px (.66rem) medium, warn tone; StatusDot 6px.
+    - DetailColumn: centered max-w 42rem (2xl), px 1.25rem py 1rem, sections spaced 1.25rem (space-y-5).
+      Action bar pinned below the scroll: px 1.25rem py .625rem, chat-surface fill.
+    - Detail header: avatar + h3 15px semibold tracking-tight; StatePill rounded-full px .5rem py .125rem 10.5px
+      medium with a 6px dot; SetupPill same without dot; description 12px/16px tertiary.
+    - SectionTitle: 11.2px (.7rem) semibold uppercase, tracking .14em, muted-foreground.
+    - ListRow is container-queried (@2xl = 42rem). The detail column is narrower than that, so every row STACKS:
+      grid gap .75rem, py .75rem; title 13px medium; description 12px/16px tertiary; the action sits under the text.
+    - Credential input: h-8 (2rem), 12px (CREDENTIAL_CONTROL_CLASS); docs + clear buttons are ghost 32px squares.
+    - "Saved" marker 10.5px medium primary. ErrorBanner: rounded-xl (3.2px), 1px destructive/30, bg destructive/10,
+      px .75rem py .5rem, 12px/16px, 14px alert glyph.
+    - Revoke ConfirmDialog: max-w-md (28rem); footer Cancel (ghost) + Revoke (destructive).
+  Behaviour:
+    - Selecting a row writes ?platform=<id>; with no param the first platform is selected.
+    - Status refreshes live on `platforms.changed` / `pairing.changed` events; older backends poll every 6s while
+      the tab is visible. Ctrl/Cmd+R (refresh hotkey) refetches platforms + pairing.
+    - Switching the "Applies to" profile blanks the list until the new profile's platforms load.
+    - Enable switch saves immediately and toasts "<name> enabled — This change takes effect after a gateway restart."
+      with a "Restart gateway" action; state flips to "Restart needed" (or "Needs setup" when unconfigured).
+    - Credential edits are local until "Save changes"; "Unsaved changes" appears beside the button while dirty.
+      Saved fields show their redacted value as the placeholder; the trash button clears the key immediately.
+    - Pending pairing rows appear only when someone is waiting (warn count pill also shows on the list row).
+      Approve removes the row optimistically; a 429 shows the lock-out message. Revoke asks via ConfirmDialog
+      (Enter confirms; the button walks Revoke → Revoking... → Done, then closes after 600ms).
+    - "Advanced (n)" is a disclosure: caret chevron-right rotates 90° when open (150ms).
+    - PlatformHint shows under the description only for enabled, not-connected platforms:
+      pending_restart → "Restart the gateway from the status bar to apply this change."; gateway stopped →
+      "Start the gateway from the status bar to connect."
+  Mobile:      at parity ("Management: messaging channels and pairing", docs/PARITY.md).
+  Notes:       Brand colours (simpleicons hex in platform-icon.tsx) are approximated with --ui-* tokens here.
+               Tabler 3.44 has no Signal / Mattermost / Home Assistant marks: stand-ins are ti-message-circle,
+               a monogram "M" and ti-smart-home. Matrix is pure black in the source (no monochrome flag), so it is
+               near-invisible in dark mode in the real app too; drawn with --black.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Messaging · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── PageSearchShell (app/page-search-shell.tsx) ── */
+      .pss { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--ui-chat-surface-background); }
+      .pss__head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; flex-shrink: 0; padding: 0.5rem 0.75rem; }
+      .pss__lead, .pss__trail { display: flex; min-width: 0; align-items: center; }
+      .pss__trail { justify-content: flex-end; }
+      .pss__body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+      .pss .search-field { max-width: calc(var(--vw) * 45); padding: 0 0.125rem; }
+      .pss .search-field > .ti { font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pss .search-field input { field-sizing: content; height: 1.75rem; }
+      .pss .search-field input::placeholder { color: var(--dt-muted-foreground); }
+
+      /* ── SettingsProfileScope (settings/profile-scope.tsx) ── */
+      .scope { display: grid; flex-shrink: 0; gap: 0.5rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--ui-stroke-secondary); }
+      .scope__label { font-size: var(--conversation-caption-font-size); font-weight: 500; color: var(--ui-text-secondary); }
+      .scope__chips { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+      .scope-chip { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-full); padding: 0.25rem 0.75rem; background: var(--ui-bg-quinary); color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); cursor: pointer; }
+      .scope-chip:hover { background: var(--chrome-action-hover); }
+      .scope-chip.is-active { border-color: var(--ui-stroke-secondary); background: var(--ui-bg-tertiary); color: var(--ui-text-primary); }
+      .scope__note { margin: 0; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+
+      /* ── MasterDetail split="rail" (app/master-detail.tsx) ── */
+      .md { display: grid; flex: 1; min-height: 0; grid-template-columns: 14rem minmax(0, 1fr); }
+      .md-list { display: flex; flex-direction: column; min-height: 0; padding: 0.5rem; }
+      .md-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .md-detail { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+      .md-detail__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .md-detail__inner { display: flex; flex-direction: column; gap: 1.25rem; max-width: 42rem; margin: 0 auto; padding: 1rem 1.25rem; }
+      .md-actionbar { flex-shrink: 0; padding: 0.625rem 1.25rem; background: var(--ui-chat-surface-background); }
+      .md-actionbar__inner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; max-width: 42rem; margin: 0 auto; }
+
+      /* ── PlatformRow ── */
+      .plat-list { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+      .plat-row { display: flex; width: 100%; align-items: center; gap: 0.5rem; border: 0; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; color: var(--ui-text-secondary); text-align: left; cursor: pointer; transition: background-color 100ms ease-out; }
+      .plat-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .plat-row.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .plat-row__main { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 0.5rem; }
+      .plat-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--conversation-text-font-size); font-weight: 400; }
+      .plat-row__end { display: flex; flex-shrink: 0; align-items: center; gap: 0.375rem; }
+      .count-pill { display: inline-flex; min-width: 1rem; align-items: center; justify-content: center; border-radius: var(--radius-full); padding: 0 0.25rem; font-size: 0.66rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+      /* ── AvatarChip (components/ui/avatar-chip.tsx) ── */
+      .achip { position: relative; display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; flex-shrink: 0; border-radius: var(--radius-md); background: var(--ui-bg-tertiary); color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); font-weight: 500; line-height: 1; }
+      .achip .ti { font-size: 0.875rem; }
+      .achip--brand { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }
+
+      /* ── Tones (PILL_TONE / StatusDot) ── */
+      .tone-good { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+      .tone-muted { background: var(--dt-muted); color: var(--dt-muted-foreground); }
+      .tone-warn { background: color-mix(in srgb, var(--tw-amber-500) 10%, transparent); color: var(--tw-amber-600); }
+      :root.dark .tone-warn { color: var(--tw-amber-300); }
+      .tone-bad { background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); }
+      .sdot { display: inline-block; width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-full); }
+      .sdot--good { background: var(--dt-primary); }
+      .sdot--muted { background: color-mix(in srgb, var(--dt-muted-foreground) 40%, transparent); }
+      .sdot--warn { background: var(--tw-amber-500); }
+      .sdot--bad { background: var(--dt-destructive); }
+      .state-pill { display: inline-flex; flex-shrink: 0; align-items: center; gap: 0.375rem; border-radius: var(--radius-full); padding: 0.125rem 0.5rem; font-size: 0.66rem; font-weight: 500; }
+
+      /* ── PlatformDetail ── */
+      .plat-head { display: flex; align-items: flex-start; gap: 0.75rem; }
+      .plat-head__main { flex: 1; min-width: 0; }
+      .plat-head__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .plat-head h3 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.025em; }
+      .caption { margin: 0.25rem 0 0; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .plat-hint { margin: 0.5rem 0 0; font-size: 0.75rem; line-height: 1.25rem; color: var(--dt-muted-foreground); }
+      .sec-title { margin: 0; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dt-muted-foreground); }
+      .sec-rows { display: grid; gap: 0.25rem; }
+      .lrow { display: grid; gap: 0.75rem; padding: 0.75rem 0; }
+      .lrow__title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: var(--conversation-text-font-size); font-weight: 500; color: var(--dt-foreground); }
+      .lrow__desc { margin-top: 0.25rem; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .lrow__saved { font-size: 0.66rem; font-weight: 500; color: var(--dt-primary); }
+      .field-action { display: flex; align-items: center; gap: 0.5rem; }
+      .field-action .control { height: 2rem; }
+      .adv-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.5rem; border: 0; padding: 0.125rem 0; background: transparent; color: var(--dt-muted-foreground); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.14em; text-align: left; text-transform: uppercase; cursor: pointer; transition: color 150ms; }
+      .adv-toggle:hover { color: var(--dt-foreground); }
+      .error-banner { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent); border-radius: var(--radius-xl); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); }
+      .error-banner .ti { margin-top: 0.125rem; flex-shrink: 0; }
+      .unsaved { font-size: 0.75rem; color: var(--dt-muted-foreground); }
+
+      /* PageLoader stand-in (the real one is a 40px rose-curve Loader at primary/70) */
+      .page-loader { display: grid; flex: 1; place-items: center; }
+      .page-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-nav="messaging" data-title="">
+            <section data-views="msg" class="workspace">
+
+              <!-- ═══════════════ View: Telegram (connected, pending pairing) ═══════════════ -->
+              <div data-view="telegram" class="pss">
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “telegram”" aria-label="Search messaging..." /></label></div>
+                  <span></span>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="scope">
+                    <div class="scope__label">Applies to</div>
+                    <div class="scope__chips"><button class="scope-chip is-active" type="button">default</button><button class="scope-chip" type="button">work</button><button class="scope-chip" type="button">researcher</button></div>
+                  </div>
+                  <div class="md">
+                    <aside class="md-list">
+                      <div class="md-list__scroll">
+                        <ul class="plat-list">
+                          <li><button class="plat-row" data-show="msg:telegram" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-brand-telegram"></i></span><span class="plat-row__main"><span class="plat-row__name">Telegram</span><span class="plat-row__end"><span class="count-pill tone-warn" aria-label="1 pending pairing request">1</span><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)"><i class="ti ti-brand-discord"></i></span><span class="plat-row__main"><span class="plat-row__name">Discord</span><span class="plat-row__end"><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:slack" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)">S</span><span class="plat-row__main"><span class="plat-row__name">Slack</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-whatsapp"></i></span><span class="plat-row__main"><span class="plat-row__name">WhatsApp</span><span class="plat-row__end"><span class="sdot sdot--warn"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:signal" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-message-circle"></i></span><span class="plat-row__main"><span class="plat-row__name">Signal</span><span class="plat-row__end"><span class="sdot sdot--bad"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--black)"><i class="ti ti-brand-matrix"></i></span><span class="plat-row__main"><span class="plat-row__name">Matrix</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)">M</span><span class="plat-row__main"><span class="plat-row__name">Mattermost</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-gmail"></i></span><span class="plat-row__main"><span class="plat-row__name">Email</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-message-2"></i></span><span class="plat-row__main"><span class="plat-row__name">SMS (Twilio)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-cyan)"><i class="ti ti-smart-home"></i></span><span class="plat-row__main"><span class="plat-row__name">Home Assistant</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-apple"></i></span><span class="plat-row__main"><span class="plat-row__name">BlueBubbles (iMessage)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">D</span><span class="plat-row__main"><span class="plat-row__name">DingTalk</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">F</span><span class="plat-row__main"><span class="plat-row__name">Feishu / Lark</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">W</span><span class="plat-row__main"><span class="plat-row__name">WeCom</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-wechat"></i></span><span class="plat-row__main"><span class="plat-row__name">Weixin</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-qq"></i></span><span class="plat-row__main"><span class="plat-row__name">QQ Bot</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-globe"></i></span><span class="plat-row__main"><span class="plat-row__name">API Server</span><span class="plat-row__end"><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-link"></i></span><span class="plat-row__main"><span class="plat-row__name">Webhooks</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                        </ul>
+                      </div>
+                    </aside>
+
+                    <main class="md-detail">
+                      <div class="md-detail__scroll">
+                        <div class="md-detail__inner">
+                          <header class="plat-head">
+                            <span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-brand-telegram"></i></span>
+                            <div class="plat-head__main">
+                              <div class="plat-head__row"><h3>Telegram</h3><span class="state-pill tone-good"><span class="sdot sdot--good"></span>Connected</span></div>
+                              <p class="caption">Chat with Hermes through a Telegram bot you own.</p>
+                            </div>
+                          </header>
+
+                          <section>
+                            <h4 class="sec-title">Pending requests (1)</h4>
+                            <div class="sec-rows" style="margin-top:.25rem">
+                              <div class="lrow"><div><div class="lrow__title">Mara Lindqvist</div><div class="lrow__desc">5810394271 · 4m ago</div></div><div><button class="btn btn--secondary btn--sm" type="button">Approve</button></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Approved users (2)</h4>
+                            <div class="sec-rows" style="margin-top:.25rem">
+                              <div class="lrow"><div><div class="lrow__title">Dana Whitfield</div><div class="lrow__desc">1127736409</div></div><div><button class="btn btn--ghost btn--sm" type="button" aria-label="Revoke Dana Whitfield" data-show="dlg:revoke">Revoke</button></div></div>
+                              <div class="lrow"><div><div class="lrow__title">6022318457</div></div><div><button class="btn btn--ghost btn--sm" type="button" aria-label="Revoke 6022318457">Revoke</button></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Get your credentials</h4>
+                            <p class="caption">In Telegram, talk to @BotFather, run /newbot, and copy the token it gives you. Then grab your numeric user ID from @userinfobot.</p>
+                            <div style="margin-top:.75rem"><a class="btn btn--text-strong btn--sm" href="#" onclick="return false">Open setup guide<i class="ti ti-external-link"></i></a></div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Required</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Bot token</label><span class="lrow__saved">Saved</span></div><div class="lrow__desc">Create a bot with @BotFather, then paste the token it gives you.</div></div>
+                                <div class="field-action"><input class="control" type="password" placeholder="7715...Qx9c" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Open docs"><i class="ti ti-external-link"></i></button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Clear TELEGRAM_BOT_TOKEN"><i class="ti ti-trash"></i></button></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Recommended</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Allowed Telegram user IDs</label><span class="lrow__saved">Saved</span></div><div class="lrow__desc">Recommended. Comma-separated numeric IDs from @userinfobot. Without this, anyone can DM your bot.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="1127736409,6022318457" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Clear TELEGRAM_ALLOWED_USERS"><i class="ti ti-trash"></i></button></div></div>
+                              <div class="lrow"><div><div class="lrow__title"><label>Home chat ID</label></div><div class="lrow__desc">Chat that receives cron output and proactive messages.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="Home chat ID" /></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <button class="adv-toggle" type="button"><span>Advanced (1)</span><i class="codicon codicon-chevron-right" style="font-size:.875rem"></i></button>
+                          </section>
+                        </div>
+                      </div>
+                      <footer class="md-actionbar">
+                        <div class="md-actionbar__inner">
+                          <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="Disable Telegram"></span>
+                          <div class="ml-auto flex items-center gap-2">
+                            <button class="btn btn--default btn--sm is-disabled" type="button"><i class="ti ti-device-floppy"></i>Save changes</button>
+                          </div>
+                        </div>
+                      </footer>
+                    </main>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: Slack (unconfigured, unsaved edits, scope override) ═══════════════ -->
+              <div data-view="slack" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “slack”" aria-label="Search messaging..." /></label></div>
+                  <span></span>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="scope">
+                    <div class="scope__label">Applies to</div>
+                    <div class="scope__chips"><button class="scope-chip" type="button">default</button><button class="scope-chip is-active" type="button">work</button><button class="scope-chip" type="button">researcher</button></div>
+                    <p class="scope__note">Changes on this page apply to the “work” profile.</p>
+                  </div>
+                  <div class="md">
+                    <aside class="md-list">
+                      <div class="md-list__scroll">
+                        <ul class="plat-list">
+                          <li><button class="plat-row" data-show="msg:telegram" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-brand-telegram"></i></span><span class="plat-row__main"><span class="plat-row__name">Telegram</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)"><i class="ti ti-brand-discord"></i></span><span class="plat-row__main"><span class="plat-row__name">Discord</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:slack" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)">S</span><span class="plat-row__main"><span class="plat-row__name">Slack</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-whatsapp"></i></span><span class="plat-row__main"><span class="plat-row__name">WhatsApp</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:signal" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-message-circle"></i></span><span class="plat-row__main"><span class="plat-row__name">Signal</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--black)"><i class="ti ti-brand-matrix"></i></span><span class="plat-row__main"><span class="plat-row__name">Matrix</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)">M</span><span class="plat-row__main"><span class="plat-row__name">Mattermost</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-gmail"></i></span><span class="plat-row__main"><span class="plat-row__name">Email</span><span class="plat-row__end"><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-message-2"></i></span><span class="plat-row__main"><span class="plat-row__name">SMS (Twilio)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-cyan)"><i class="ti ti-smart-home"></i></span><span class="plat-row__main"><span class="plat-row__name">Home Assistant</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-apple"></i></span><span class="plat-row__main"><span class="plat-row__name">BlueBubbles (iMessage)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">D</span><span class="plat-row__main"><span class="plat-row__name">DingTalk</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">F</span><span class="plat-row__main"><span class="plat-row__name">Feishu / Lark</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">W</span><span class="plat-row__main"><span class="plat-row__name">WeCom</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-wechat"></i></span><span class="plat-row__main"><span class="plat-row__name">Weixin</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-qq"></i></span><span class="plat-row__main"><span class="plat-row__name">QQ Bot</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-globe"></i></span><span class="plat-row__main"><span class="plat-row__name">API Server</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-link"></i></span><span class="plat-row__main"><span class="plat-row__name">Webhooks</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                        </ul>
+                      </div>
+                    </aside>
+
+                    <main class="md-detail">
+                      <div class="md-detail__scroll">
+                        <div class="md-detail__inner">
+                          <header class="plat-head">
+                            <span class="achip achip--brand" style="--brand:var(--ui-purple)">S</span>
+                            <div class="plat-head__main">
+                              <div class="plat-head__row"><h3>Slack</h3><span class="state-pill tone-muted"><span class="sdot sdot--muted"></span>Disabled</span><span class="state-pill tone-muted">Needs setup</span></div>
+                              <p class="caption">Talk to Hermes in Slack DMs and channels over Socket Mode.</p>
+                            </div>
+                          </header>
+
+                          <section>
+                            <h4 class="sec-title">Get your credentials</h4>
+                            <p class="caption">Create a Slack app, enable Socket Mode, install it to your workspace, then copy the bot token and app-level token.</p>
+                            <div style="margin-top:.75rem"><a class="btn btn--text-strong btn--sm" href="#" onclick="return false">Open setup guide<i class="ti ti-external-link"></i></a></div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Required</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Slack bot token</label></div><div class="lrow__desc">Use the bot token from OAuth &amp; Permissions after installing your Slack app.</div></div>
+                                <div class="field-action"><input class="control is-focused" type="password" value="xoxb-5581204913-7734" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Open docs"><i class="ti ti-external-link"></i></button></div></div>
+                              <div class="lrow"><div><div class="lrow__title"><label>Slack app token</label></div><div class="lrow__desc">Use the app-level token required for Socket Mode.</div></div>
+                                <div class="field-action"><input class="control" type="password" placeholder="Paste Slack app token" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Open docs"><i class="ti ti-external-link"></i></button></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Recommended</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Allowed Slack user IDs</label></div><div class="lrow__desc">Recommended. Comma-separated Slack user IDs.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="Slack user IDs allowed to talk to Hermes" /></div></div>
+                              <div class="lrow"><div><div class="lrow__title"><label>Home channel ID</label></div><div class="lrow__desc">Channel that receives cron output and proactive messages.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="Home channel ID" /></div></div>
+                            </div>
+                          </section>
+                        </div>
+                      </div>
+                      <footer class="md-actionbar">
+                        <div class="md-actionbar__inner">
+                          <span class="switch switch--xs" role="switch" aria-checked="false" aria-label="Enable Slack"></span>
+                          <div class="ml-auto flex items-center gap-2">
+                            <span class="unsaved">Unsaved changes</span>
+                            <button class="btn btn--default btn--sm" type="button"><i class="ti ti-device-floppy"></i>Save changes</button>
+                          </div>
+                        </div>
+                      </footer>
+                    </main>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: Signal (startup failed) ═══════════════ -->
+              <div data-view="signal" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “signal”" aria-label="Search messaging..." /></label></div>
+                  <span></span>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="scope">
+                    <div class="scope__label">Applies to</div>
+                    <div class="scope__chips"><button class="scope-chip is-active" type="button">default</button><button class="scope-chip" type="button">work</button><button class="scope-chip" type="button">researcher</button></div>
+                  </div>
+                  <div class="md">
+                    <aside class="md-list">
+                      <div class="md-list__scroll">
+                        <ul class="plat-list">
+                          <li><button class="plat-row" data-show="msg:telegram" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-brand-telegram"></i></span><span class="plat-row__main"><span class="plat-row__name">Telegram</span><span class="plat-row__end"><span class="count-pill tone-warn" aria-label="1 pending pairing request">1</span><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)"><i class="ti ti-brand-discord"></i></span><span class="plat-row__main"><span class="plat-row__name">Discord</span><span class="plat-row__end"><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:slack" type="button"><span class="achip achip--brand" style="--brand:var(--ui-purple)">S</span><span class="plat-row__main"><span class="plat-row__name">Slack</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-whatsapp"></i></span><span class="plat-row__main"><span class="plat-row__name">WhatsApp</span><span class="plat-row__end"><span class="sdot sdot--warn"></span></span></span></button></li>
+                          <li><button class="plat-row" data-show="msg:signal" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-message-circle"></i></span><span class="plat-row__main"><span class="plat-row__name">Signal</span><span class="plat-row__end"><span class="sdot sdot--bad"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--black)"><i class="ti ti-brand-matrix"></i></span><span class="plat-row__main"><span class="plat-row__name">Matrix</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-blue)">M</span><span class="plat-row__main"><span class="plat-row__name">Mattermost</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-gmail"></i></span><span class="plat-row__main"><span class="plat-row__name">Email</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-message-2"></i></span><span class="plat-row__main"><span class="plat-row__name">SMS (Twilio)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-cyan)"><i class="ti ti-smart-home"></i></span><span class="plat-row__main"><span class="plat-row__name">Home Assistant</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-apple"></i></span><span class="plat-row__main"><span class="plat-row__name">BlueBubbles (iMessage)</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">D</span><span class="plat-row__main"><span class="plat-row__name">DingTalk</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">F</span><span class="plat-row__main"><span class="plat-row__name">Feishu / Lark</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip">W</span><span class="plat-row__main"><span class="plat-row__name">WeCom</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-green)"><i class="ti ti-brand-wechat"></i></span><span class="plat-row__main"><span class="plat-row__name">Weixin</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-red)"><i class="ti ti-brand-qq"></i></span><span class="plat-row__main"><span class="plat-row__name">QQ Bot</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-globe"></i></span><span class="plat-row__main"><span class="plat-row__name">API Server</span><span class="plat-row__end"><span class="sdot sdot--good"></span></span></span></button></li>
+                          <li><button class="plat-row" type="button"><span class="achip achip--brand" style="--brand:var(--ui-text-tertiary)"><i class="ti ti-link"></i></span><span class="plat-row__main"><span class="plat-row__name">Webhooks</span><span class="plat-row__end"><span class="sdot sdot--muted"></span></span></span></button></li>
+                        </ul>
+                      </div>
+                    </aside>
+
+                    <main class="md-detail">
+                      <div class="md-detail__scroll">
+                        <div class="md-detail__inner">
+                          <header class="plat-head">
+                            <span class="achip achip--brand" style="--brand:var(--ui-blue)"><i class="ti ti-message-circle"></i></span>
+                            <div class="plat-head__main">
+                              <div class="plat-head__row"><h3>Signal</h3><span class="state-pill tone-bad"><span class="sdot sdot--bad"></span>Startup failed</span></div>
+                              <p class="caption">Message Hermes on Signal through a signal-cli REST bridge.</p>
+                            </div>
+                          </header>
+
+                          <div class="error-banner"><i class="ti ti-alert-triangle"></i><span>Could not reach the signal-cli bridge at http://127.0.0.1:8080 (connection refused). Check that the bridge is running, then restart the gateway.</span></div>
+
+                          <section>
+                            <h4 class="sec-title">Get your credentials</h4>
+                            <p class="caption">Run a signal-cli REST bridge somewhere reachable, then point Hermes at the URL and the registered phone number.</p>
+                            <div style="margin-top:.75rem"><a class="btn btn--text-strong btn--sm" href="#" onclick="return false">Open setup guide<i class="ti ti-external-link"></i></a></div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Required</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Signal bridge URL</label><span class="lrow__saved">Saved</span></div><div class="lrow__desc">URL of a running signal-cli REST bridge.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="http://127.0.0.1:8080" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Clear SIGNAL_HTTP_URL"><i class="ti ti-trash"></i></button></div></div>
+                              <div class="lrow"><div><div class="lrow__title"><label>Phone number</label><span class="lrow__saved">Saved</span></div><div class="lrow__desc">The number registered with your signal-cli bridge.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="+1415...0142" /><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Clear SIGNAL_ACCOUNT"><i class="ti ti-trash"></i></button></div></div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <h4 class="sec-title">Recommended</h4>
+                            <div class="sec-rows" style="margin-top:.75rem">
+                              <div class="lrow"><div><div class="lrow__title"><label>Allowed Signal users</label></div><div class="lrow__desc">Recommended. Comma-separated Signal identifiers.</div></div>
+                                <div class="field-action"><input class="control" type="text" placeholder="Phone numbers or UUIDs allowed to talk to Hermes" /></div></div>
+                            </div>
+                          </section>
+                        </div>
+                      </div>
+                      <footer class="md-actionbar">
+                        <div class="md-actionbar__inner">
+                          <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="Disable Signal"></span>
+                          <div class="ml-auto flex items-center gap-2">
+                            <button class="btn btn--default btn--sm is-disabled" type="button"><i class="ti ti-device-floppy"></i>Save changes</button>
+                          </div>
+                        </div>
+                      </footer>
+                    </main>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: loading (platforms === null → header hidden, PageLoader) ═══════════════ -->
+              <div data-view="loading" class="pss" hidden>
+                <div class="page-loader" role="status" aria-label="Loading messaging platforms..."><span class="loader"></span></div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ═══ Revoke ConfirmDialog (components/ui/confirm-dialog.tsx) ═══ -->
+          <section data-views="dlg">
+            <div data-view="none"></div>
+            <div data-view="revoke" hidden>
+              <div class="scrim" data-show="dlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close" data-show="dlg:none"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Revoke access</h2>
+                  <p class="dialog__desc">Dana Whitfield will lose access and stop being recognized on their next message.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button" data-show="dlg:none">Cancel</button>
+                  <button class="btn btn--destructive" type="button" data-show="dlg:none">Revoke</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="msg:telegram">Telegram · connected + pairing</button>
+        <button class="btn btn--secondary btn--sm" data-show="msg:slack">Slack · unconfigured, unsaved edits</button>
+        <button class="btn btn--secondary btn--sm" data-show="msg:signal">Signal · startup failed</button>
+        <button class="btn btn--secondary btn--sm" data-show="msg:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:revoke">Revoke dialog</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:none">Close dialog</button>
+      </nav>
+    </div>
+  </body>
+</html>

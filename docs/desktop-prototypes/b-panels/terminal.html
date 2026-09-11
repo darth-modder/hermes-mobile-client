@@ -1,0 +1,269 @@
+<!doctype html>
+<!--
+  Screen:      Terminal (B · panel inside Chat)   pane id `terminal` (placement bottom, tool panel, Ctrl+`)
+  Replicates:  apps/desktop/src/app/right-sidebar/terminal/{chrome.tsx (TerminalPaneChrome), rail.tsx (TerminalRail,
+               TerminalRailItem), instance.tsx (TerminalInstance, AgentTerminalInstance), workspace.tsx,
+               persistent.tsx}, app/contrib/controller.tsx l.194-215 + bindToolPaneCollapse l.621-628,
+               components/pane-shell/tree/renderer/{tree-group.tsx, strip-visibility.ts, track-model.ts},
+               components/ui/pane-tab.tsx
+  Views:       #term=shells | #term=agent | #term=starting | #term=selection | #term=collapsed
+  Measurements:
+    - zone height 20vh by default (a single-pane zone declaring a height is a fixed track), max 80vh, no minHeight:
+      dragging the sash down folds the zone to its 28px strip (COLLAPSED_ZONE_PX)
+    - a lone tool panel always keeps its strip (stranded rule): h-7 strip with one TERMINAL tab (9px uppercase)
+      and the minimize chevron (size-5, radius-md, .75rem, hover-revealed) pinned right
+    - instance: absolute inset-0, px-2 pb-2 pt-0, --ui-terminal-surface-background (= chat surface); xterm text
+      --ui-text-secondary; font = Settings → Terminal Font, else bundled JetBrains Mono
+    - rail: w-9 (36px), border-l --ui-stroke-quaternary, terminal surface; list py-1 gap-0.5, scrollbar hidden
+    - rail item: size-7 (28px) radius-md; active = --chrome-action-hover + foreground + a 2px --ui-stroke-primary
+      bar on the right edge (inset-y-0.5, rounded-l-sm); idle tertiary, hover = chrome-action-hover
+    - glyphs .875rem: codicon terminal (shell), codicon agent (agent background process, --dt-primary when idle)
+    - "+" new terminal: size-7, --ui-text-quaternary, .8125rem; hide chevron-down at the bottom (pb-1.5),
+      opacity 0 until the rail is hovered
+    - selection chip: "Add to chat" secondary button h-6 px-2 .68rem, radius-md, shadow-md, backdrop blur, with a
+      small kbd combo (Ctrl+L) at 70%; positioned at the selection's end (fallback right 12 / top 8)
+    - starting: centered spiral-search Loader size-8 --ui-text-tertiary
+  Behaviour:
+    - Ctrl+` (and the status-bar terminal button) collapses the zone to its strip / restores it; the tab stays and
+      every PTY keeps running while collapsed (PersistentTerminal keeps xterm in a fixed overlay layer)
+    - rail items: click selects, middle-click or Cmd/Ctrl-click closes, right-click: Close / Close others /
+      Close all / Hide terminal; tooltip (side left) "N. title" + the toggle hotkey
+    - agent background processes appear as read-only tabs (no PTY, no input) streamed from the backend
+    - selecting text shows "Add to chat" (Ctrl+L) which inserts the selection into the composer
+    - closing the last terminal hides the pane; reopening creates a fresh one
+    - edit-mode veils (layout editor) cover the rail too (z-50 above the rail's z-40)
+  Mobile:      Absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Terminal · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ws-col { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .ws-row { display: flex; flex: 1; min-height: 0; }
+      .chat { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+      .panel-label { display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding-left: 0.5rem; color: var(--theme-primary);
+        font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+      .panel-label::before { content: ''; flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 1px;
+        background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      .frow { display: flex; align-items: center; gap: 0.25rem; height: 22px; padding-right: 0.75rem; font-size: 0.75rem; color: var(--ui-text-secondary); white-space: nowrap; }
+      .frow .codicon { width: 0.875rem; font-size: 0.875rem; color: var(--ui-text-tertiary); }
+      .d0 { padding-left: 17px; } .d1 { padding-left: 27px; }
+      /* Horizontal sash (column split) */
+      .hsash { position: relative; flex-shrink: 0; height: 1px; background: color-mix(in srgb, var(--ui-stroke-secondary) 10%, transparent); cursor: row-resize; }
+      .hsash::after { content: ''; position: absolute; inset: -1px 0 -7px; }
+      .hsash:hover { background: var(--ui-stroke-secondary); box-shadow: 0 0 0 1.5px var(--ui-sash-hover-border); }
+      /* Zone + strip */
+      .tzone { display: flex; flex-direction: column; flex-shrink: 0; height: 230px; min-width: 0; background: var(--ui-editor-surface-background); }
+      .tzone--min { height: 1.75rem; }
+      .strip { position: relative; display: flex; height: 1.75rem; flex-shrink: 0; background: var(--ui-sidebar-surface-background); }
+      .strip__tabs { display: flex; flex: 1; min-width: 0; }
+      .ztab { position: relative; display: flex; align-items: center; height: 100%; min-width: 3.25rem; max-width: 12rem; color: var(--ui-text-tertiary); font-size: 0.6875rem; font-weight: 500; }
+      .ztab.is-active { color: var(--dt-foreground); box-shadow: inset 0 -2px 0 var(--theme-primary); }
+      .ztab__label { padding: 0 0.5rem; font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; white-space: nowrap; }
+      .strip__min { display: grid; place-items: center; align-self: center; width: 1.25rem; height: 1.25rem; margin: 0 0.25rem; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ui-text-tertiary); opacity: 0; transition: opacity 150ms; }
+      .strip:hover .strip__min, .strip__min.is-shown { opacity: 1; }
+      .strip__min .codicon { font-size: 0.75rem; }
+      /* TerminalPaneChrome */
+      .tchrome { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .tslot { position: relative; flex: 1; min-width: 0; min-height: 0; }
+      .tinst { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 0 0.5rem 0.5rem; background: var(--ui-terminal-surface-background); }
+      .tinst .terminal { padding: 0.25rem 0; color: var(--ui-text-secondary); }
+      .terminal .cmd { color: var(--ui-text-primary); }
+      .terminal .ok { color: var(--ui-green); }
+      .terminal .warn { color: var(--ui-yellow); }
+      .terminal .err { color: var(--ui-red); }
+      .terminal .cyan { color: var(--ui-cyan); }
+      .terminal .sel { background: var(--ui-selection-background); }
+      .cursor { display: inline-block; width: 0.5em; height: 1.1em; vertical-align: text-bottom; background: var(--ui-text-secondary); }
+      .trail { position: relative; z-index: 40; display: flex; flex-direction: column; align-items: center; width: 2.25rem; flex-shrink: 0; border-left: 1px solid var(--ui-stroke-quaternary); background: var(--ui-terminal-surface-background); }
+      .trail__list { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; gap: 0.125rem; align-self: stretch; margin: 0; padding: 0.25rem 0; list-style: none; overflow: hidden; }
+      .trail__list li { position: relative; display: flex; justify-content: center; width: 100%; }
+      .trail__item { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ui-text-tertiary); cursor: pointer; }
+      .trail__item:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .trail__item.is-active { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .trail__item .codicon { font-size: 0.875rem; }
+      .trail__item--agent:not(.is-active) { color: var(--dt-primary); }
+      .trail__bar { position: absolute; top: 0.125rem; bottom: 0.125rem; right: 0; width: 0.125rem; border-radius: var(--radius-sm) 0 0 var(--radius-sm); background: var(--ui-stroke-primary); }
+      .trail__add { color: var(--ui-text-quaternary); }
+      .trail__add .codicon { font-size: 0.8125rem; }
+      .trail__foot { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; padding-bottom: 0.375rem; }
+      .trail__hide { width: 1.5rem; height: 1.5rem; opacity: 0; transition: opacity 150ms; }
+      .trail:hover .trail__hide { opacity: 1; }
+      .add-chip { position: absolute; z-index: 50; display: flex; align-items: center; gap: 0.25rem; }
+      .add-chip .btn { height: 1.5rem; padding: 0 0.5rem; border-radius: var(--radius-md); font-size: 0.68rem; box-shadow: var(--shadow-md); backdrop-filter: blur(0.75rem); }
+      .add-chip .kbd-group { margin-left: 0.25rem; opacity: 0.7; }
+      .spiral { width: 2rem; height: 2rem; border-width: 1.5px; border-color: var(--ui-stroke-secondary); border-top-color: var(--ui-text-tertiary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth" data-title="">
+            <section class="ws-col" data-views="term">
+
+              <!-- ═══ View: shells — three shells + an agent tab, first shell active ═══ -->
+              <div data-view="shells" class="ws-col">
+                <div class="ws-row">
+                  <div class="chat">
+                    <div class="thread"><div class="thread__inner" style="padding-bottom:6rem">
+                      <div class="msg-user">Start the Expo dev server and tell me when the gateway connects.</div>
+                      <div class="turn"><div class="scaffold"><div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran in background</span><span class="tool-row__meta">npx expo start --android</span></div></div>
+                      <div class="msg-ai"><p>Metro is up and the app bundled in 812 ms. The gateway logged a connected event 12 ms after the ws ticket was issued.</p></div></div>
+                    </div></div>
+                    <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything…</div><button class="composer__send is-idle"><i class="ti ti-arrow-up"></i></button></div></div></div>
+                  </div>
+                  <div class="sash"></div>
+                  <aside class="pane pane--side" style="width:237px;flex-shrink:0">
+                    <div class="flex items-center" style="height:1.75rem;padding:0 .625rem"><span class="panel-label">hermes-android</span></div>
+                    <div class="frow d0"><i class="codicon codicon-folder"></i>android</div>
+                    <div class="frow d0"><i class="codicon codicon-folder"></i>docs</div>
+                    <div class="frow d0"><i class="codicon codicon-folder"></i>src</div>
+                    <div class="frow d0"><i class="codicon codicon-file"></i>app.json</div>
+                    <div class="frow d0"><i class="codicon codicon-file"></i>package.json</div>
+                  </aside>
+                </div>
+                <div class="hsash" role="separator" aria-orientation="horizontal"></div>
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">terminal</span></div></div><button class="strip__min" aria-label="Minimize"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <div class="tchrome">
+                    <div class="tslot"><div class="tinst" data-terminal="">
+<div class="terminal"><span class="prompt">PS</span> <span class="path">D:\Stuff\Code\git\hermes-android</span>&gt; <span class="cmd">npx expo start --android</span>
+<span class="dim">Starting project at D:\Stuff\Code\git\hermes-android</span>
+Starting Metro Bundler
+<span class="cyan">›</span> Metro waiting on <span class="path">exp://192.168.1.24:8081</span>
+<span class="cyan">›</span> Press <span class="cmd">a</span> │ open Android
+<span class="cyan">›</span> Press <span class="cmd">r</span> │ reload app
+<span class="ok">Android Bundled 812ms</span> index.ts <span class="dim">(1204 modules)</span>
+ <span class="cyan">LOG</span>  [gateway] ws ticket issued, connecting…
+ <span class="cyan">LOG</span>  [gateway] connected <span class="dim">(12ms)</span>
+ <span class="warn">WARN</span>  [theme] --ui-selection-background missing on skin "slate", falling back
+<span class="cursor"></span></div>
+                    </div></div>
+                    <div class="trail" data-suppress-pane-reveal="">
+                      <ul class="trail__list" role="tablist" aria-label="Terminals">
+                        <li><span class="trail__bar" aria-hidden="true"></span><button class="trail__item is-active" role="tab" aria-selected="true" aria-label="1. pwsh"><i class="codicon codicon-terminal"></i></button></li>
+                        <li><button class="trail__item" role="tab" aria-label="2. bash"><i class="codicon codicon-terminal"></i></button></li>
+                        <li><button class="trail__item" role="tab" aria-label="3. node"><i class="codicon codicon-terminal"></i></button></li>
+                        <li><button class="trail__item trail__item--agent" role="tab" aria-label="4. npx expo start --android"><i class="codicon codicon-agent"></i></button></li>
+                        <li><button class="trail__item trail__add" aria-label="New terminal"><i class="codicon codicon-add"></i></button></li>
+                      </ul>
+                      <div class="trail__foot"><button class="btn btn--ghost btn--icon-xs trail__hide" aria-label="Hide terminal"><i class="codicon codicon-chevron-down i-sm"></i></button></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Rail tooltip (side left) on hover of item 2 -->
+                <div class="tip" style="right:44px;bottom:143px">2. bash<span class="kbd">Ctrl+`</span></div>
+              </div>
+
+              <!-- ═══ View: agent — the agent's background process tab (read-only) ═══ -->
+              <div data-view="agent" class="ws-col" hidden>
+                <div class="ws-row">
+                  <div class="chat">
+                    <div class="thread"><div class="thread__inner" style="padding-bottom:6rem"><div class="msg-user">Run the full e2e suite in the background.</div><div class="turn"><div class="scaffold"><div class="tool-row" style="opacity:1"><span class="loader" style="width:.7rem;height:.7rem"></span><span>Running in background</span><span class="tool-row__meta">npx playwright test</span></div></div></div></div></div>
+                    <div class="composer-dock"><div class="status-stack"><div class="status-row"><i class="codicon codicon-agent i-xs"></i><span>1 Background</span><span class="ml-auto t-tertiary">Running</span></div></div><div class="composer"><div class="composer__row"><button class="composer__ctl"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything…</div><button class="composer__send is-idle"><i class="ti ti-arrow-up"></i></button></div></div></div>
+                  </div>
+                </div>
+                <div class="hsash"></div>
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">terminal</span></div></div><button class="strip__min"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <div class="tchrome">
+                    <div class="tslot"><div class="tinst" data-terminal="">
+<div class="terminal"><span class="dim">$ npx playwright test</span>
+Running 48 tests using 4 workers
+  <span class="ok">✓</span>  1 [chromium] › auth-revoked.spec.ts:12 › revoked token shows sign-in <span class="dim">(8.2s)</span>
+  <span class="ok">✓</span>  2 [chromium] › reconnect.spec.ts:30 › backs off on network loss <span class="dim">(4.1s)</span>
+  <span class="err">✘</span>  3 [chromium] › reconnect.spec.ts:58 › resumes after server restart <span class="dim">(30.0s)</span>
+  <span class="ok">✓</span>  4 [chromium] › sessions.spec.ts:9 › pins survive reload <span class="dim">(2.7s)</span>
+  <span class="ok">✓</span>  5 [chromium] › sessions.spec.ts:41 › search finds FTS hits <span class="dim">(3.3s)</span>
+  <span class="dim">…</span></div>
+                    </div></div>
+                    <div class="trail">
+                      <ul class="trail__list" role="tablist" aria-label="Terminals">
+                        <li><button class="trail__item" aria-label="1. pwsh"><i class="codicon codicon-terminal"></i></button></li>
+                        <li><span class="trail__bar"></span><button class="trail__item trail__item--agent is-active" aria-label="2. npx playwright test"><i class="codicon codicon-agent"></i></button></li>
+                        <li><button class="trail__item trail__add" aria-label="New terminal"><i class="codicon codicon-add"></i></button></li>
+                      </ul>
+                      <div class="trail__foot"><button class="btn btn--ghost btn--icon-xs trail__hide"><i class="codicon codicon-chevron-down i-sm"></i></button></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══ View: starting — a new shell spawning ═══ -->
+              <div data-view="starting" class="ws-col" hidden>
+                <div class="ws-row"><div class="chat"><div class="thread"><div class="thread__inner"><div class="msg-user">Start the Expo dev server.</div></div></div></div></div>
+                <div class="hsash"></div>
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">terminal</span></div></div><button class="strip__min"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <div class="tchrome">
+                    <div class="tslot"><div class="tinst"><div class="center" style="position:absolute;inset:0;z-index:10"><span class="loader spiral"></span></div></div></div>
+                    <div class="trail">
+                      <ul class="trail__list"><li><button class="trail__item"><i class="codicon codicon-terminal"></i></button></li><li><span class="trail__bar"></span><button class="trail__item is-active"><i class="codicon codicon-terminal"></i></button></li><li><button class="trail__item trail__add"><i class="codicon codicon-add"></i></button></li></ul>
+                      <div class="trail__foot"><button class="btn btn--ghost btn--icon-xs trail__hide"><i class="codicon codicon-chevron-down i-sm"></i></button></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══ View: selection — text selected, "Add to chat" chip ═══ -->
+              <div data-view="selection" class="ws-col" hidden>
+                <div class="ws-row"><div class="chat"><div class="thread"><div class="thread__inner"><div class="msg-user">Why did the reconnect spec fail?</div></div></div></div></div>
+                <div class="hsash"></div>
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">terminal</span></div></div><button class="strip__min"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <div class="tchrome">
+                    <div class="tslot"><div class="tinst" data-terminal="">
+<div class="terminal"><span class="prompt">PS</span> <span class="path">D:\Stuff\Code\git\hermes-android</span>&gt; <span class="cmd">npx playwright test reconnect.spec.ts</span>
+  <span class="err">✘</span>  1 [chromium] › reconnect.spec.ts:58 › resumes after server restart <span class="dim">(30.0s)</span>
+
+  <span class="sel">Error: Timed out 30000ms waiting for expect(locator).toBeVisible()</span>
+<span class="sel">    Locator: getByText('Connected')</span>
+<span class="sel">    at e2e/reconnect.spec.ts:71:44</span>
+
+  1 failed
+<span class="prompt">PS</span> <span class="path">D:\Stuff\Code\git\hermes-android</span>&gt; <span class="cursor"></span></div>
+                      <div class="add-chip" style="left:360px;top:88px"><button class="btn btn--secondary" type="button">Add to chat<span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">L</span></span></button></div>
+                    </div></div>
+                    <div class="trail">
+                      <ul class="trail__list"><li><span class="trail__bar"></span><button class="trail__item is-active"><i class="codicon codicon-terminal"></i></button></li><li><button class="trail__item trail__add"><i class="codicon codicon-add"></i></button></li></ul>
+                      <div class="trail__foot"><button class="btn btn--ghost btn--icon-xs trail__hide"><i class="codicon codicon-chevron-down i-sm"></i></button></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══ View: collapsed — Ctrl+` folds the zone to its strip; PTYs keep running ═══ -->
+              <div data-view="collapsed" class="ws-col" hidden>
+                <div class="ws-row">
+                  <div class="chat">
+                    <div class="thread"><div class="thread__inner"><div class="msg-user">Start the Expo dev server and tell me when the gateway connects.</div><div class="msg-ai"><p>Metro is up and the app bundled in 812 ms.</p></div></div></div>
+                    <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything…</div><button class="composer__send is-idle"><i class="ti ti-arrow-up"></i></button></div></div></div>
+                  </div>
+                </div>
+                <div class="hsash"></div>
+                <div class="tzone tzone--min">
+                  <div class="strip" title="Restore"><div class="strip__tabs"><div class="ztab"><span class="ztab__label">terminal</span></div></div><button class="strip__min is-shown" aria-label="Restore"><i class="codicon codicon-chevron-up"></i></button></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="term:shells">Shells + rail</button>
+        <button class="btn btn--secondary btn--sm" data-show="term:agent">Agent process tab</button>
+        <button class="btn btn--secondary btn--sm" data-show="term:starting">Starting</button>
+        <button class="btn btn--secondary btn--sm" data-show="term:selection">Selection → Add to chat</button>
+        <button class="btn btn--secondary btn--sm" data-show="term:collapsed">Collapsed</button>
+      </nav>
+    </div>
+  </body>
+</html>

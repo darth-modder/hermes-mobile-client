@@ -1,0 +1,330 @@
+<!doctype html>
+<!--
+  Screen:      Webhooks (A · overlay screen)   route `/webhooks`
+  Replicates:  apps/desktop/src/app/webhooks/index.tsx (WebhooksView, WebhookDetail, CopyValueRow, create dialog,
+               delete ConfirmDialog), components/ui/{alert,copy-button,field,switch,select}.tsx,
+               app/overlays/panel.tsx (Panel primitives), app/settings/primitives.tsx (ListRow in the "created" dialog)
+  Views:       #wh=list | #wh=disabled (receiver off, no subscriptions) | #wh=empty (receiver on, none yet) | #wh=loading
+               #sub=github | #sub=sentry | #sub=stripe        #whbanner=none | #whbanner=restart (restart-needed alert)
+               #whdlg=create | #whdlg=created | #whdlg=delete | #whdlg=menu
+  Measurements:
+    - Panel content px-5 pb-4, pt titlebar/2-0.4375rem; header title "Subscriptions (N)" 14px semibold,
+      subtitle (hint) 12px muted/80 truncated
+    - Alert (variant warning): grid [auto|1fr] gap-x-3 gap-y-1, rounded-lg, border primary/30,
+      bg mix(card 96%, primary 4%), px-4 py-3, text-sm, shadow-xs; icon size-4 mt-0.5 primary; mb-4
+      title medium tracking-tight fg; description muted, relaxed; action Button sm mt-1
+    - PanelList 13rem + SearchField; rows h-7 .78rem, dot size-1.5 emerald-500 (enabled) / muted-foreground/50 (disabled)
+    - detail h3 .95rem semibold; "deliver only" pill warn; PanelMeta [5rem|1fr] .7rem with muted pills for events/skills
+    - CopyValueRow: rounded bg fg/5 px-2.5 py-1.5 .7rem, value mono truncate fg/80, CopyButton icon-sm (32px) 14px icon
+    - description text-xs relaxed fg/80; prompt PanelBlock
+    - create dialog max-w-lg: 2-col grids (gap-4) Name/Description, Events/Skills, Deliver select (h-9)/Deliver-only switch (h-9 row)
+  Behaviour:
+    - list is per profile scope (React Query key ['webhooks', scope]); the detail shows the selected row or the first
+    - search matches name, description, deliver and events
+    - row menu (kebab + right-click): Enable/Disable (check / circle-slash) and Delete; toggles paint optimistically,
+      toast "Enabled: "name"" and reconcile with the backend
+    - Enable webhooks writes config and restarts the gateway; on a failed restart the restart-needed alert appears
+      with "Restart gateway" (refresh icon, secondary); both re-read state after ~4s
+    - Create shows the URL + one-time secret in the same dialog ("Subscription created"); closing resets the form;
+      "Name required" toast when the name is blank
+    - CopyButton swaps to a check for ~1.5s after copying; F5 / Cmd-R refetches; Esc or X closes
+  Mobile:      Webhooks is at parity on mobile (docs/PARITY.md, Management · M10).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Webhooks · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Panel primitives (overlays/panel.tsx) — same block as cron.html / profiles.html */
+      .panel { padding-bottom: 1rem; }
+      .pn-fill { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .pn-body { display: flex; flex: 1; gap: 1.25rem; min-height: 0; overflow: hidden; }
+      .pn-list { display: flex; flex-direction: column; flex-shrink: 0; width: 13rem; min-height: 0; }
+      .pn-list > .search-field { flex-shrink: 0; width: 100%; margin-bottom: 0.25rem; padding: 0 0.125rem; }
+      .pn-list__scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; }
+      .pn-row { position: relative; display: flex; flex-shrink: 0; align-items: center; width: 100%; height: 1.75rem; border-radius: var(--radius-md); color: var(--ui-text-secondary); font-size: 0.78rem; cursor: pointer; transition: background-color 100ms ease-out; }
+      .pn-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .pn-row.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .pn-row__main { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; height: 100%; padding: 0 0.25rem 0 0.5rem; }
+      .pn-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: 50%; }
+      .pn-dot--on { background: var(--tw-emerald-500); }
+      .pn-dot--off { background: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-kebab { display: grid; flex-shrink: 0; place-items: center; width: 1.25rem; height: 1.25rem; margin-right: 0.25rem; border: 0; border-radius: 4px; background: transparent; color: var(--ui-text-tertiary); opacity: 0; cursor: pointer; transition: color 100ms, background-color 100ms; }
+      .pn-row:hover .pn-kebab, .pn-kebab.is-open { opacity: 1; }
+      .pn-kebab:hover, .pn-kebab.is-open { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .pn-add { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 100%; height: 1.75rem; border: 0; border-radius: 2.5px; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); cursor: pointer; }
+      .pn-add:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .pn-section-label { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-detail { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+      .pn-detail__inner { display: flex; flex-direction: column; gap: 1rem; padding: 0 0.5rem 1.5rem 0.25rem; }
+      .pn-h3 { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.025em; color: var(--dt-foreground); }
+      .pn-meta { display: grid; grid-template-columns: 5rem 1fr; gap: 0.25rem 0.5rem; margin: 0; font-size: 0.7rem; }
+      .pn-meta dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .pn-meta dd { min-width: 0; margin: 0; overflow-wrap: break-word; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-block { max-height: 12rem; margin: 0; overflow: auto; border-radius: var(--radius-sm); padding: 0.625rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-family: var(--dt-font-mono); font-size: 0.68rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-foreground) 80%, transparent); white-space: pre-wrap; word-break: break-word; }
+      .pn-pill { display: inline-flex; align-items: center; border-radius: var(--radius-full); padding: 0.125rem 0.375rem; font-size: 0.62rem; font-weight: 500; text-transform: capitalize; }
+      .pn-pill--muted { background: color-mix(in srgb, var(--dt-foreground) 10%, transparent); color: var(--dt-muted-foreground); }
+      .pn-pill--warn { background: color-mix(in srgb, var(--tw-amber-500) 10%, transparent); color: var(--tw-amber-600); }
+      :root.dark .pn-pill--warn { color: var(--tw-amber-300); }
+      .pn-pill.is-raw { text-transform: none; }
+      .pn-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .pn-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .pn-empty__icon { font-size: 1.25rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-empty__desc { max-width: 24rem; margin: 0; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pn-loader { display: grid; flex: 1; place-items: center; }
+      .pn-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; border-top-color: color-mix(in srgb, var(--dt-primary) 70%, transparent); }
+
+      /* Alert variant="warning" (components/ui/alert.tsx) */
+      .alert { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.25rem 0.75rem; width: 100%; margin-bottom: 1rem; border: 1px solid color-mix(in srgb, var(--dt-primary) 30%, transparent); border-radius: var(--radius-lg); padding: 0.75rem 1rem; background: color-mix(in srgb, var(--dt-card) 96%, var(--dt-primary) 4%); box-shadow: var(--shadow-xs); font-size: 0.875rem; color: var(--dt-card-foreground); }
+      .alert > .ti { margin-top: 0.125rem; font-size: 1rem; color: var(--dt-primary); }
+      .alert__title { grid-column-start: 2; min-height: 1rem; font-weight: 500; letter-spacing: -0.025em; color: var(--dt-foreground); }
+      .alert__desc { display: grid; grid-column-start: 2; justify-items: start; gap: 0.25rem; color: var(--dt-muted-foreground); }
+      .alert__desc p { margin: 0; line-height: 1.625; }
+
+      /* CopyValueRow */
+      .copy-row { display: flex; align-items: center; gap: 0.25rem; border-radius: var(--radius-sm); padding: 0.375rem 0.625rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-size: 0.7rem; }
+      .copy-row__v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--dt-font-mono); color: color-mix(in srgb, var(--dt-foreground) 80%, transparent); }
+      .copy-row .btn { width: 2rem; height: 2rem; margin: -0.375rem -0.375rem -0.375rem 0; }
+
+      .fld { display: grid; gap: 0.375rem; }
+      .fld__label { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.75rem; font-weight: 500; color: var(--dt-foreground); }
+      .fld-select { height: 2.25rem; border-radius: var(--radius-md); }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event and raise the sign-in prompt.</p></div></div></div>
+          </div>
+
+          <!-- ═══ Webhooks overlay (Panel, default close label "Close") ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <section data-views="wh" class="panel">
+
+                  <!-- ── Subscriptions list + detail ── -->
+                  <div data-view="list" class="pn-fill">
+                    <header class="panel__header">
+                      <div class="grow" style="min-width:0"><h2 class="panel__title">Subscriptions (3)</h2><p class="panel__subtitle t-truncate" style="margin:0">Subscription changes hot-reload once the receiver is running. Disabled subscriptions reject incoming events.</p></div>
+                    </header>
+                    <section data-views="whbanner">
+                      <div data-view="none"></div>
+                      <div data-view="restart" hidden>
+                        <div class="alert" role="alert">
+                          <i class="ti ti-alert-triangle"></i>
+                          <div class="alert__desc">
+                            <p>Webhooks are enabled, but the gateway still needs a restart before the receiver can come online.</p>
+                            <button class="btn btn--secondary btn--sm" style="margin-top:.25rem"><i class="ti ti-refresh"></i>Restart gateway</button>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                    <div class="pn-body">
+                      <div class="pn-list">
+                        <label class="search-field"><i class="ti ti-search" style="color:color-mix(in srgb,var(--dt-muted-foreground) 70%,transparent)"></i><input placeholder="Search webhooks..." /></label>
+                        <div class="pn-list__scroll">
+                          <div class="pn-row" data-show="sub:github"><div class="pn-row__main"><span class="pn-dot pn-dot--on"></span><span class="pn-row__title">github-push</span></div><button class="pn-kebab" aria-label="Actions" data-show="whdlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="sub:sentry"><div class="pn-row__main"><span class="pn-dot pn-dot--on"></span><span class="pn-row__title">sentry-alerts</span></div><button class="pn-kebab" aria-label="Actions" data-show="whdlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="sub:stripe"><div class="pn-row__main"><span class="pn-dot pn-dot--off"></span><span class="pn-row__title">stripe-invoices</span></div><button class="pn-kebab" aria-label="Actions" data-show="whdlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <button class="pn-add" aria-label="New subscription" title="New subscription" data-show="whdlg:create"><i class="codicon codicon-add"></i></button>
+                        </div>
+                      </div>
+
+                      <section data-views="sub" data-default="github" class="pn-fill" style="min-width:0">
+                        <div data-view="github" class="pn-detail">
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">github-push</h3></div>
+                              <dl class="pn-meta">
+                                <dt>Deliver to</dt><dd>Telegram</dd>
+                                <dt>Events</dt><dd><span class="flex gap-1" style="flex-wrap:wrap"><span class="pn-pill pn-pill--muted is-raw">push</span><span class="pn-pill pn-pill--muted is-raw">pull_request</span></span></dd>
+                                <dt>Skills</dt><dd><span class="flex gap-1" style="flex-wrap:wrap"><span class="pn-pill pn-pill--muted is-raw">github-pr-workflow</span></span></dd>
+                              </dl>
+                              <div class="copy-row"><span class="copy-row__v">http://127.0.0.1:8644/webhooks/github-push</span><button class="btn btn--ghost btn--icon-sm" aria-label="Copy"><i class="ti ti-copy"></i></button></div>
+                            </header>
+                            <div class="col gap-1-5">
+                              <div class="pn-section-label">Description</div>
+                              <p style="margin:0;font-size:.75rem;line-height:1.625;color:color-mix(in srgb,var(--dt-foreground) 80%,transparent)">Summarize pushes to main and pull requests on hermes-android, and flag anything with failing CI.</p>
+                            </div>
+                            <div class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">A GitHub {{event}} event arrived for {{repository.full_name}}.
+Summarize what changed in two or three lines. If a check run failed, name the job and link the log. Skip dependabot noise.</pre>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div data-view="sentry" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">sentry-alerts</h3><span class="pn-pill pn-pill--warn">deliver only</span></div>
+                              <dl class="pn-meta">
+                                <dt>Deliver to</dt><dd>Slack</dd>
+                                <dt>Events</dt><dd>(all)</dd>
+                              </dl>
+                              <div class="copy-row"><span class="copy-row__v">http://127.0.0.1:8644/webhooks/sentry-alerts</span><button class="btn btn--ghost btn--icon-sm" aria-label="Copy"><i class="ti ti-copy"></i></button></div>
+                            </header>
+                            <div class="col gap-1-5">
+                              <div class="pn-section-label">Description</div>
+                              <p style="margin:0;font-size:.75rem;line-height:1.625;color:color-mix(in srgb,var(--dt-foreground) 80%,transparent)">Forward new Sentry issues straight to #alerts without running the agent.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div data-view="stripe" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div class="flex items-center gap-2" style="flex-wrap:wrap;min-width:0"><h3 class="pn-h3">stripe-invoices</h3></div>
+                              <dl class="pn-meta">
+                                <dt>Deliver to</dt><dd>Email</dd>
+                                <dt>Events</dt><dd><span class="flex gap-1" style="flex-wrap:wrap"><span class="pn-pill pn-pill--muted is-raw">invoice.paid</span><span class="pn-pill pn-pill--muted is-raw">invoice.payment_failed</span></span></dd>
+                              </dl>
+                              <div class="copy-row"><span class="copy-row__v">http://127.0.0.1:8644/webhooks/stripe-invoices</span><button class="btn btn--ghost btn--icon-sm" aria-label="Copy"><i class="ti ti-copy"></i></button></div>
+                            </header>
+                            <div class="col gap-1-5">
+                              <div class="pn-section-label">Prompt</div>
+                              <pre class="pn-block">An invoice event arrived. If payment failed, draft a polite reminder for the customer and include the hosted invoice link.</pre>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+
+                  <!-- ── Receiver disabled, no subscriptions: banner + empty (button disabled) ── -->
+                  <div data-view="disabled" class="pn-fill" hidden>
+                    <div class="alert" role="alert">
+                      <i class="ti ti-world"></i>
+                      <div class="alert__title">Webhook receiver disabled</div>
+                      <div class="alert__desc">
+                        <p>Webhooks are their own gateway platform. Enable them here to accept incoming HTTP events; chat channels are only needed when a subscription delivers to Telegram, Discord, Slack, or another channel.</p>
+                        <button class="btn btn--default btn--sm" style="margin-top:.25rem"><i class="ti ti-world"></i>Enable webhooks</button>
+                      </div>
+                    </div>
+                    <div class="pn-empty">
+                      <div class="pn-empty__inner">
+                        <i class="codicon codicon-globe pn-empty__icon"></i>
+                        <p class="pn-empty__desc">No webhook subscriptions yet.</p>
+                        <div style="margin-top:.5rem"><button class="btn btn--default btn--sm is-disabled"><i class="ti ti-plus"></i>New subscription</button></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- ── Receiver on, no subscriptions ── -->
+                  <div data-view="empty" class="pn-empty" hidden>
+                    <div class="pn-empty__inner">
+                      <i class="codicon codicon-globe pn-empty__icon"></i>
+                      <p class="pn-empty__desc">No webhook subscriptions yet.</p>
+                      <div style="margin-top:.5rem"><button class="btn btn--default btn--sm" data-show="whdlg:create"><i class="ti ti-plus"></i>New subscription</button></div>
+                    </div>
+                  </div>
+
+                  <!-- ── Loading ── -->
+                  <div data-view="loading" class="pn-loader" role="status" aria-label="Loading webhooks..." hidden><span class="loader"></span></div>
+                </section>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Dialogs + row menu ═══ -->
+          <section data-views="whdlg">
+            <div data-view="none"></div>
+
+            <div data-view="menu" hidden>
+              <div class="menu" style="left:232px;top:196px;width:10rem">
+                <button class="menu__item" data-show="whdlg:none"><i class="codicon codicon-circle-slash"></i>Disable</button>
+                <button class="menu__item is-danger" data-show="whdlg:delete"><i class="codicon codicon-trash"></i>Delete</button>
+              </div>
+            </div>
+
+            <div data-view="create" hidden>
+              <div class="scrim" data-show="whdlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" data-show="whdlg:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header"><h2 class="dialog__title">New subscription</h2></div>
+                <form class="col gap-4" onsubmit="return false">
+                  <div class="grid-2">
+                    <div class="fld"><label class="fld__label">Name</label><input class="control is-focused" placeholder="e.g. github-push" value="linear-issues" /></div>
+                    <div class="fld"><label class="fld__label">Description</label><input class="control" placeholder="What this webhook does (optional)" /></div>
+                  </div>
+                  <div class="fld"><label class="fld__label">Prompt</label><textarea class="control" style="min-height:6rem" placeholder="Instructions for the agent when this webhook fires (optional)"></textarea></div>
+                  <div class="grid-2">
+                    <div class="fld"><label class="fld__label">Events</label><input class="control" placeholder="comma-separated, leave empty for all" value="Issue, Comment" /></div>
+                    <div class="fld"><label class="fld__label">Skills</label><input class="control" placeholder="comma-separated skill names (optional)" /></div>
+                  </div>
+                  <div class="grid-2">
+                    <div class="fld"><label class="fld__label">Deliver to</label><button class="control select-trigger fld-select">Log</button></div>
+                    <div class="fld"><label class="fld__label">Deliver payload only</label><div class="flex items-center" style="height:2.25rem"><span class="switch" role="switch" aria-checked="false"></span></div></div>
+                  </div>
+                  <div class="dialog__footer"><button class="btn btn--default btn--sm" type="submit" data-show="whdlg:created">Create</button></div>
+                </form>
+              </div>
+            </div>
+
+            <div data-view="created" hidden>
+              <div class="scrim" data-show="whdlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" data-show="whdlg:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Subscription created</h2>
+                  <p class="dialog__desc">Copy the secret now — it is only shown once.</p>
+                </div>
+                <div style="display:grid;gap:.5rem">
+                  <div class="list-row list-row--wide"><div><div class="list-row__title">Webhook URL</div><div style="margin-top:.5rem"><div class="copy-row"><span class="copy-row__v">http://127.0.0.1:8644/webhooks/linear-issues</span><button class="btn btn--ghost btn--icon-sm" aria-label="Copy"><i class="ti ti-copy"></i></button></div></div></div></div>
+                  <div class="list-row list-row--wide"><div><div class="list-row__title">Secret (shown once)</div><div style="margin-top:.5rem"><div class="copy-row"><span class="copy-row__v">whsec_4f9c2a71b8e04d6f93a1c5e2d7b0f168</span><button class="btn btn--ghost btn--icon-sm" aria-label="Copy"><i class="ti ti-check"></i></button></div></div></div></div>
+                  <div class="dialog__footer"><button class="btn btn--default btn--sm" data-show="whdlg:none">Done</button></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-view="delete" hidden>
+              <div class="scrim" data-show="whdlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete webhook</h2>
+                  <p class="dialog__desc">This will permanently remove <span class="t-medium" style="color:var(--dt-foreground)">github-push</span>. This cannot be undone.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" data-show="whdlg:none">Cancel</button>
+                  <button class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="wh:list">Subscriptions</button>
+        <button class="btn btn--secondary btn--sm" data-show="wh:disabled">Receiver disabled</button>
+        <button class="btn btn--secondary btn--sm" data-show="wh:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="wh:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="sub:github">github-push</button>
+        <button class="btn btn--secondary btn--sm" data-show="sub:sentry">sentry-alerts (deliver only)</button>
+        <button class="btn btn--secondary btn--sm" data-show="sub:stripe">stripe-invoices (disabled)</button>
+        <button class="btn btn--secondary btn--sm" data-show="whbanner:restart">Restart-needed banner</button>
+        <button class="btn btn--secondary btn--sm" data-show="whbanner:none">No banner</button>
+        <button class="btn btn--secondary btn--sm" data-show="whdlg:menu">Row menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="whdlg:create">Create</button>
+        <button class="btn btn--secondary btn--sm" data-show="whdlg:created">Created</button>
+        <button class="btn btn--secondary btn--sm" data-show="whdlg:delete">Delete</button>
+        <button class="btn btn--secondary btn--sm" data-show="whdlg:none">No dialog</button>
+      </nav>
+    </div>
+  </body>
+</html>

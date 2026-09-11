@@ -1,0 +1,171 @@
+<!doctype html>
+<!--
+  Screen:      Model picker (E · app-wide overlay, dialog)   ModelPickerOverlay → ModelPickerDialog ("Switch model")
+  Replicates:  apps/desktop/src/app/model-picker-overlay.tsx, components/model-picker.tsx,
+               components/ui/{dialog,command,highlight-matches,skeleton}.tsx, i18n/en.ts (modelPicker.*)
+  Views:       #picker=list | filtered | loading
+  Measurements:
+    - scrim black/22 + 2px blur; dialog max-w-2xl (42rem), max-h 85vh, rounded-xl (3.2px), 1px --stroke-nous, bg --ui-chat-bubble-background,
+      shadow-nous; body p-0 gap-0 overflow hidden; close X 16px in a 24px ghost button at top/right .625rem
+    - header: px-4 py-3, 1px bottom --dt-border; title 15px/600 tracking-tight; "current: <model> · <provider>" mono 12px tertiary, relaxed leading
+    - command: bg --dt-card, no radius; search row h-11 px-3 gap-2, 16px muted icon, 14px input, 1px bottom border; list max-h-96 (24rem)
+    - group: p-1; heading sticky top-0, bg --dt-popover, px-2 py-1.5, 12px/500 muted: provider name + mono "slug · N" (normal case) + tier badge
+      (Free tier: emerald/15 bg, emerald-600 text; Pro: primary/15 bg, primary text; 0.6rem/600 uppercase, rounded-sm, px-1 py-0.5)
+    - model row: pl-6 (1.5rem) pr-2 py-1.5, rounded-sm, mono 14px, gap-2; highlighted = bg --dt-accent;
+      current model = solid bg primary + primary-foreground (price at primary-foreground/80, chips at primary-foreground/20)
+      price: 0.66rem tabular muted "$in / $out"; sale chip amber/15 "-25%" + struck "was …" at muted/80; Free chip emerald/15 uppercase;
+      locked (Pro) rows at opacity .45 with a 0.62rem "PRO" label and a note under the group
+    - footer: flex-row justify-end gap-2, bg --dt-card, p-3: "Add provider" (ghost) + "Cancel" (outline)
+    - loading: one group with a 12×128px skeleton heading and 4 skeleton rows (h-5, widths 60/80/50/60%)
+  Behaviour:
+    - z rungs: scrim var(--z-modal-backdrop) 120, dialog var(--z-modal) 130 (from onboarding it lifts to --z-onboarding-popover)
+    - only mounted while the gateway is open; the search input autofocuses
+    - filtering is a plain substring match over model id, provider name and slug; the backend's curated order is kept (no fuzzy re-sort);
+      matches are marked in --ui-accent (500)
+    - only providers with models are listed; switching to an unconfigured provider goes through "Add provider" (opens onboarding in manual mode)
+    - local models (behind --local) show live "Loading into memory" / download progress bars (64×4px) inline
+    - picking a model applies it to the focused session/tile and closes; open/close: fade + zoom 95→100%, 200ms
+  Mobile:      At parity: providers and models live in Settings on mobile (M09, docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Model picker · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .dialog--mp { display: flex; flex-direction: column; max-width: 42rem; padding: 0; gap: 0; overflow: hidden; }
+      .dialog--mp .dialog__close { color: var(--ui-text-tertiary); }
+      .dialog--mp .dialog__close .ti { font-size: 1rem; }
+      .mp-head { display: flex; flex-direction: column; gap: 0.25rem; border-bottom: 1px solid var(--dt-border); padding: 0.75rem 1rem; }
+      .mp-head .dialog__desc { font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1.625; }
+      .mp-cmd { background: var(--dt-card); }
+      .cmd-input { display: flex; align-items: center; gap: 0.5rem; height: 2.75rem; padding: 0 0.75rem; border-bottom: 1px solid var(--dt-border); }
+      .cmd-input > .ti { font-size: 1rem; color: var(--dt-muted-foreground); }
+      .cmd-input input { flex: 1; min-width: 0; height: 2.5rem; border: 0; background: transparent; outline: none; font-size: 0.875rem; }
+      .cmd-input input::placeholder { color: var(--dt-muted-foreground); }
+      .mp-list { max-height: 24rem; overflow-y: auto; overflow-x: hidden; }
+      .mp-group { padding: 0.25rem; }
+      .mp-heading { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding: 0.375rem 0.5rem; background: var(--dt-popover); font-size: 0.75rem; font-weight: 500; color: var(--dt-muted-foreground); }
+      .mp-heading .slug { font-family: var(--dt-font-mono); font-size: 0.75rem; font-weight: 400; }
+      .badge-tier { border-radius: var(--radius-sm); padding: 0.125rem 0.25rem; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.025em; }
+      .badge-tier--free { background: color-mix(in srgb, var(--tw-emerald-500) 15%, transparent); color: var(--tw-emerald-600); }
+      .badge-tier--pro { background: color-mix(in srgb, var(--dt-primary) 15%, transparent); color: var(--dt-primary); }
+      .mp-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem 0.375rem 1.5rem; border-radius: var(--radius-sm); font-family: var(--dt-font-mono); font-size: 0.875rem; line-height: 1.25rem; cursor: default; }
+      .mp-item:hover, .mp-item.is-selected { background: var(--dt-accent); color: var(--dt-accent-foreground); }
+      .mp-item.is-current, .mp-item.is-current:hover { background: var(--dt-primary); color: var(--dt-primary-foreground); }
+      .mp-item.is-locked { opacity: 0.45; cursor: not-allowed; }
+      .mp-item.is-locked:hover { background: transparent; }
+      .mp-item mark { background: transparent; font-weight: 500; color: var(--ui-accent); }
+      .price { display: inline-flex; flex-shrink: 0; align-items: center; gap: 0.375rem; font-size: 0.66rem; font-variant-numeric: tabular-nums; color: var(--dt-muted-foreground); }
+      .is-current .price { color: color-mix(in srgb, var(--dt-primary-foreground) 80%, transparent); }
+      .chip { border-radius: var(--radius-sm); padding: 0.125rem 0.25rem; font-size: 0.62rem; font-weight: 600; }
+      .chip--sale { background: color-mix(in srgb, var(--tw-amber-500) 15%, transparent); color: var(--tw-amber-600); }
+      .chip--free { background: color-mix(in srgb, var(--tw-emerald-500) 15%, transparent); color: var(--tw-emerald-600); text-transform: uppercase; letter-spacing: 0.025em; }
+      .was { text-decoration: line-through; opacity: 0.7; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .lock-label { flex-shrink: 0; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.025em; opacity: 0.8; }
+      .pro-note { padding: 0.25rem 1.5rem 0.5rem; font-size: 0.62rem; line-height: 1.625; color: var(--dt-muted-foreground); }
+      .mp-foot { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem; background: var(--dt-card); }
+      .sk-row { padding: 0.375rem 0.5rem 0.375rem 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p></div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <div class="scrim"></div>
+          <div class="dialog dialog--mp" role="dialog" aria-modal="true">
+            <div class="mp-head">
+              <h2 class="dialog__title">Switch model</h2>
+              <p class="dialog__desc">current: claude-opus-5 · anthropic</p>
+            </div>
+            <section data-views="picker" class="mp-cmd">
+              <!-- ── Full list ── -->
+              <div data-view="list">
+                <div class="cmd-input"><i class="ti ti-search"></i><input class="is-focused" placeholder="Filter providers and models..." aria-label="Filter providers and models" /></div>
+                <div class="mp-list">
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="t-truncate">Anthropic</span><span class="slug">anthropic · 4</span></div>
+                    <div class="mp-item is-current"><span class="grow t-truncate">claude-opus-5</span><span class="price" title="Input / Output price per million tokens"><span>$15.00 / $75.00</span></span></div>
+                    <div class="mp-item is-selected"><span class="grow t-truncate">claude-sonnet-5</span><span class="price"><span>$3.00 / $15.00</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">claude-haiku-4.5</span><span class="price"><span>$1.00 / $5.00</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">claude-opus-4.1</span><span class="price"><span>$15.00 / $75.00</span></span></div>
+                  </div>
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="t-truncate">Nous Portal</span><span class="slug">nous · 42</span><span class="badge-tier badge-tier--free">Free tier</span></div>
+                    <div class="mp-item"><span class="grow t-truncate">hermes-4-405b</span><span class="price"><span class="chip chip--free">Free</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">xiaomi/mimo-v2.5</span><span class="price"><span>$0.30 / $1.20</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">deepseek/deepseek-v4-flash</span><span class="price"><span class="chip chip--sale">-25%</span><span>$0.21 / $0.84</span><span class="was">was $0.28 / $1.12</span></span></div>
+                    <div class="mp-item is-locked"><span class="grow t-truncate">moonshotai/kimi-k2.6</span><span class="lock-label">Pro</span><span class="price"><span>$0.60 / $2.50</span></span></div>
+                    <div class="mp-item is-locked"><span class="grow t-truncate">openai/gpt-5.2</span><span class="lock-label">Pro</span><span class="price"><span>$1.25 / $10.00</span></span></div>
+                    <div class="pro-note">Pro models need a paid Nous subscription.</div>
+                  </div>
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="t-truncate">OpenRouter</span><span class="slug">openrouter · 312</span></div>
+                    <div class="mp-item"><span class="grow t-truncate">google/gemini-3-pro</span><span class="price"><span>$1.25 / $10.00</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">qwen/qwen3-coder</span><span class="price"><span>$0.22 / $0.95</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">x-ai/grok-4.1-fast</span><span class="price"><span>$0.20 / $0.50</span></span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Filtered "flash" (substring, curated order kept) ── -->
+              <div data-view="filtered" hidden>
+                <div class="cmd-input"><i class="ti ti-search"></i><input value="flash" aria-label="Filter providers and models" /></div>
+                <div class="mp-list">
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="t-truncate">Nous Portal</span><span class="slug">nous · 42</span><span class="badge-tier badge-tier--free">Free tier</span></div>
+                    <div class="mp-item is-selected"><span class="grow t-truncate">deepseek/deepseek-v4-<mark>flash</mark></span><span class="price"><span class="chip chip--sale">-25%</span><span>$0.21 / $0.84</span><span class="was">was $0.28 / $1.12</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">google/gemini-3-<mark>flash</mark></span><span class="price"><span>$0.30 / $2.50</span></span></div>
+                  </div>
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="t-truncate">OpenRouter</span><span class="slug">openrouter · 312</span></div>
+                    <div class="mp-item"><span class="grow t-truncate">google/gemini-3-<mark>flash</mark></span><span class="price"><span>$0.30 / $2.50</span></span></div>
+                    <div class="mp-item"><span class="grow t-truncate">google/gemini-3-<mark>flash</mark>-lite</span><span class="price"><span>$0.10 / $0.40</span></span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Loading (skeletons) ── -->
+              <div data-view="loading" hidden>
+                <div class="cmd-input"><i class="ti ti-search"></i><input placeholder="Filter providers and models..." aria-label="Filter providers and models" /></div>
+                <div class="mp-list">
+                  <div class="mp-group">
+                    <div class="mp-heading"><span class="skeleton" style="height:.75rem;width:8rem"></span></div>
+                    <div class="sk-row"><span class="skeleton" style="height:1.25rem;width:60%"></span></div>
+                    <div class="sk-row"><span class="skeleton" style="height:1.25rem;width:80%"></span></div>
+                    <div class="sk-row"><span class="skeleton" style="height:1.25rem;width:50%"></span></div>
+                    <div class="sk-row"><span class="skeleton" style="height:1.25rem;width:60%"></span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <div class="mp-foot">
+              <button class="btn btn--ghost" type="button">Add provider</button>
+              <button class="btn btn--outline" type="button">Cancel</button>
+            </div>
+            <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" type="button"><i class="ti ti-x"></i></button>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="picker:list">All models</button>
+        <button class="btn btn--secondary btn--sm" data-show="picker:filtered">Filtered “flash”</button>
+        <button class="btn btn--secondary btn--sm" data-show="picker:loading">Loading</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,174 @@
+<!doctype html>
+<!--
+  Screen:      Confirm dialog (F · dialogs), the shared general-purpose confirmation
+  Replicates:  apps/desktop/src/components/ui/confirm-dialog.tsx, store/confirm.ts, components/confirm-host.tsx,
+               components/ui/{dialog,action-status,button}.tsx
+  Views:       #dlg=default | #dlg=destructive | #dlg=busy | #dlg=done | #dlg=error | #dlg=secondary
+  Measurements:
+    - DialogContent "max-w-md" → 28rem; body p-4, grid gap-3; radius-xl; 1px --stroke-nous; --shadow-nous; X close
+    - header flex-col gap-1; title .9375rem semibold tracking-tight; description (optional) 12px/16px tertiary
+    - inline error: flex items-start gap-2, rounded-md (2px), 1px destructive/30, destructive/10 fill, px-3 py-2,
+      12px destructive; AlertTriangle size-3.5 mt-0.5
+    - footer: flex-row justify-end gap-2 — Cancel ghost, [secondary action: secondary variant], Confirm
+      (default, or destructive when destructive=true). Buttons px-3 py-1.5, 12px/16px medium, radius 2.5px.
+    - confirm label runs through ActionStatus: idle label → Loader2 (spinning) + busy label → Check + done label
+  Behaviour:
+    - Two front doors: mount <ConfirmDialog> with an async onConfirm (gets the busy → done beat + inline
+      error), or call confirm({ title, description?, confirmLabel?, cancelLabel?, destructive? }) from
+      store/confirm.ts, which resolves true/false like window.confirm (ConfirmHost renders it with
+      dismissOnConfirm, so no busy beat). One modal at a time: a second confirm() answers the first "no".
+    - Opens focused on Confirm. Enter or Space confirms from anywhere in the dialog, even if Cancel has focus.
+      Esc / Cancel / backdrop / X dismiss, except while busy.
+    - Defaults: confirm "Confirm", busy "Loading…", done "Done", cancel "Cancel".
+    - Busy: every button disables. Success holds the "Done" beat for 600ms, then closes. A throw resets to
+      idle and shows the message inline (fallback: generic failure copy). dismissOnConfirm closes as soon as
+      onConfirm resolves.
+    - secondaryAction: a third, non-destructive way out between Cancel and Confirm; closes on click.
+    - Note: every current caller passes destructive; the default view shows the non-destructive variant with
+      illustrative copy.
+  Mobile:      At parity on mobile as a pattern (docs/PARITY.md: the delete / rename flows it guards are at parity).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Confirm · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; }
+      .ierr { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.75rem; line-height: 1rem; }
+      .ierr .ti { flex-shrink: 0; margin-top: 0.125rem; font-size: 0.875rem; }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .fg { color: var(--dt-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="cron">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Every weekday at 8am, summarize my inbox and post the top five threads here.</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-watch"></i><span>Scheduled</span><span class="tool-row__meta">cron 0 8 * * 1-5 · Summarize inbox every morning</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Scheduled. The first run is tomorrow at 08:00. It will post here and pin the summary.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Default (non-destructive) ── -->
+            <div data-view="default">
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Restart the gateway?</h2>
+                  <p class="dialog__desc">Running turns finish first. New messages queue until it is back.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Confirm</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Destructive ── -->
+            <div data-view="destructive" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete cron job?</h2>
+                  <p class="dialog__desc">This will remove <span class="t-medium fg">Summarize inbox every morning</span> permanently. It will stop firing immediately.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Busy ── -->
+            <div data-view="busy" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete cron job?</h2>
+                  <p class="dialog__desc">This will remove <span class="t-medium fg">Summarize inbox every morning</span> permanently. It will stop firing immediately.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost" disabled>Cancel</button>
+                  <button type="button" class="btn btn--destructive" disabled><i class="ti ti-loader-2 spin"></i>Deleting...</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Done beat (600ms, then closes) ── -->
+            <div data-view="done" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete cron job?</h2>
+                  <p class="dialog__desc">This will remove <span class="t-medium fg">Summarize inbox every morning</span> permanently. It will stop firing immediately.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost" disabled>Cancel</button>
+                  <button type="button" class="btn btn--destructive" disabled><i class="ti ti-check"></i>Done</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Error (onConfirm threw; back to idle) ── -->
+            <div data-view="error" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete cron job?</h2>
+                  <p class="dialog__desc">This will remove <span class="t-medium fg">Summarize inbox every morning</span> permanently. It will stop firing immediately.</p>
+                </div>
+                <div class="ierr"><i class="ti ti-alert-triangle"></i><span>Job 3f2a91 is running right now. Try again when it finishes.</span></div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── With a secondary action ── -->
+            <div data-view="secondary" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Remove worktree?</h2>
+                  <p class="dialog__desc">Remove it from git (deletes the worktree directory; the branch stays), or just hide the lane from the sidebar and leave the worktree on disk.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--secondary">Hide from sidebar</button>
+                  <button type="button" class="btn btn--destructive">Remove worktree</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:default">Default</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:destructive">Destructive</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:busy">Busy</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:done">Done beat</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:error">Inline error</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:secondary">Secondary action</button>
+      </nav>
+    </div>
+  </body>
+</html>

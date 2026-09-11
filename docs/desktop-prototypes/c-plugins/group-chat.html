@@ -1,0 +1,466 @@
+<!doctype html>
+<!--
+  Screen:      Group chat (C · Bot Mode plugin)   no route; a MAIN-window workspace tab opened with
+               host.openWorkspace("hermes-bots:group:<slug>", {title: <group>, minWidth: "24rem"}) from a group row.
+               Older desktops fall back to rendering the same room inside the Bots pane.
+  Replicates:  apps/desktop/src/plugins/hermes-bots/group-chat-view.tsx (GroupChatWorkspace l.466-1332, openGroupChat l.1378),
+               group-chat-parts.tsx (GroupMentionInput l.177-344, GroupClarifyCard l.375-557, GroupImageControls l.45-122),
+               group-hold-status.tsx, group-activity.ts (labels / glyphs / tones l.88-129), group-rounds.ts + group-chat.ts
+               (GROUP_CHAT_MAX_ROUNDS 3, GROUP_CHAT_MAX_MESSAGES 10, GROUP_CHAT_MAX_MEMBERS 6),
+               create-dialog.tsx (CreateGroupChatDialog l.1127-1352), i18n.ts en.group
+  Views:       #room=room (default: a run waiting on @user) | #room=activity (activity open, a held member, @-mention popover)
+               | #room=create (New group chat dialog)
+  Measurements:
+    - header px-2.5 pt-2.5 pb-2 gap-2: "Back" ghost sm; room picture size-6 (24px) rounded-md (ring-1 stroke-secondary) or a
+      --chrome-action-hover tile with codicon organization; name 14px semibold; count 10.4px quaternary ("3 bots", or amber
+      "2 of 3 available" when a member's gateway is down); gear and trash ghost sm (trash hovers destructive)
+    - hold status: flex gap-1.5, border-b stroke-secondary, --ui-bg-tertiary, px-2.5 py-1.5, 11.2px; debug-pause icon
+      --ui-text-secondary; title medium primary, hint tertiary
+    - activity bar: border-b stroke-secondary; toggle px-2.5 py-1 11.2px quaternary, chevron 10.4px, "Activity" medium +
+      latest event; "Stop" ghost xs --ui-accent with debug-stop while the room runs; open list px-2.5 pb-1.5 gap-0.5,
+      rows 11.2px with glyph 10.4px; tones: failed / timed-out = destructive, working / replied / delivered = --ui-accent,
+      else --ui-text-tertiary; time 10px quaternary
+    - log px-2.5 pb-2 gap-1.5. Folded thread: rounded-md 1px stroke-secondary px-2 py-1.5 12px tertiary, chevron-right,
+      head text (80 chars), "N replies · 2 hr ago" 10px quaternary. Open thread: border-l-2 stroke-secondary pl-1.5 gap-1.5
+    - entry: flex gap-2 items-start; user = rounded-md --chrome-action-hover px-2 py-1.5; bot = px-2 py-1 with a 24px face (mt-0.5);
+      speaker 11.2px semibold (bots --ui-accent, click reveals @handle / device); time 10px quaternary; copy button on hover;
+      body 12px --ui-text-secondary with markdown
+    - "Reply in thread" link 10.4px --ui-accent; reply box = the mention textarea + attach + "Reply" sm
+    - clarify / approval card: rounded-md 1px --ui-accent/50, --ui-accent/5 fill, px-2.5 py-2 gap-1.5; head 12px medium with
+      question (or shield) icon; choices secondary sm h-6 px-2 11.2px (picked = default); free text h-7 12px; "Answer" sm
+    - composer: border-t stroke-secondary p-2; textarea rows=1 min-h-9 max-h-40; attach ghost sm; "New Thread" sm
+    - mention popover: absolute bottom-full mb-1 w-64 max-h-48, rounded-md 1px stroke-secondary, --ui-bg-primary, py-1,
+      shadow-lg; option px-2 py-1 12px: "@handle" medium + meta 10.4px quaternary; active = --ui-control-hover-background
+  Behaviour (not visible statically):
+    - the main composer STARTS a new thread with the whole room; "Reply in thread" continues that thread. The newest thread is
+      open, older ones fold to summary rows (click to open, "Collapse thread" to fold)
+    - a send triggers up to 3 serial rounds of member turns (max 10 messages per send); @-mentioned bots respond, everyone
+      when nobody is mentioned; each bot replies briefly or passes; the room settles when a full round stays silent
+    - bots escalate to @user: the card appears in the room and the roster row shows the needs-you "?" until answered
+    - Stop interrupts the member on turn and holds the rest ("Stopped <group> — remaining turns are held until you resume");
+      holds persist across reloads until you @mention the bot or send "@all resume"
+    - Enter sends, Shift+Enter newline; in the popover Up/Down move, Enter/Tab insert, Esc closes; IME composition is ignored
+    - paste or drop files anywhere on the room: a dashed 2px --ui-accent overlay reads "Drop to attach — every responding bot
+      sees it"; chips with image thumbs appear above the composer
+    - the log sticks to the bottom while you are within 80px of it; reopening the tab re-anchors
+    - every member keeps its own "Group: <roomId>" session; the room log mirrors to every connected gateway
+  Mobile:      Bot Mode (Bots tab, group chat, routines) is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Group chat · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── Bot Mode page-local styles: tokens only (roster block shared with bots-tab.html) ── */
+      .bot-face { display: block; flex-shrink: 0; overflow: visible; --face-eye: color-mix(in srgb, var(--black) 85%, transparent); --face-hl: color-mix(in srgb, var(--white) 85%, transparent); }
+      [data-slot="bots-pane"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+      .bots-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-inline: -0.625rem; }
+      .bp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.625rem 0.625rem 0.375rem; }
+      .bp-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .bp-actions { display: flex; align-items: center; gap: 0.125rem; }
+      .bp-ico { border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .bp-list { display: grid; flex: 1; align-content: start; gap: 0.125rem; min-height: 0; overflow-y: auto; padding: 0 0.375rem 0.5rem; }
+      .bot-row { display: flex; align-items: center; gap: 0.625rem; width: 100%; min-width: 0; overflow: hidden; border: 0; border-radius: var(--radius-md); padding: 0.5rem; background: transparent; color: var(--dt-foreground); text-align: left; cursor: pointer; }
+      .bot-row:hover { background: var(--chrome-action-hover); }
+      .bot-row.is-active { background: var(--ui-row-active-background); }
+      .bot-row__body { flex: 1; min-width: 0; }
+      .bot-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .bot-row__id { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .bot-row__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .bot-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; }
+      .bot-row__age { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .bot-row__sub { display: flex; min-width: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .bot-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bot-row__ask { flex-shrink: 0; color: var(--ui-accent); }
+      .dot { display: block; width: 0.375rem; height: 0.375rem; border-radius: 50%; }
+      .dot--working { background: var(--ui-accent); }
+      .dot--idle { width: 0.3125rem; height: 0.3125rem; }
+      .group-lead { position: relative; display: flex; align-items: center; justify-content: center; width: 34px; flex-shrink: 0; }
+      .group-tile { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-md); background: var(--chrome-action-hover); color: var(--ui-text-tertiary); }
+
+      /* Workspace */
+      .ws-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-chat-surface-background); }
+      .zone-tabs .pane-tab { padding: 0; }
+      .zone-tabs .pane-tab + .pane-tab { border-left: 1px solid var(--ui-stroke-quaternary); }
+      .ptl { display: flex; align-items: center; height: 100%; padding: 0 0.5rem; font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; }
+      .frame .pane-tab .pane-tab__close { margin-right: 0.375rem; }
+
+      /* Group room (group-chat-view.tsx) */
+      .gc { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .gc-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.625rem 0.625rem 0.5rem; }
+      .gc-room-ico { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; flex-shrink: 0; border-radius: var(--radius-md); background: var(--chrome-action-hover); color: var(--ui-text-tertiary); }
+      .gc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 600; }
+      .gc-count { flex-shrink: 0; font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .gc-head-btn { color: var(--ui-text-tertiary); }
+      .gc-head-btn:hover { color: var(--dt-foreground); }
+      .gc-head-btn--danger:hover { color: var(--dt-destructive); }
+      .gc-hold { display: flex; align-items: flex-start; gap: 0.375rem; border-bottom: 1px solid var(--ui-stroke-secondary); background: var(--ui-bg-tertiary); padding: 0.375rem 0.625rem; font-size: 0.7rem; }
+      .frame .gc-hold .codicon { margin-top: 0.125rem; color: var(--ui-text-secondary); }
+      .gc-act { border-bottom: 1px solid var(--ui-stroke-secondary); }
+      .gc-act-row { display: flex; align-items: center; gap: 0.25rem; }
+      .gc-act-btn { display: flex; flex: 1; min-width: 0; align-items: center; gap: 0.375rem; border: 0; padding: 0.25rem 0.625rem; background: transparent; color: var(--ui-text-quaternary); font-size: 0.7rem; text-align: left; cursor: pointer; }
+      .gc-act-btn:hover { color: var(--dt-foreground); }
+      .frame .gc-act .codicon { font-size: 0.65rem; }
+      .gc-act-list { display: grid; gap: 0.125rem; padding: 0 0.625rem 0.375rem; }
+      .gc-ev { display: flex; align-items: center; gap: 0.375rem; font-size: 0.7rem; }
+      .gc-ev__time { flex-shrink: 0; font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .tone-accent { color: var(--ui-accent); }
+      .tone-danger { color: var(--dt-destructive); }
+      .tone-muted { color: var(--ui-text-tertiary); }
+      .gc-stop { color: var(--ui-accent); }
+      .gc-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+      .gc-log__in { display: grid; gap: 0.375rem; padding: 0 0.625rem 0.5rem; }
+      .gc-fold { display: flex; width: 100%; align-items: center; gap: 0.5rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; color: var(--ui-text-tertiary); font-size: 0.75rem; text-align: left; cursor: pointer; }
+      .gc-fold:hover { background: var(--chrome-action-hover); }
+      .frame .gc-fold .codicon { font-size: 0.65rem; }
+      .gc-fold__meta { flex-shrink: 0; font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .gc-thread { display: grid; gap: 0.375rem; border-left: 2px solid var(--ui-stroke-secondary); padding-left: 0.375rem; }
+      .gc-entry { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.25rem 0.5rem; }
+      .gc-entry--user { border-radius: var(--radius-md); background: var(--chrome-action-hover); padding: 0.375rem 0.5rem; }
+      .gc-entry .bot-face { margin-top: 0.125rem; }
+      .gc-entry__body { flex: 1; min-width: 0; }
+      .gc-entry__meta { display: flex; align-items: center; gap: 0.5rem; }
+      .gc-who { border: 0; padding: 0; background: transparent; color: var(--ui-accent); font-size: 0.7rem; font-weight: 600; cursor: pointer; }
+      .gc-entry--user .gc-who { color: var(--dt-foreground); cursor: default; }
+      .gc-time { font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .gc-text { color: var(--ui-text-secondary); font-size: 0.75rem; user-select: text; }
+      .gc-text p { margin: 0 0 0.25rem; }
+      .gc-text p:last-child { margin-bottom: 0; }
+      .gc-reply-link { justify-self: start; border: 0; padding: 0 0.5rem 0.25rem; background: transparent; color: var(--ui-accent); font-size: 0.65rem; cursor: pointer; }
+      .gc-reply-link:hover { text-decoration: underline; }
+      .gc-clarify { display: grid; gap: 0.375rem; border: 1px solid color-mix(in srgb, var(--ui-accent) 50%, transparent); border-radius: var(--radius-md); padding: 0.5rem 0.625rem; background: color-mix(in srgb, var(--ui-accent) 5%, transparent); }
+      .gc-clarify__head { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; font-weight: 500; }
+      .gc-clarify__q { font-size: 0.75rem; white-space: pre-wrap; }
+      .gc-choices { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+      .gc-choice { height: 1.5rem; padding: 0 0.5rem; font-size: 0.7rem; }
+      .gc-working { padding: 0.25rem 0.5rem; color: var(--ui-text-quaternary); font-size: 0.7rem; font-style: italic; }
+      .gc-compose { border-top: 1px solid var(--ui-stroke-secondary); padding: 0.5rem; }
+      .gc-compose__row { display: flex; align-items: center; gap: 0.375rem; }
+      .gc-input-wrap { position: relative; flex: 1; min-width: 0; }
+      .frame textarea.gc-input { display: block; height: 2.25rem; min-height: 2.25rem; max-height: 10rem; }
+      .gc-attach { color: var(--ui-text-tertiary); }
+      .gc-mention { position: absolute; bottom: 100%; left: 0; z-index: 50; width: 16rem; max-height: 12rem; overflow-y: auto; margin-bottom: 0.25rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.25rem 0; background: var(--ui-bg-primary); box-shadow: var(--shadow-lg); backdrop-filter: blur(0.75rem); }
+      .gc-mention__opt { display: flex; align-items: baseline; gap: 0.5rem; width: 100%; border: 0; padding: 0.25rem 0.5rem; background: transparent; color: var(--ui-text-secondary); font-size: 0.75rem; text-align: left; cursor: pointer; }
+      .gc-mention__opt.is-active { background: var(--ui-control-hover-background); color: var(--dt-foreground); }
+      .gc-mention__opt b { font-weight: 500; }
+      .gc-mention__opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.65rem; color: var(--ui-text-quaternary); }
+
+      /* New group chat dialog */
+      .stack { display: grid; gap: 0.75rem; }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+      .pick-chip { display: inline-flex; align-items: center; gap: 0.25rem; border: 0; border-radius: var(--radius-full); padding: 0.125rem 0.375rem 0.125rem 0.5rem; background: var(--chrome-action-hover); color: var(--ui-text-secondary); font-size: 0.6875rem; cursor: pointer; }
+      .pick-chip:hover { color: var(--dt-foreground); }
+      .frame .pick-chip .codicon { font-size: 0.6rem; }
+      .pick-list { display: grid; gap: 0.125rem; max-height: 16rem; overflow-y: auto; padding-right: 0.5rem; }
+      .pick-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; border-radius: var(--radius-md); padding: 0.25rem 0.375rem; cursor: pointer; }
+      .pick-row:hover { background: var(--chrome-action-hover); }
+      .pick-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--dt-foreground); }
+      .pick-row__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .img-ctl { display: flex; align-items: center; gap: 0.5rem; }
+      .img-ctl__tile { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; flex-shrink: 0; overflow: hidden; border-radius: 50%; background: var(--chrome-action-hover); color: var(--ui-text-tertiary); }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="face-hexagon" viewBox="0 0 40 44"><path d="M20 3.5 L34.5 11.8 L34.5 28.2 L20 36.5 L5.5 28.2 L5.5 11.8Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-squircle" viewBox="0 0 40 44"><rect x="4" y="4" width="32" height="32" rx="11" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-cloud" viewBox="0 0 40 44"><path d="M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-drop" viewBox="0 0 40 44"><path d="M20 3 C27 12 34 18.5 34 25.5 A14 14 0 0 1 6 25.5 C6 18.5 13 12 20 3Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="25" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="25" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="24.3" r=".65"/><circle cx="24" cy="24.3" r=".65"/></g></symbol>
+        <symbol id="face-circle" viewBox="0 0 40 44"><circle cx="20" cy="20" r="16" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-dots" viewBox="0 0 40 44"><g style="fill:var(--face)"><circle cx="16.4" cy="41.2" r="1.15"/><circle cx="20" cy="41.2" r="1.15" opacity=".6"/><circle cx="23.6" cy="41.2" r="1.15" opacity=".3"/></g></symbol>
+      </defs>
+    </svg>
+
+    <!-- Bots roster (abridged): the group row owns the highlight while a room is open -->
+    <template id="bots-pane">
+      <div class="bots-pane">
+        <div class="bp-head">
+          <span class="bp-title">Bots</span>
+          <div class="bp-actions">
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="Activity toasts off — click to enable"><i class="codicon codicon-bell-slash"></i></button>
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="New bot or group chat"><i class="codicon codicon-add"></i></button>
+          </div>
+        </div>
+        <div class="bp-list">
+          <button class="bot-row is-active" type="button">
+            <span class="group-lead"><span class="group-tile"><i class="codicon codicon-organization"></i></span></span>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__name" style="flex:1">Launch crew</span><span class="bot-row__age">now</span></span><span class="bot-row__sub"><span class="bot-row__preview">@coder: Ship behind a flag or wait for the fix? @user</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">coder</span></span><span class="bot-row__age">1m</span></span><span class="bot-row__sub"><span class="bot-row__preview">Merged the reconnect fix; Windows run pending.</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">Research Lead</span></span><span class="bot-row__age">5m</span></span><span class="bot-row__sub"><span class="bot-row__preview">Sent @coder two figures with sources.</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">inbox-butler</span></span><span class="bot-row__age">1h</span></span><span class="bot-row__sub"><span class="bot-row__preview">Morning digest: 14 new, 3 need a reply</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <span class="group-lead"><span class="group-tile"><i class="codicon codicon-organization"></i></span></span>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__name" style="flex:1">Research council</span><span class="bot-row__age">2d</span></span><span class="bot-row__sub"><span class="bot-row__preview">You: Compare the two eval runs side by side</span></span></span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="bots" data-title="Launch crew">
+            <section data-views="room" class="ws-row">
+              <!-- ══ View: room — a run waiting on @user ══ -->
+              <div data-view="room" class="zone">
+                <div class="zone-tabs" role="tablist">
+                  <div class="pane-tab" role="tab"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">Launch crew</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                </div>
+                <div class="gc">
+                  <div class="gc-head">
+                    <button class="btn btn--ghost btn--sm" type="button">Back</button>
+                    <span class="gc-room-ico"><i class="codicon codicon-organization"></i></span>
+                    <div class="gc-name">Launch crew</div>
+                    <span class="gc-count" title="Research Lead, coder, inbox-butler">3 bots</span>
+                    <button class="btn btn--ghost btn--sm gc-head-btn" type="button" aria-label="Group settings for Launch crew" title="Group settings — rename Launch crew or set a room picture"><i class="codicon codicon-gear"></i></button>
+                    <button class="btn btn--ghost btn--sm gc-head-btn gc-head-btn--danger" type="button" aria-label="Disband Launch crew" title="Disband the Launch crew group chat"><i class="codicon codicon-trash"></i></button>
+                  </div>
+                  <div class="gc-act">
+                    <div class="gc-act-row">
+                      <button class="gc-act-btn" type="button" aria-expanded="false" title="Show room activity"><i class="codicon codicon-chevron-right"></i><span class="t-medium">Activity</span><span class="t-truncate">coder replied · 1 min ago</span></button>
+                      <button class="btn btn--ghost btn--xs gc-stop" type="button" title="Stop this run — interrupts the member on turn and holds the rest"><i class="codicon codicon-debug-stop"></i>Stop</button>
+                    </div>
+                  </div>
+                  <div class="gc-log">
+                    <div class="gc-log__in">
+                      <button class="gc-fold" type="button" title="Open this thread"><i class="codicon codicon-chevron-right"></i><span class="t-truncate grow">Pick three launch-day metrics we can actually measure</span><span class="gc-fold__meta">4 replies · 2 hr ago</span></button>
+                      <div class="gc-thread">
+                        <div class="gc-entry gc-entry--user">
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><span class="gc-who">You</span><span class="gc-time">6 min ago</span></div>
+                            <div class="gc-text"><p>We ship v0.9.2 on Friday. @everyone what is still blocking?</p></div>
+                          </div>
+                        </div>
+                        <div class="gc-entry">
+                          <svg class="bot-face" width="24" height="24" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><button class="gc-who" type="button" title="Show full handle">Research Lead</button><span class="gc-time">5 min ago</span></div>
+                            <div class="gc-text"><p>Nothing on my side. The changelog and the benchmark table are final.</p></div>
+                          </div>
+                        </div>
+                        <div class="gc-entry">
+                          <svg class="bot-face" width="24" height="24" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><button class="gc-who" type="button" title="Show full handle">inbox-butler</button><span class="gc-time">4 min ago</span></div>
+                            <div class="gc-text"><p>Two customers asked about the Windows reconnect bug this week. Worth a line in the release notes.</p></div>
+                          </div>
+                        </div>
+                        <div class="gc-entry">
+                          <svg class="bot-face" width="24" height="24" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><button class="gc-who" type="button" title="Show full handle">coder</button><span class="gc-time">1 min ago</span></div>
+                            <div class="gc-text"><p>The reconnect fix is merged but not yet tested on Windows. Ship behind a flag, or wait for the fix? @user</p></div>
+                          </div>
+                        </div>
+                        <button class="gc-reply-link" type="button">Reply in thread</button>
+                      </div>
+                      <div class="gc-clarify">
+                        <div class="gc-clarify__head"><i class="codicon codicon-question tone-accent"></i>@coder asks:</div>
+                        <div class="gc-clarify__q">Ship v0.9.2 behind a flag, or hold the release until the Windows reconnect fix is verified?</div>
+                        <div class="gc-choices">
+                          <button class="btn btn--secondary btn--sm gc-choice" type="button">Ship behind a flag</button>
+                          <button class="btn btn--secondary btn--sm gc-choice" type="button">Hold the release</button>
+                        </div>
+                        <input class="control" style="height:1.75rem" aria-label="Answer @coder" placeholder="Or type your own answer…" />
+                        <div class="flex justify-end"><button class="btn btn--default btn--sm is-disabled" type="button">Answer</button></div>
+                      </div>
+                      <div class="gc-working">Waiting for your answer…</div>
+                    </div>
+                  </div>
+                  <div class="gc-compose">
+                    <div class="gc-compose__row">
+                      <div class="gc-input-wrap"><textarea class="control gc-input" rows="1" aria-label="Message Launch crew" placeholder="New thread in Launch crew… (@name to direct, @everyone for all)"></textarea></div>
+                      <button class="btn btn--ghost btn--sm gc-attach" type="button" title="Attach files — every responding bot sees them"><i class="codicon codicon-attach"></i></button>
+                      <button class="btn btn--default btn--sm is-disabled" type="button">New Thread</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ══ View: activity open + a held member + @-mention popover ══ -->
+              <div data-view="activity" class="zone" hidden>
+                <div class="zone-tabs" role="tablist">
+                  <div class="pane-tab" role="tab"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">Launch crew</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                </div>
+                <div class="gc">
+                  <div class="gc-head">
+                    <button class="btn btn--ghost btn--sm" type="button">Back</button>
+                    <span class="gc-room-ico"><i class="codicon codicon-organization"></i></span>
+                    <div class="gc-name">Launch crew</div>
+                    <span class="gc-count">3 bots</span>
+                    <button class="btn btn--ghost btn--sm gc-head-btn" type="button" aria-label="Group settings for Launch crew"><i class="codicon codicon-gear"></i></button>
+                    <button class="btn btn--ghost btn--sm gc-head-btn gc-head-btn--danger" type="button" aria-label="Disband Launch crew"><i class="codicon codicon-trash"></i></button>
+                  </div>
+                  <div class="gc-hold" role="status">
+                    <i class="codicon codicon-debug-pause"></i>
+                    <div class="grow">
+                      <div class="t-medium t-primary">Paused: inbox-butler</div>
+                      <div class="t-tertiary">Mention a paused bot or send @all resume to release them.</div>
+                    </div>
+                  </div>
+                  <div class="gc-act">
+                    <div class="gc-act-row">
+                      <button class="gc-act-btn" type="button" aria-expanded="true" title="Hide room activity"><i class="codicon codicon-chevron-down"></i><span class="t-medium">Activity</span><span class="t-truncate">coder is working… · now</span></button>
+                      <button class="btn btn--ghost btn--xs gc-stop" type="button"><i class="codicon codicon-debug-stop"></i>Stop</button>
+                    </div>
+                    <div class="gc-act-list">
+                      <div class="gc-ev"><i class="codicon codicon-sync tone-accent"></i><span class="grow t-truncate tone-accent">coder is working…</span><span class="gc-ev__time">now</span><button class="btn btn--ghost btn--micro gc-stop" type="button"><i class="codicon codicon-debug-stop"></i>Stop</button></div>
+                      <div class="gc-ev"><i class="codicon codicon-check tone-accent"></i><span class="grow t-truncate tone-accent">Research Lead replied</span><span class="gc-ev__time">1 min ago</span></div>
+                      <div class="gc-ev"><i class="codicon codicon-debug-pause tone-muted"></i><span class="grow t-truncate tone-muted">inbox-butler is held (stopped by you) — @mention it or say resume to release</span><span class="gc-ev__time">1 min ago</span></div>
+                      <div class="gc-ev"><i class="codicon codicon-circle-outline tone-muted"></i><span class="grow t-truncate tone-muted">Research Lead passed</span><span class="gc-ev__time">2 min ago</span></div>
+                      <div class="gc-ev"><i class="codicon codicon-comment tone-muted"></i><span class="grow t-truncate tone-muted">You sent a message</span><span class="gc-ev__time">2 min ago</span></div>
+                    </div>
+                  </div>
+                  <div class="gc-log">
+                    <div class="gc-log__in">
+                      <button class="gc-fold" type="button"><i class="codicon codicon-chevron-right"></i><span class="t-truncate grow">We ship v0.9.2 on Friday. @everyone what is still blocking?</span><span class="gc-fold__meta">4 replies · 20 min ago</span></button>
+                      <div class="gc-thread">
+                        <div class="gc-entry gc-entry--user">
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><span class="gc-who">You</span><span class="gc-time">2 min ago</span></div>
+                            <div class="gc-text"><p>@coder @researcher draft the flag rollout plan. Keep it to five steps.</p></div>
+                          </div>
+                        </div>
+                        <div class="gc-entry">
+                          <svg class="bot-face" width="24" height="24" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+                          <div class="gc-entry__body">
+                            <div class="gc-entry__meta"><button class="gc-who" type="button">Research Lead</button><span class="gc-time">1 min ago</span></div>
+                            <div class="gc-text"><p>Steps 1–2 from me: enable for internal builds first, then 10% of Windows installs with crash telemetry on.</p></div>
+                          </div>
+                        </div>
+                        <button class="gc-reply-link" type="button">Reply in thread</button>
+                      </div>
+                      <div class="gc-working">coder is thinking…</div>
+                    </div>
+                  </div>
+                  <div class="gc-compose">
+                    <div class="gc-compose__row">
+                      <div class="gc-input-wrap">
+                        <div class="gc-mention" role="listbox">
+                          <button class="gc-mention__opt is-active" type="button"><b>@everyone</b><span>Every bot in the room</span></button>
+                          <button class="gc-mention__opt" type="button"><b>@all</b><span>Every bot in the room</span></button>
+                          <button class="gc-mention__opt" type="button"><b>@coder</b><span>coder</span></button>
+                          <button class="gc-mention__opt" type="button"><b>@researcher</b><span>Research Lead</span></button>
+                          <button class="gc-mention__opt" type="button"><b>@inbox-butler</b><span>inbox-butler</span></button>
+                        </div>
+                        <textarea class="control gc-input is-focused" rows="1" aria-label="Message Launch crew">@</textarea>
+                      </div>
+                      <button class="btn btn--ghost btn--sm gc-attach" type="button" title="Attach files — every responding bot sees them"><i class="codicon codicon-attach"></i></button>
+                      <button class="btn btn--default btn--sm" type="button">New Thread</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ══ View: New group chat dialog (over the room) ══ -->
+              <div data-view="create" class="zone" hidden>
+                <div class="zone-tabs" role="tablist">
+                  <div class="pane-tab" role="tab"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">Launch crew</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                </div>
+                <div class="gc">
+                  <div class="gc-head">
+                    <button class="btn btn--ghost btn--sm" type="button">Back</button>
+                    <span class="gc-room-ico"><i class="codicon codicon-organization"></i></span>
+                    <div class="gc-name">Launch crew</div>
+                    <span class="gc-count">3 bots</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Dialog layer for the create view (portaled over the whole window) -->
+          <div class="create-layer" hidden data-create-layer>
+            <div class="scrim"></div>
+            <div class="dialog" role="dialog" style="max-width:28rem">
+              <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+              <div class="dialog__header">
+                <h2 class="dialog__title">New group chat</h2>
+                <p class="dialog__desc">Pick 2–6 bots. Local memberships sync through each Bot profile; cross-machine members stay scoped to this room.</p>
+              </div>
+              <label class="search-field is-filled" style="opacity:1"><i class="codicon codicon-search i-xs"></i><input aria-label="Search bots to add" placeholder="Search bots to add…" /></label>
+              <div class="chips">
+                <button class="pick-chip" type="button" title="Remove from selection">Research Lead<i class="codicon codicon-close"></i></button>
+                <button class="pick-chip" type="button" title="Remove from selection">acme-support<i class="codicon codicon-close"></i></button>
+              </div>
+              <div class="pick-list">
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">Research Lead</div><div class="pick-row__sub">@researcher · in “Launch crew”, “Research council”</div></div>
+                  <span class="checkbox is-on"></span>
+                </label>
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">coder</div><div class="pick-row__sub">@coder · in “Launch crew”</div></div>
+                  <span class="checkbox"></span>
+                </label>
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">inbox-butler</div><div class="pick-row__sub">@inbox-butler · in “Launch crew”</div></div>
+                  <span class="checkbox"></span>
+                </label>
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-green)"><use href="#face-drop" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">acme-support</div><div class="pick-row__sub">@acme-support</div></div>
+                  <span class="checkbox is-on"></span>
+                </label>
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-purple)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">Hermes</div><div class="pick-row__sub">@hermes</div></div>
+                  <span class="checkbox"></span>
+                </label>
+                <label class="pick-row">
+                  <svg class="bot-face" width="24" height="24" style="--face:var(--ui-yellow)"><use href="#face-circle" width="100%" height="100%"/></svg>
+                  <div class="grow"><div class="pick-row__name">dixie</div><div class="pick-row__sub">@dixie-mac-mini · Mac Mini</div></div>
+                  <span class="checkbox"></span>
+                </label>
+              </div>
+              <div class="stack">
+                <div class="img-ctl">
+                  <span class="img-ctl__tile"><i class="codicon codicon-organization"></i></span>
+                  <button class="btn btn--secondary btn--sm" type="button">Upload</button>
+                  <button class="btn btn--secondary btn--sm" type="button">Generate</button>
+                </div>
+                <input class="control" maxlength="64" aria-label="Group name" placeholder="Research Lead, acme-support" />
+              </div>
+              <div class="dialog__footer">
+                <button class="btn btn--secondary" type="button">Cancel</button>
+                <button class="btn btn--default" type="button">Create Group (2)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="room:room">Room (waiting on you)</button>
+        <button class="btn btn--secondary btn--sm" data-show="room:activity">Activity + held + @ menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="room:create">New group chat</button>
+      </nav>
+    </div>
+    <style>
+      /* The create dialog layer follows the create view */
+      .frame:has([data-view="create"]:not([hidden])) [data-create-layer] { display: block !important; }
+    </style>
+  </body>
+</html>

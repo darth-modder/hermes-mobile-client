@@ -1,0 +1,311 @@
+<!doctype html>
+<!--
+  Screen:      Status-bar pop-ups (G · small in-app elements) — model menu, gateway menu, context usage
+  Replicates:  apps/desktop/src/app/shell/{model-menu-panel.tsx, model-catalog-menu.tsx, model-edit-submenu.tsx,
+               gateway-menu-panel.tsx, context-usage-panel.tsx, statusbar-controls.tsx, hooks/use-statusbar-items.tsx},
+               src/app/chat/composer/model-pill.tsx, src/components/ui/{dropdown-menu.tsx, log-view.tsx, switch.tsx},
+               src/components/status-dot.tsx, src/i18n/en.ts (shell.modelMenu, modelOptions, gatewayMenu,
+               statusbar.contextUsagePanel)
+  Views:       #pop=model | #pop=gateway | #pop=gateway-offline | #pop=context
+  Measurements:
+    - every pop-up is a DropdownMenuContent: radius-lg, 1px --ui-stroke-secondary, bg elevated at 96%,
+      shadow-md, backdrop blur; opens side "top", sideOffset 8px; zoom-in-95 + fade-in
+    - statusbar menus default to w-56, align start; gateway-health: w-72 (18rem), p-0, align start;
+      context-usage: w-auto, p-0, align END
+    - MODEL menu opens from the composer's model pill (not a statusbar item): w-64 (16rem), p-0,
+      align end; search row px-2.5 py-1.5 (input h-4, 12px); list max-h max(150px, 30dvh);
+      provider label 10px semibold uppercase tracking-wider tertiary; rows = dropdownMenuRow
+      (gap .5rem, radius 0, padding .25rem .625rem, 12px) with "name  meta" (meta tertiary) and a check
+      on the current model; footer rows Edit models… (settings-gear 12px) and Refresh models (sync 12px)
+    - model edit submenu (hover a row): w-52 (13rem), p-0, sideOffset 4 (flips left when there is no room);
+      section labels 10px medium uppercase; Thinking / Fast switches size xs; Effort radio list with a
+      check (12px) at the right of the chosen level
+    - GATEWAY panel: 14px base; header px-3 py-2 with two status lines (0.7rem, dot 6px: good = primary,
+      warn = amber-500, bad = destructive, muted = muted-foreground/40) and icon-xs ghost buttons
+      (reconnect when offline, open system panel, 1px×16px divider, restart = power, destructive hover);
+      sections border-t border/50, px-3 py-2; section label 0.62rem semibold uppercase tracking .14em;
+      LogView mono 11px/1.5 tertiary, max-h-40 (10rem), last 40 lines, WS noise filtered
+    - CONTEXT panel: w-72 (18rem), p-3, gap .75rem, 12px; title medium + "~X / Y Tokens" 11px muted;
+      "N% Full" 11px; stacked bar h-1.5 rounded-full on --ui-stroke-tertiary; legend rows gap .375rem,
+      8×8 swatch radius 2px, label muted, tokens tabular-nums
+  Behaviour (not visible statically):
+    - model rows: click commits the model and closes; hovering opens the edit submenu so options can be
+      changed without closing; edits are stored as a per-model preset and pushed to the session only for
+      the active row; typing filters (arrows/Enter handled by the search field); provider labels collapse
+    - Refresh models refetches with refresh:true (spins the sync glyph); failed writes roll back + toast
+    - gateway log tail polls every 3s only while the menu is open, pinned to the newest line;
+      "View all logs →" and the dashboard button open Command Center → System and close the menu
+    - context numbers are measured occupancy when the backend has them, else the estimate
+  Mobile:      Model picker and context usage exist on mobile in their own sheets; the gateway menu is
+               desktop-only (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Status-bar pop-ups · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Anchors light up while their menu is open. */
+      .frame:has([data-view='gateway']:not([hidden])) .statusbar__group:first-child > .statusbar__item:nth-child(2),
+      .frame:has([data-view='gateway-offline']:not([hidden])) .statusbar__group:first-child > .statusbar__item:nth-child(2),
+      .frame:has([data-view='context']:not([hidden])) .statusbar__group.ml-auto > .statusbar__item:first-child { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .frame:has([data-view='model']:not([hidden])) .model-pill { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+
+      .pop { position: absolute; z-index: 60; font-size: var(--conversation-text-font-size); color: var(--dt-popover-foreground); }
+
+      /* dropdown-menu.tsx rows */
+      .dm-search { padding: 0.375rem 0.625rem; }
+      .dm-search input { display: block; width: 100%; height: 1rem; border: 0; padding: 0; background: transparent; color: var(--dt-foreground); font-size: 0.75rem; line-height: 1; outline: none; }
+      .dm-search input::placeholder { color: var(--ui-text-tertiary); }
+      .dm-sep { height: 1px; margin: 0.25rem 0; background: var(--ui-stroke-tertiary); }
+      .dm-list { max-height: max(150px, 30%); overflow-y: auto; padding: 0.125rem 0; }
+      .dm-group { padding: 0.125rem 0; }
+      .dm-glabel { display: flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; color: var(--ui-text-tertiary); font-size: 0.625rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; }
+      .dm-glabel .codicon { font-size: 0.75rem !important; opacity: 0; }
+      .dm-glabel:hover .codicon { opacity: 1; }
+      .dm-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.625rem; color: var(--ui-text-primary); font-size: 0.75rem; cursor: pointer; }
+      .dm-row:hover, .dm-row.is-open { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .dm-row .codicon, .dm-row .ti { font-size: 0.75rem !important; }
+      .dm-row--quiet { color: var(--ui-text-tertiary); }
+      .dm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dm-meta { color: var(--ui-text-tertiary); }
+      .dm-check { margin-left: auto; color: var(--dt-foreground); }
+      .dm-section { padding: 0.25rem 0.625rem 0.125rem; color: var(--ui-text-tertiary); font-size: 0.625rem; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; }
+      .dm-sub { position: absolute; right: calc(100% + 4px); width: 13rem; padding: 0; }
+
+      /* status-dot.tsx tones */
+      .sdot { display: inline-block; width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-full); }
+      .sdot--good { background: var(--dt-primary); }
+      .sdot--warn { background: var(--tw-amber-500); }
+      .sdot--bad { background: var(--dt-destructive); }
+      .sdot--muted { background: color-mix(in srgb, var(--dt-muted-foreground) 40%, transparent); }
+
+      /* gateway-menu-panel.tsx */
+      .gw { font-size: 0.875rem; }
+      .gw__head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; }
+      .gw__lines { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; font-size: 0.7rem; line-height: 1; }
+      .gw__lines span { display: flex; align-items: center; gap: 0.375rem; }
+      .gw__btns { display: flex; flex-shrink: 0; align-items: center; gap: 0.125rem; }
+      .gw__btns .btn { color: var(--dt-muted-foreground); }
+      .gw__btns .btn:hover { color: var(--dt-foreground); }
+      .gw__btns .btn.is-power:hover { color: var(--dt-destructive); background: var(--chrome-action-hover); }
+      .gw__btns .ti { font-size: 0.75rem !important; }
+      .gw__div { width: 1px; height: 1rem; margin: 0 0.25rem; background: color-mix(in srgb, var(--dt-border) 70%, transparent); }
+      .gw__sec { border-top: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent); padding: 0.5rem 0.75rem; }
+      .gw__label { color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+      .gw__all { margin-right: -0.5rem; padding-block: 0; line-height: 1; }
+      .logview { max-height: 10rem; margin-top: 0.375rem; overflow: auto; padding: 0.375rem 0; color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; user-select: text; }
+      .gw__plats { margin: 0.375rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.25rem; }
+      .gw__plats li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; }
+      .gw__plats li > span:first-child { text-transform: capitalize; }
+      .gw__plats li > span:last-child { display: flex; align-items: center; gap: 0.375rem; color: var(--dt-muted-foreground); font-size: 0.66rem; }
+
+      /* context-usage-panel.tsx */
+      .ctx { display: flex; flex-direction: column; gap: 0.75rem; width: 18rem; padding: 0.75rem; font-size: 0.75rem; }
+      .ctx p { margin: 0; }
+      .ctx__bar { display: flex; height: 0.375rem; overflow: hidden; border-radius: var(--radius-full); background: var(--ui-stroke-tertiary); }
+      .ctx__bar span { height: 100%; min-width: 1px; }
+      .ctx ul { display: flex; flex-direction: column; gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+      .ctx li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+      .ctx li > span:first-child { display: flex; align-items: center; gap: 0.5rem; min-width: 0; color: var(--dt-muted-foreground); }
+      .ctx li i { width: 0.5rem; height: 0.5rem; flex-shrink: 0; border-radius: 2px; }
+      .ctx li > span:last-child { color: var(--dt-foreground); font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-time">Today 10:42</div>
+                <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                    <div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div>
+                    <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p></div>
+                </div>
+              </div>
+            </div>
+            <div class="composer-dock">
+              <div class="composer">
+                <div class="composer__row">
+                  <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                  <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                  <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                  <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pop-ups are portalled to <body>, so they sit on the window, not inside a pane. -->
+          <section data-views="pop">
+            <!-- ── View: model menu (from the composer model pill) ─────── -->
+            <div data-view="model">
+              <div class="menu pop" style="width:16rem;padding:0;right:169px;bottom:69px" data-slot="dropdown-menu-content">
+                <div class="dm-search"><input aria-label="Search models" placeholder="Search models" /></div>
+                <div class="dm-sep"></div>
+                <div class="dm-list">
+                  <div class="dm-group">
+                    <div class="dm-glabel"><span class="t-truncate">Anthropic</span><i class="codicon codicon-chevron-down"></i></div>
+                    <div class="dm-row is-open">
+                      <span class="dm-name">claude-opus-5<span class="dm-meta"> High</span></span><i class="codicon codicon-check dm-check"></i>
+                    </div>
+                    <div class="dm-row"><span class="dm-name">claude-sonnet-5<span class="dm-meta"> Medium</span></span></div>
+                    <div class="dm-row"><span class="dm-name">claude-haiku-5<span class="dm-meta"> Low</span></span></div>
+                  </div>
+                  <div class="dm-group">
+                    <div class="dm-glabel"><span class="t-truncate">DeepSeek</span><i class="codicon codicon-chevron-down"></i></div>
+                    <div class="dm-row"><span class="dm-name">deepseek-v4-flash<span class="dm-meta"> Fast Medium</span></span></div>
+                    <div class="dm-row"><span class="dm-name">deepseek-v4<span class="dm-meta"> High</span></span></div>
+                  </div>
+                  <div class="dm-group">
+                    <div class="dm-glabel"><span class="t-truncate">Xiaomi MiMo</span><i class="codicon codicon-chevron-down"></i></div>
+                    <div class="dm-row"><span class="dm-name">mimo-v2.5<span class="dm-meta"> Medium</span></span></div>
+                  </div>
+                </div>
+                <!-- Edit submenu for the hovered claude-opus-5 row, flipped to the left (no room on the right).
+                     Portalled: a sibling of the menu content, top-aligned with the row. -->
+                      <div class="menu dm-sub" style="top:56px" data-slot="dropdown-menu-sub-content">
+                        <div class="dm-section">Options</div>
+                        <div class="dm-row">Thinking<span class="switch switch--xs is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                        <div class="dm-row">Fast<span class="switch switch--xs ml-auto" role="switch" aria-checked="false"></span></div>
+                        <div class="dm-sep"></div>
+                        <div class="dm-section">Effort</div>
+                        <div class="dm-row">Minimal</div>
+                        <div class="dm-row">Low</div>
+                        <div class="dm-row">Medium</div>
+                        <div class="dm-row">High<i class="codicon codicon-check dm-check"></i></div>
+                        <div class="dm-row">Extra High</div>
+                        <div class="dm-row">Max</div>
+                        <div class="dm-row">Ultra</div>
+                      </div>
+                <div class="dm-sep"></div>
+                <div class="dm-section">MoA presets</div>
+                <div class="dm-row"><span class="dm-name">council-3</span></div>
+                <div class="dm-sep"></div>
+                <div class="dm-row dm-row--quiet"><i class="codicon codicon-settings-gear"></i>Edit models…</div>
+                <div class="dm-row dm-row--quiet"><i class="codicon codicon-sync"></i>Refresh models</div>
+              </div>
+            </div>
+
+            <!-- ── View: gateway menu (connected) ─────────────────────── -->
+            <div data-view="gateway" hidden>
+              <div class="menu pop gw" style="width:18rem;padding:0;left:28px;bottom:28px">
+                <div class="gw__head">
+                  <div class="gw__lines">
+                    <span class="t-medium"><i class="sdot sdot--good"></i>Connected</span>
+                    <span class="t-muted"><i class="sdot sdot--good"></i>Inference ready</span>
+                  </div>
+                  <div class="gw__btns">
+                    <button class="btn btn--ghost btn--icon-xs" aria-label="Open system panel"><i class="ti ti-layout-dashboard"></i></button>
+                    <span class="gw__div" aria-hidden="true"></span>
+                    <button class="btn btn--ghost btn--icon-xs is-power" aria-label="Restart gateway"><i class="ti ti-power"></i></button>
+                  </div>
+                </div>
+                <div class="gw__sec">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="gw__label">Recent activity</div>
+                    <button class="btn btn--text btn--xs gw__all t-medium" type="button">View all logs →</button>
+                  </div>
+                  <div class="logview">INFO session.resume runtime=desk-7f3a profile=default
+INFO turn complete in 41.2s · 18 tool calls
+INFO telegram poll ok (3 updates)
+INFO cron "Summarize inbox every morning" next run 07:00
+WARNING discord reconnecting in 8s (attempt 2)
+INFO model.options refreshed (3 providers)</div>
+                </div>
+                <div class="gw__sec">
+                  <div class="gw__label">Messaging platforms</div>
+                  <ul class="gw__plats">
+                    <li><span>discord</span><span><i class="sdot sdot--warn"></i>Retrying</span></li>
+                    <li><span>slack</span><span><i class="sdot sdot--bad"></i>Startup failed</span></li>
+                    <li><span>telegram</span><span><i class="sdot sdot--good"></i>Connected</span></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── View: gateway menu (offline) ───────────────────────── -->
+            <div data-view="gateway-offline" hidden>
+              <div class="menu pop gw" style="width:18rem;padding:0;left:28px;bottom:28px">
+                <div class="gw__head">
+                  <div class="gw__lines">
+                    <span class="t-medium"><i class="sdot sdot--bad"></i>Offline</span>
+                    <span class="t-muted"><i class="sdot sdot--bad"></i>Disconnected</span>
+                  </div>
+                  <div class="gw__btns">
+                    <button class="btn btn--ghost btn--icon-xs" aria-label="Reconnect gateway"><i class="ti ti-refresh"></i></button>
+                    <button class="btn btn--ghost btn--icon-xs" aria-label="Open system panel"><i class="ti ti-layout-dashboard"></i></button>
+                    <span class="gw__div" aria-hidden="true"></span>
+                    <button class="btn btn--ghost btn--icon-xs is-power" aria-label="Restart gateway"><i class="ti ti-power"></i></button>
+                  </div>
+                </div>
+                <div class="gw__sec t-muted" style="font-size:.75rem">Gateway process exited (code 1). Check the gateway log for the traceback.</div>
+                <div class="gw__sec">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="gw__label">Recent activity</div>
+                    <button class="btn btn--text btn--xs gw__all t-medium" type="button">View all logs →</button>
+                  </div>
+                  <div class="logview">INFO gateway starting on 127.0.0.1:8642
+ERROR config.yaml: model_context_length must be an integer
+ERROR gateway exited with code 1</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── View: context usage ────────────────────────────────── -->
+            <div data-view="context" hidden>
+              <div class="menu pop" style="padding:0;right:148px;bottom:28px" data-slot="context-usage-panel">
+                <div class="ctx">
+                  <div class="flex justify-between gap-2" style="align-items:baseline">
+                    <p class="t-medium" style="color:var(--dt-foreground)">Context Usage</p>
+                    <span class="t-muted" style="font-size:.6875rem">~104K / 200K Tokens</span>
+                  </div>
+                  <p style="font-size:.6875rem;color:var(--dt-foreground)">52% Full</p>
+                  <div class="ctx__bar" data-slot="context-usage-bar">
+                    <span style="width:8%;background:var(--context-usage-system)"></span>
+                    <span style="width:20.2%;background:var(--context-usage-tools)"></span>
+                    <span style="width:3%;background:var(--context-usage-rules)"></span>
+                    <span style="width:4.4%;background:var(--context-usage-skills)"></span>
+                    <span style="width:11.5%;background:var(--context-usage-mcp)"></span>
+                    <span style="width:1.7%;background:var(--context-usage-subagents)"></span>
+                    <span style="width:2.1%;background:var(--context-usage-memory)"></span>
+                    <span style="width:49.1%;background:var(--context-usage-conversation)"></span>
+                  </div>
+                  <ul>
+                    <li><span><i style="background:var(--context-usage-system)"></i><span class="t-truncate">System prompt</span></span><span>8.4K</span></li>
+                    <li><span><i style="background:var(--context-usage-tools)"></i><span class="t-truncate">Tool definitions</span></span><span>21K</span></li>
+                    <li><span><i style="background:var(--context-usage-rules)"></i><span class="t-truncate">Rules</span></span><span>3.1K</span></li>
+                    <li><span><i style="background:var(--context-usage-skills)"></i><span class="t-truncate">Skills</span></span><span>4.6K</span></li>
+                    <li><span><i style="background:var(--context-usage-mcp)"></i><span class="t-truncate">MCP</span></span><span>12K</span></li>
+                    <li><span><i style="background:var(--context-usage-subagents)"></i><span class="t-truncate">Subagent definitions</span></span><span>1.8K</span></li>
+                    <li><span><i style="background:var(--context-usage-memory)"></i><span class="t-truncate">Memory</span></span><span>2.2K</span></li>
+                    <li><span><i style="background:var(--context-usage-conversation)"></i><span class="t-truncate">Conversation</span></span><span>51K</span></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="pop:model">Model menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="pop:gateway">Gateway menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="pop:gateway-offline">Gateway (offline)</button>
+        <button class="btn btn--secondary btn--sm" data-show="pop:context">Context usage</button>
+      </nav>
+    </div>
+  </body>
+</html>

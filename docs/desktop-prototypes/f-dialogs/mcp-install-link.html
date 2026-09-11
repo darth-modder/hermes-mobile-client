@@ -1,0 +1,183 @@
+<!doctype html>
+<!--
+  Screen:      MCP install link dialog (F · dialogs), opened by a hermes://mcp/install deep link
+  Replicates:  apps/desktop/src/app/contrib/mcp-install-deeplink-dialog.tsx, components/ui/{dialog,input,button}.tsx
+               (copy: en.ts settings.mcp.deepLink*, name, serverJson)
+  Views:       #dlg=http | #dlg=stdio | #dlg=conflict | #dlg=saving
+  Measurements:
+    - DialogContent "max-w-lg" → 32rem; body p-4, grid gap-3; radius-xl; --shadow-nous
+    - content column: flex-col gap-3
+    - stdio caution: flex gap-2, rounded-md, 1px destructive/40 border, destructive/10 fill, px-3 py-2, 12px
+      destructive, AlertTriangle size-3.5 mt-0.5
+    - "Name" label: flex-col gap-1, 12px --dt-muted-foreground, wraps an Input (control default)
+    - validation line: 12px --dt-destructive
+    - "Server JSON": label 12px muted; <pre> max-h-64 (16rem) scroll, rounded-md (2px), 1px --dt-border,
+      --dt-muted at 40%, p-2, mono 12px, pre-wrap + break-all, --dt-foreground
+    - footer: Cancel ghost + "Add server" (default for url servers, DESTRUCTIVE variant for stdio/command servers)
+  Behaviour:
+    - Nothing touches config until "Add server". The JSON shown is exactly what gets written.
+    - Name must match 1-64 of letters, digits, dots, dashes, underscores; an existing server name blocks
+      confirm (never overwritten). Confirm also stays disabled while the existing-name preflight loads.
+    - On confirm it re-reads the freshest server map, merges, saves, toasts "saved" and navigates to
+      /skills?tab=mcp&server=<name>. A late conflict or save failure shows the inline error block.
+    - While saving the label becomes "Saving…" and Esc / backdrop / Cancel cannot close.
+    - Malformed links never open this dialog; they toast "MCP install link rejected" with a reason.
+  Mobile:      MCP servers are at parity on mobile (docs/PARITY.md, Settings row, M09). The hermes:// deep-link
+               install is not listed there.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP install link · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .stack { display: flex; flex-direction: column; gap: 0.75rem; }
+      .caution { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--dt-destructive) 40%, transparent); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.75rem; line-height: 1rem; }
+      .caution .ti { flex-shrink: 0; margin-top: 0.125rem; font-size: 0.875rem; }
+      .ierr { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.75rem; line-height: 1rem; }
+      .ierr .ti { flex-shrink: 0; margin-top: 0.125rem; font-size: 0.875rem; }
+      .lab { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; line-height: 1rem; color: var(--dt-muted-foreground); }
+      .bad { margin: 0; font-size: 0.75rem; line-height: 1rem; color: var(--dt-destructive); }
+      .json { max-height: 16rem; margin: 0; overflow: auto; border: 1px solid var(--dt-border); border-radius: var(--radius-md); padding: 0.5rem; background: color-mix(in srgb, var(--dt-muted) 40%, transparent); color: var(--dt-foreground); font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1rem; white-space: pre-wrap; word-break: break-all; user-select: text; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="kanban">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Sketch how a kanban board could orchestrate several agents working on one repo.</div>
+                <div class="turn">
+                  <div class="msg-ai"><p>Treat each column as a queue with an owner: a planner fills Backlog, workers pull from Ready, and a reviewer gates Done. Cards carry the worktree path so two agents never share a checkout.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── HTTP server ── -->
+            <div data-view="http">
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Add MCP server?</h2>
+                  <p class="dialog__desc">A link asked to add this MCP server to Hermes. Review the exact configuration below — it comes from the link, not from Hermes.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab">Name<input class="control is-focused" value="linear" /></label>
+                  <div class="lab">Server JSON
+<pre class="json">{
+  "url": "https://mcp.linear.app/mcp",
+  "headers": {
+    "X-Client": "hermes-desktop"
+  }
+}</pre>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Add server</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── stdio (command) server: caution + destructive confirm ── -->
+            <div data-view="stdio" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Add MCP server?</h2>
+                  <p class="dialog__desc">A link asked to add this MCP server to Hermes. Review the exact configuration below — it comes from the link, not from Hermes.</p>
+                </div>
+                <div class="stack">
+                  <div class="caution"><i class="ti ti-alert-triangle"></i><span>This server runs a local process on your machine with the command shown below. Only continue if you trust its source.</span></div>
+                  <label class="lab">Name<input class="control" value="filesystem" /></label>
+                  <div class="lab">Server JSON
+<pre class="json">{
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "C:\\Users\\ahmed\\Projects"
+  ],
+  "env": {
+    "NODE_OPTIONS": "--max-old-space-size=512"
+  }
+}</pre>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--destructive">Add server</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Name conflict (confirm blocked) ── -->
+            <div data-view="conflict" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Add MCP server?</h2>
+                  <p class="dialog__desc">A link asked to add this MCP server to Hermes. Review the exact configuration below — it comes from the link, not from Hermes.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab">Name<input class="control is-focused" value="github" /></label>
+                  <p class="bad">A server named github already exists — choose a different name or cancel.</p>
+                  <div class="lab">Server JSON
+<pre class="json">{
+  "url": "https://api.githubcopilot.com/mcp/"
+}</pre>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Add server</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Saving (then a late failure lands in the error block) ── -->
+            <div data-view="saving" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Add MCP server?</h2>
+                  <p class="dialog__desc">A link asked to add this MCP server to Hermes. Review the exact configuration below — it comes from the link, not from Hermes.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab">Name<input class="control" value="linear" /></label>
+                  <div class="lab">Server JSON
+<pre class="json">{
+  "url": "https://mcp.linear.app/mcp"
+}</pre>
+                  </div>
+                  <div class="ierr"><i class="ti ti-alert-triangle"></i><span>Failed to save MCP servers: backend returned 503 (gateway restarting)</span></div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost" disabled>Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Saving…</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:http">HTTP server</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:stdio">stdio server (caution)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:conflict">Name conflict</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:saving">Saving / error</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  Screen:      Archive skill confirm (F · dialogs), from Capabilities → Skills (and the memory graph)
+  Replicates:  apps/desktop/src/app/learning/archive-skill-confirm-dialog.tsx, components/ui/confirm-dialog.tsx,
+               components/ui/dialog.tsx
+  Views:       single view (the dialog has no busy beat: dismissOnConfirm)
+  Measurements:
+    - ConfirmDialog: DialogContent "max-w-md" → 28rem; body p-4, grid gap-3; radius-xl; --shadow-nous; X close
+    - title "Archive <skill>?" .9375rem semibold; description 12px/16px --ui-text-tertiary. The description
+      is a plain string, so the backticks around `hermes curator restore` render literally.
+    - footer: Cancel ghost + "Archive" destructive (bg --dt-destructive; dark mode at 60%)
+  Behaviour:
+    - Opens focused on Archive; Enter/Space confirm from anywhere in the dialog; Esc / Cancel / backdrop dismiss.
+    - dismissOnConfirm + optimistic: the skill leaves the list and the dialog closes immediately; the archive runs
+      in the background. Success toasts "Skill archived" / "Restorable via hermes curator restore."; failure
+      rolls the row back and reports through onFailure (toast), never inside the dialog.
+    - Archive targets the Capabilities profile-scope override when one is set, else the active profile.
+  Mobile:      Skills are at parity on mobile (docs/PARITY.md, Settings row, M09).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Archive skill · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. Capabilities page stand-in underneath the dialog. */
+      .dialog--md { max-width: 28rem; }
+      .cap { flex: 1; min-height: 0; overflow: hidden; padding-top: 1.25rem; }
+      .cap__title { margin: 0 0 0.25rem; font-size: 0.875rem; font-weight: 600; }
+      .cap__tabs { display: flex; gap: 0.75rem; margin: 0.5rem 0 0.75rem; }
+      .skill { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.5rem; border-radius: var(--radius-md); }
+      .skill__name { font-size: 0.8125rem; font-weight: 500; }
+      .skill__desc { font-size: 0.75rem; color: var(--ui-text-tertiary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-nav="skills" data-title="">
+            <div class="cap page-inset">
+              <div class="page-max">
+                <h1 class="cap__title">Capabilities</h1>
+                <div class="t-tertiary t-caption">Skills, MCP servers and tools available to the default profile.</div>
+                <div class="cap__tabs">
+                  <button class="text-tab is-active">Skills <span class="count">14</span></button>
+                  <button class="text-tab">MCP <span class="count">3</span></button>
+                  <button class="text-tab">Tools <span class="count">27</span></button>
+                </div>
+                <div class="skill row-hover"><i class="ti ti-sparkles t-tertiary"></i><div class="grow"><div class="skill__name">pr-review-checklist</div><div class="skill__desc">Learned · Walks a diff against the repo's review checklist before opening a PR.</div></div><span class="badge badge--muted">learned</span><button class="btn btn--ghost btn--icon-xs" aria-label="Actions"><i class="codicon codicon-kebab-vertical i-xs"></i></button></div>
+                <div class="skill row-hover"><i class="ti ti-sparkles t-tertiary"></i><div class="grow"><div class="skill__name">windows-e2e-triage</div><div class="skill__desc">Learned · Reruns a flaky Playwright spec three times and diffs the traces.</div></div><span class="badge badge--muted">learned</span><button class="btn btn--ghost btn--icon-xs" aria-label="Actions"><i class="codicon codicon-kebab-vertical i-xs"></i></button></div>
+                <div class="skill row-hover"><i class="ti ti-puzzle t-tertiary"></i><div class="grow"><div class="skill__name">github</div><div class="skill__desc">Bundled · Issues, pull requests and Actions runs through the gh CLI.</div></div><span class="badge badge--outline">bundled</span><button class="btn btn--ghost btn--icon-xs" aria-label="Actions"><i class="codicon codicon-kebab-vertical i-xs"></i></button></div>
+                <div class="skill row-hover"><i class="ti ti-puzzle t-tertiary"></i><div class="grow"><div class="skill__name">sqlite-fts</div><div class="skill__desc">Bundled · Build and query full-text indexes over local SQLite databases.</div></div><span class="badge badge--outline">bundled</span><button class="btn btn--ghost btn--icon-xs" aria-label="Actions"><i class="codicon codicon-kebab-vertical i-xs"></i></button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <div class="dialog dialog--md" role="alertdialog">
+            <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+            <div class="dialog__header">
+              <h2 class="dialog__title">Archive pr-review-checklist?</h2>
+              <p class="dialog__desc">The skill is archived and can be restored with `hermes curator restore`.</p>
+            </div>
+            <div class="dialog__footer">
+              <button type="button" class="btn btn--ghost">Cancel</button>
+              <button type="button" class="btn btn--destructive">Archive</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<!--
+  Screen:      Gateway connecting (E · app-wide overlay, boot-time)   GatewayConnectingOverlay, always mounted
+  Replicates:  apps/desktop/src/components/gateway-connecting-overlay.tsx, components/ui/decode-text.tsx,
+               styles.css (.dither)
+  Views:       #connecting=live | text-out | overlay-out
+  Measurements:
+    - overlay: fixed inset-0, grid place-items-center, bg --ui-chat-surface-background (opaque; data-glass-opaque)
+    - word: "CONNECTING", mono 0.64rem (10.24px) / 600, uppercase, tracking .4em, tabular-nums, pl .4em, colour --theme-primary
+    - first 4 chars ("CONN") never scramble; the tail cycles through the ascii set / \ | - _ = + < > ~ : *
+    - cursor: 8px dither square (2px checker of currentColor), ml .125rem, radius 1px, raised 1px, 1s step-end blink
+  Behaviour:
+    - z rung: var(--z-connecting) = 1200 (under onboarding 1300 and setup/boot-failure 1400)
+    - cold boot only: shows while the gateway isn't open and boot hasn't finished; after one healthy boot it never returns
+      (sleep/wake drops keep the shell usable; profile switches reskeleton the sidebar instead)
+    - decode: half a char resolves per 45ms tick; fully resolved it holds 16 ticks, then replays
+    - exit on gateway open: text-out (word slides down 8px, fades, desaturates; 300ms) → hold 300ms → overlay fades 500ms
+      (OVERLAY_OUT_MS 520) → unmount. Reduced motion jumps straight to gone.
+    - unmounts immediately if boot errors (the boot-failure overlay owns the screen)
+    - dev only: ?connecting=1 loops a preview (2.6s connect, 1.1s replay pause)
+  Mobile:      Absent by design as a full-screen boot mask (the phone never boots a backend, docs/PARITY.md); reconnect/replay
+               state itself is at parity (Sessions, M07).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gateway connecting · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .gc { position: absolute; inset: 0; z-index: var(--z-connecting); display: grid; place-items: center; background: var(--ui-chat-surface-background); opacity: 1; transition: opacity 500ms ease-out; }
+      /* Frozen mid-fade so the state is visible; the real overlay ends at opacity 0 and unmounts. */
+      .gc.is-fading { opacity: 0.35; pointer-events: none; }
+      .decode { display: inline-flex; align-items: center; padding-left: 0.4em; white-space: pre; font-family: var(--dt-font-mono); font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4em; font-variant-numeric: tabular-nums; color: var(--theme-primary); transition: all 300ms ease-out; }
+      /* text-out: translate-y-2 opacity-0 saturate-0 (held at 25% here so it is visible) */
+      .decode.is-leaving { transform: translateY(0.5rem); opacity: 0.25; filter: saturate(0); }
+      .decode__cursor { display: inline-block; flex-shrink: 0; width: 0.5rem; height: 0.5rem; margin-left: 0.125rem; border-radius: 1px; transform: translateY(-1px);
+        background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; animation: gc-blink 1s step-end infinite; }
+      @keyframes gc-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+            </div></div>
+          </div>
+
+          <section data-views="connecting">
+            <div data-view="live" class="gc">
+              <span class="decode" data-decode-tail="ECTING">CONN<span class="decode__tail">ECTING</span><span class="decode__cursor" aria-hidden="true"></span></span>
+            </div>
+            <div data-view="text-out" class="gc" hidden>
+              <span class="decode is-leaving">CONNECTING<span class="decode__cursor" aria-hidden="true"></span></span>
+            </div>
+            <div data-view="overlay-out" class="gc is-fading" hidden>
+              <span class="decode is-leaving" style="opacity:0">CONNECTING</span>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="connecting:live">Live (decoding)</button>
+        <button class="btn btn--secondary btn--sm" data-show="connecting:text-out">Exit · text out</button>
+        <button class="btn btn--secondary btn--sm" data-show="connecting:overlay-out">Exit · overlay fading</button>
+      </nav>
+    </div>
+    <script>
+      // Prototype-only: the DecodeText loop (prefix 4 static, 45ms ticks, 16-tick hold, replay).
+      ;(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        var CH = '/\\|-_=+<>~:*'
+        document.addEventListener('DOMContentLoaded', function () {
+          var host = document.querySelector('[data-decode-tail]')
+          var tailEl = host && host.querySelector('.decode__tail')
+          if (!tailEl) return
+          var tail = host.getAttribute('data-decode-tail')
+          var resolved = 0
+          var hold = 0
+          setInterval(function () {
+            if (resolved >= tail.length) {
+              hold += 1
+              if (hold > 16) { resolved = 0; hold = 0 }
+              tailEl.textContent = tail
+              return
+            }
+            resolved += 0.5
+            var n = Math.floor(resolved)
+            tailEl.textContent = Array.from(tail, function (c, i) { return i < n ? c : CH[(Math.random() * CH.length) | 0] }).join('')
+          }, 45)
+        })
+      })()
+    </script>
+  </body>
+</html>

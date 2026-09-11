@@ -1,0 +1,697 @@
+<!doctype html>
+<!--
+  Screen:      Kanban (C · plugin, OFF by default)   route `/kanban` (full page in the workspace, in place of chat)
+  Replicates:  apps/desktop/src/plugins/kanban/plugin.tsx (nav row, statusbar count, palette + ⌘⌥N keybind),
+               plugins/kanban/board.tsx (KanbanBoardPage, Column, Card, CardFooter, Intro, FilterMenu, SelectionBar,
+               NewTaskDialog), plugins/kanban/board-switcher.tsx (BoardSwitcher in titleBar.center),
+               plugins/kanban/drawer.tsx (TaskDrawer), plugins/kanban/ui.tsx (Avatar, StatusMenu, Section, Callout,
+               RunClock, arcState), plugins/kanban/orchestration.tsx, plugins/kanban/model-override.tsx,
+               plugins/kanban/kanban.css (machine-activity arc), plugins/kanban/types.ts (COLUMN_META),
+               plugins/kanban/i18n.ts (`en` bundle — every string on this page)
+  Views:       #kanban=board (default) | #kanban=drawer | #kanban=switcher
+               The board markup lives once in <template id="kb-board-tpl">; a small script at the end of <body>
+               clones it into each view (drawer/switcher add their overlay into the cloned page).
+  Measurements:
+    - page: flex column, bg --ui-surface-background, fills the workspace (983×746 in the 1220×800 window)
+    - header: px-4 py-2 (1rem / .5rem), gap-2; h1 "Kanban" 14px/20px semibold; total pill rounded-full
+      bg-quaternary px-1.5 py-px 10px tabular; filter + organization buttons = ghost icon-xs (24px, radius 4px,
+      codicon 0.85rem); "New task" = default Button size sm (px-2 with icon, py-1, 12px) + codicon add 0.8rem
+    - intro (until "Got it"): mx-4 mb-2, radius-lg (2.4px), bg-quinary, px-3 py-2.5, 12px / leading-relaxed, text-secondary
+    - lane strip: flex gap-2 (8px), px-4 pt-1 pb-3, overflow-x auto (grab-to-scrub)
+    - lane: w-64 (16rem = 256px), p-2, radius-lg, bg = bg-quinary 50% (drag-over: bg-quinary 100%)
+      header h-5 (20px) mb-1.5 px-1 gap-1.5: 6px tone dot · label 11px medium UPPERCASE tracking-wide tertiary ·
+      count 10px quaternary · collapse chevron-left (20px, radius 4px, hover-only)
+      body: flex column gap-2, overflow-y auto; "+" lane add = dashed 1px stroke-secondary, radius-md, py-1.5, hover-only;
+      empty lane label "Empty" 11px quaternary, centred
+    - collapsed lane (rail): w-8 (32px), p-2, gap-1.5, radius-lg; dot in an h-5 row (aligns with expanded headers),
+      vertical-rl label 11px uppercase, count 10px. Empty lanes auto-collapse when the board has any work.
+    - card: radius-md (2px), 1px stroke-tertiary + 2px LEFT border in the column tone, bg --ui-bg-elevated, p-2.5 (10px),
+      gap-2; title 13px medium leading-snug clamp 2; summary 11px tertiary clamp 2; footer 10px tertiary gap-2,
+      avatars 1.125rem (18px) with 9px initials, footer codicons 0.7rem, short id mono quaternary (6 chars, "t_" stripped)
+      hover: bg primary 6%; selected (Ctrl/⌘-click): border --dt-composer-ring + fill ring 7%; dragging: opacity .4
+    - column tones (types.ts COLUMN_META → tokens): triage text-tertiary · todo text-secondary · scheduled --ui-purple ·
+      ready --ui-blue · running --ui-green · blocked --ui-red · review --ui-yellow · done text-tertiary · archived text-quaternary
+    - arc (kanban.css): overlay ring inset -1px, 1.5px band, conic gradient tone 55° wide, 2.2s linear loop;
+      stale (no heartbeat 2+ min) = --ui-yellow, 6s
+    - titlebar board switcher: ghost Button sm, h-7 (28px), max-w-56, px-2 gap-1.5; label 12px medium; count 11px
+      quaternary; chevron-down 0.8125rem tertiary. Menu = DropdownMenu centred under it.
+    - status bar count (right area, order 80): px-1.5, 11px tabular, codicon project 0.7rem, hidden when 0 running+ready
+    - drawer: absolute right, full page height, w-[26rem] (416px), border-l stroke-tertiary, bg --ui-bg-elevated,
+      z-20, not modal (no scrim); header px-4 pt-3.5 pb-3 gap-2; status button radius 4px px-2 py-1 11px semibold
+      uppercase, fill tone 15%; actions 24px squares; title 14px semibold leading-snug;
+      body px-4 pb-4, sections gap-4; meta grid [6rem | 1fr] gap-x-3 gap-y-1 at 0.71rem;
+      section label 0.62rem semibold uppercase tracking .14em quaternary; callout radius-md p-2.5, fill tone 7%,
+      2px left rule; model field = outline Button h-8 full width px-2.5 12px
+  Behaviour (not visible statically):
+    - drag a card between lanes (HTML5 DnD): optimistic move, rolled back + toast if the backend refuses. Locked lanes
+      (Running, Review, Scheduled) refuse drops — no-drop cursor, and they are never offered as "Move to" targets.
+      Drop straight onto a collapsed rail works. The lane strip also grab-scrolls on empty space.
+    - lane chevron and the dashed "+" fade in on lane hover (opacity, holds its slot); rail click expands.
+      An override only lives for the lane's current empty/non-empty phase.
+    - card click opens the drawer; Ctrl/⌘-click toggles selection → floating SelectionBar centred bottom-4:
+      radius-lg, 1px stroke-secondary, bg-elevated, NO shadow, py-1 pr-1 pl-3: "N selected" · Move to ▾ · Assign ▾ ·
+      Archive · Delete (destructive) · × (Esc clears).
+    - right-click a card: Open · Select (Ctrl-click) · Move to <lane> (with tone dots) · Delete.
+    - filter kebab menu: All profiles / each assignee (avatar) · All tenants / tenants · Show archived · Group Running by
+      profile (Running lane sub-groups by assignee, 10px quaternary header with 14px avatar + count).
+    - organization button toggles the Orchestration panel under the header (border-t, px-4 py-3): Orchestrator profile
+      + Default assignee selects (w-44), "Auto-decompose triage tasks" xs switch, Profile descriptions rows
+      (name w-24 · input h-7 · Save outline xs · Auto ghost xs).
+    - "New task" / lane "+" / Ctrl+Alt+N / palette "Kanban: New task" open NewTaskDialog (w-[min(42rem,94vw)]).
+    - running card footer "working · 4m" ticks every 5s; tooltips (data-tip here) explain attached / auto-assign / stale.
+    - drawer: slides in from the right (fade + 1rem, 150ms ease-out); Esc closes; comments on a running task reach the
+      live worker; "Requeue with note" posts and reclaims. Activity auto-scrolls to its newest row.
+    - live updates ride the events socket; 60s board poll, 30s drawer poll, worker log every 3s while running.
+  Mobile:      Kanban is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kanban · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local styles for the Kanban plugin. Tokens only. */
+
+      /* Column tones (types.ts COLUMN_META) */
+      .tone-triage { --tone: var(--ui-text-tertiary); }
+      .tone-todo { --tone: var(--ui-text-secondary); }
+      .tone-scheduled { --tone: var(--ui-purple); }
+      .tone-ready { --tone: var(--ui-blue); }
+      .tone-running { --tone: var(--ui-green); }
+      .tone-blocked { --tone: var(--ui-red); }
+      .tone-review { --tone: var(--ui-yellow); }
+      .tone-done { --tone: var(--ui-text-tertiary); }
+      .tone-archived { --tone: var(--ui-text-quaternary); }
+      .tone-warning { --tone: var(--ui-yellow); }         /* SEVERITY_TONE.warning */
+      .tone-error { --tone: var(--dt-destructive); }       /* SEVERITY_TONE.error / critical */
+
+      /* Page + header (board.tsx:1324-1364) */
+      .kb-page { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; background: var(--ui-surface-background); }
+      .kb-header { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; }
+      .kb-title { margin: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; color: var(--dt-foreground); }
+      .kb-total { border-radius: var(--radius-full); padding: 1px 0.375rem; background: var(--ui-bg-quaternary); color: var(--ui-text-tertiary); font-size: 0.625rem; font-variant-numeric: tabular-nums; }
+      .kb-header .btn--icon-xs .codicon { font-size: 0.85rem; }
+      .kb-header .btn--icon-xs.is-active { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .kb-new { padding-inline: 0.5rem !important; }
+      .kb-new .codicon { font-size: 0.8rem !important; }
+
+      /* Intro (board.tsx:844-863) */
+      .kb-intro { display: flex; flex-direction: column; align-items: flex-start; gap: 0.375rem; flex-shrink: 0; margin: 0 1rem 0.5rem; border-radius: var(--radius-lg); padding: 0.625rem 0.75rem; background: var(--ui-bg-quinary); color: var(--ui-text-secondary); font-size: 0.75rem; line-height: 1.625; user-select: text; }
+      .kb-intro p { margin: 0; min-width: 0; }
+
+      /* Lane strip + lanes (board.tsx:336-520, 1390-1415) */
+      .kb-lanes { display: flex; flex: 1; gap: 0.5rem; min-height: 0; overflow-x: auto; padding: 0.25rem 1rem 0.75rem; }
+      .kb-col { display: flex; flex-direction: column; flex-shrink: 0; width: 16rem; height: 100%; border-radius: var(--radius-lg); padding: 0.5rem; background: color-mix(in srgb, var(--ui-bg-quinary) 50%, transparent); transition: background-color 150ms; }
+      .kb-col.is-over { background: var(--ui-bg-quinary); }
+      .kb-col__head { display: flex; align-items: center; gap: 0.375rem; height: 1.25rem; margin-bottom: 0.375rem; padding: 0 0.25rem; flex-shrink: 0; }
+      .kb-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-full); background: var(--tone); }
+      .kb-dot--menu { width: 0.5rem; height: 0.5rem; }
+      .kb-col__label { font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.025em; color: var(--ui-text-tertiary); cursor: help; }
+      .kb-col__count { font-size: 0.625rem; font-variant-numeric: tabular-nums; color: var(--ui-text-quaternary); }
+      .kb-col__collapse { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; margin-left: auto; border: 0; border-radius: 0.25rem; background: transparent; color: var(--ui-text-tertiary); opacity: 0; cursor: pointer; transition: opacity 150ms; }
+      .kb-col__collapse .codicon { font-size: 0.75rem; }
+      .kb-col:hover .kb-col__collapse, .kb-col.is-hover .kb-col__collapse { opacity: 1; }
+      .kb-col__collapse:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .kb-col__body { position: relative; display: flex; flex: 1; flex-direction: column; gap: 0.5rem; min-height: 0; overflow-y: auto; }
+      .kb-add { display: flex; flex-shrink: 0; align-items: center; justify-content: center; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.375rem 0; background: transparent; color: var(--ui-text-tertiary); opacity: 0; cursor: pointer; transition: opacity 150ms, color 150ms, border-color 150ms; }
+      .kb-add .codicon { font-size: 0.8rem; }
+      .kb-col:hover .kb-add, .kb-col.is-hover .kb-add { opacity: 1; }
+      .kb-add:hover { border-color: var(--ui-text-quaternary); background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .kb-empty { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .kb-rail { display: flex; flex-direction: column; flex-shrink: 0; align-items: center; gap: 0.375rem; width: 2rem; height: 100%; border: 0; border-radius: var(--radius-lg); padding: 0.5rem; background: color-mix(in srgb, var(--ui-bg-quinary) 50%, transparent); cursor: pointer; transition: background-color 150ms; }
+      .kb-rail:hover { background: var(--ui-bg-quinary); }
+      .kb-rail__dot { display: grid; place-items: center; height: 1.25rem; flex-shrink: 0; }
+      .kb-rail__label { writing-mode: vertical-rl; font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.025em; color: var(--ui-text-tertiary); }
+
+      /* Card (board.tsx:240-304) + footer (147-238) */
+      .kb-card { --kanban-tone: var(--tone); position: relative; display: flex; flex-direction: column; flex-shrink: 0; gap: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); border-left: 2px solid var(--tone); border-radius: var(--radius-md); padding: 0.625rem; background: var(--ui-bg-elevated); cursor: grab; transition: background-color 150ms, border-color 150ms; }
+      .kb-card:hover { background: color-mix(in srgb, var(--dt-primary) 6%, transparent); }
+      .kb-card:active { cursor: grabbing; }
+      .kb-card.is-selected { border-color: var(--dt-composer-ring); border-left-color: var(--tone); background: color-mix(in srgb, var(--dt-composer-ring) 7%, transparent); }
+      .kb-card.is-dragging { opacity: 0.4; }
+      .kb-card__title, .kb-card__summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.375; }
+      .kb-card__title { font-size: 0.8125rem; font-weight: 500; color: var(--dt-foreground); }
+      .kb-card__summary { font-size: 0.6875rem; color: var(--ui-text-tertiary); }
+      .kb-foot { display: flex; align-items: center; gap: 0.5rem; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-tertiary); }
+      .kb-foot .codicon { font-size: 0.7rem; }
+      .kb-foot__end { display: flex; flex-shrink: 1; align-items: center; gap: 0.5rem; min-width: 0; margin-left: auto; }
+      .kb-meta { display: inline-flex; align-items: center; gap: 0.25rem; }
+      .kb-prio { display: inline-flex; align-items: center; gap: 0.125rem; color: var(--tw-amber-500); }
+      .kb-warn { display: inline-flex; align-items: center; gap: 0.125rem; color: var(--dt-destructive); }
+      .kb-age { color: var(--ui-text-quaternary); }
+      .kb-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--dt-font-mono); color: var(--ui-text-quaternary); }
+      .kb-attached { display: inline-flex; min-width: 0; align-items: center; gap: 0.25rem; font-weight: 500; color: var(--tone); cursor: help; }
+      .kb-run { flex-shrink: 0; font-weight: 500; color: var(--ui-green); cursor: help; }
+      .kb-stale { flex-shrink: 0; font-weight: 500; color: var(--tw-amber-500); cursor: help; }
+
+      /* Avatar (ui.tsx:166-186). Real hue = profileColor(name) (hsl hash); mapped to palette tokens here. */
+      .kb-av { display: grid; place-items: center; flex-shrink: 0; width: var(--av, 1.25rem); height: var(--av, 1.25rem); border-radius: var(--radius-full); background: var(--ui-bg-quaternary); color: var(--ui-text-secondary); font-size: 0.5625rem; font-weight: 600; line-height: 1; }
+      .kb-av--researcher { --hue: var(--ui-purple); }
+      .kb-av--coder { --hue: var(--ui-cyan); }
+      .kb-av--inbox-butler { --hue: var(--ui-orange); }
+      .kb-av--researcher, .kb-av--coder, .kb-av--inbox-butler { background: color-mix(in srgb, var(--hue) 22%, transparent); color: var(--hue); }
+
+      /* Machine-activity arc (kanban.css, verbatim geometry; stale amber → --ui-yellow) */
+      @property --kanban-arc-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+      .kanban-arc {
+        pointer-events: none;
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1.5px;
+        background: conic-gradient(from var(--kanban-arc-angle), transparent 0deg, var(--kanban-tone, var(--ui-stroke-primary)) 55deg, transparent 110deg);
+        -webkit-mask: linear-gradient(var(--black) 0 0) content-box, linear-gradient(var(--black) 0 0);
+        mask: linear-gradient(var(--black) 0 0) content-box, linear-gradient(var(--black) 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        animation: kanban-arc-spin 2.2s linear infinite;
+      }
+      .kanban-arc--stale { --kanban-tone: var(--ui-yellow); animation-duration: 6s; }
+      @keyframes kanban-arc-spin { to { --kanban-arc-angle: 360deg; } }
+
+      /* Titlebar board switcher (board-switcher.tsx:338-347), stamped into .titlebar by the script below */
+      .kb-switch { position: absolute; left: 50%; transform: translateX(-50%); height: 1.75rem; max-width: 14rem; gap: 0.375rem; padding: 0 0.5rem !important; }
+      .kb-switch__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; font-weight: 500; line-height: 1; }
+      .kb-switch__count { font-size: 0.6875rem; font-variant-numeric: tabular-nums; color: var(--ui-text-quaternary); }
+      .kb-switch .codicon { flex-shrink: 0; font-size: 0.8125rem !important; color: var(--ui-text-tertiary); }
+      :root:has([data-view='switcher']:not([hidden])) .kb-switch { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .kb-switch-menu { top: 1px; left: 50%; transform: translateX(-50%); min-width: 11rem; }
+      .kb-menu-count { font-size: 0.625rem; font-variant-numeric: tabular-nums; color: var(--ui-text-quaternary); }
+
+      /* Status bar count pill (plugin.tsx:63-76) */
+      .kb-sb-count { font-variant-numeric: tabular-nums; }
+      .kb-sb-count .codicon { font-size: 0.7rem !important; }
+
+      /* Task drawer (drawer.tsx:676-956) */
+      .kb-drawer { position: absolute; inset: 0 0 0 auto; z-index: 20; display: flex; flex-direction: column; width: 26rem; border-left: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-elevated); animation: kb-drawer-in 150ms ease-out; }
+      @keyframes kb-drawer-in { from { opacity: 0; transform: translateX(1rem); } }
+      .kb-drawer__head { display: flex; flex-direction: column; flex-shrink: 0; gap: 0.5rem; padding: 0.875rem 1rem 0.75rem; }
+      .kb-drawer__row { display: flex; align-items: center; gap: 0.5rem; }
+      .kb-drawer__actions { display: flex; align-items: center; gap: 0.125rem; margin-left: auto; }
+      .kb-drawer__title { margin: 0; font-size: 0.875rem; line-height: 1.375; font-weight: 600; color: var(--dt-foreground); user-select: text; }
+      .kb-drawer__body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 1rem 1rem; user-select: text; }
+      .kb-drawer__stack { display: flex; flex-direction: column; gap: 1rem; font-size: 0.875rem; }
+      .kb-status-btn { display: inline-flex; align-items: center; gap: 0.375rem; border: 0; border-radius: 0.25rem; padding: 0.25rem 0.5rem; background: color-mix(in srgb, var(--tone) 15%, transparent); color: var(--tone); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.025em; cursor: pointer; transition: filter 150ms; }
+      .kb-status-btn:hover { filter: brightness(1.05); }
+      .kb-status-btn .codicon { font-size: 0.7rem; }
+      .kb-short { font-family: var(--dt-font-mono); font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .kb-sq { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border: 0; border-radius: 0.25rem; background: transparent; color: var(--ui-text-tertiary); cursor: pointer; transition: color 150ms, background-color 150ms; }
+      .kb-sq:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .kb-sq .codicon { font-size: 0.9rem; }
+      .kb-metagrid { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: center; column-gap: 0.75rem; row-gap: 0.25rem; font-size: 0.71rem; }
+      .kb-metagrid > .k { color: var(--ui-text-quaternary); }
+      .kb-metagrid > .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text-secondary); }
+      .kb-assignee { display: inline-flex; max-width: 100%; align-items: center; gap: 0.375rem; margin: 0 -0.25rem; border: 0; border-radius: 0.25rem; padding: 0.125rem 0.25rem; background: transparent; color: inherit; font-size: inherit; text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .kb-assignee:hover { background: var(--chrome-action-hover); }
+      .kb-assignee .codicon { font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .kb-model { width: 100%; height: 2rem; justify-content: space-between !important; gap: 0.5rem; padding: 0 0.625rem !important; font-size: 0.75rem; font-weight: 400; }
+      .kb-model.is-inherited { color: var(--ui-text-tertiary); }
+      .kb-model .codicon { font-size: 0.7rem !important; opacity: 0.5; }
+      .kb-section { display: flex; flex-direction: column; gap: 0.375rem; }
+      .kb-section__head { display: flex; align-items: center; justify-content: space-between; min-height: 1.5rem; }
+      .kb-label { font-size: 0.62rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ui-text-quaternary); }
+      .kb-prose { margin: 0; white-space: pre-wrap; font-size: 0.8125rem; color: var(--ui-text-secondary); }
+      .kb-callout { display: flex; flex-direction: column; gap: 0.5rem; border-left: 2px solid var(--tone); border-radius: var(--radius-md); padding: 0.625rem; background: color-mix(in srgb, var(--tone) 7%, transparent); }
+      .kb-callout__title { display: flex; align-items: flex-start; gap: 0.375rem; font-size: 0.75rem; font-weight: 500; color: var(--tone); }
+      .kb-callout__title .codicon { flex-shrink: 0; margin-top: 1px; font-size: 0.8rem; }
+      .kb-callout p { margin: 0; white-space: pre-wrap; font-size: 0.71rem; line-height: 1.625; color: var(--ui-text-secondary); }
+      .kb-callout .btn--xs .codicon { font-size: 0.7rem; }
+      .kb-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+      .kb-links > span { font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .kb-link-chip { border: 0; border-radius: 0.25rem; padding: 0.125rem 0.375rem; background: var(--ui-bg-quaternary); color: var(--ui-text-secondary); font-family: var(--dt-font-mono); font-size: 0.625rem; cursor: pointer; transition: color 150ms, background-color 150ms; }
+      .kb-link-chip:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .kb-list { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+      .kb-comments { gap: 0.5rem; }
+      .kb-comments li { font-size: 0.75rem; }
+      .kb-comments .who { font-weight: 500; color: var(--ui-text-secondary); }
+      .kb-comments .when { margin-left: 0.5rem; font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .kb-comments p { margin: 0; white-space: pre-wrap; color: var(--ui-text-tertiary); }
+      .kb-help { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 0.25rem; color: var(--ui-text-quaternary); cursor: help; }
+      .kb-help:hover { color: var(--ui-text-secondary); }
+      .kb-help .codicon { font-size: 0.8rem; }
+      .kb-composer { position: relative; }
+      textarea.control.kb-composer__input { min-height: 0; max-height: 10rem; padding-right: 3.5rem; field-sizing: content; resize: none; }
+      .kb-composer > .btn { position: absolute; top: 0.25rem; right: 0.25rem; }
+      .kb-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+      .kb-composer-foot span { font-size: 0.625rem; line-height: 1.25; color: var(--ui-text-quaternary); }
+      .kb-composer-foot .codicon { font-size: 0.7rem; }
+      .kb-fade { overflow-y: auto; max-height: var(--max, 9rem); }
+      .kb-fade--top { mask-image: linear-gradient(to bottom, transparent, var(--black) 1.25rem); }
+      .kb-fade--bottom { mask-image: linear-gradient(to bottom, var(--black) calc(100% - 1.25rem), transparent); }
+      /* FadeScroll with `deps` pins to the newest row: column-reverse starts the scroller at its bottom. */
+      .kb-fade--end { display: flex; flex-direction: column-reverse; }
+      .kb-events li { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.6875rem; }
+      .kb-events .what { flex-shrink: 0; color: var(--ui-text-secondary); }
+      .kb-events .extra { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .kb-events .when { flex-shrink: 0; margin-left: auto; color: var(--ui-text-quaternary); }
+      .kb-runs { gap: 0.375rem; }
+      .kb-runs li { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.71rem; }
+      .kb-runs .row { display: flex; align-items: center; gap: 0.5rem; }
+      .kb-runs .when { flex-shrink: 0; margin-left: auto; color: var(--ui-text-quaternary); }
+      .kb-runs p { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: pre-wrap; color: var(--ui-text-quaternary); }
+      .kb-runs p.is-error { color: var(--dt-destructive); }
+      .kb-log { padding: 0.375rem 0; font-family: var(--dt-font-mono); font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; color: var(--ui-text-tertiary); }
+      .kb-files li { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .kb-files .codicon { font-size: 0.75rem; }
+      .kb-est { display: flex; align-items: center; gap: 0.5rem; }
+      .kb-est > span { font-size: 0.625rem; color: var(--ui-text-quaternary); }
+      .kb-est .codicon { font-size: 0.75rem !important; }
+    </style>
+  </head>
+  <body>
+    <!-- ═══ The board page, cloned into every view ═══ -->
+    <template id="kb-board-tpl">
+      <div class="kb-page">
+        <!-- Header (board.tsx:1330-1364) -->
+        <header class="kb-header">
+          <h1 class="kb-title">Kanban</h1>
+          <span class="kb-total">11</span>
+          <button class="btn btn--ghost btn--icon-xs" aria-label="Filters"><i class="codicon codicon-filter"></i></button>
+          <label class="search-field"><i class="codicon codicon-search i-xs"></i><input aria-label="Filter cards…" placeholder="Filter cards…" /></label>
+          <div class="ml-auto flex items-center gap-1">
+            <button class="btn btn--ghost btn--icon-xs" aria-label="Orchestration settings" data-tip="Orchestration settings"><i class="codicon codicon-organization"></i></button>
+            <button class="btn btn--default btn--sm kb-new" type="button"><i class="codicon codicon-add"></i>New task</button>
+          </div>
+        </header>
+
+        <!-- One-time intro (board.tsx:844-863) -->
+        <div class="kb-intro">
+          <p>You don’t run the cards — agents do. Put a card in Ready with an assignee and an agent picks it up within a minute. No assignee, no run. Triage: an agent rewrites the idea into a proper task first. Todo: waiting on other cards. Scheduled: waiting on a timer. Running and Review: the agents’ lanes, hands off. Blocked: it’s waiting on you. Results come back on the card.</p>
+          <button class="btn btn--text-strong" type="button">Got it</button>
+        </div>
+
+        <!-- Lane strip (BOARD_COLUMNS order) -->
+        <div class="kb-lanes">
+          <!-- Triage -->
+          <div class="kb-col tone-triage">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="Raw ideas — a specifier fleshes out the spec.">Triage</span>
+              <span class="kb-col__count">2</span>
+              <button class="kb-col__collapse" aria-label="Collapse Triage"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-triage">
+                <span class="kb-card__title">Nightly digest of failed CI runs</span>
+                <span class="kb-card__summary">Rough idea: post a summary of red builds to the team channel every morning, grouped by suite.</span>
+                <div class="kb-foot">
+                  <span class="kb-attached" data-tip="default (the orchestrator) picks this up on the next tick and writes the spec."><span class="kb-av" style="--av:1.125rem">D</span><span class="t-truncate">→ default</span></span>
+                  <div class="kb-foot__end"><span class="kb-age">2h ago</span><span class="kb-id">a1c4e2</span></div>
+                </div>
+              </div>
+              <div class="kb-card tone-triage">
+                <span class="kb-card__title">Try Whisper turbo for voice notes</span>
+                <div class="kb-foot">
+                  <span class="kb-attached" data-tip="default (the orchestrator) picks this up on the next tick and writes the spec."><span class="kb-av" style="--av:1.125rem">D</span><span class="t-truncate">→ default</span></span>
+                  <div class="kb-foot__end"><span class="kb-age">5h ago</span><span class="kb-id">b7d90f</span></div>
+                </div>
+              </div>
+              <button class="kb-add" aria-label="New task in Triage"><i class="codicon codicon-add"></i></button>
+            </div>
+          </div>
+
+          <!-- Todo: empty → auto-collapsed rail -->
+          <button class="kb-rail tone-todo" aria-label="Expand Todo" type="button">
+            <span class="kb-rail__dot"><span class="kb-dot"></span></span>
+            <span class="kb-rail__label">Todo</span>
+          </button>
+
+          <!-- Scheduled: empty → auto-collapsed rail -->
+          <button class="kb-rail tone-scheduled" aria-label="Expand Scheduled" type="button">
+            <span class="kb-rail__dot"><span class="kb-dot"></span></span>
+            <span class="kb-rail__label">Scheduled</span>
+          </button>
+
+          <!-- Ready (drawn in its hover state: collapse chevron + dashed add visible) -->
+          <div class="kb-col tone-ready is-hover">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="Dependencies satisfied — assign a profile and the dispatcher runs it.">Ready</span>
+              <span class="kb-col__count">2</span>
+              <button class="kb-col__collapse" aria-label="Collapse Ready"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-ready">
+                <span class="kb-card__title">Port nous theme tokens to Compose</span>
+                <span class="kb-card__summary">Map the --theme-* seeds and --ui-* mixes onto a Material 3 ColorScheme; light and dark.</span>
+                <div class="kb-foot">
+                  <span class="kb-attached" data-tip="coder is attached — the dispatcher hands this over on its next tick (≤1m)."><span class="kb-av kb-av--coder" style="--av:1.125rem">C</span><span class="t-truncate">coder</span></span>
+                  <div class="kb-foot__end">
+                    <span class="kb-prio"><i class="codicon codicon-arrow-up"></i>2</span>
+                    <span class="kb-meta"><i class="codicon codicon-checklist"></i>1/3</span>
+                    <span class="kb-meta"><i class="codicon codicon-comment"></i>2</span>
+                    <span class="kb-id">3e8f1b</span>
+                  </div>
+                </div>
+              </div>
+              <div class="kb-card tone-ready">
+                <span class="kb-card__title">Triage the inbox backlog from last week</span>
+                <div class="kb-foot">
+                  <span class="kb-attached" data-tip="inbox-butler is attached — the dispatcher hands this over on its next tick (≤1m)."><span class="kb-av kb-av--inbox-butler" style="--av:1.125rem">IB</span><span class="t-truncate">inbox-butler</span></span>
+                  <div class="kb-foot__end"><span class="kb-id">c05d77</span></div>
+                </div>
+              </div>
+              <button class="kb-add" aria-label="New task in Ready"><i class="codicon codicon-add"></i></button>
+            </div>
+          </div>
+
+          <!-- Running (locked lane: no add button, refuses drops) -->
+          <div class="kb-col tone-running">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="Claimed by a worker — an agent is on it. Set by the dispatcher.">Running</span>
+              <span class="kb-col__count">2</span>
+              <button class="kb-col__collapse" aria-label="Collapse Running"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-running">
+                <span class="kanban-arc" aria-hidden="true"></span>
+                <span class="kb-card__title">Fix flaky e2e on Windows</span>
+                <span class="kb-card__summary">Reproduced the race in auth-revoked.spec: the reconnect timer arms before the mock backend is ready.</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--coder" style="--av:1.125rem">C</span>
+                  <span class="kb-run" data-tip="An agent is working on this now.">working · 4m</span>
+                  <div class="kb-foot__end">
+                    <span class="kb-prio"><i class="codicon codicon-arrow-up"></i>1</span>
+                    <span class="kb-meta"><i class="codicon codicon-comment"></i>2</span>
+                    <span class="kb-meta"><i class="codicon codicon-references"></i>1</span>
+                    <span class="kb-id">8f3a21</span>
+                  </div>
+                </div>
+              </div>
+              <div class="kb-card tone-running">
+                <span class="kanban-arc kanban-arc--stale" aria-hidden="true"></span>
+                <span class="kb-card__title">Research SQLite FTS5 tokenizers for session search</span>
+                <span class="kb-card__summary">Comparing unicode61, trigram and porter on the 40k-session fixture.</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--researcher" style="--av:1.125rem">R</span>
+                  <span class="kb-stale" data-tip="Claimed, but no worker heartbeat for 2+ minutes — the dispatcher will reclaim it.">no heartbeat</span>
+                  <div class="kb-foot__end"><span class="kb-id">5b2e90</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blocked -->
+          <div class="kb-col tone-blocked">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="The worker asked for human input.">Blocked</span>
+              <span class="kb-col__count">1</span>
+              <button class="kb-col__collapse" aria-label="Collapse Blocked"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-blocked">
+                <span class="kb-card__title">Rotate the gateway signing key</span>
+                <span class="kb-card__summary">Needs a human to confirm the new key id before the old one is revoked.</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--coder" style="--av:1.125rem">C</span>
+                  <div class="kb-foot__end">
+                    <span class="kb-meta"><i class="codicon codicon-comment"></i>1</span>
+                    <span class="kb-warn"><i class="codicon codicon-warning"></i>1</span>
+                    <span class="kb-id">e41a06</span>
+                  </div>
+                </div>
+              </div>
+              <button class="kb-add" aria-label="New task in Blocked"><i class="codicon codicon-add"></i></button>
+            </div>
+          </div>
+
+          <!-- Review (locked lane) -->
+          <div class="kb-col tone-review">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="A review agent is checking the work. Set by the dispatcher.">Review</span>
+              <span class="kb-col__count">1</span>
+              <button class="kb-col__collapse" aria-label="Collapse Review"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-review">
+                <span class="kb-card__title">Summarize the Kanban orchestration thread</span>
+                <span class="kb-card__summary">Five proposals, two agreed. Draft attached for review.</span>
+                <div class="kb-foot">
+                  <span class="kb-attached" data-tip="A review agent is checking the completed work."><span class="kb-av kb-av--researcher" style="--av:1.125rem">R</span><span class="t-truncate">researcher</span></span>
+                  <div class="kb-foot__end"><span class="kb-id">9d7c3a</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Done -->
+          <div class="kb-col tone-done">
+            <header class="kb-col__head">
+              <span class="kb-dot"></span>
+              <span class="kb-col__label" data-tip="Completed; dependent children become ready.">Done</span>
+              <span class="kb-col__count">3</span>
+              <button class="kb-col__collapse" aria-label="Collapse Done"><i class="codicon codicon-chevron-left"></i></button>
+            </header>
+            <div class="kb-col__body">
+              <div class="kb-card tone-done">
+                <span class="kb-card__title">Add mock backend fixture for e2e</span>
+                <span class="kb-card__summary">Fixture boots a stub gateway on a random port; used by 6 specs.</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--coder" style="--av:1.125rem">C</span>
+                  <div class="kb-foot__end"><span class="kb-meta"><i class="codicon codicon-references"></i>1</span><span class="kb-id">4d10b8</span></div>
+                </div>
+              </div>
+              <div class="kb-card tone-done">
+                <span class="kb-card__title">Draft README for the Android client</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--researcher" style="--av:1.125rem">R</span>
+                  <div class="kb-foot__end"><span class="kb-meta"><i class="codicon codicon-comment"></i>4</span><span class="kb-id">f20c88</span></div>
+                </div>
+              </div>
+              <div class="kb-card tone-done">
+                <span class="kb-card__title">Label the October newsletter inbox</span>
+                <div class="kb-foot">
+                  <span class="kb-av kb-av--inbox-butler" style="--av:1.125rem">IB</span>
+                  <div class="kb-foot__end"><span class="kb-id">7a61d3</span></div>
+                </div>
+              </div>
+              <button class="kb-add" aria-label="New task in Done"><i class="codicon codicon-add"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-plugins="kanban" data-nav="kanban" data-title="Kanban">
+            <section data-views="kanban" class="workspace">
+              <!-- ── View: board ───────────────────────────────────── -->
+              <div data-view="board" class="workspace">
+                <div data-clone="kb-board-tpl"></div>
+              </div>
+
+              <!-- ── View: drawer (TaskDrawer over the right of the board) ── -->
+              <div data-view="drawer" class="workspace" hidden>
+                <div data-clone="kb-board-tpl">
+                  <aside class="kb-drawer" aria-label="Task">
+                    <header class="kb-drawer__head">
+                      <div class="kb-drawer__row">
+                        <button class="kb-status-btn tone-running" type="button"><span class="kb-dot"></span>Running<i class="codicon codicon-chevron-down"></i></button>
+                        <span class="kb-short">8f3a21</span>
+                        <div class="kb-drawer__actions">
+                          <button class="kb-sq" aria-label="Task actions" type="button"><i class="codicon codicon-ellipsis"></i></button>
+                          <button class="kb-sq" aria-label="Close" type="button"><i class="codicon codicon-close"></i></button>
+                        </div>
+                      </div>
+                      <h2 class="kb-drawer__title">Fix flaky e2e on Windows</h2>
+                    </header>
+
+                    <div class="kb-drawer__body">
+                      <div class="kb-drawer__stack">
+                        <!-- Meta table -->
+                        <div class="kb-metagrid">
+                          <span class="k">Assignee</span>
+                          <span class="v"><button class="kb-assignee" type="button"><span class="kb-av kb-av--coder" style="--av:.875rem">C</span><span class="t-truncate">coder</span><i class="codicon codicon-chevron-down"></i></button></span>
+                          <span class="k">Priority</span><span class="v">1</span>
+                          <span class="k">Workspace</span><span class="v">worktree: D:\Stuff\Code\git\hermes-android\.worktrees\t_8f3a21c9</span>
+                          <span class="k">Model</span>
+                          <span class="v"><button class="btn btn--outline kb-model is-inherited" type="button"><span class="t-truncate">Profile default</span><i class="codicon codicon-chevron-down"></i></button></span>
+                          <span class="k">Created by</span><span class="v">default</span>
+                          <span class="k">Created</span><span class="v">32m ago</span>
+                          <span class="k">Worker pid</span><span class="v">18244</span>
+                        </div>
+
+                        <!-- Diagnostics -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Diagnostics · 1</div></div>
+                          <div class="kb-callout tone-warning">
+                            <div class="kb-callout__title"><i class="codicon codicon-warning"></i><span>Worker crashed on a previous run ×1</span></div>
+                            <p>Run 1 exited with code 1 after 3m (pytest collection error). The dispatcher requeued it and a new worker claimed it 4m ago.</p>
+                            <div class="flex gap-1-5" style="flex-wrap:wrap">
+                              <button class="btn btn--secondary btn--xs" type="button">Reclaim now</button>
+                              <button class="btn btn--outline btn--xs" type="button"><i class="codicon codicon-copy"></i>hermes kanban log 8f3a21</button>
+                            </div>
+                          </div>
+                        </section>
+
+                        <!-- Description -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Description</div><button class="btn btn--ghost btn--icon-xs" aria-label="Edit description"><i class="codicon codicon-edit i-xs"></i></button></div>
+                          <p class="kb-prose">auth-revoked.spec fails about 1 in 10 runs on the Windows runner only. Find the race, fix it, and prove it with --repeat-each=20.</p>
+                        </section>
+
+                        <!-- Estimate -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Estimate</div></div>
+                          <div class="kb-est">
+                            <button class="btn btn--outline btn--xs" type="button"><i class="codicon codicon-dashboard"></i>Estimate effort</button>
+                            <span data-tip="Runs a quick auxiliary-model call to estimate tokens + complexity. A rough guide, not a bill.">makes a model call</span>
+                          </div>
+                        </section>
+
+                        <!-- Latest summary -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Latest summary</div></div>
+                          <p class="kb-prose">Reproduced the race in auth-revoked.spec: the reconnect timer arms before the mock backend is ready. Patching use-gateway-boot.ts to await readiness first.</p>
+                        </section>
+
+                        <!-- Dependencies -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Dependencies</div></div>
+                          <div class="kb-links"><span>Blocked by</span><button class="kb-link-chip" type="button">4d10b8</button></div>
+                        </section>
+
+                        <!-- Comments -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Comments · 2</div><span class="kb-help" data-tip="This task is running. Your note is folded into the worker’s current turn within a few seconds — no block/unblock dance. “Requeue with note” instead restarts the task from scratch with your note in context."><i class="codicon codicon-question"></i></span></div>
+                          <ul class="kb-list kb-comments">
+                            <li><span class="who">default</span><span class="when">20m ago</span><p>Only the Windows runner fails; macOS and Linux are green.</p></li>
+                            <li><span class="who">coder</span><span class="when">6m ago</span><p>Reproduced locally with --repeat-each=20. It is a timer race, not a flaky network.</p></li>
+                          </ul>
+                          <div class="col gap-1-5">
+                            <div class="kb-composer">
+                              <textarea class="control control--sm kb-composer__input" rows="1" placeholder="Message the running worker…"></textarea>
+                              <button class="btn btn--secondary btn--xs is-disabled" type="button">Send</button>
+                            </div>
+                            <div class="kb-composer-foot">
+                              <span>Delivered to the running worker within a few seconds.</span>
+                              <button class="btn btn--outline btn--xs is-disabled shrink-0" type="button"><i class="codicon codicon-debug-restart"></i>Requeue with note</button>
+                            </div>
+                          </div>
+                        </section>
+
+                        <!-- Activity -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Activity · 7</div></div>
+                          <div class="kb-fade kb-fade--top kb-fade--end" style="--max:7rem">
+                            <ul class="kb-list kb-events">
+                              <li><span class="what">created in Ready · assigned to coder</span><span class="when">32m ago</span></li>
+                              <li><span class="what">claimed by a worker</span><span class="when">31m ago</span></li>
+                              <li><span class="what">worker started</span><span class="extra">pid 17702</span><span class="when">31m ago</span></li>
+                              <li><span class="what">reclaimed — returned to the queue</span><span class="extra">worker exited (code 1)</span><span class="when">27m ago</span></li>
+                              <li><span class="what">comment by default</span><span class="when">20m ago</span></li>
+                              <li><span class="what">comment by coder</span><span class="when">6m ago</span></li>
+                              <li><span class="what">worker started</span><span class="extra">pid 18244</span><span class="when">4m ago</span></li>
+                            </ul>
+                          </div>
+                        </section>
+
+                        <!-- Runs -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Runs · 2</div></div>
+                          <div class="kb-fade" style="--max:11rem">
+                            <ul class="kb-list kb-runs">
+                              <li>
+                                <div class="row"><span class="badge badge--muted badge--xs">running</span><span class="t-tertiary">coder</span><span class="when">4m ago</span></div>
+                              </li>
+                              <li>
+                                <div class="row"><span class="badge badge--destructive badge--xs">crashed</span><span class="t-tertiary">coder</span><span class="t-quaternary">3m</span><span class="when">27m ago</span></div>
+                                <p class="is-error">ERROR collecting e2e/auth-revoked.spec.ts — Cannot find module '../fixtures/mock-backend'</p>
+                              </li>
+                            </ul>
+                          </div>
+                        </section>
+
+                        <!-- Worker log -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Worker log · tail</div></div>
+                          <div class="kb-fade kb-fade--end" style="--max:12rem">
+                            <div class="kb-log">[14:02:11] claimed t_8f3a21c9 (run 2) · workspace worktree
+[14:02:12] $ npx playwright test e2e/auth-revoked.spec.ts --repeat-each=20
+[14:03:40]   18 passed, 2 failed (reconnect timer race)
+[14:04:02] reading apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts
+[14:04:31] patch: await backend.ready before arming the reconnect timer
+[14:05:37] $ npx playwright test e2e/auth-revoked.spec.ts --repeat-each=20</div>
+                          </div>
+                        </section>
+
+                        <!-- Attachments -->
+                        <section class="kb-section">
+                          <div class="kb-section__head"><div class="kb-label">Attachments · 1</div><button class="btn btn--ghost btn--icon-xs" aria-label="Upload attachment"><i class="codicon codicon-cloud-upload i-xs"></i></button></div>
+                          <ul class="kb-list kb-files"><li><i class="codicon codicon-file"></i>trace-windows-run1.zip</li></ul>
+                        </section>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+
+              <!-- ── View: switcher (board-switcher menu open under the titlebar) ── -->
+              <div data-view="switcher" class="workspace" hidden>
+                <div data-clone="kb-board-tpl">
+                  <div class="menu kb-switch-menu" role="menu" aria-label="Boards">
+                    <button class="menu__item" role="menuitem">Default<span class="kb-menu-count">4</span></button>
+                    <button class="menu__item is-checked is-focused" role="menuitem">Android port<span class="kb-menu-count">11</span></button>
+                    <button class="menu__item" role="menuitem">Inbox zero<span class="kb-menu-count">7</span></button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item" role="menuitem"><i class="codicon codicon-edit"></i>Rename…</button>
+                    <button class="menu__item" role="menuitem"><i class="codicon codicon-settings-gear"></i>Settings…</button>
+                    <button class="menu__item" role="menuitem"><i class="codicon codicon-add"></i>New board…</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item" role="menuitem"><i class="codicon codicon-package"></i>Export…</button>
+                    <button class="menu__item" role="menuitem"><i class="codicon codicon-cloud-download"></i>Import…</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item is-danger" role="menuitem"><i class="codicon codicon-trash"></i>Delete</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="kanban:board">Board</button>
+        <button class="btn btn--secondary btn--sm" data-show="kanban:drawer">Task drawer</button>
+        <button class="btn btn--secondary btn--sm" data-show="kanban:switcher">Board switcher</button>
+      </nav>
+    </div>
+
+    <script>
+      // Prototype plumbing only (not part of the design).
+      // 1. Clone the board template into each view; a placeholder's own children (drawer, menu) move into the page.
+      document.querySelectorAll('[data-clone]').forEach(function (slot) {
+        var page = document.getElementById(slot.dataset.clone).content.firstElementChild.cloneNode(true)
+        while (slot.firstChild) page.appendChild(slot.firstChild)
+        slot.replaceWith(page)
+      })
+      // 2. After proto.js stamps the shell: the titlebar centre becomes the board switcher (the page contributes
+      //    <BoardSwitcher/> to titleBar.center), and the status bar gains the plugin's "N running/ready" pill.
+      document.addEventListener('DOMContentLoaded', function () {
+        var title = document.querySelector('.titlebar__title')
+        if (title) {
+          title.outerHTML =
+            '<button class="btn btn--ghost btn--sm kb-switch" type="button">' +
+            '<span class="kb-switch__label">Android port</span><span class="kb-switch__count">11</span>' +
+            '<i class="codicon codicon-chevron-down"></i></button>'
+        }
+        var right = document.querySelector('.statusbar__group.ml-auto')
+        if (right) {
+          right.insertAdjacentHTML(
+            'afterbegin',
+            '<button class="statusbar__item kb-sb-count" data-tip="Kanban — 2 running, 2 ready"><i class="codicon codicon-project"></i><span>4</span></button>'
+          )
+        }
+      })
+    </script>
+  </body>
+</html>

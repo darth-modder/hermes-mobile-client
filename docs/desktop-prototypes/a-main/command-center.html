@@ -1,0 +1,418 @@
+<!doctype html>
+<!--
+  Screen:      Command Center (A · overlay screen)   route `/command-center` (?section=sessions|system|usage|maintenance)
+  Replicates:  apps/desktop/src/app/command-center/index.tsx (CommandCenterView, UsagePanel, UsageList, UsageStat, EmptyPanel),
+               command-center/maintenance.tsx (MaintenancePanel, OpRow, MemoryFileRow, SectionLabel),
+               app/overlays/{overlay-view,overlay-split-layout}.tsx, components/chat/log-tail.tsx,
+               components/ui/{search-field,segmented-control,tab-dropdown (ResponsiveTabs),confirm-dialog}.tsx
+  Views:       #cc=sessions | #cc=system | #cc=usage | #cc=maintenance      (CommandCenterSection, nav order sessions/system/usage/maintenance)
+               #sessions=list | #sessions=empty     #usage=data | #usage=empty     #ccdlg=delete (delete-session ConfirmDialog)
+  Measurements:
+    - overlay: scrim black/22 + 2px blur, inset titlebar+0.875rem; card radius-xl, 1px --ui-stroke-secondary, shadow-md
+    - split: 13rem nav rail (sidebar surface, px-2.5, pt titlebar/2-0.4375rem) | main max 75rem,
+      main pt ((titlebar/2+1rem)*2/3), px clamp(0.8333rem, 2.6667vw, 2.6667rem), pb-2
+    - nav item h-7, radius-md, 13px, 16px icon; active = 1px stroke-tertiary + bg-tertiary
+    - header mb-4: h2 13px semibold; description mt-0.5, 12px/16px tertiary
+    - sessions row: py-2 gap-2; title 13px medium; timestamp 12px tertiary; row actions icon-xs (24px) ghost, 14px icons
+    - system: status dot size-2 (8px) emerald-500 / amber-500; actions Button xs text / textStrong
+    - log label .625rem medium uppercase tracking .08em; LogTail rounded-lg border stroke-tertiary bg-quinary,
+      body mono .7rem leading-relaxed, pre px-2 py-1.5; log search w-44 (11rem)
+    - usage stats: grid 3 cols gap-4 py-2; label .625rem uppercase tracking .12em; value text-base (16px) semibold
+    - daily bars: h-24 (96px) flex gap-px; input = primary/50 with 1px top radius, output = emerald-500/60
+    - usage lists: 2 cols gap-x-8 gap-y-5; rows py-1.5; label mono .7rem; value .65rem tertiary
+    - maintenance: sections gap-5; OpRow py-2 (title 13px medium, desc 12px tertiary); action log pre
+      max-h-48 rounded-lg border bg-quinary p-3 mono .65rem tertiary; curator badge bg emerald/15 text emerald-400
+  Behaviour:
+    - section lives in the route (?section=), so reload / deep links reopen the same tab
+    - session search is debounced 180ms; filters on title + id; list sorted by last_active desc
+    - row actions (pin, export, delete) fade in on row hover / focus-within (opacity transition)
+    - pin toggles bookmark ↔ bookmark-filled; delete opens the shared ConfirmDialog (busy "Deleting…", done "Session deleted")
+    - System refetches status + 200 log lines on open and whenever the log file / level tab changes;
+      log search is a client-side substring filter; LogTail follows the tail until the user scrolls up;
+      its copy button sits at 5% opacity until the log is hovered
+    - Restart gateway / Update Hermes poll /api/actions every 1.2s (max 18 polls) and write an activity task
+    - Usage refetches when the 7d/30d/90d segment changes; bar title tooltips show "day · in N · out N"
+    - Maintenance ops poll their action log every 1.2s (≤ 5 min); while one runs the other ops are disabled
+    - F5 / Cmd-R refreshes System or Usage (useRefreshHotkey); Esc or the X closes; below 47.5rem the rail
+      becomes a dropdown on the titlebar strip and the section header hides
+  Mobile:      Command Center is thinner on mobile (docs/PARITY.md): sessions management is at parity (M07);
+               gateway restart / update and local maintenance ops drive the host machine and are absent by design.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Command Center · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .cc-fill { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .cc-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1rem; }
+      .cc-head h2 { margin: 0; font-size: var(--conversation-text-font-size); font-weight: 600; color: var(--dt-foreground); }
+      .cc-head p { margin: 0.125rem 0 0; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .cc-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+      .cc-list { margin: 0; padding: 0; list-style: none; }
+      .cc-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; }
+      .cc-row__open { flex: 1; min-width: 0; border: 0; padding: 0; background: transparent; text-align: left; cursor: pointer; }
+      .cc-row__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--conversation-text-font-size); font-weight: 500; color: var(--dt-foreground); }
+      .cc-row__time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--conversation-caption-font-size); color: var(--ui-text-tertiary); }
+      .cc-row__actions { display: flex; flex-shrink: 0; align-items: center; gap: 0.125rem; opacity: 0; transition: opacity 150ms; }
+      .cc-row:hover .cc-row__actions, .cc-row.is-hover .cc-row__actions, .cc-row:focus-within .cc-row__actions { opacity: 1; }
+      .cc-row__actions .btn { color: var(--ui-text-tertiary); }
+      .cc-row__actions .btn:hover { color: var(--dt-foreground); }
+      .cc-row__actions .btn.is-danger:hover { color: var(--dt-destructive); }
+      .cc-empty { display: grid; min-height: 12rem; place-items: center; padding: 0 1.5rem; text-align: center; }
+      .cc-empty__desc { margin-top: 0.25rem; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .cc-label { font-size: 0.625rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ui-text-tertiary); }
+      .cc-dot { width: 0.5rem; height: 0.5rem; flex-shrink: 0; border-radius: 50%; background: var(--tw-emerald-500); }
+      .cc-log { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); background: var(--ui-bg-quinary); }
+      .cc-log__scroll { height: 100%; overflow-y: auto; scrollbar-gutter: stable; user-select: text; }
+      .cc-log pre { margin: 0; padding: 0.375rem 0.5rem; font-family: var(--dt-font-mono); font-size: 0.7rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); white-space: pre-wrap; word-break: break-word; }
+      .cc-log pre .warn { color: var(--tw-amber-600); }
+      :root.dark .cc-log pre .warn { color: var(--tw-amber-300); }
+      .cc-log__copy { position: absolute; top: 0.375rem; right: 0.625rem; z-index: 1; height: 1.25rem; padding: 0 0.25rem; opacity: 0.05; transition: opacity 150ms; }
+      .cc-log:hover .cc-log__copy { opacity: 1; }
+      .cc-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: 0.5rem 0; }
+      .cc-stat__label { font-size: 0.625rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ui-text-tertiary); }
+      .cc-stat__value { margin-top: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; font-weight: 600; letter-spacing: -0.025em; color: var(--dt-foreground); }
+      .cc-swatch { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 1px; }
+      .cc-swatch--in { background: color-mix(in srgb, var(--dt-primary) 60%, transparent); }
+      .cc-swatch--out { background: color-mix(in srgb, var(--tw-emerald-500) 70%, transparent); }
+      .cc-bars { display: flex; align-items: flex-end; gap: 1px; height: 6rem; }
+      .cc-bar { display: flex; flex: 1; flex-direction: column; justify-content: flex-end; min-width: 0; height: 6rem; }
+      .cc-bar > i:first-child { display: block; border-radius: 1px 1px 0 0; background: color-mix(in srgb, var(--dt-primary) 50%, transparent); }
+      .cc-bar > i:last-child { display: block; background: color-mix(in srgb, var(--tw-emerald-500) 60%, transparent); }
+      .cc-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 2rem; padding-top: 0.25rem; }
+      .cc-ulist { margin: 0; padding: 0; list-style: none; }
+      .cc-ulist li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.375rem 0; }
+      .cc-ulist .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--dt-font-mono); font-size: 0.7rem; color: var(--dt-foreground); }
+      .cc-ulist .v { flex-shrink: 0; font-size: 0.65rem; color: var(--ui-text-tertiary); }
+      .cc-op { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; }
+      .cc-op__title { font-size: var(--conversation-text-font-size); font-weight: 500; color: var(--dt-foreground); }
+      .cc-op__desc { margin-top: 0.125rem; font-size: var(--conversation-caption-font-size); color: var(--ui-text-tertiary); }
+      .cc-sublabel { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.375rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dt-muted-foreground); }
+      .cc-pre { max-height: 12rem; margin: 0; overflow: auto; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.75rem; background: var(--ui-bg-quinary); font-family: var(--dt-font-mono); font-size: 0.65rem; line-height: 1.625; color: var(--ui-text-tertiary); white-space: pre-wrap; word-break: break-word; user-select: text; }
+      .cc-badge-active { background: color-mix(in srgb, var(--tw-emerald-500) 15%, transparent); color: var(--tw-emerald-600); }
+      :root.dark .cc-badge-active { color: color-mix(in srgb, var(--tw-emerald-500) 70%, var(--white)); } /* emerald-400 */
+      .btn--text.is-danger { color: var(--dt-destructive); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event and raise the sign-in prompt.</p></div></div></div>
+          </div>
+
+          <!-- ═══ Command Center overlay (OverlayView + OverlaySplitLayout, no Panel) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close command center"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <div class="split">
+                  <!-- OverlayNav rail: MessageCircle / Activity / BarChart3 / Wrench -->
+                  <aside class="split__nav" aria-label="Command center sections">
+                    <button class="nav-item" data-show="cc:sessions"><i class="ti ti-message-circle"></i><span>Sessions</span></button>
+                    <button class="nav-item" data-show="cc:system"><i class="ti ti-activity"></i><span>System</span></button>
+                    <button class="nav-item" data-show="cc:usage"><i class="ti ti-chart-bar"></i><span>Usage</span></button>
+                    <button class="nav-item" data-show="cc:maintenance"><i class="ti ti-tool"></i><span>Maintenance</span></button>
+                  </aside>
+
+                  <main class="split__main">
+                    <section data-views="cc" class="cc-fill">
+
+                      <!-- ── Sessions ─────────────────────────────────────── -->
+                      <div data-view="sessions" class="cc-fill">
+                        <header class="cc-head">
+                          <div class="grow"><h2>Sessions</h2><p>Search and manage sessions</p></div>
+                          <div class="flex items-center gap-2 shrink-0">
+                            <label class="search-field" style="max-width:40%;min-width:16rem"><i class="ti ti-search" style="color:color-mix(in srgb,var(--dt-muted-foreground) 70%,transparent)"></i><input placeholder="Search sessions, views, and actions" /></label>
+                          </div>
+                        </header>
+                        <section data-views="sessions" class="cc-fill">
+                          <div data-view="list" class="cc-scroll">
+                            <ul class="cc-list">
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Refactor gateway auth handshake</div><div class="cc-row__time">Sep 11, 2026, 10:42 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row is-hover"><button class="cc-row__open" type="button"><div class="cc-row__title">Why is the e2e suite flaky on Windows?</div><div class="cc-row__time">Sep 11, 2026, 10:30 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Draft README for the Android client</div><div class="cc-row__time">Sep 11, 2026, 9:38 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Summarize inbox every morning</div><div class="cc-row__time">Sep 11, 2026, 7:51 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Release checklist for v0.9</div><div class="cc-row__time">Sep 10, 2026, 6:12 PM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Unpin session"><i class="ti ti-bookmark-filled"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Port nous theme tokens to mobile</div><div class="cc-row__time">Sep 10, 2026, 4:05 PM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Benchmark streaming throttle</div><div class="cc-row__time">Sep 10, 2026, 11:20 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">SQLite FTS for session search</div><div class="cc-row__time">Sep 10, 2026, 9:02 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Kanban board orchestration ideas</div><div class="cc-row__time">Sep 6, 2026, 3:47 PM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Voice mode latency notes</div><div class="cc-row__time">Sep 5, 2026, 8:19 PM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">SSH remote backend setup</div><div class="cc-row__time">Sep 5, 2026, 10:02 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                              <li class="cc-row"><button class="cc-row__open" type="button"><div class="cc-row__title">Inbox digest</div><div class="cc-row__time">Sep 4, 2026, 8:00 AM</div></button>
+                                <div class="cc-row__actions"><button class="btn btn--ghost btn--icon-xs" aria-label="Pin session"><i class="ti ti-bookmark"></i></button><button class="btn btn--ghost btn--icon-xs" aria-label="Export session"><i class="ti ti-download"></i></button><button class="btn btn--ghost btn--icon-xs is-danger" aria-label="Delete session" data-show="ccdlg:delete"><i class="ti ti-trash"></i></button></div></li>
+                            </ul>
+                          </div>
+                          <!-- EmptyPanel: noSessions (no query) / noResults (with query) -->
+                          <div data-view="empty" class="cc-scroll" hidden>
+                            <div class="cc-empty"><div><div class="cc-empty__desc">No sessions yet.</div></div></div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <!-- ── System ───────────────────────────────────────── -->
+                      <div data-view="system" class="cc-fill" hidden>
+                        <header class="cc-head">
+                          <div class="grow"><h2>System</h2><p>Status, logs, and system actions</p></div>
+                        </header>
+                        <div class="cc-fill" style="display:grid;grid-template-rows:auto minmax(0,1fr);gap:1rem">
+                          <div style="display:grid;gap:.5rem">
+                            <div class="flex justify-between gap-3" style="align-items:flex-start">
+                              <div class="grow">
+                                <div class="flex items-center gap-2"><span class="cc-dot"></span><span class="t-medium" style="font-size:var(--conversation-text-font-size)">Messaging gateway running</span></div>
+                                <div class="t-tertiary" style="margin-top:.25rem;font-size:var(--conversation-caption-font-size)">Hermes 0.9.2 · Active sessions 3</div>
+                              </div>
+                              <div class="flex items-center shrink-0" style="gap:.25rem .75rem">
+                                <button class="btn btn--text btn--xs" style="padding:0">Restart gateway</button>
+                                <button class="btn btn--text-strong btn--xs" style="padding:0">Update Hermes</button>
+                              </div>
+                            </div>
+                            <div class="t-tertiary" style="font-size:var(--conversation-caption-font-size)">gateway-restart · done</div>
+                          </div>
+
+                          <div class="cc-fill" style="padding-top:.5rem">
+                            <div class="flex items-center justify-between" style="flex-wrap:wrap;gap:.25rem .75rem;margin-bottom:.5rem">
+                              <span class="cc-label">Recent logs</span>
+                              <div class="flex items-center" style="flex-wrap:wrap;gap:.25rem .75rem">
+                                <div class="flex items-center gap-2">
+                                  <button class="text-tab is-active">agent</button><button class="text-tab">errors</button><button class="text-tab">gateway</button><button class="text-tab">desktop</button>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <button class="text-tab is-active">all</button><button class="text-tab">info</button><button class="text-tab">warning</button><button class="text-tab">error</button>
+                                </div>
+                                <label class="search-field" style="width:11rem"><i class="ti ti-search" style="color:color-mix(in srgb,var(--dt-muted-foreground) 70%,transparent)"></i><input placeholder="Filter log lines..." /></label>
+                              </div>
+                            </div>
+                            <div class="cc-log">
+                              <button class="btn btn--ghost cc-log__copy" aria-label="Copy"><i class="ti ti-copy i-xs"></i></button>
+                              <div class="cc-log__scroll"><pre>2026-09-11 10:40:02,318 INFO     gateway: listening on 127.0.0.1:8642 (desktop)
+2026-09-11 10:40:02,902 INFO     gateway: session token accepted (profile=default)
+2026-09-11 10:41:58,112 INFO     session: resumed 7f3a91c2 "Refactor gateway auth handshake"
+2026-09-11 10:42:03,480 INFO     agent: turn started model=claude-opus-5 toolsets=12 tools=38
+2026-09-11 10:42:04,006 INFO     tools: search_files query="reconnect" path=tui_gateway/ hits=14
+2026-09-11 10:42:05,771 INFO     tools: read_file tui_gateway/server.py (18.2 KB)
+2026-09-11 10:42:11,240 INFO     tools: patch apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts +18 -6
+2026-09-11 10:42:19,020 <span class="warn">WARNING  tools.terminal: command exceeded 30s, backgrounding (pid 18244)</span>
+2026-09-11 10:42:44,615 INFO     agent: turn finished in 41.1s input=31.4K output=2.2K cost=$0.12
+2026-09-11 10:43:02,090 INFO     cron: tick — 5 jobs, next "Inbox digest" at 2026-09-12 08:00
+2026-09-11 10:43:30,441 INFO     agent: turn started model=claude-opus-5 toolsets=12 tools=38
+2026-09-11 10:43:31,207 INFO     tools: write_file e2e/auth-revoked.spec.ts (+64)
+2026-09-11 10:43:39,862 INFO     tools: terminal "npx playwright test e2e/auth-revoked.spec.ts" exit=0 (8.2s)
+2026-09-11 10:43:40,003 INFO     agent: turn finished in 9.6s input=12.9K output=0.8K cost=$0.04
+2026-09-11 10:44:12,511 INFO     curator: skipped (last run 2 days ago, interval 7d)</pre></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- ── Usage ────────────────────────────────────────── -->
+                      <div data-view="usage" class="cc-fill" hidden>
+                        <header class="cc-head">
+                          <div class="grow"><h2>Usage</h2><p>Token, cost, and skill activity over time</p></div>
+                          <div class="flex items-center gap-2 shrink-0">
+                            <div class="seg"><button class="seg__opt">7d</button><button class="seg__opt is-active">30d</button><button class="seg__opt">90d</button></div>
+                          </div>
+                        </header>
+                        <section data-views="usage" class="cc-fill">
+                          <div data-view="data" class="cc-fill" style="gap:1.25rem;overflow-y:auto;padding-bottom:.5rem">
+                            <div class="cc-stats">
+                              <div><div class="cc-stat__label">Sessions</div><div class="cc-stat__value">184</div></div>
+                              <div><div class="cc-stat__label">API calls</div><div class="cc-stat__value">2.4K</div></div>
+                              <div><div class="cc-stat__label">Tokens in/out</div><div class="cc-stat__value">18.2M / 1.1M</div></div>
+                            </div>
+                            <section>
+                              <div class="flex justify-between" style="align-items:baseline;margin-bottom:.5rem">
+                                <span class="cc-label">Daily tokens</span>
+                                <span class="flex items-center gap-3 t-tertiary" style="font-size:.65rem">
+                                  <span class="flex items-center gap-1"><span class="cc-swatch cc-swatch--in"></span> input</span>
+                                  <span class="flex items-center gap-1"><span class="cc-swatch cc-swatch--out"></span> output</span>
+                                </span>
+                              </div>
+                              <!-- 30 day columns: input px on top, output px below, both scaled to max(in+out) = 96px -->
+                              <div class="cc-bars">
+                                <div class="cc-bar" title="2026-08-13 · in 610K · out 52K"><i style="height:34px"></i><i style="height:3px"></i></div>
+                                <div class="cc-bar"><i style="height:52px"></i><i style="height:5px"></i></div>
+                                <div class="cc-bar"><i style="height:18px"></i><i style="height:2px"></i></div>
+                                <div class="cc-bar"><i style="height:0"></i><i style="height:0"></i></div>
+                                <div class="cc-bar"><i style="height:0"></i><i style="height:0"></i></div>
+                                <div class="cc-bar"><i style="height:61px"></i><i style="height:6px"></i></div>
+                                <div class="cc-bar"><i style="height:72px"></i><i style="height:7px"></i></div>
+                                <div class="cc-bar"><i style="height:44px"></i><i style="height:4px"></i></div>
+                                <div class="cc-bar"><i style="height:58px"></i><i style="height:5px"></i></div>
+                                <div class="cc-bar"><i style="height:80px"></i><i style="height:8px"></i></div>
+                                <div class="cc-bar"><i style="height:12px"></i><i style="height:1px"></i></div>
+                                <div class="cc-bar"><i style="height:0"></i><i style="height:0"></i></div>
+                                <div class="cc-bar"><i style="height:66px"></i><i style="height:6px"></i></div>
+                                <div class="cc-bar"><i style="height:70px"></i><i style="height:7px"></i></div>
+                                <div class="cc-bar"><i style="height:48px"></i><i style="height:4px"></i></div>
+                                <div class="cc-bar"><i style="height:55px"></i><i style="height:5px"></i></div>
+                                <div class="cc-bar"><i style="height:82px"></i><i style="height:9px"></i></div>
+                                <div class="cc-bar"><i style="height:38px"></i><i style="height:3px"></i></div>
+                                <div class="cc-bar"><i style="height:0"></i><i style="height:0"></i></div>
+                                <div class="cc-bar"><i style="height:1px"></i><i style="height:0"></i></div>
+                                <div class="cc-bar"><i style="height:62px"></i><i style="height:6px"></i></div>
+                                <div class="cc-bar"><i style="height:77px"></i><i style="height:7px"></i></div>
+                                <div class="cc-bar"><i style="height:85px"></i><i style="height:8px"></i></div>
+                                <div class="cc-bar"><i style="height:40px"></i><i style="height:4px"></i></div>
+                                <div class="cc-bar"><i style="height:58px"></i><i style="height:5px"></i></div>
+                                <div class="cc-bar"><i style="height:69px"></i><i style="height:6px"></i></div>
+                                <div class="cc-bar"><i style="height:87px"></i><i style="height:9px"></i></div>
+                                <div class="cc-bar"><i style="height:30px"></i><i style="height:3px"></i></div>
+                                <div class="cc-bar"><i style="height:64px"></i><i style="height:6px"></i></div>
+                                <div class="cc-bar" title="2026-09-11 · in 1.4M · out 118K"><i style="height:74px"></i><i style="height:7px"></i></div>
+                              </div>
+                              <div class="flex justify-between t-tertiary" style="margin-top:.25rem;font-size:.6rem"><span>2026-08-13</span><span>2026-09-11</span></div>
+                            </section>
+                            <div class="cc-lists">
+                              <section class="grow">
+                                <div class="cc-label" style="margin-bottom:.375rem">Top models</div>
+                                <ul class="cc-ulist">
+                                  <li><span class="k">claude-opus-5</span><span class="v">12.9M</span></li>
+                                  <li><span class="k">deepseek-v4-flash</span><span class="v">4.1M</span></li>
+                                  <li><span class="k">mimo-v2.5</span><span class="v">1.6M</span></li>
+                                  <li><span class="k">gpt-5.1-codex</span><span class="v">512K</span></li>
+                                  <li><span class="k">claude-haiku-4-5</span><span class="v">220K</span></li>
+                                </ul>
+                              </section>
+                              <section class="grow">
+                                <div class="cc-label" style="margin-bottom:.375rem">Top skills</div>
+                                <ul class="cc-ulist">
+                                  <li><span class="k">github-pr-workflow</span><span class="v">142 actions</span></li>
+                                  <li><span class="k">systematic-debugging</span><span class="v">96 actions</span></li>
+                                  <li><span class="k">release-notes</span><span class="v">41 actions</span></li>
+                                  <li><span class="k">android-emulator</span><span class="v">33 actions</span></li>
+                                  <li><span class="k">docker-compose-debugging</span><span class="v">18 actions</span></li>
+                                  <li><span class="k">sqlite-fts</span><span class="v">9 actions</span></li>
+                                </ul>
+                              </section>
+                            </div>
+                          </div>
+                          <!-- no totals: EmptyPanel with a Retry text button (PageLoader "Loading usage..." while loading) -->
+                          <div data-view="empty" class="cc-fill" hidden>
+                            <div class="cc-empty"><div><div class="cc-empty__desc">No usage in the last 30 days.</div><div class="flex" style="justify-content:center;margin-top:.75rem"><button class="btn btn--text btn--xs" style="padding:0">Retry</button></div></div></div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <!-- ── Maintenance (a doctor run is tailing its log) ── -->
+                      <div data-view="maintenance" class="cc-fill" hidden>
+                        <header class="cc-head">
+                          <div class="grow"><h2>Maintenance</h2><p>Diagnostics, backups, curator, and memory data</p></div>
+                        </header>
+                        <div class="cc-fill" style="gap:1.25rem;overflow-y:auto;padding-bottom:.5rem">
+                          <section>
+                            <div class="cc-label" style="margin-bottom:.375rem">Diagnostics</div>
+                            <div class="cc-op"><div class="grow"><div class="cc-op__title">Run doctor</div><div class="cc-op__desc">Health-check the install, config, and providers</div></div><button class="btn btn--text-strong btn--xs is-disabled" style="padding:0">Run doctor</button></div>
+                            <div class="cc-op"><div class="grow"><div class="cc-op__title">Security audit</div><div class="cc-op__desc">Scan config and skills for risky settings</div></div><button class="btn btn--text-strong btn--xs is-disabled" style="padding:0">Security audit</button></div>
+                            <div class="cc-op"><div class="grow"><div class="cc-op__title">Create backup</div><div class="cc-op__desc">Zip config, memories, skills, and sessions</div></div><button class="btn btn--text-strong btn--xs is-disabled" style="padding:0">Create backup</button></div>
+                            <div class="cc-op"><div class="grow"><div class="cc-op__title">Debug share</div><div class="cc-op__desc">Upload a redacted report + logs, get shareable links (auto-deletes in 6h)</div></div><button class="btn btn--text-strong btn--xs" style="padding:0">Debug share</button></div>
+                            <div style="margin-top:.5rem">
+                              <div class="cc-sublabel">Action log<span style="text-transform:none;letter-spacing:0">Running...</span></div>
+                              <pre class="cc-pre">$ hermes doctor
+Checking install ............... ok  (hermes 0.9.2, python 3.12.6)
+Checking config ................ ok  (~/.hermes/config.yaml)
+Checking providers
+  anthropic .................... ok  (claude-opus-5)
+  deepseek ..................... ok  (deepseek-v4-flash)
+  xiaomi-mimo .................. ok  (mimo-v2.5)
+Checking MCP servers
+  github ....................... ok  (12 tools)
+  playwright ................... slow (3.8s handshake)
+Checking gateway ............... ok  (127.0.0.1:8642)
+Checking skills ................ </pre>
+                            </div>
+                          </section>
+
+                          <section>
+                            <div class="cc-label" style="margin-bottom:.375rem">Skill curator</div>
+                            <div class="flex items-center justify-between gap-3" style="padding:.5rem 0">
+                              <div class="grow">
+                                <div class="flex items-center gap-2"><span class="cc-op__title">Skill curator</span><span class="badge cc-badge-active">Active</span></div>
+                                <div class="cc-op__desc">Background review that archives stale agent-created skills · Last run 2 days ago</div>
+                              </div>
+                              <div class="flex items-center shrink-0 gap-1-5">
+                                <button class="btn btn--text btn--xs" style="padding:0">Pause</button>
+                                <button class="btn btn--text-strong btn--xs is-disabled" style="padding:0">Run now</button>
+                              </div>
+                            </div>
+                          </section>
+
+                          <section>
+                            <div class="cc-label" style="margin-bottom:.375rem">Memory data</div>
+                            <div class="t-tertiary" style="padding:.25rem 0;font-size:var(--conversation-caption-font-size)">Built-in memory files injected into every session · Active provider: built-in</div>
+                            <div class="flex items-center justify-between gap-3" style="padding:.5rem 0">
+                              <div class="grow"><span class="cc-op__title">Agent memory (MEMORY.md)</span><span class="t-tertiary" style="margin-left:.5rem;font-size:var(--conversation-caption-font-size)">4.2 KB</span></div>
+                              <button class="btn btn--text btn--xs is-danger" style="padding:0">Reset memory</button>
+                            </div>
+                            <div class="flex items-center justify-between gap-3" style="padding:.5rem 0">
+                              <div class="grow"><span class="cc-op__title">User profile (USER.md)</span><span class="t-tertiary" style="margin-left:.5rem;font-size:var(--conversation-caption-font-size)">1.1 KB</span></div>
+                              <button class="btn btn--text btn--xs is-danger" style="padding:0">Reset profile</button>
+                            </div>
+                          </section>
+                        </div>
+                      </div>
+
+                    </section>
+                  </main>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Delete-session ConfirmDialog (max-w-md, destructive) ═══ -->
+          <section data-views="ccdlg">
+            <div data-view="none"></div>
+            <div data-view="delete" hidden>
+              <div class="scrim" data-show="ccdlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete session?</h2>
+                  <p class="dialog__desc">This will permanently delete “Why is the e2e suite flaky on Windows?”. This cannot be undone.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" data-show="ccdlg:none">Cancel</button>
+                  <button class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="cc:sessions">Sessions</button>
+        <button class="btn btn--secondary btn--sm" data-show="cc:system">System</button>
+        <button class="btn btn--secondary btn--sm" data-show="cc:usage">Usage</button>
+        <button class="btn btn--secondary btn--sm" data-show="cc:maintenance">Maintenance</button>
+        <button class="btn btn--secondary btn--sm" data-show="sessions:list">Sessions: list</button>
+        <button class="btn btn--secondary btn--sm" data-show="sessions:empty">Sessions: empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="usage:data">Usage: data</button>
+        <button class="btn btn--secondary btn--sm" data-show="usage:empty">Usage: empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="ccdlg:delete">Delete dialog</button>
+        <button class="btn btn--secondary btn--sm" data-show="ccdlg:none">No dialog</button>
+      </nav>
+    </div>
+  </body>
+</html>

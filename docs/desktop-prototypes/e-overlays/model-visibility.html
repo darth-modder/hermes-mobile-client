@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  Screen:      Model visibility (E · app-wide overlay, dialog)   ModelVisibilityOverlay → ModelVisibilityDialog ("Models")
+  Replicates:  apps/desktop/src/app/model-visibility-overlay.tsx, components/model-visibility-dialog.tsx,
+               components/ui/{dialog,checkbox,switch,disclosure-caret,highlight-matches}.tsx, i18n/en.ts (modelVisibility.*)
+  Views:       #vis=list | search
+  Measurements:
+    - scrim black/22 + 2px blur; dialog max-w-xs (20rem), rounded-xl (3.2px), 1px --stroke-nous, bg --ui-chat-bubble-background, shadow-nous;
+      body p-0 gap-0 overflow hidden; close X 16px in a 24px ghost button at top/right .625rem
+    - header: px-3 pt-3 pb-1; title 13px/600 tracking-tight
+    - search row: px-3 py-1.5 gap-1.5; 14px search icon at muted/70; bare input h-5, 12px, placeholder tertiary
+    - list: max-h 55vh, pb-1; provider block py-0.5
+      provider header: px-3 pt-1 pb-0.5 gap-2; label 10px/600 uppercase tracking-wider tertiary + 10px caret (hidden until hover);
+      16px checkbox (checked / indeterminate / unchecked) on the right
+      model row: <label> px-3 py-1 gap-2, 12px, hover --ui-control-active-background; name + tertiary tag; Switch xs (28×16, 12px thumb)
+    - footer: px-3 py-2; "Add provider…" text button xs, tertiary, -ml-2
+  Behaviour:
+    - z rungs: scrim var(--z-modal-backdrop) 120, dialog var(--z-modal) 130; only mounted while the gateway is open
+    - toggles which models appear in the composer's model menu; families collapse (dated snapshots fold into one row)
+    - provider checkbox: all on = checked, some = indeterminate, none = unchecked; clicking sets every family in that provider
+    - clicking a provider label collapses/expands it (persisted); searching ignores collapse and filters by model, provider and slug,
+      marking matches in --ui-accent
+    - "Add provider…" closes this and opens Settings → Providers
+  Mobile:      At parity: provider and model settings are on mobile (M09, docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Model visibility · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .dialog--vis { max-width: 20rem; padding: 0; gap: 0; overflow: hidden; }
+      .dialog--vis .dialog__close { color: var(--ui-text-tertiary); }
+      .dialog--vis .dialog__close .ti { font-size: 1rem; }
+      .vis-head { padding: 0.75rem 0.75rem 0.25rem; }
+      .vis-head h2 { margin: 0; font-size: 0.8125rem; font-weight: 600; letter-spacing: -0.025em; }
+      .vis-search { display: flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; }
+      .vis-search .ti { flex-shrink: 0; font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .vis-search input { width: 100%; height: 1.25rem; border: 0; background: transparent; outline: none; font-size: 0.75rem; color: var(--dt-foreground); }
+      .vis-search input::placeholder { color: var(--ui-text-tertiary); }
+      .vis-list { max-height: 55vh; overflow-y: auto; padding-bottom: 0.25rem; }
+      .vis-prov { padding: 0.125rem 0; }
+      .vis-prov__head { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem 0.125rem; }
+      .vis-prov__label { display: flex; width: 100%; min-width: 0; align-items: center; gap: 0.25rem; border: 0; padding: 0.125rem 0; background: transparent; text-align: left; font-size: 0.625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ui-text-tertiary); cursor: pointer; }
+      .vis-prov__label .codicon { font-size: 0.625rem; opacity: 0; transition: opacity 150ms; }
+      .vis-prov__label:hover .codicon { opacity: 1; }
+      .vis-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem; font-size: 0.75rem; cursor: pointer; }
+      .vis-row:hover { background: var(--ui-control-active-background); }
+      .vis-row .tag { color: var(--ui-text-tertiary); }
+      .vis-row mark, .vis-prov__label mark { background: transparent; font-weight: 500; color: var(--ui-accent); }
+      /* Checkbox indeterminate + switch xs geometry (checkbox.tsx, switch.tsx xs: h-4 w-7, thumb size-3, translate-x-3.5) */
+      .checkbox { border-color: var(--dt-border); }
+      .checkbox.is-mixed { background: var(--dt-primary); border-color: var(--dt-primary); }
+      .checkbox.is-mixed::after { content: ''; width: 0.5rem; height: 1.5px; background: var(--dt-primary-foreground); }
+      .switch--xs.is-on::after { transform: translateX(0.875rem); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <div class="scrim"></div>
+          <div class="dialog dialog--vis" role="dialog" aria-modal="true">
+            <div class="vis-head"><h2>Models</h2></div>
+            <section data-views="vis">
+              <div data-view="list">
+                <div class="vis-search"><i class="ti ti-search"></i><input placeholder="Search models" aria-label="Search models" /></div>
+                <div class="vis-list">
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">Anthropic</span><i class="codicon codicon-chevron-down"></i></button><span class="checkbox is-on" role="checkbox" aria-checked="true"></span></div>
+                    <label class="vis-row"><span class="grow t-truncate">Claude Opus 5</span><span class="switch switch--xs is-on"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">Claude Sonnet 5</span><span class="switch switch--xs is-on"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">Claude Haiku 4.5</span><span class="switch switch--xs is-on"></span></label>
+                  </div>
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">Nous Portal</span><i class="codicon codicon-chevron-down"></i></button><span class="checkbox is-mixed" role="checkbox" aria-checked="mixed"></span></div>
+                    <label class="vis-row"><span class="grow t-truncate">Hermes 4 405B</span><span class="switch switch--xs is-on"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">MiMo v2.5 <span class="tag">xiaomi</span></span><span class="switch switch--xs is-on"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">DeepSeek V4 Flash <span class="tag">deepseek</span></span><span class="switch switch--xs is-on"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">Kimi K2.6 <span class="tag">moonshotai</span></span><span class="switch switch--xs"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate">GPT-5.2 <span class="tag">openai</span></span><span class="switch switch--xs"></span></label>
+                  </div>
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">OpenRouter</span><i class="codicon codicon-chevron-right"></i></button><span class="checkbox" role="checkbox" aria-checked="false"></span></div>
+                  </div>
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">Xiaomi MiMo</span><i class="codicon codicon-chevron-down"></i></button><span class="checkbox is-on" role="checkbox" aria-checked="true"></span></div>
+                    <label class="vis-row"><span class="grow t-truncate">MiMo v2.5</span><span class="switch switch--xs is-on"></span></label>
+                  </div>
+                </div>
+              </div>
+
+              <div data-view="search" hidden>
+                <div class="vis-search"><i class="ti ti-search"></i><input value="kimi" aria-label="Search models" /></div>
+                <div class="vis-list">
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">Nous Portal</span><i class="codicon codicon-chevron-down"></i></button><span class="checkbox is-mixed" role="checkbox" aria-checked="mixed"></span></div>
+                    <label class="vis-row"><span class="grow t-truncate"><mark>Kimi</mark> K2.6 <span class="tag">moonshotai</span></span><span class="switch switch--xs"></span></label>
+                  </div>
+                  <div class="vis-prov">
+                    <div class="vis-prov__head"><button class="vis-prov__label" type="button"><span class="t-truncate">OpenRouter</span><i class="codicon codicon-chevron-down"></i></button><span class="checkbox" role="checkbox" aria-checked="false"></span></div>
+                    <label class="vis-row"><span class="grow t-truncate"><mark>Kimi</mark> K2.6 <span class="tag">moonshotai</span></span><span class="switch switch--xs"></span></label>
+                    <label class="vis-row"><span class="grow t-truncate"><mark>Kimi</mark> K2 Thinking <span class="tag">moonshotai</span></span><span class="switch switch--xs"></span></label>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <div style="padding:.5rem .75rem"><button class="btn btn--text btn--xs" type="button" style="margin-left:-.5rem;color:var(--ui-text-tertiary)">Add provider…</button></div>
+            <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" type="button"><i class="ti ti-x"></i></button>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="vis:list">All providers</button>
+        <button class="btn btn--secondary btn--sm" data-show="vis:search">Search “kimi”</button>
+      </nav>
+    </div>
+  </body>
+</html>

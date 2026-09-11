@@ -1,0 +1,160 @@
+<!doctype html>
+<!--
+  Screen:      Login windows (D · window)   electron/main.ts openOauthLoginWindow(baseUrl, {silent}) and
+               openPortalLoginWindow() — plain BrowserWindows that load an EXTERNAL sign-in page
+  Replicates:  apps/desktop/electron/main.ts l.7602-7700 (OAuth gateway login), l.8587-8690 (Hermes Cloud
+               portal login), electron/oauth-partition.ts (session partition)
+  Views:       #login=oauth | #login=portal | #login=silent (silent-cascade fallback)
+  Measurements:
+    - BrowserWindow 520×720, NATIVE frame (no titleBarStyle override), autoHideMenuBar: true
+      (Alt shows the menu), sandboxed, isolated OAuth session partition, webSecurity on
+    - window titles: oauth 'Sign in to Hermes gateway'; portal 'Sign in to Hermes Cloud';
+      silent cascade 'Connecting to Hermes Cloud agent…' (the page may override document.title)
+    - native Windows caption: ~32px, app icon + title, min / max / close
+  Behaviour (not visible statically):
+    - NOTHING inside the window is Hermes UI: the page belongs to the gateway's identity provider
+      (oauth) or the Hermes Cloud portal / Privy (portal). The mock pages below are generic stand-ins.
+    - completion is detected from cookies, not from the page: every did-navigate / did-redirect /
+      did-frame-navigate re-checks the partition's cookie jar, plus a 750ms poll; once the session
+      cookie exists the window is destroyed and the promise resolves
+    - closing the window before that rejects the sign-in (the app shows its own error/toast)
+    - silent cascade starts HIDDEN; the auto-SSO 302 chain normally finishes in <1s so it never shows,
+      and it is revealed only as a fallback if the cascade stalls (e.g. the portal session lapsed and the
+      gate fell through to the interactive chooser)
+    - renderer crashes are logged (kind 'oauth' / 'portal'), never reloaded
+  Mobile:      Mobile signs in through its own flow (system browser / in-app auth), no separate window (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Login window · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      /* The Hermes main window behind (dimmed stand-in). */
+      .ghost-win { position: absolute; border-radius: 8px; background: var(--ui-bg-sidebar); box-shadow: var(--shadow-md); opacity: 0.8; overflow: hidden; }
+      .ghost-win::before { content: ''; position: absolute; inset: 0 0 auto; height: 34px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-chrome); }
+      .ghost-win::after { content: ''; position: absolute; top: 34px; bottom: 0; left: 237px; right: 0; background: var(--ui-bg-chrome); border-left: 1px solid var(--ui-stroke-tertiary); }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+
+      /* Native-framed BrowserWindow (OS chrome, not Hermes chrome). */
+      .native-win { position: absolute; left: 350px; top: 14px; width: 520px; height: 720px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: 8px; background: var(--white); box-shadow: var(--shadow-lg); }
+      .native-cap { display: flex; flex-shrink: 0; align-items: center; gap: 8px; height: 32px; padding-left: 10px; background: var(--ui-bg-chrome); color: var(--ui-text-primary); font-size: 12px; }
+      .native-cap__icon { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      .native-cap__icon .ti { font-size: 11px; }
+      .native-cap .win-controls { height: 32px; margin: 0 0 0 auto; }
+
+      /* The external sign-in page. Not themed by Hermes: always light. */
+      .ext { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; background: color-mix(in srgb, var(--black) 3%, var(--white)); color: color-mix(in srgb, var(--black) 85%, transparent); font-family: system-ui, sans-serif; }
+      .ext__card { width: 380px; margin-top: 64px; border: 1px solid color-mix(in srgb, var(--black) 9%, transparent); border-radius: 12px; padding: 32px 32px 26px; background: var(--white); box-shadow: 0 1px 3px color-mix(in srgb, var(--black) 6%, transparent); }
+      .ext__logo { display: grid; place-items: center; width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 10px; background: color-mix(in srgb, var(--black) 88%, transparent); color: var(--white); }
+      .ext__logo .ti { font-size: 22px; }
+      .ext h1 { margin: 0 0 6px; text-align: center; font-size: 20px; font-weight: 650; }
+      .ext__sub { margin: 0 0 22px; text-align: center; font-size: 13px; color: color-mix(in srgb, var(--black) 55%, transparent); }
+      .ext__btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 40px; margin-bottom: 10px; border: 1px solid color-mix(in srgb, var(--black) 14%, transparent); border-radius: 8px; background: var(--white); color: inherit; font: inherit; font-size: 14px; font-weight: 500; }
+      .ext__btn--primary { border-color: transparent; background: color-mix(in srgb, var(--black) 88%, transparent); color: var(--white); }
+      .ext__field { width: 100%; height: 40px; margin-bottom: 10px; border: 1px solid color-mix(in srgb, var(--black) 14%, transparent); border-radius: 8px; padding: 0 12px; background: var(--white); color: inherit; font: inherit; font-size: 14px; }
+      .ext__or { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; font-size: 12px; color: color-mix(in srgb, var(--black) 45%, transparent); }
+      .ext__or::before, .ext__or::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--black) 10%, transparent); }
+      .ext__row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .ext__row .ext__btn { margin: 0; }
+      .ext__foot { margin-top: 18px; text-align: center; font-size: 12px; color: color-mix(in srgb, var(--black) 45%, transparent); }
+      .ext__url { margin-top: auto; padding: 10px 0 14px; font-size: 11px; color: color-mix(in srgb, var(--black) 40%, transparent); }
+      .ext__spin { width: 22px; height: 22px; margin: 0 auto 14px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--black) 12%, transparent); border-top-color: color-mix(in srgb, var(--black) 70%, transparent); animation: proto-spin 0.9s linear infinite; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="ghost-win" style="left:40px;top:30px;width:1140px;height:680px" aria-hidden="true"></div>
+
+            <section data-views="login">
+              <!-- ── View: OAuth gateway login ────────────────────────── -->
+              <div data-view="oauth">
+                <div class="native-win">
+                  <div class="native-cap"><span class="native-cap__icon"><i class="ti ti-feather"></i></span><span>Sign in to Hermes gateway</span>
+                    <div class="win-controls" aria-hidden="true"><span><i class="codicon codicon-chrome-minimize"></i></span><span><i class="codicon codicon-chrome-maximize"></i></span><span><i class="codicon codicon-chrome-close"></i></span></div></div>
+                  <div class="ext">
+                    <div class="ext__card">
+                      <div class="ext__logo"><i class="ti ti-shield-lock"></i></div>
+                      <h1>Sign in</h1>
+                      <p class="ext__sub">to continue to gateway.example.com</p>
+                      <button class="ext__btn" type="button"><i class="ti ti-building"></i>Continue with company SSO</button>
+                      <button class="ext__btn" type="button"><i class="ti ti-key"></i>Continue with a passkey</button>
+                      <div class="ext__or">or</div>
+                      <input class="ext__field" placeholder="Email address" />
+                      <button class="ext__btn ext__btn--primary" type="button">Continue</button>
+                      <div class="ext__foot">Identity provider page · Terms · Privacy</div>
+                    </div>
+                    <div class="ext__url">https://idp.example.com/authorize?client_id=hermes-gateway…</div>
+                  </div>
+                </div>
+                <div class="proto-note" style="left:350px;top:740px">External content: the gateway's identity provider, not Hermes UI · 520×720 native window</div>
+              </div>
+
+              <!-- ── View: Hermes Cloud portal login ──────────────────── -->
+              <div data-view="portal" hidden>
+                <div class="native-win">
+                  <div class="native-cap"><span class="native-cap__icon"><i class="ti ti-feather"></i></span><span>Sign in to Hermes Cloud</span>
+                    <div class="win-controls" aria-hidden="true"><span><i class="codicon codicon-chrome-minimize"></i></span><span><i class="codicon codicon-chrome-maximize"></i></span><span><i class="codicon codicon-chrome-close"></i></span></div></div>
+                  <div class="ext">
+                    <div class="ext__card">
+                      <div class="ext__logo"><i class="ti ti-cloud"></i></div>
+                      <h1>Log in or sign up</h1>
+                      <p class="ext__sub">Hermes Cloud portal</p>
+                      <input class="ext__field" placeholder="your@email.com" />
+                      <button class="ext__btn ext__btn--primary" type="button">Continue</button>
+                      <div class="ext__or">or continue with</div>
+                      <div class="ext__row">
+                        <button class="ext__btn" type="button" aria-label="Social account"><i class="ti ti-user-circle"></i></button>
+                        <button class="ext__btn" type="button" aria-label="Wallet"><i class="ti ti-wallet"></i></button>
+                        <button class="ext__btn" type="button" aria-label="Passkey"><i class="ti ti-fingerprint"></i></button>
+                      </div>
+                      <div class="ext__foot">Protected by the portal's auth provider</div>
+                    </div>
+                    <div class="ext__url">https://portal.example/login</div>
+                  </div>
+                </div>
+                <div class="proto-note" style="left:350px;top:740px">External content: the Hermes Cloud portal (Privy session), not Hermes UI · 520×720 native window</div>
+              </div>
+
+              <!-- ── View: silent cascade revealed as a fallback ──────── -->
+              <div data-view="silent" hidden>
+                <div class="native-win">
+                  <div class="native-cap"><span class="native-cap__icon"><i class="ti ti-feather"></i></span><span>Connecting to Hermes Cloud agent…</span>
+                    <div class="win-controls" aria-hidden="true"><span><i class="codicon codicon-chrome-minimize"></i></span><span><i class="codicon codicon-chrome-maximize"></i></span><span><i class="codicon codicon-chrome-close"></i></span></div></div>
+                  <div class="ext">
+                    <div class="ext__card" style="text-align:center">
+                      <div class="ext__spin"></div>
+                      <h1>Redirecting…</h1>
+                      <p class="ext__sub" style="margin:0">Signing you in to the agent with your portal session.</p>
+                    </div>
+                    <div class="ext__url">https://agent.example/oauth/start → portal SSO</div>
+                  </div>
+                </div>
+                <div class="proto-note" style="left:350px;top:740px">Starts hidden; revealed only if the auto-SSO redirect chain doesn't finish quickly</div>
+              </div>
+            </section>
+
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="login:oauth">OAuth (gateway)</button>
+        <button class="btn btn--secondary btn--sm" data-show="login:portal">Portal (Hermes Cloud)</button>
+        <button class="btn btn--secondary btn--sm" data-show="login:silent">Silent cascade fallback</button>
+      </nav>
+    </div>
+  </body>
+</html>

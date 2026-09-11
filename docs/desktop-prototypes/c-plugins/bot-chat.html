@@ -1,0 +1,271 @@
+<!doctype html>
+<!--
+  Screen:      Bot Chat (C · Bot Mode plugin, workspace)   `/:sessionId` of the bot's canonical session; reached by
+               clicking a bot row in the Bots tab. Every bot has exactly one forever-chat: the session titled "Bot Chat"
+               on its profile.
+  Replicates:  apps/desktop/src/plugins/hermes-bots/canonical-chat.ts (identity: title "Bot Chat", CANONICAL_CHAT_TITLE l.48),
+               chat-empty.tsx (BotChatEmpty), plugin.tsx (chat-empty slot l.616-622, /new → /compact guard l.660-690,
+               Routines pane registration l.404-440: placement main, dock right of workspace, defaultCollapsed, 250px),
+               roster-pane.tsx (tab caption = host.setWorkspaceOwnerLabel(displayName) l.506-508),
+               components/ui/pane-tab.tsx (PaneTab / PaneTabLabel / vertical rail), pane-shell/tree/renderer/tree-group.tsx l.444-488
+  Views:       #chat=conversation (default) | #chat=empty (a bot that has not spoken yet: BotChatEmpty)
+  Measurements:
+    - zone tab strip 30px, sidebar surface; PaneTab 11px medium, label 9px uppercase tracking-wide, px-2 (8px), max-w-48;
+      active tab = editor surface + 2px inset underline --theme-primary; idle hover darkens by --ui-tab-hover-darken;
+      tabs separated by 1px --ui-stroke-quaternary. The canonical chat's tab is captioned with the BOT'S display name
+    - Routines collapsed: w-7 (28px) rail on the right edge, sidebar surface, inset 1px --ui-stroke-tertiary line facing the
+      chat; one vertical PaneTab ([writing-mode:vertical-rl], max-h-48, py-2, border-l stroke-tertiary) captioned
+      "Scheduled jobs" (core cron.title)
+    - empty state: face 96px, 16px gap, then the Wordmark lettering (Collapse face, uppercase, --dt-midground with
+      plus-lighter; dark: foreground/90) at width calc(80% - 1rem) with fit-text (floor 2.75rem), mb-1;
+      "Say something to get started." muted, leading-normal, tracking-tight; the stack is lifted translateY(-56px)
+      (half the face block) so the NAME sits on the optical centre line; py-6, sm:px-6, lg:px-8
+    - transcript + composer are the core chat (see a-main/chat.html)
+  Behaviour (not visible statically):
+    - "/new" or "/reset" typed here is rewritten to "/compact" with the toast "This chat never resets" — the canonical chat is
+      one continuous conversation; regular sessions on the same profile keep /new
+    - messages from other bots arrive as user turns prefixed "Message from 🤖 <name> (@<handle>):" and the bot replies
+      with its message_agent tool; the roster row previews them in italics with the prefix stripped
+    - a row click always opens this chat even when other tabs for the bot are open; they stay open beside it
+    - the empty state mounts for every empty session but only renders once the roster resolves the session to a bot
+    - the bot face animates (blink, eye scan; three dots under the face while working); the tab never shows the face
+    - click the rail (or its tab) to restore the Scheduled jobs pane (see routines.html); the rail exists only while the
+      Bots tab is showing and a bot chat owns the workspace
+    - a newly created bot's chat opens with the kickoff "Hey, tell me about yourself!" and the bot's self-introduction
+  Mobile:      Bot Mode (Bot Chat, group chat, routines) is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bot Chat · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── Bot Mode page-local styles: tokens only (same block as bots-tab.html) ── */
+      .bot-face { display: block; flex-shrink: 0; overflow: visible; --face-eye: color-mix(in srgb, var(--black) 85%, transparent); --face-hl: color-mix(in srgb, var(--white) 85%, transparent); }
+      [data-slot="bots-pane"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+      .bots-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-inline: -0.625rem; }
+      .bp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.625rem 0.625rem 0.375rem; }
+      .bp-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .bp-actions { display: flex; align-items: center; gap: 0.125rem; }
+      .bp-ico { border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .bp-tools { display: flex; align-items: center; gap: 0.25rem; min-width: 0; padding: 0 0.625rem 0.375rem; }
+      .bp-tools .search-field { flex: 1; min-width: 0; opacity: 0.5; }
+      .bp-tools .search-field input::placeholder { color: var(--ui-text-tertiary); }
+      .bp-filter { width: 1.75rem; height: 1.75rem; }
+      .bp-list { display: grid; flex: 1; align-content: start; gap: 0.125rem; min-height: 0; overflow-y: auto; padding: 0 0.375rem 0.5rem; }
+      .bot-row { display: flex; align-items: center; gap: 0.625rem; width: 100%; min-width: 0; overflow: hidden; border: 0; border-radius: var(--radius-md); padding: 0.5rem; background: transparent; color: var(--dt-foreground); text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .bot-row:hover { background: var(--chrome-action-hover); }
+      .bot-row.is-active { background: var(--ui-row-active-background); }
+      .bot-row__body { flex: 1; min-width: 0; }
+      .bot-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .bot-row__id { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .bot-row__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .bot-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; }
+      .bot-row__age { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .bot-row__sub { display: flex; align-items: center; gap: 0.375rem; min-width: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .bot-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bot-row__preview.is-from-bot { font-style: italic; }
+      .frame .bot-row__mark { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .frame .bot-row__warn { flex-shrink: 0; font-size: 0.6875rem; color: var(--tw-amber-600); }
+      :root.dark .frame .bot-row__warn { color: var(--tw-amber-300); }
+      .bot-row__ask { flex-shrink: 0; color: var(--ui-accent); }
+      .dot { display: block; width: 0.375rem; height: 0.375rem; border-radius: 50%; }
+      .dot--working { background: var(--ui-accent); }
+      .dot--idle { width: 0.3125rem; height: 0.3125rem; }
+      .group-lead { position: relative; display: flex; align-items: center; justify-content: center; width: 34px; flex-shrink: 0; }
+      .group-tile { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-md); background: var(--chrome-action-hover); color: var(--ui-text-tertiary); }
+      .sec-head { display: flex; align-items: center; gap: 0.375rem; width: 100%; min-width: 0; margin-top: 0.25rem; border: 0; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; background: transparent; color: var(--ui-text-quaternary); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-align: left; cursor: pointer; }
+      .sec-head:hover { background: var(--chrome-action-hover); color: var(--ui-text-secondary); }
+      .frame .sec-head .caret { font-size: 0.75rem; }
+      .sec-head .caret.is-open { transform: rotate(90deg); }
+      .sec-head__count { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
+      .sec-rows { display: grid; gap: 0.125rem; min-width: 0; }
+
+      /* Workspace */
+      .ws-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone-host { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-chat-surface-background); }
+      .zone-tabs .pane-tab { padding: 0; }
+      .zone-tabs .pane-tab + .pane-tab { border-left: 1px solid var(--ui-stroke-quaternary); }
+      .ptl { display: flex; align-items: center; height: 100%; padding: 0 0.5rem; font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; }
+      .frame .pane-tab .pane-tab__close { margin-right: 0.375rem; }
+      .rail { display: flex; flex-direction: column; width: 1.75rem; min-width: 1.75rem; height: 100%; flex-shrink: 0; background: var(--ui-sidebar-surface-background); box-shadow: inset 1px 0 0 var(--ui-stroke-tertiary); cursor: pointer; }
+      .rail-tab { display: flex; justify-content: center; width: 100%; max-height: 12rem; padding: 0.5rem 0; border-left: 1px solid var(--ui-stroke-tertiary); color: var(--ui-text-tertiary); font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; writing-mode: vertical-rl; }
+      .rail-tab:hover { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--black) var(--ui-tab-hover-darken), transparent); color: var(--ui-text-secondary); }
+
+      /* BotChatEmpty (chat-empty.tsx) */
+      .bot-empty { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; padding-bottom: 6rem; }
+      .bot-empty__stack { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: center; padding: 1.5rem 2rem; text-align: center; color: var(--dt-muted-foreground); transform: translateY(-56px); pointer-events: none; }
+      .bot-empty__face { display: flex; justify-content: center; margin-bottom: 16px; }
+      .bot-empty .wordmark { width: calc(80% - 1rem); margin: 0 auto 0.25rem; font-size: 4.25rem; text-align: center; white-space: nowrap; }
+      .bot-empty__copy { margin: 0; line-height: 1.5; letter-spacing: -0.025em; }
+
+      /* Per-view roster highlight: the empty view is acme-support's chat */
+      .frame:has([data-view="empty"]:not([hidden])) .bot-row[data-key="researcher"] { background: transparent; }
+      .frame:has([data-view="empty"]:not([hidden])) .bot-row[data-key="acme-support"] { background: var(--ui-row-active-background); }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="face-hexagon" viewBox="0 0 40 44"><path d="M20 3.5 L34.5 11.8 L34.5 28.2 L20 36.5 L5.5 28.2 L5.5 11.8Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-squircle" viewBox="0 0 40 44"><rect x="4" y="4" width="32" height="32" rx="11" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-cloud" viewBox="0 0 40 44"><path d="M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-drop" viewBox="0 0 40 44"><path d="M20 3 C27 12 34 18.5 34 25.5 A14 14 0 0 1 6 25.5 C6 18.5 13 12 20 3Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="25" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="25" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="24.3" r=".65"/><circle cx="24" cy="24.3" r=".65"/></g></symbol>
+        <symbol id="face-dots" viewBox="0 0 40 44"><g style="fill:var(--face)"><circle cx="16.4" cy="41.2" r="1.15"/><circle cx="20" cy="41.2" r="1.15" opacity=".6"/><circle cx="23.6" cy="41.2" r="1.15" opacity=".3"/></g></symbol>
+      </defs>
+    </svg>
+
+    <!-- Bots roster (abridged from bots-tab.html) -->
+    <template id="bots-pane">
+      <div class="bots-pane">
+        <div class="bp-head">
+          <span class="bp-title">Bots</span>
+          <div class="bp-actions">
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="Activity toasts off — click to enable"><i class="codicon codicon-bell-slash"></i></button>
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="New bot or group chat"><i class="codicon codicon-add"></i></button>
+          </div>
+        </div>
+        <div class="bp-tools">
+          <label class="search-field"><i class="codicon codicon-search i-xs"></i><input aria-label="Search bots and group chats" placeholder="Search bots and group chats…" /></label>
+          <button class="btn btn--ghost btn--icon-xs bp-ico bp-filter" type="button" aria-label="Filter roster"><i class="codicon codicon-list-filter"></i></button>
+        </div>
+        <div class="bp-list">
+          <button class="sec-head" type="button"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-folder"></i><span class="t-truncate">Team</span><span class="sec-head__count">3</span></button>
+          <div class="sec-rows">
+            <button class="bot-row is-active" data-key="researcher" type="button">
+              <svg class="bot-face" width="34" height="34" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/><use href="#face-dots" width="100%" height="100%"/></svg>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--working"></span></span><i class="codicon codicon-pinned bot-row__mark"></i><span class="bot-row__name">Research Lead</span></span><span class="bot-row__age">now</span></span><span class="bot-row__sub"><span class="bot-row__preview">Sent @coder two figures with sources.</span></span></span>
+            </button>
+            <button class="bot-row" data-key="coder" type="button">
+              <svg class="bot-face" width="34" height="34" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">coder</span></span><span class="bot-row__age">12m</span></span><span class="bot-row__sub"><span class="bot-row__preview is-from-bot">2.4× and 1.8× — sources are in the thread.</span></span></span>
+            </button>
+            <button class="bot-row" data-key="inbox-butler" type="button">
+              <svg class="bot-face" width="34" height="34" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">inbox-butler</span></span><i class="codicon codicon-warning bot-row__warn"></i><span class="bot-row__age">1h</span></span><span class="bot-row__sub"><span class="bot-row__preview">Morning digest: 14 new, 3 need a reply</span></span></span>
+            </button>
+          </div>
+          <button class="sec-head" type="button"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-folder"></i><span class="t-truncate">Clients</span><span class="sec-head__count">1</span></button>
+          <div class="sec-rows">
+            <button class="bot-row" data-key="acme-support" type="button">
+              <svg class="bot-face" width="34" height="34" style="--face:var(--ui-green)"><use href="#face-drop" width="100%" height="100%"/></svg>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">acme-support</span></span></span></span>
+            </button>
+          </div>
+          <button class="sec-head" type="button"><i class="codicon codicon-chevron-right caret is-open"></i><i class="codicon codicon-inbox"></i><span class="t-truncate">Unassigned</span><span class="sec-head__count">2</span></button>
+          <div class="sec-rows">
+            <button class="bot-row" data-key="launch-crew" type="button">
+              <span class="group-lead"><span class="group-tile"><i class="codicon codicon-organization"></i></span></span>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__name" style="flex:1">Launch crew</span><i class="codicon codicon-question bot-row__ask"></i><span class="bot-row__age">5m</span></span><span class="bot-row__sub"><span class="bot-row__preview">@coder: Ship behind a flag or wait for the fix? @user</span></span></span>
+            </button>
+            <button class="bot-row" data-key="default" type="button">
+              <svg class="bot-face" width="34" height="34" style="--face:var(--ui-purple)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+              <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot dot--idle"></span></span><span class="bot-row__name">Hermes</span></span><span class="bot-row__age">1d</span></span><span class="bot-row__sub"><span class="bot-row__preview">Release notes are in docs/CHANGELOG.md.</span></span></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="bots" data-title="Bot Chat">
+            <div class="ws-row">
+              <section data-views="chat" class="zone-host">
+                <!-- ── View: conversation ─────────────────────────────── -->
+                <div data-view="conversation" class="zone">
+                  <div class="zone-tabs" role="tablist">
+                    <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                    <div class="pane-tab" role="tab"><span class="ptl">coder</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  </div>
+                  <div class="thread">
+                    <div class="thread__inner">
+                      <div class="msg-time">Sep 2, 16:05</div>
+                      <div class="msg-user">Hey, tell me about yourself!</div>
+                      <div class="turn">
+                        <div class="msg-ai">
+                          <p>I'm <strong>Research Lead</strong> (@researcher). I dig through papers, benchmarks and changelogs and hand back short, sourced summaries.</p>
+                          <p>Teammates I can message: <span class="code-inline">@coder</span> writes and reviews code, <span class="code-inline">@inbox-butler</span> triages your mail, <span class="code-inline">@acme-support</span> works the Acme queue.</p>
+                        </div>
+                      </div>
+                      <div class="msg-time">Today 09:12</div>
+                      <div class="msg-user">Message from 🤖 coder (@coder): Can you find current speculative-decoding speedups for 7B models? I need two solid numbers for the README.</div>
+                      <div class="turn">
+                        <div class="scaffold">
+                          <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 4s</span></div>
+                          <div class="tool-row"><i class="codicon codicon-globe"></i><span>Searched the web</span><span class="tool-row__meta">“speculative decoding 7B speedup 2026” · 8 results</span></div>
+                          <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">arxiv.org/abs/2607.01182</span></div>
+                          <div class="tool-row"><i class="codicon codicon-mail"></i><span>message_agent</span><span class="tool-row__meta">→ coder · delivered</span></div>
+                        </div>
+                        <div class="msg-ai">
+                          <p>Sent @coder two figures with sources:</p>
+                          <ul>
+                            <li><strong>2.4×</strong> tokens/s for a 7B target with a 160M draft model (EAGLE-3, A100, greedy).</li>
+                            <li><strong>1.8×</strong> with sampling at T=0.8 on the same pair.</li>
+                          </ul>
+                          <p>Its reply will come back here as a background notification.</p>
+                        </div>
+                        <div class="t-quaternary" style="font-size:.625rem;padding:0 var(--message-text-indent)">09:14 · 38s · deepseek-v4-flash</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="composer-dock">
+                    <div class="composer">
+                      <div class="composer__row">
+                        <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                        <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                        <button class="model-pill" type="button">deepseek-v4-flash<i class="codicon codicon-chevron-down i-xs"></i></button>
+                        <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                        <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── View: empty (BotChatEmpty for a bot that has not spoken) ── -->
+                <div data-view="empty" class="zone" hidden>
+                  <div class="zone-tabs" role="tablist">
+                    <div class="pane-tab" role="tab"><span class="ptl">Research Lead</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                    <div class="pane-tab is-active" role="tab" aria-selected="true"><span class="ptl">acme-support</span><i class="codicon codicon-close pane-tab__close"></i></div>
+                  </div>
+                  <div class="bot-empty" data-slot="bot_chat_empty">
+                    <div class="bot-empty__stack">
+                      <div class="bot-empty__face"><svg class="bot-face" width="96" height="96" style="--face:var(--ui-green)"><use href="#face-drop" width="100%" height="100%"/></svg></div>
+                      <p class="wordmark" aria-label="acme-support">acme-support</p>
+                      <p class="bot-empty__copy">Say something to get started.</p>
+                    </div>
+                  </div>
+                  <div class="composer-dock">
+                    <div class="composer">
+                      <div class="composer__row">
+                        <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                        <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                        <button class="model-pill" type="button">claude-opus-5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                        <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                        <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Routines (Scheduled jobs) pane, collapsed to the right-edge rail -->
+              <div class="rail" title="Restore" role="tablist"><div class="rail-tab" role="tab">Scheduled jobs</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="chat:conversation">Bot Chat</button>
+        <button class="btn btn--secondary btn--sm" data-show="chat:empty">Empty (bot hasn't spoken)</button>
+      </nav>
+    </div>
+  </body>
+</html>

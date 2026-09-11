@@ -1,0 +1,279 @@
+<!doctype html>
+<!--
+  Screen:      Memory provider full configuration (F · dialogs), over Settings → Memory & Context
+  Replicates:  apps/desktop/src/app/settings/memory/provider-config-modal.tsx (the modal),
+               settings/memory/provider-config-panel.tsx (inline panel under the Memory Provider row),
+               settings/memory/connect.tsx (OAuth connect affordance under the provider description),
+               settings/memory/field-control.tsx (per-kind controls), settings/primitives.tsx (ListRow, Pill),
+               settings/config-settings.tsx (where the panel + connect mount)
+  Views:       #modal=open | #modal=saving | #modal=closed   and   #connect=connected | #connect=pending | #connect=error
+  Measurements:
+    - modal: DialogContent "max-w-2xl" → 42rem, body p-4 grid gap-3 (scrolls inside; max-h 85%); X close
+    - title: SlidersHorizontal icon size-4 --dt-primary + "<Provider> — full configuration"
+    - description 12px/16px tertiary, profile name in medium; docs link 12px --ui-accent-secondary,
+      underline on hover (offset 4px), ExternalLink size-3
+    - group heading h3: border-b --ui-accent-secondary at 30%, pb-1.5, mono .68rem uppercase tracking-wide,
+      --ui-accent-secondary; section mt-6 (first mt-2); rows sit in pl-1, separated by --dt-border at 40%
+    - ListRow is container-queried @2xl (42rem). Inside the modal the row is ~39.75rem, so rows STACK:
+      title (13px medium) → description (12px/16px tertiary) → control full width, grid gap-3, py-3.
+      On the settings page (wider) the same ListRow is two columns [1fr | minmax(15rem,22rem)].
+    - controls: text/number/secret Input and json Textarea use mono 12px, placeholder muted at 45%;
+      select = SelectTrigger 12px; bool = Switch h-5 w-9. Secret with a stored value: placeholder
+      "Leave blank to keep current value" + "✓ set" (mono .65rem tertiary, check --ui-accent-secondary).
+      Info tooltip icon size-3.5 muted/70 beside labels that carry `info`.
+    - footer: Cancel ghost sm + "Save changes" default sm with Save (floppy) icon → Loader2 spinning while saving
+    - panel: header row py-2 gap-2 — DisclosureCaret (.75rem, rotates 90° open), "<Provider> settings" 13px
+      medium, one Pill per secret ("API key set" / "not set", muted badge), "Full config…" secondary sm with
+      sliders icon. Body: ml-1.5, border-l-2 --ui-accent-secondary at 25%, pl-4 pr-4 pb-4, inline fields only.
+    - connect: inline-flex wrap gap-x-3 gap-y-1, 12px. Connected: Check size-3 + "api key set"/"oauth set" muted;
+      link button "Connect via OAuth" / "Reconnect" / "Connect" (link variant, p-0, ExternalLink size-3).
+      Pending: Loader2 size-3 + "Waiting for browser consent…" + link "Cancel". Error: link + destructive detail.
+  Behaviour:
+    - Panel autosaves: discrete controls commit on change, text-like controls on blur; blank secrets are never sent.
+      Providers with no declared fields render no panel. Load failure shows the message + Retry.
+    - Modal reseeds on every open; secrets seed blank (write-only). Save sends ONLY edited keys, toasts
+      "<Provider> saved" / "Memory provider configuration updated.", refreshes the panel and closes.
+      Failure toasts "Failed to save <Provider> settings" and stays open. Cancel / Esc / X discard drafts.
+    - Connect: starts OAuth, polls status every 1.5s for up to 120s; error text clears itself after 6s.
+      Only rendered for providers that expose an OAuth flow (the status route 404s otherwise).
+  Mobile:      Settings is at parity on mobile (docs/PARITY.md, Settings row, M09); memory-provider config is not
+               called out there specifically.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Memory provider config · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .settings-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 5rem; }
+      .settings-search { display: inline-flex; align-items: center; gap: 0.375rem; width: 18rem; height: 1.625rem; padding: 0 0.625rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-full); background: var(--ui-bg-elevated); box-shadow: var(--shadow-sm); color: var(--ui-text-tertiary); font-size: 0.75rem; }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .mono { font-family: var(--dt-font-mono); }
+      .control.mono::placeholder { color: color-mix(in srgb, var(--dt-muted-foreground) 45%, transparent); }
+      /* connect affordance */
+      .mconnect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin-top: 0.375rem; font-size: 0.75rem; }
+      .mconnect .muted { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--dt-muted-foreground); }
+      .mconnect .ti { font-size: 0.75rem; }
+      .mconnect .btn--link { gap: 0.25rem; font-size: 0.75rem; font-weight: 500; }
+      /* provider panel */
+      .ppanel { padding: 0.25rem 0; }
+      .ppanel__head { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; }
+      .ppanel__toggle { display: flex; flex: 1; min-width: 0; align-items: center; gap: 0.5rem; border: 0; padding: 0; background: transparent; text-align: left; cursor: pointer; }
+      .ppanel__caret { flex-shrink: 0; font-size: 0.75rem; transform: rotate(90deg); transition: transform 150ms; }
+      .ppanel__title { font-size: var(--conversation-text-font-size); font-weight: 500; color: var(--dt-foreground); }
+      .ppanel__body { margin-left: 0.375rem; border-left: 2px solid color-mix(in srgb, var(--ui-accent-secondary) 25%, transparent); padding: 0 1rem 1rem; }
+      .ppanel__body > .list-row { border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 40%, transparent); }
+      .ppanel__body > .list-row:last-child { border-bottom: 0; }
+      /* modal */
+      .docs-link { display: inline-flex; width: fit-content; align-items: center; gap: 0.25rem; color: var(--ui-accent-secondary); font-size: var(--conversation-caption-font-size); text-underline-offset: 4px; cursor: pointer; }
+      .docs-link:hover { text-decoration: underline; }
+      .docs-link .ti { font-size: 0.75rem; }
+      .mgroup { margin-top: 1.5rem; }
+      .mgroup:first-child { margin-top: 0.5rem; }
+      .mgroup__h { margin: 0; border-bottom: 1px solid color-mix(in srgb, var(--ui-accent-secondary) 30%, transparent); padding-bottom: 0.375rem; color: var(--ui-accent-secondary); font-family: var(--dt-font-mono); font-size: 0.68rem; font-weight: 400; letter-spacing: 0.025em; text-transform: uppercase; }
+      .mgroup__rows { padding-left: 0.25rem; }
+      .mrow { display: grid; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid color-mix(in srgb, var(--dt-border) 40%, transparent); }
+      .mrow:last-child { border-bottom: 0; }
+      .mrow__title { display: inline-flex; align-items: center; gap: 0.375rem; font-size: var(--conversation-text-font-size); font-weight: 500; color: var(--dt-foreground); }
+      .mrow__title .ti { font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .mrow__desc { margin-top: 0.25rem; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .secret-set { display: inline-flex; align-self: flex-start; align-items: center; gap: 0.25rem; font-family: var(--dt-font-mono); font-size: 0.65rem; color: var(--ui-text-tertiary); }
+      .secret-set .ti { font-size: 0.75rem; color: var(--ui-accent-secondary); }
+      .secret { display: flex; flex-direction: column; gap: 0.25rem; }
+      .json { min-height: 4rem; font-family: var(--dt-font-mono); font-size: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event…</p></div></div></div>
+          </div>
+
+          <!-- ═══ Settings overlay (Memory & Context) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card" style="overflow:visible">
+              <div class="overlay-card__edge"><span class="settings-search"><i class="codicon codicon-search i-xs"></i>Search settings...<span class="kbd kbd--sm ml-auto">/</span></span></div>
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close settings"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body" style="overflow:hidden;border-radius:inherit">
+                <div class="split">
+                  <aside class="split__nav" aria-label="Settings sections">
+                    <button class="nav-item"><i class="ti ti-box"></i><span>Model</span></button>
+                    <button class="nav-item"><i class="ti ti-message-circle"></i><span>Chat</span></button>
+                    <button class="nav-item"><i class="ti ti-palette"></i><span>Appearance</span></button>
+                    <button class="nav-item"><i class="ti ti-device-desktop"></i><span>Workspace</span></button>
+                    <button class="nav-item"><i class="ti ti-lock"></i><span>Safety</span></button>
+                    <button class="nav-item"><i class="ti ti-world"></i><span>Browser</span></button>
+                    <button class="nav-item is-active"><i class="ti ti-brain"></i><span>Memory &amp; Context</span></button>
+                    <button class="nav-item"><i class="ti ti-microphone"></i><span>Voice</span></button>
+                    <button class="nav-item"><i class="ti ti-tool"></i><span>Advanced</span></button>
+                    <button class="nav-item"><i class="ti ti-bell"></i><span>Notifications</span></button>
+                    <button class="nav-item"><i class="ti ti-chart-bar"></i><span>Billing</span></button>
+                    <div class="nav-gap"></div>
+                    <button class="nav-item"><i class="ti ti-bolt"></i><span>Providers</span></button>
+                    <button class="nav-item"><i class="ti ti-world"></i><span>Gateways</span></button>
+                    <button class="nav-item"><i class="ti ti-keyboard"></i><span>Keyboard Shortcuts</span></button>
+                    <button class="nav-item"><i class="ti ti-key"></i><span>Tools &amp; Keys</span></button>
+                    <button class="nav-item"><i class="ti ti-package"></i><span>Plugins</span></button>
+                    <button class="nav-item"><i class="ti ti-archive"></i><span>Archived Chats</span></button>
+                    <div class="nav-gap"></div>
+                    <button class="nav-item"><i class="ti ti-info-circle"></i><span>About</span></button>
+                  </aside>
+
+                  <main class="split__main">
+                    <div class="settings-scroll">
+                      <section class="settings-section">
+                        <div class="section-heading"><i class="ti ti-brain"></i><span>Memory &amp; Context</span></div>
+                        <div class="list-row"><div><div class="list-row__title">Memory</div><div class="list-row__desc">Save durable memories that can help future sessions.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">User Profile</div><div class="list-row__desc">Maintain a compact profile of user preferences.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row">
+                          <div>
+                            <div class="list-row__title">Memory Provider</div>
+                            <div class="list-row__desc">Where memories are stored and recalled from.</div>
+                            <!-- MemoryConnect (descriptionExtra) -->
+                            <section data-views="connect">
+                              <div data-view="connected">
+                                <span class="mconnect"><span class="muted"><i class="ti ti-check"></i>api key set</span><button class="btn btn--link"><i class="ti ti-external-link"></i>Connect via OAuth</button></span>
+                              </div>
+                              <div data-view="pending" hidden>
+                                <span class="mconnect"><span class="muted" style="gap:.375rem"><i class="ti ti-loader-2 spin"></i>Waiting for browser consent…</span><button class="btn btn--link">Cancel</button></span>
+                              </div>
+                              <div data-view="error" hidden>
+                                <span class="mconnect"><button class="btn btn--link"><i class="ti ti-external-link"></i>Connect via OAuth</button><span class="t-danger">Timed out — try again.</span></span>
+                              </div>
+                            </section>
+                          </div>
+                          <div class="list-row__action"><button class="control select-trigger">Honcho</button></div>
+                        </div>
+
+                        <!-- ProviderConfigPanel -->
+                        <div class="ppanel">
+                          <div class="ppanel__head">
+                            <button class="ppanel__toggle" aria-expanded="true"><i class="codicon codicon-chevron-right ppanel__caret"></i><span class="ppanel__title">Honcho settings</span><span class="badge badge--muted">API key set</span></button>
+                            <button class="btn btn--secondary btn--sm"><i class="ti ti-adjustments-horizontal"></i>Full config…</button>
+                          </div>
+                          <div class="ppanel__body">
+                            <div class="list-row"><div><div class="list-row__title">Workspace</div><div class="list-row__desc">Honcho workspace that holds this profile's peers and sessions.</div></div><div class="list-row__action"><input class="control mono" value="hermes" /></div></div>
+                            <div class="list-row"><div><div class="list-row__title">API key</div><div class="list-row__desc">Honcho API key. Stored encrypted; never shown again.</div></div><div class="list-row__action"><div class="secret" style="width:100%"><input class="control mono" type="password" placeholder="Leave blank to keep current value" /><span class="secret-set"><i class="ti ti-check"></i>set</span></div></div></div>
+                            <div class="list-row"><div><div class="list-row__title">Recall mode</div><div class="list-row__desc">How memories reach the model: injected into context, exposed as tools, or both.</div></div><div class="list-row__action"><button class="control select-trigger">hybrid</button></div></div>
+                          </div>
+                        </div>
+
+                        <div class="list-row"><div><div class="list-row__title">Context Engine</div><div class="list-row__desc">Strategy for managing long conversations near the context limit.</div></div><div class="list-row__action"><button class="control select-trigger">Compressor</button></div></div>
+                      </section>
+                    </div>
+                  </main>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Provider config modal ═══ -->
+          <section data-views="modal">
+            <div data-view="open">
+              <div class="scrim"></div>
+              <div class="dialog dialog--wide" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-adjustments-horizontal"></i>Honcho — full configuration</h2>
+                  <p class="dialog__desc">Every Honcho option for the <span class="t-medium">default</span> profile. Blank fields fall back to the resolved host or built-in default.</p>
+                  <a class="docs-link">Honcho configuration reference<i class="ti ti-external-link"></i></a>
+                </div>
+                <div style="min-width:0">
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Connection</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">Workspace</div><div class="mrow__desc">Honcho workspace that holds this profile's peers and sessions.</div></div><input class="control mono" value="hermes" /></div>
+                      <div class="mrow"><div><div class="mrow__title">API key</div><div class="mrow__desc">Honcho API key. Stored encrypted; never shown again.</div></div><div class="secret"><input class="control mono" type="password" placeholder="Leave blank to keep current value" /><span class="secret-set"><i class="ti ti-check"></i>set</span></div></div>
+                      <div class="mrow"><div><div class="mrow__title">Base URL</div><div class="mrow__desc">Self-hosted Honcho endpoint. Blank uses the hosted API.</div></div><input class="control mono" placeholder="https://api.honcho.dev" /></div>
+                      <div class="mrow"><div><div class="mrow__title">Environment</div></div><button class="control select-trigger">production</button></div>
+                    </div>
+                  </section>
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Message writing</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">Save messages</div><div class="mrow__desc">Write every turn to Honcho so it can learn from the conversation.</div></div><span class="switch is-on"></span></div>
+                      <div class="mrow"><div><div class="mrow__title">Write frequency<i class="ti ti-info-circle" aria-label="About Write frequency"></i></div><div class="mrow__desc">When messages are flushed to Honcho.</div></div><button class="control select-trigger">async</button></div>
+                    </div>
+                  </section>
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Dialectic</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">Max result chars</div><div class="mrow__desc">Upper bound on the text a dialectic query returns into context.</div></div><input class="control mono" type="number" value="1200" /></div>
+                      <div class="mrow"><div><div class="mrow__title">Reasoning level</div></div><button class="control select-trigger">low</button></div>
+                    </div>
+                  </section>
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Identity</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">User peer aliases</div><div class="mrow__desc">Map other peer names to you, as JSON.</div></div><textarea class="control json">{"t":"eri"}</textarea></div>
+                    </div>
+                  </section>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost btn--sm">Cancel</button>
+                  <button type="button" class="btn btn--default btn--sm"><i class="ti ti-device-floppy"></i>Save changes</button>
+                </div>
+              </div>
+            </div>
+
+            <div data-view="saving" hidden>
+              <div class="scrim"></div>
+              <div class="dialog dialog--wide" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-adjustments-horizontal"></i>Honcho — full configuration</h2>
+                  <p class="dialog__desc">Every Honcho option for the <span class="t-medium">default</span> profile. Blank fields fall back to the resolved host or built-in default.</p>
+                  <a class="docs-link">Honcho configuration reference<i class="ti ti-external-link"></i></a>
+                </div>
+                <div style="min-width:0">
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Connection</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">Workspace</div><div class="mrow__desc">Honcho workspace that holds this profile's peers and sessions.</div></div><input class="control mono" value="hermes-android" /></div>
+                      <div class="mrow"><div><div class="mrow__title">API key</div><div class="mrow__desc">Honcho API key. Stored encrypted; never shown again.</div></div><div class="secret"><input class="control mono" type="password" placeholder="Leave blank to keep current value" /><span class="secret-set"><i class="ti ti-check"></i>set</span></div></div>
+                      <div class="mrow"><div><div class="mrow__title">Base URL</div><div class="mrow__desc">Self-hosted Honcho endpoint. Blank uses the hosted API.</div></div><input class="control mono" placeholder="https://api.honcho.dev" /></div>
+                      <div class="mrow"><div><div class="mrow__title">Environment</div></div><button class="control select-trigger">production</button></div>
+                    </div>
+                  </section>
+                  <section class="mgroup">
+                    <h3 class="mgroup__h">Message writing</h3>
+                    <div class="mgroup__rows">
+                      <div class="mrow"><div><div class="mrow__title">Save messages</div><div class="mrow__desc">Write every turn to Honcho so it can learn from the conversation.</div></div><span class="switch"></span></div>
+                    </div>
+                  </section>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost btn--sm">Cancel</button>
+                  <button type="button" class="btn btn--default btn--sm" disabled><i class="ti ti-loader-2 spin"></i>Save changes</button>
+                </div>
+              </div>
+            </div>
+
+            <div data-view="closed" hidden></div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="modal:open">Modal open</button>
+        <button class="btn btn--secondary btn--sm" data-show="modal:saving">Modal saving</button>
+        <button class="btn btn--secondary btn--sm" data-show="modal:closed">Modal closed (panel)</button>
+        <span style="width:1rem"></span>
+        <button class="btn btn--secondary btn--sm" data-show="connect:connected">Connect · key set</button>
+        <button class="btn btn--secondary btn--sm" data-show="connect:pending">Connect · waiting</button>
+        <button class="btn btn--secondary btn--sm" data-show="connect:error">Connect · error</button>
+      </nav>
+    </div>
+  </body>
+</html>

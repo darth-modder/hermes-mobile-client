@@ -1,0 +1,242 @@
+<!doctype html>
+<!--
+  Screen:      Command palette (E · app-wide overlay, floating HUD)   ⌘K / Ctrl+K (also Ctrl+P), CommandPalette
+  Replicates:  apps/desktop/src/app/command-palette/{index,status-row,marketplace-theme-page,pet-palette-page}.tsx, contrib.ts,
+               app/floating-hud.ts, components/ui/{command,highlight-matches,kbd}.tsx, i18n/en.ts (commandCenter.*, settings.nav.*)
+  Views:       #palette=default | search | themes | pet
+  Measurements:
+    - HUD: top-3 (0.75rem) centred, w-[min(34rem,100vw-2rem)], rounded-xl (3.2px), 1px --stroke-nous, bg --ui-chat-bubble-background,
+      shadow-nous, overflow hidden. Transparent full-window overlay behind it (click-away, no dim or blur)
+    - search row: h-11 (44px), px-3, gap-2, 1px bottom border --dt-border; 16px muted search icon; input 12px (HUD_TEXT), placeholder muted
+    - list: max-h min(20rem, 56vh), own thin scrollbar; group p-1
+    - group heading (HUD_HEADING): px-2.5 pt-2.5 pb-1, 0.64rem/600 uppercase tracking .16em, colour --theme-primary, not sticky
+    - row: gap-2 px-2 py-1, rounded-sm, 12px; 14px muted icon; label truncates; highlighted = bg --dt-accent + accent-foreground
+      trailing: keybind combo (Kbd sm, 18px, opacity .55) → chevron (sub-page) → check (current setting, primary)
+      detail note: -ml-1, muted/80 (state notes like "on" keep the label colour with a 2px-offset underline at 50%)
+    - search hits: matched terms wrapped in <mark>, transparent bg, 500 weight, --ui-accent
+    - sub-page back row: px-3 py-1.5, 12px muted, "‹ Back / <title>" (title 500 foreground), 1px bottom border
+    - Marketplace/Pets rows: gap-2 px-2 py-1 rounded-md, hover --chrome-action-hover; name 500; meta 11px muted/80;
+      status right 11px muted (spinner "Installing...", green check "Installed", download "Install"); pet thumb 32px
+  Behaviour:
+    - z rungs: overlay var(--z-over-modal) 200, content var(--z-over-modal-content) 210
+    - open: fade + zoom 95→100% + slide-in-from-top-2, 150ms; the frame + input paint first, rows arrive in a deferred render
+    - ranking is ours, not cmdk's: every typed word must match label or keywords; exact > prefix > whole word > word prefix > substring
+      > scattered > keyword-only; groups sort by their best row; ties keep curated order. The first row auto-highlights
+    - empty query shows Go to / Projects / Commands / Command Center / Appearance / Settings; typing adds Capabilities tabs, themes, colour
+      modes, Sessions, Settings fields, Plugins, Tools & Keys, MCP servers, Archived chats, then Branches (worktrees) last
+    - a pasted session id offers "Go to session <id>"; a pasted absolute path offers "Open folder as project — <path>"
+    - holding Ctrl/⌘ swaps project rows to "New session in <project>"; Ctrl+Enter on a session opens a new tab, Ctrl+Shift+Enter a window
+    - theme and colour-mode rows live-preview on highlight and stay open (keepOpen); toggles stay open and re-read their on/off note
+    - sub-pages: Esc or Backspace on an empty input steps back one level instead of closing; Install theme is a child of Change theme
+    - the list ignores the pointer until it actually moves (a parked cursor can't steal the highlight)
+  Mobile:      Thinner than desktop: only a few slash commands have a mobile surface (docs/PARITY.md). Theme install and pets are
+               absent by design (pet overlay).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Command palette · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .hud-catcher { position: absolute; inset: 0; z-index: var(--z-over-modal); }
+      .hud { position: absolute; left: 50%; top: 0.75rem; z-index: var(--z-over-modal-content); width: min(34rem, calc(100% - 2rem)); overflow: hidden; transform: translateX(-50%);
+        border: 1px solid var(--stroke-nous); border-radius: var(--radius-xl); background: var(--ui-chat-bubble-background); box-shadow: var(--shadow-nous); color: var(--dt-foreground); }
+      .cmd-input { display: flex; align-items: center; gap: 0.5rem; height: 2.75rem; padding: 0 0.75rem; border-bottom: 1px solid var(--dt-border); }
+      .cmd-input > .ti { font-size: 1rem; color: var(--dt-muted-foreground); flex-shrink: 0; }
+      .cmd-input input { flex: 1; min-width: 0; height: 2.5rem; border: 0; background: transparent; outline: none; font-size: 0.75rem; }
+      .cmd-input input::placeholder { color: var(--dt-muted-foreground); }
+      .cmd-list { max-height: 20rem; overflow-x: hidden; overflow-y: auto; }
+      .cmd-group { padding: 0.25rem; }
+      .cmd-heading { padding: 0.625rem 0.625rem 0.25rem; font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em; color: var(--theme-primary); }
+      .cmd-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; line-height: 1rem; cursor: default; user-select: none; }
+      .cmd-item:hover, .cmd-item.is-selected { background: var(--dt-accent); color: var(--dt-accent-foreground); }
+      .cmd-item > .ti:first-child, .cmd-item > .codicon:first-child { flex-shrink: 0; font-size: 0.875rem; color: var(--dt-muted-foreground); }
+      .cmd-item .kbd-group { margin-left: auto; opacity: 0.55; }
+      .cmd-item .trail { flex-shrink: 0; font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .cmd-item .trail--first { margin-left: auto; }
+      .cmd-item .is-current { flex-shrink: 0; margin-left: auto; font-size: 0.875rem; color: var(--dt-primary); }
+      .note { margin-left: -0.25rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .note--state { flex-shrink: 0; color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 50%, transparent); text-underline-offset: 2px; }
+      .cmd-item mark { background: transparent; font-weight: 500; color: var(--ui-accent); }
+      .cmd-back { display: flex; width: 100%; align-items: center; gap: 0.375rem; border: 0; border-bottom: 1px solid var(--dt-border); padding: 0.375rem 0.75rem; background: transparent; text-align: left; font-size: 0.75rem; color: var(--dt-muted-foreground); cursor: pointer; }
+      .cmd-back:hover { color: var(--dt-foreground); }
+      .cmd-back .ti { font-size: 0.875rem; }
+      .cmd-back .sep { color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .cmd-back strong { font-weight: 500; color: var(--dt-foreground); }
+      .res { display: flex; width: 100%; align-items: flex-start; gap: 0.5rem; border: 0; border-radius: var(--radius-md); padding: 0.25rem 0.5rem; background: transparent; text-align: left; font-size: 0.75rem; line-height: 1rem; color: var(--dt-foreground); cursor: pointer; transition: background-color 150ms; }
+      .res:hover { background: var(--chrome-action-hover); }
+      .res:disabled { opacity: 0.6; }
+      .res--center { align-items: center; }
+      .res.is-active { background: color-mix(in srgb, var(--chrome-action-hover) 70%, transparent); }
+      .res__icon { margin-top: 0.125rem; flex-shrink: 0; font-size: 0.875rem; color: var(--dt-muted-foreground); }
+      .res__name { font-weight: 500; }
+      .res__meta { font-size: 0.6875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .res__status { margin-left: auto; margin-top: 0.125rem; display: flex; flex-shrink: 0; align-items: center; gap: 0.25rem; font-size: 0.6875rem; color: var(--dt-muted-foreground); }
+      .res__status .ti { font-size: 0.75rem; }
+      .pet-thumb { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: var(--radius-md); background: var(--ui-bg-quinary); color: var(--ui-text-secondary); }
+      .pet-thumb .ti { font-size: 1.125rem; }
+      .gen-tile { display: grid; place-items: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: var(--radius-md); background: var(--chrome-action-hover); }
+      .gen-tile .ti { font-size: 1rem; }
+      .gen-tag { flex-shrink: 0; border-radius: var(--radius-full); padding: 1px 0.375rem; background: color-mix(in srgb, var(--dt-primary) 15%, transparent); color: var(--dt-primary); font-size: 0.625rem; font-weight: 500; }
+      .paw-toggle { display: flex; flex-shrink: 0; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-md); padding: 0.375rem; background: var(--chrome-action-hover); color: var(--dt-foreground); cursor: pointer; }
+      .paw-toggle .ti { font-size: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="turn"><div class="scaffold"><div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div><div class="tool-row"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">use-gateway-boot.ts</span></div></div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div></div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <div class="hud-catcher"></div>
+          <div class="hud" role="dialog" aria-label="Command palette">
+            <section data-views="palette">
+              <!-- ── Root list, empty query ── -->
+              <div data-view="default">
+                <div class="cmd-input"><i class="ti ti-search"></i><input placeholder="Search sessions, views, and actions" aria-label="Command palette" /></div>
+                <div class="cmd-list">
+                  <div class="cmd-group"><div class="cmd-heading">Go to</div>
+                    <div class="cmd-item is-selected"><i class="ti ti-plus"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></div>
+                    <div class="cmd-item"><i class="ti ti-app-window"></i><span class="t-truncate">New window</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">Shift</span><span class="kbd kbd--sm">N</span></span></div>
+                    <div class="cmd-item"><i class="ti ti-settings"></i><span class="t-truncate">Settings</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">,</span></span></div>
+                    <div class="cmd-item"><i class="ti ti-tool"></i><span class="t-truncate">Capabilities</span></div>
+                    <div class="cmd-item"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></div>
+                    <div class="cmd-item"><i class="ti ti-package"></i><span class="t-truncate">Artifacts</span></div>
+                    <div class="cmd-item"><i class="ti ti-clock"></i><span class="t-truncate">Cron</span></div>
+                    <div class="cmd-item"><i class="ti ti-users"></i><span class="t-truncate">Profiles</span></div>
+                    <div class="cmd-item"><i class="ti ti-cpu"></i><span class="t-truncate">Agents</span></div>
+                    <div class="cmd-item"><i class="ti ti-chart-dots-3"></i><span class="t-truncate">Starmap</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Projects</div>
+                    <div class="cmd-item"><i class="codicon codicon-folder-opened"></i><span class="t-truncate">Open folder as project…</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">O</span></span></div>
+                    <div class="cmd-item"><i class="codicon codicon-folder-library"></i><span class="t-truncate">hermes-android</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">↵</span></span></div>
+                    <div class="cmd-item"><i class="codicon codicon-folder-library"></i><span class="t-truncate">hermes-agent</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">↵</span></span></div>
+                    <div class="cmd-item"><i class="codicon codicon-home"></i><span class="t-truncate">No project</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">↵</span></span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Commands</div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle layout edit mode</span><span class="note note--state">off</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle status bar</span><span class="note note--state">on</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle tabs</span><span class="note note--state">on</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle terminal</span><span class="note note--state">off</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle logs</span><span class="note note--state">off</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Toggle yolo</span><span class="note note--state">off</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Command Center</div>
+                    <div class="cmd-item"><i class="ti ti-archive"></i><span class="t-truncate">Sessions</span></div>
+                    <div class="cmd-item"><i class="ti ti-activity"></i><span class="t-truncate">System</span></div>
+                    <div class="cmd-item"><i class="ti ti-chart-bar"></i><span class="t-truncate">Usage</span></div>
+                    <div class="cmd-item"><i class="ti ti-refresh"></i><span class="t-truncate">Restart gateway</span></div>
+                    <div class="cmd-item"><i class="ti ti-download"></i><span class="t-truncate">Update Hermes</span><span class="note">v0.9.2</span></div>
+                    <div class="cmd-item"><i class="ti ti-refresh"></i><span class="t-truncate">Reload window</span></div>
+                    <div class="cmd-item"><i class="codicon codicon-globe"></i><span class="t-truncate">Open browser</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">Shift</span><span class="kbd kbd--sm">L</span></span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Appearance</div>
+                    <div class="cmd-item"><i class="ti ti-palette"></i><span class="t-truncate">Change theme</span><i class="ti ti-chevron-right trail trail--first"></i></div>
+                    <div class="cmd-item"><i class="ti ti-sun"></i><span class="t-truncate">Change color mode…</span><i class="ti ti-chevron-right trail trail--first"></i></div>
+                    <div class="cmd-item"><i class="ti ti-paw"></i><span class="t-truncate">Pets</span><i class="ti ti-chevron-right trail trail--first"></i></div>
+                    <div class="cmd-item"><i class="ti ti-egg"></i><span class="t-truncate">Generate a pet</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Settings</div>
+                    <div class="cmd-item"><i class="ti ti-box"></i><span class="t-truncate">Model</span></div>
+                    <div class="cmd-item"><i class="ti ti-message-circle"></i><span class="t-truncate">Chat</span></div>
+                    <div class="cmd-item"><i class="ti ti-palette"></i><span class="t-truncate">Appearance</span></div>
+                    <div class="cmd-item"><i class="ti ti-device-desktop"></i><span class="t-truncate">Workspace</span></div>
+                    <div class="cmd-item"><i class="ti ti-lock"></i><span class="t-truncate">Safety</span></div>
+                    <div class="cmd-item"><i class="ti ti-globe"></i><span class="t-truncate">Browser</span></div>
+                    <div class="cmd-item"><i class="ti ti-brain"></i><span class="t-truncate">Memory &amp; Context</span></div>
+                    <div class="cmd-item"><i class="ti ti-microphone"></i><span class="t-truncate">Voice</span></div>
+                    <div class="cmd-item"><i class="ti ti-tool"></i><span class="t-truncate">Advanced</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Accounts</span></div>
+                    <div class="cmd-item"><i class="ti ti-key"></i><span class="t-truncate">API keys</span></div>
+                    <div class="cmd-item"><i class="ti ti-globe"></i><span class="t-truncate">Gateways</span></div>
+                    <div class="cmd-item"><i class="ti ti-key"></i><span class="t-truncate">Tools</span></div>
+                    <div class="cmd-item"><i class="ti ti-settings-2"></i><span class="t-truncate">Settings</span></div>
+                    <div class="cmd-item"><i class="ti ti-package"></i><span class="t-truncate">Plugins</span></div>
+                    <div class="cmd-item"><i class="ti ti-archive"></i><span class="t-truncate">Archived Chats</span></div>
+                    <div class="cmd-item"><i class="ti ti-info-circle"></i><span class="t-truncate">About</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Root list, typed "auth" (ranked; sessions only surface on type) ── -->
+              <div data-view="search" hidden>
+                <div class="cmd-input"><i class="ti ti-search"></i><input value="auth" aria-label="Command palette" /></div>
+                <div class="cmd-list">
+                  <div class="cmd-group"><div class="cmd-heading">Sessions</div>
+                    <div class="cmd-item is-selected"><i class="ti ti-message-circle"></i><span class="t-truncate"><mark>Auth</mark> flow for the Nous Portal loopback</span></div>
+                    <div class="cmd-item"><i class="ti ti-message-circle"></i><span class="t-truncate">Refactor gateway <mark>auth</mark> handshake</span></div>
+                    <div class="cmd-item"><i class="ti ti-message-circle"></i><span class="t-truncate">SSH remote backend setup</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Archived chats</div>
+                    <div class="cmd-item"><i class="ti ti-archive"></i><span class="t-truncate"><mark>Auth</mark> token rotation spike</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Settings fields</div>
+                    <div class="cmd-item"><i class="ti ti-globe"></i><span class="t-truncate">Remote <mark>auth</mark> mode</span><span class="note">Gateways</span></div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">O<mark>Auth</mark> callback port</span><span class="note">Providers</span></div>
+                  </div>
+                  <div class="cmd-group"><div class="cmd-heading">Settings</div>
+                    <div class="cmd-item"><i class="ti ti-bolt"></i><span class="t-truncate">Accounts</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Sub-page: Install theme (VS Code Marketplace) ── -->
+              <div data-view="themes" hidden>
+                <button class="cmd-back" type="button"><i class="ti ti-chevron-left"></i><span>Back</span><span class="sep">/</span><strong>Install theme</strong></button>
+                <div class="cmd-input"><i class="ti ti-search"></i><input placeholder="Search the VS Code Marketplace..." aria-label="Command palette" /></div>
+                <div class="cmd-list">
+                  <div role="listbox" style="padding:.25rem">
+                    <button class="res" type="button"><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">One Dark Pro</span><span class="t-truncate res__meta">binaryify · 11M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                    <button class="res" type="button"><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">GitHub Theme</span><span class="t-truncate res__meta">GitHub · 16.2M installs</span></span><span class="res__status"><i class="ti ti-check" style="color:var(--ui-green)"></i>Installed</span></button>
+                    <button class="res" type="button"><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Dracula Theme Official</span><span class="t-truncate res__meta">Dracula Theme · 7.9M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                    <button class="res" type="button"><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Catppuccin for VSCode</span><span class="t-truncate res__meta">Catppuccin · 3.1M installs</span></span><span class="res__status"><i class="ti ti-loader-2 spin"></i>Installing...</span></button>
+                    <button class="res" type="button" disabled><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Monokai Pro</span><span class="t-truncate res__meta">monokai · 3.4M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                    <button class="res" type="button" disabled><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Tokyo Night</span><span class="t-truncate res__meta">enkia · 2.4M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                    <button class="res" type="button" disabled><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Night Owl</span><span class="t-truncate res__meta">sarah.drasner · 2.1M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                    <button class="res" type="button" disabled><i class="ti ti-palette res__icon"></i><span class="col" style="min-width:0"><span class="t-truncate res__name">Ayu</span><span class="t-truncate res__meta">teabyii · 1.6M installs</span></span><span class="res__status"><i class="ti ti-download"></i>Install</span></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Sub-page: Pets (petdex gallery) ── -->
+              <div data-view="pet" hidden>
+                <button class="cmd-back" type="button"><i class="ti ti-chevron-left"></i><span>Back</span><span class="sep">/</span><strong>Pets</strong></button>
+                <div class="cmd-input"><i class="ti ti-search"></i><input placeholder="Search pets…" aria-label="Command palette" /><button class="paw-toggle" type="button" aria-label="Turn off" aria-pressed="true"><i class="ti ti-paw"></i></button></div>
+                <div class="cmd-list">
+                  <div role="listbox" style="padding:.25rem">
+                    <button class="res res--center" type="button"><span class="gen-tile"><i class="ti ti-egg"></i></span><span class="res__name">Generate a pet</span></button>
+                    <button class="res res--center is-active" type="button"><span class="pet-thumb"><i class="ti ti-paw"></i></span><span class="col" style="min-width:0"><span class="flex items-center gap-1-5"><span class="t-truncate res__name">Byte</span></span><span class="t-truncate res__meta">byte-the-cat · Installed</span></span><span class="res__status" style="margin-top:0"><i class="ti ti-check" style="font-size:.875rem;color:var(--dt-foreground)"></i></span></button>
+                    <button class="res res--center" type="button"><span class="pet-thumb"><i class="ti ti-paw"></i></span><span class="col" style="min-width:0"><span class="flex items-center gap-1-5"><span class="t-truncate res__name">Mochi</span><span class="gen-tag">Generated</span></span><span class="t-truncate res__meta">bubble-tea-otter · Installed</span></span></button>
+                    <button class="res res--center" type="button"><span class="pet-thumb"><i class="ti ti-paw"></i></span><span class="col" style="min-width:0"><span class="t-truncate res__name">Pip the Penguin</span><span class="t-truncate res__meta">pip-penguin</span></span></button>
+                    <button class="res res--center" type="button"><span class="pet-thumb"><i class="ti ti-paw"></i></span><span class="col" style="min-width:0"><span class="t-truncate res__name">Ember Fox</span><span class="t-truncate res__meta">ember-fox</span></span></button>
+                    <button class="res res--center" type="button"><span class="pet-thumb"><i class="ti ti-paw"></i></span><span class="col" style="min-width:0"><span class="t-truncate res__name">Moss Golem</span><span class="t-truncate res__meta">moss-golem</span></span></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="palette:default">Root (empty query)</button>
+        <button class="btn btn--secondary btn--sm" data-show="palette:search">Search “auth”</button>
+        <button class="btn btn--secondary btn--sm" data-show="palette:themes">Install theme</button>
+        <button class="btn btn--secondary btn--sm" data-show="palette:pet">Pets</button>
+      </nav>
+    </div>
+  </body>
+</html>

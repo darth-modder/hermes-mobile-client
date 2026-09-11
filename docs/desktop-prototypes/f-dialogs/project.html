@@ -1,0 +1,229 @@
+<!doctype html>
+<!--
+  Screen:      New project dialog (F · dialogs)
+  Replicates:  apps/desktop/src/app/chat/sidebar/project-dialog.tsx (create mode),
+               components/ui/{dialog,input,textarea,generate-button,tooltip}.tsx,
+               lib/project-idea-templates.ts (random 6 of 18 starter pills)
+  Views:       #dlg=filled | #dlg=empty | #dlg=generating
+  Measurements:
+    - DialogContent "max-w-md" → 28rem; body p-4, grid gap-3 (.75rem); radius-xl; --shadow-nous
+    - name Input: control default (px-2.5 py-1.5, 12px/16px, radius 2.5px), autofocus + select-all on open
+    - section label ("Folders", "Idea"): .6875rem medium --ui-text-tertiary; section = flex-col gap-1.5
+    - empty folders line: .75rem --ui-text-quaternary
+    - folder row: flex gap-2, rounded-md (2px), bg --ui-control-hover-background, px-2 py-1, .75rem;
+      codicon folder .75rem tertiary; path truncates (title = full path);
+      first row gets "primary" badge (.625rem uppercase quaternary);
+      remove = ghost icon button size-5 (1.25rem), codicon close .75rem, quaternary → foreground on hover
+    - "Add folder": ghost size sm (px-2.5 py-1, px-2 with icon), self-start, codicon add .75rem
+    - Idea Textarea: min-h-20 (5rem), pr-8, .8125rem; GenerateButton absolute top-1 right-1, ghost icon-xs
+      (24px), codicon sparkle 12px, muted/80
+    - template pills: rounded-full, 1px --ui-stroke-tertiary, px-2 py-0.5, .6875rem --ui-text-secondary, gap-1,
+      emoji + label; hover: stroke-secondary border, control-hover fill, foreground.
+      Shuffle = ghost size-5 icon button, codicon refresh .75rem, quaternary
+    - footer: Cancel ghost + Create default
+  Behaviour:
+    - Create is disabled until the name is non-empty AND at least one folder is added
+      (a project owns sessions by folder prefix, so a folder-less project is not allowed).
+    - "Add folder" opens the native directory picker; duplicates are ignored; first folder is primary.
+    - Sparkle: generates IDEA.md text from the name (one-shot, not cancellable, so no Stop square) → the button
+      disables (50% opacity, no hover tip) and the sparkle spins; its aria-label becomes "Generating…" until it
+      resolves. Tips (Radix, side top, 6px offset) read "Generate idea", "Remove", "Shuffle templates".
+      Pills prefill the idea; Shuffle re-rolls 6 random pills.
+    - Enter in the name field submits; Esc in the name field closes. Clicking the backdrop does NOT close
+      (onInteractOutside prevented). While submitting everything disables; failure = toast "Could not create project".
+    - Same component also renders "Rename project" (name only, Save) and "Add folder" (single picker button).
+  Mobile:      Projects are at parity on mobile (docs/PARITY.md, Management row, M10); the native folder picker is
+               machine-bound (local filesystem is absent by design).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>New project · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; }
+      .p-sec { display: flex; flex-direction: column; gap: 0.375rem; }
+      .p-label { font-size: 0.6875rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .p-empty { font-size: 0.75rem; color: var(--ui-text-quaternary); }
+      .folders { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+      .folder { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.25rem 0.5rem; background: var(--ui-control-hover-background); font-size: 0.75rem; }
+      .folder > .codicon { flex-shrink: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .folder__path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .folder__badge { flex-shrink: 0; font-size: 0.625rem; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .ib5 { width: 1.25rem; height: 1.25rem; padding: 0; border-radius: 4px; color: var(--ui-text-quaternary); }
+      .ib5:hover { color: var(--dt-foreground); }
+      .ib5 .codicon { font-size: 0.75rem; }
+      .idea { position: relative; }
+      .idea textarea { min-height: 5rem; padding-right: 2rem; font-size: 0.8125rem; line-height: 1.25rem; }
+      .gen { position: absolute; top: 0.25rem; right: 0.25rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .gen:hover { color: var(--dt-foreground); }
+      .gen .codicon { font-size: 12px; }
+      .pills { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+      .pill { display: flex; align-items: center; gap: 0.25rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-full); padding: 0.125rem 0.5rem; background: transparent; color: var(--ui-text-secondary); font-size: 0.6875rem; cursor: pointer; transition: color 150ms, background-color 150ms, border-color 150ms; }
+      .pill:hover { border-color: var(--ui-stroke-secondary); background: var(--ui-control-hover-background); color: var(--dt-foreground); }
+      .pill:disabled { opacity: 0.5; }
+      .self-start { align-self: flex-start; }
+      /* Tips portal out of the dialog in the app (Radix default side "top", sideOffset 6), so the prototype
+         lets this one dialog overflow instead of clipping the tip. */
+      .dialog--tips { overflow: visible; }
+      .tip-anchor { position: relative; display: inline-flex; }
+      .tip--top { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+      .btn .codicon.i-12 { font-size: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="theme">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Port the nous theme tokens to the mobile app. Same seeds, same mix knobs.</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">apps/desktop/src/themes/presets.ts</span></div>
+                    <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">src/theme/tokens.ts</span><span class="add">+112</span><span class="del">−9</span></div>
+                  </div>
+                  <div class="msg-ai"><p>The seeds and per-mode mix knobs now match <span class="code-inline">applyTheme()</span>. Colour mixing happens once at startup, since React Native has no <span class="code-inline">color-mix()</span>.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Filled: name + two folders + idea ── -->
+            <div data-view="filled">
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New project</h2>
+                  <p class="dialog__desc">Name a workspace and add one or more folders.</p>
+                </div>
+                <input class="control is-focused" value="Hermes Android" placeholder="e.g. Skunkworks" />
+                <div class="p-sec">
+                  <span class="p-label">Folders</span>
+                  <ul class="folders">
+                    <li class="folder"><i class="codicon codicon-folder"></i><span class="folder__path" title="D:\Stuff\Code\git\hermes-android">D:\Stuff\Code\git\hermes-android</span><span class="folder__badge">primary</span><button class="btn btn--ghost ib5" aria-label="Remove"><i class="codicon codicon-close"></i></button></li>
+                    <li class="folder"><i class="codicon codicon-folder"></i><span class="folder__path" title="D:\Stuff\Code\git\hermes-agent\apps\desktop">D:\Stuff\Code\git\hermes-agent\apps\desktop</span><button class="btn btn--ghost ib5" aria-label="Remove"><i class="codicon codicon-close"></i></button></li>
+                  </ul>
+                  <button type="button" class="btn btn--ghost btn--sm self-start"><i class="codicon codicon-add i-12"></i>Add folder</button>
+                </div>
+                <div class="p-sec">
+                  <span class="p-label">Idea</span>
+                  <div class="idea">
+                    <textarea class="control">A phone client for Hermes that dials a desktop gateway.
+
+- Pair with a QR code, stream chat, approve tool calls
+- Near parity for everything that is not machine-bound</textarea>
+                    <button class="btn btn--ghost btn--icon-xs gen" aria-label="Generate idea"><i class="codicon codicon-sparkle"></i></button>
+                  </div>
+                  <div class="pills">
+                    <button class="pill" type="button"><span aria-hidden="true">🎮</span>Game jam</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🧪</span>Research log</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🛰️</span>API wrapper</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🌱</span>Habit tracker</button>
+                    <button class="pill" type="button"><span aria-hidden="true">📊</span>Data viz</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🧠</span>Flashcards</button>
+                    <button class="btn btn--ghost ib5" aria-label="Shuffle templates"><i class="codicon codicon-refresh"></i></button>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Create</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Empty: just opened (Create disabled) + Shuffle tip on hover ── -->
+            <div data-view="empty" hidden>
+              <div class="dialog dialog--md dialog--tips" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New project</h2>
+                  <p class="dialog__desc">Name a workspace and add one or more folders.</p>
+                </div>
+                <input class="control is-focused" value="" placeholder="e.g. Skunkworks" />
+                <div class="p-sec">
+                  <span class="p-label">Folders</span>
+                  <span class="p-empty">No folders added yet.</span>
+                  <button type="button" class="btn btn--ghost btn--sm self-start"><i class="codicon codicon-add i-12"></i>Add folder</button>
+                </div>
+                <div class="p-sec">
+                  <span class="p-label">Idea</span>
+                  <div class="idea">
+                    <textarea class="control" placeholder="What's this project about? (saved to IDEA.md)"></textarea>
+                    <button class="btn btn--ghost btn--icon-xs gen" aria-label="Generate idea"><i class="codicon codicon-sparkle"></i></button>
+                  </div>
+                  <div class="pills" style="position:relative">
+                    <button class="pill" type="button"><span aria-hidden="true">📚</span>Novel</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🤖</span>Discord bot</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🍳</span>Recipe box</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🗺️</span>Trip planner</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🎵</span>Music toy</button>
+                    <button class="pill" type="button"><span aria-hidden="true">✍️</span>Screenplay</button>
+                    <span class="tip-anchor"><button class="btn btn--ghost ib5" aria-label="Shuffle templates" style="background:var(--chrome-action-hover);color:var(--dt-foreground)"><i class="codicon codicon-refresh"></i></button><span class="tip tip--top">Shuffle templates</span></span>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Create</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Generating: sparkle spins, tip "Generating…" ── -->
+            <div data-view="generating" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New project</h2>
+                  <p class="dialog__desc">Name a workspace and add one or more folders.</p>
+                </div>
+                <input class="control" value="Skunkworks" placeholder="e.g. Skunkworks" />
+                <div class="p-sec">
+                  <span class="p-label">Folders</span>
+                  <ul class="folders">
+                    <li class="folder"><i class="codicon codicon-folder"></i><span class="folder__path" title="C:\Users\dev\Projects\skunkworks">C:\Users\dev\Projects\skunkworks</span><span class="folder__badge">primary</span><button class="btn btn--ghost ib5" aria-label="Remove"><i class="codicon codicon-close"></i></button></li>
+                  </ul>
+                  <button type="button" class="btn btn--ghost btn--sm self-start"><i class="codicon codicon-add i-12"></i>Add folder</button>
+                </div>
+                <div class="p-sec">
+                  <span class="p-label">Idea</span>
+                  <div class="idea">
+                    <textarea class="control is-focused" placeholder="What's this project about? (saved to IDEA.md)"></textarea>
+                    <button class="btn btn--ghost btn--icon-xs gen" aria-label="Generating…" disabled><i class="codicon codicon-sparkle codicon-modifier-spin"></i></button>
+                  </div>
+                  <div class="pills">
+                    <button class="pill" type="button"><span aria-hidden="true">🎨</span>Generative art</button>
+                    <button class="pill" type="button"><span aria-hidden="true">💸</span>Budget tracker</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🧩</span>Puzzle maker</button>
+                    <button class="pill" type="button"><span aria-hidden="true">📝</span>Digital garden</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🏋️</span>Workout plan</button>
+                    <button class="pill" type="button"><span aria-hidden="true">🔭</span>Learn-by-building</button>
+                    <button class="btn btn--ghost ib5" aria-label="Shuffle templates"><i class="codicon codicon-refresh"></i></button>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Create</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:filled">Filled</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:empty">Empty (Create disabled)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:generating">Generating idea</button>
+      </nav>
+    </div>
+  </body>
+</html>

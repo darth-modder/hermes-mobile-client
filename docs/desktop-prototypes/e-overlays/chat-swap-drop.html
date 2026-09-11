@@ -1,0 +1,103 @@
+<!doctype html>
+<!--
+  Screen:      Chat swap + file drop (E · overlays inside the chat pane)
+  Replicates:  apps/desktop/src/app/chat/chat-swap-overlay.tsx (ChatSwapOverlay, ChatSyncBadge), app/chat/chat-drop-overlay.tsx,
+               components/ui/{drop-affordance,glyph-spinner}.tsx, i18n/en.ts (composer.wakingProfile/dropFiles/dropSession, desktop.hydrationSyncing)
+  Views:       #chatfx=swap | sync | drop | drop-session
+  Measurements:
+    - both cover the chat pane only (absolute inset-0 of the session view), never the sidebar or titlebar
+    - swap: centred pill, no radius, px-4 py-2, bg card/92%, shadow-composer, mono 13px foreground, gap-2;
+      braille spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏, 80ms) in a 12px left-aligned box, --ui-accent
+    - sync badge: top-2 right-3, rounded-full, 1px border/50, bg card/92%, px-2 py-0.5, mono 11px muted, shadow-composer, same spinner
+    - drop: dashed sheet inset-2 (8px), rounded-2xl (4.8px), 2px dashed composer-ring/55%, bg card/55%, 2px backdrop blur;
+      centred label 11px/500 uppercase tracking-wide foreground
+  Behaviour:
+    - z: swap overlay z-50, sync badge z-30, drop overlay z-40, all local to the chat pane (not on the global ladder); all pointer-events-none
+    - swap shows while the live gateway re-targets another profile's backend (lazily spawned); fades in/out 150ms and keeps the last
+      profile name through the fade; the spinner pauses once the swap is done
+    - sync badge is the quiet paint-first variant: the stored transcript is already usable while the profile gate catches up
+    - drop shows while files (attach) or a sidebar session (link this chat) are dragged over the chat; 150ms fade; the drop lands on the real
+      element underneath. The same dashed sheet language is used by layout zone targets
+  Mobile:      Profiles and attachments are at parity (docs/PARITY.md: Chat, Settings); drag-and-drop itself has no mobile equivalent
+               (attachments come from the picker).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat swap and drop · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .swap { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; pointer-events: none; transition: opacity 150ms ease-out; }
+      .swap__pill { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: color-mix(in srgb, var(--dt-card) 92%, transparent); box-shadow: var(--shadow-composer); font-family: var(--dt-font-mono); font-size: 0.8125rem; color: var(--dt-foreground); }
+      .braille { display: inline-flex; width: 0.75rem; justify-content: flex-start; color: var(--ui-accent); }
+      .sync { position: absolute; right: 0.75rem; top: 0.5rem; z-index: 30; display: flex; align-items: center; gap: 0.375rem; pointer-events: none;
+        border: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent); border-radius: var(--radius-full); padding: 0.125rem 0.5rem;
+        background: color-mix(in srgb, var(--dt-card) 92%, transparent); box-shadow: var(--shadow-composer); font-family: var(--dt-font-mono); font-size: 0.6875rem; color: var(--dt-muted-foreground); }
+      .drop { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; pointer-events: none; transition: opacity 150ms ease-out; }
+      .drop__sheet { position: absolute; inset: 0.5rem; border: 2px dashed color-mix(in srgb, var(--dt-composer-ring) 55%, transparent); border-radius: var(--radius-2xl);
+        background: color-mix(in srgb, var(--dt-card) 55%, transparent); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+      .drop__label { position: relative; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.025em; color: var(--dt-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="theme">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Yesterday 16:05</div>
+              <div class="msg-user">Map the nous theme tokens to the React Native theme object. Keep the radius scalar at 0.2.</div>
+              <div class="turn">
+                <div class="scaffold">
+                  <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">docs/desktop-prototypes/assets/tokens.css</span></div>
+                  <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">src/theme/tokens.ts</span><span class="add">+112</span><span class="del">−40</span></div>
+                </div>
+                <div class="msg-ai"><p>Every <span class="code-inline">--ui-*</span> surface now resolves through one <span class="code-inline">theme.colors</span> map, and radii multiply the 0.2 scalar exactly like the desktop.</p><p>Dark mode reuses the same mix knobs, so the chrome, sidebar and card tints match within a few percent.</p></div>
+              </div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+
+            <section data-views="chatfx">
+              <div data-view="swap" class="swap" aria-hidden="true">
+                <div class="swap__pill"><span class="braille" data-braille>⠋</span>Waking up work…</div>
+              </div>
+              <div data-view="sync" hidden>
+                <div class="sync" aria-live="polite"><span class="braille" data-braille>⠋</span>Syncing work…</div>
+              </div>
+              <div data-view="drop" class="drop" aria-hidden="true" hidden>
+                <div class="drop__sheet"></div>
+                <span class="drop__label">Drop files to attach</span>
+              </div>
+              <div data-view="drop-session" class="drop" aria-hidden="true" hidden>
+                <div class="drop__sheet"></div>
+                <span class="drop__label">Drop to link this chat</span>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="chatfx:swap">Profile swap</button>
+        <button class="btn btn--secondary btn--sm" data-show="chatfx:sync">Sync badge</button>
+        <button class="btn btn--secondary btn--sm" data-show="chatfx:drop">Drop files</button>
+        <button class="btn btn--secondary btn--sm" data-show="chatfx:drop-session">Drop session</button>
+      </nav>
+    </div>
+    <script>
+      // Prototype-only: GlyphSpinner "braille" frames at 80ms.
+      ;(function () {
+        var F = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        var i = 0
+        setInterval(function () {
+          i = (i + 1) % F.length
+          document.querySelectorAll('[data-braille]').forEach(function (el) { el.textContent = F[i] })
+        }, 80)
+      })()
+    </script>
+  </body>
+</html>

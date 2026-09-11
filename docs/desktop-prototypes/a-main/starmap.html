@@ -1,0 +1,511 @@
+<!doctype html>
+<!--
+  Screen:      Starmap / Memory Graph (A · overlay screen)   route `/starmap` (also `/journey`)
+  Replicates:  apps/desktop/src/app/starmap/index.tsx (StarmapView), star-map.tsx (StarMap: canvas, legend, reveal label),
+               timeline.tsx (constellation scrubber), share-controls.tsx (import / export dialog),
+               node-context-menu.tsx (right-click menu), render.ts (drawScene, drawScramble), color.ts (palette),
+               constants.ts, geometry.ts (nodeRadius, recencyInk, fitViewport), simulation.ts (ring layout), time-axis.ts
+  Views:       #sm=map (idle, fully built) | #sm=focus (node hovered/selected) | #sm=playing (reveal 0.58) | #sm=empty | #sm=loading
+               #smdlg=menu (node right-click) | #smdlg=share (Import / export map)   #smimport=on ("Back to my map")
+               #smfilter=on (All / Used / Learned — strings only, see Behaviour)
+  Measurements:
+    - Panel with no header; the map fills the card (px-5 pb-4, pt titlebar/2-0.4375rem)
+    - canvas drawn here as SVG at the card's inner size (1084×678); the real map is a DPR-aware <canvas>
+    - disk: TILT 1 (circles, no squash); rings = RING_CORE + i·RING_BAND in world units, fit zoom k≈0.7
+      (fitViewport: (h − 2·80) / ((340+30)·2)), centre biased slightly low; 5 rings here
+    - ring stroke: light fg α .06 width 2 / dark α .10 width 1.5; band wash of the theme primary
+      (light: inner edge α .03 fading by .27 of the band; dark: outer rim α .01)
+    - nodes: skill = lit orb, radius (3 + √useCount·.55 [+.8 pinned]) · k · ageScale; memory = diamond radius 4.4 · k;
+      ageScale .34→1 by recency; alpha = recencyInk (old .42 → mid .74 → new .95)
+    - links: dashed [1.5,1.5] width .5, α = recencyInk · (light .18 / dark .24); lit links solid 1.5 at full ink
+    - ring date labels: 10px sans centred on the ring top, bg box (label width + 6) × 13, ink α .2 (1 when lit)
+    - empty core: katakana/digit "scramble" field in the theme primary (light α .3 / dark α .22) clipped to
+      1.25 × the core ring, over a background wash (α .93 → .88 → 0)
+    - tooltip: badge row 9px (date sans, tags mono) α .7 + use count α .5; title chip inverted 600 11px, pad 6×4,
+      line 16px; neighbour labels 11px chips (light white/.85, dark black/.72), ink α .85
+    - timeline: top-6 (1.5rem), centred, w-28rem; play button size-5 (codicon triangle-right .95rem / debug-pause .8rem);
+      track h-7 with a dashed fg/5 midline, stars 2–4px (dim α .22, lit twinkle), ring ticks size-1 primary
+      (α .3 → 1 once passed), playhead w-0.5 fg
+    - legend bottom-2 left-2, gap-1, .62rem muted: skill dot size-2 primary/80, memory diamond size-2 rotated 45°,
+      ".58rem muted/65 core = oldest · outer = newer", reveal date fg/75 tabular
+    - share: bottom-2 right-2, ghost icon Button (36px) with upload icon 14px, muted
+    - node menu: min-w-36 rounded-lg border stroke-secondary, elevated 96% + blur, p-1; header .68rem muted; rows text-xs px-2 py-1
+    - share dialog max-w-md: textarea h-24 rounded-md bg fg/5 p-2.5 pr-9 mono xs break-all muted/90; Load button full width
+  Behaviour:
+    - drag pans, wheel zooms about the cursor (0.3–5×), double-click / double-tap / smart-zoom resets the view
+    - hover highlights a node, its neighbours and the links between them (others dim to .16 / .025) and shows the
+      tooltip; click toggles a sticky selection; clicking a ring date locks that band (independent of node selection)
+    - Space or the play button sweeps reveal 0→1 over 15s with a relaxed smoothstep; rings grow out from their inner
+      neighbour, stars "warp" in from 32% of their radius; the camera steps out one ring at a time (Spore-style);
+      scrubbing snaps instead of easing; the core scramble animates continuously (paused when the window is blurred)
+    - right-click a node: Edit skill…/memory… (CodeEditor dialog), Archive skill / Delete memory (confirm)
+    - share code: the textarea is pre-filled with this map's code; Load is enabled only for a different code;
+      a loaded map shows "Back to my map" left of the share button
+    - All / Used / Learned: en.ts defines starmap.filterAll/filterUsed/filterLearned (and viewGraph), but no component
+      in apps/desktop/src/app/starmap renders them at b973068 — shown here only as the #smfilter toggle
+  Mobile:      Starmap is thinner on mobile (docs/PARITY.md): learned skills and memories are managed from the skills
+               and memory settings; there is no graph view.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Starmap · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .panel { padding-bottom: 1rem; }
+      .pn-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .pn-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .pn-empty__icon { font-size: 1.25rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .pn-empty__desc { max-width: 24rem; margin: 0; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pn-loader { display: grid; flex: 1; place-items: center; }
+      .pn-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; border-top-color: color-mix(in srgb, var(--dt-primary) 70%, transparent); }
+
+      /* Palette (color.ts computePalette) expressed in tokens */
+      .sm-wrap {
+        --sm-base: var(--black);
+        --sm-inv: var(--white);
+        --sm-skill: color-mix(in srgb, var(--theme-primary) 82%, var(--black));        /* mix(primary, base, .18) */
+        --sm-memory: color-mix(in srgb, var(--ui-orange) 55%, var(--dt-background));   /* complementary of primary, 45% to bg */
+        --sm-band: var(--theme-primary);
+        --sm-chip: color-mix(in srgb, var(--white) 85%, transparent);
+        --sm-ring-a: 0.06; --sm-ring-w: 2;
+        --sm-line-a: 0.18;
+        --sm-band-a: 0.03;
+        --sm-scr-a: 0.3;
+        position: relative; flex: 1; min-height: 0; overflow: hidden; color: var(--dt-foreground);
+      }
+      :root.dark .sm-wrap {
+        --sm-base: var(--white);
+        --sm-inv: var(--black);
+        --sm-skill: color-mix(in srgb, var(--theme-primary) 88%, var(--white));
+        --sm-band: color-mix(in srgb, var(--theme-primary) 70%, var(--white));
+        --sm-chip: color-mix(in srgb, var(--black) 72%, transparent);
+        --sm-ring-a: 0.1; --sm-ring-w: 1.5;
+        --sm-line-a: 0.24;
+        --sm-band-a: 0.01;
+        --sm-scr-a: 0.22;
+      }
+      .sm-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab; }
+      .sm-ring { fill: none; stroke: var(--sm-base); stroke-opacity: var(--sm-ring-a); stroke-width: var(--sm-ring-w); }
+      .sm-ring.is-lit { stroke-opacity: 0.08; }
+      .sm-links { stroke: var(--sm-base); opacity: var(--sm-line-a); }
+      .sm-link { stroke-width: 0.5; stroke-dasharray: 1.5 1.5; fill: none; }
+      .sm-link-lit { stroke: var(--sm-base); stroke-width: 1.5; fill: none; }
+      .sm-memory { fill: var(--sm-memory); }
+      .sm-hi { fill: var(--sm-base); }
+      .sm-sel { fill: none; stroke: var(--sm-base); stroke-width: 1.4; }
+      .sm-label-bg { fill: var(--dt-background); }
+      .sm-label { fill: var(--sm-base); font: 10px var(--dt-font-sans); text-anchor: middle; }
+      .sm-scr { fill: var(--theme-primary); font-family: var(--font-terminal), 'Hiragino Sans', 'Noto Sans JP', monospace; text-anchor: middle; dominant-baseline: middle; }
+      .sm-scr-g { opacity: var(--sm-scr-a); }
+      .sm-tip-badge { fill: var(--sm-base); font: 9px var(--dt-font-sans); dominant-baseline: middle; }
+      .sm-tip-badge.mono { font-family: var(--dt-font-mono); }
+      .sm-tip-title-bg { fill: var(--sm-base); }
+      .sm-tip-title { fill: var(--sm-inv); font: 600 11px var(--dt-font-sans); dominant-baseline: middle; }
+      .sm-chip { fill: var(--sm-chip); }
+      .sm-chip-t { fill: var(--sm-base); fill-opacity: 0.85; font: 11px var(--dt-font-sans); text-anchor: middle; }
+
+      /* Timeline (timeline.tsx) */
+      .sm-tl-host { position: absolute; inset: 1.5rem 0 auto; z-index: 20; display: flex; justify-content: center; padding: 0 3rem; pointer-events: none; }
+      .sm-tl { display: flex; align-items: center; gap: 0.75rem; width: 28rem; max-width: 100%; pointer-events: auto; }
+      .sm-play { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 0; padding: 0; background: transparent; color: color-mix(in srgb, var(--dt-foreground) 75%, transparent); cursor: pointer; transition: color 150ms; }
+      .sm-play:hover { color: var(--dt-foreground); }
+      .sm-track { position: relative; flex: 1; min-width: 0; height: 1.75rem; cursor: pointer; }
+      .sm-track__mid { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed color-mix(in srgb, var(--dt-foreground) 5%, transparent); transform: translateY(-50%); pointer-events: none; }
+      .sm-track__layer { position: absolute; inset: 0; }
+      .sm-track__lit { clip-path: inset(0 calc((1 - var(--starmap-reveal, 1)) * 100%) 0 0); }
+      .sm-star { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
+      .sm-track__lit .sm-star { animation: starmap-twinkle var(--d, 3s) ease-in-out var(--dl, 0s) infinite; }
+      @keyframes starmap-twinkle { 0%, 100% { opacity: var(--o, 1); } 50% { opacity: calc(var(--o, 1) * 0.35); } }
+      .sm-tick { position: absolute; top: 50%; width: 0.25rem; height: 0.25rem; border-radius: 50%; background: var(--theme-primary); transform: translate(-50%, -50%); opacity: 0.3; }
+      .sm-tick.is-on { opacity: 1; }
+      .sm-head { position: absolute; top: 0; bottom: 0; left: calc(var(--starmap-reveal, 1) * 100%); width: 0.125rem; background: var(--dt-foreground); transform: translateX(-50%); pointer-events: none; }
+
+      /* Legend + share */
+      .sm-legend { position: absolute; bottom: 0.5rem; left: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.62rem; color: var(--dt-muted-foreground); pointer-events: none; }
+      .sm-legend span { display: flex; align-items: center; gap: 0.375rem; }
+      .sm-sw-skill { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: color-mix(in srgb, var(--theme-primary) 80%, transparent); }
+      .sm-sw-mem { display: inline-block; width: 0.5rem; height: 0.5rem; background: var(--sm-memory); transform: rotate(45deg); }
+      .sm-legend .note { font-size: 0.58rem; color: color-mix(in srgb, var(--dt-muted-foreground) 65%, transparent); }
+      .sm-legend .reveal { font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--dt-foreground) 75%, transparent); }
+      .sm-share { position: absolute; right: 0.5rem; bottom: 0.5rem; z-index: 20; display: flex; align-items: center; gap: 0.25rem; }
+      .sm-share .btn--ghost { color: var(--dt-muted-foreground); }
+      .sm-share .btn--ghost:hover { color: var(--dt-foreground); }
+      .sm-filter { position: absolute; top: 1.5rem; left: 0.5rem; z-index: 20; }
+      .sm-code { position: relative; }
+      .sm-code textarea { display: block; width: 100%; height: 6rem; resize: none; border: 0; border-radius: var(--radius-md); padding: 0.625rem 2.25rem 0.625rem 0.625rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1.625; word-break: break-all; color: color-mix(in srgb, var(--dt-muted-foreground) 90%, transparent); outline: none; }
+      .sm-code .btn { position: absolute; top: 0.375rem; right: 0.375rem; height: 1.25rem; padding: 0 0.25rem; }
+      .sm-menu__head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.25rem 0.5rem; font-size: 0.68rem; color: var(--dt-muted-foreground); }
+      .sm-menu .menu__item.is-danger:hover { background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event and raise the sign-in prompt.</p></div></div></div>
+          </div>
+
+          <!-- ═══ Starmap overlay (Panel, no header: the map owns its chrome) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close memory graph"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <section data-views="sm" class="panel">
+                  <!-- idle: reveal 1 (whole map) -->
+                  <div data-view="map" class="sm-wrap" data-starmap data-reveal="1" data-k="0.7">
+                    <svg class="sm-svg" viewBox="0 0 1084 678" preserveAspectRatio="xMidYMid meet" aria-label="Memory graph"></svg>
+                    <div class="sm-tl-host">
+                      <div class="sm-tl">
+                        <button class="sm-play" aria-label="Play timeline"><i class="codicon codicon-triangle-right" style="font-size:.95rem"></i></button>
+                        <div class="sm-track" role="slider" aria-label="Timeline scrubber" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" style="--starmap-reveal:1">
+                          <div class="sm-track__mid"></div>
+                          <div class="sm-track__layer sm-track__dim"></div>
+                          <div class="sm-track__layer sm-track__lit"></div>
+                          <div class="sm-track__layer sm-track__ticks"></div>
+                          <div class="sm-head"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <section data-views="smfilter">
+                      <div data-view="off"></div>
+                      <div data-view="on" hidden><div class="sm-filter seg"><button class="seg__opt is-active">All</button><button class="seg__opt">Used</button><button class="seg__opt">Learned</button></div></div>
+                    </section>
+                    <div class="sm-share">
+                      <section data-views="smimport"><div data-view="off"></div><div data-view="on" hidden><button class="btn btn--text btn--xs" style="padding:0 .25rem">Back to my map</button></div></section>
+                      <button class="btn btn--ghost btn--icon" aria-label="Import / export map" title="Import / export map" data-show="smdlg:share"><i class="ti ti-upload" style="font-size:.875rem"></i></button>
+                    </div>
+                    <div class="sm-legend">
+                      <span><span class="sm-sw-skill"></span> skill</span>
+                      <span><span class="sm-sw-mem"></span> memory</span>
+                      <span class="note">core = oldest · outer = newer</span>
+                      <span class="reveal">Sep 11, 2026</span>
+                    </div>
+                  </div>
+
+                  <!-- focus: hovered / selected skill with its neighbourhood lit -->
+                  <div data-view="focus" class="sm-wrap" data-starmap data-reveal="1" data-k="0.7" data-focus="1" hidden>
+                    <svg class="sm-svg" viewBox="0 0 1084 678" preserveAspectRatio="xMidYMid meet" aria-label="Memory graph"></svg>
+                    <div class="sm-tl-host">
+                      <div class="sm-tl">
+                        <button class="sm-play" aria-label="Play timeline"><i class="codicon codicon-triangle-right" style="font-size:.95rem"></i></button>
+                        <div class="sm-track" role="slider" aria-label="Timeline scrubber" style="--starmap-reveal:1">
+                          <div class="sm-track__mid"></div><div class="sm-track__layer sm-track__dim"></div><div class="sm-track__layer sm-track__lit"></div><div class="sm-track__layer sm-track__ticks"></div><div class="sm-head"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="sm-share"><button class="btn btn--ghost btn--icon" aria-label="Import / export map" data-show="smdlg:share"><i class="ti ti-upload" style="font-size:.875rem"></i></button></div>
+                    <div class="sm-legend">
+                      <span><span class="sm-sw-skill"></span> skill</span>
+                      <span><span class="sm-sw-mem"></span> memory</span>
+                      <span class="note">core = oldest · outer = newer</span>
+                      <span class="reveal">Sep 11, 2026</span>
+                    </div>
+                  </div>
+
+                  <!-- playing: reveal 0.58, camera stepped in to the leading ring -->
+                  <div data-view="playing" class="sm-wrap" data-starmap data-reveal="0.58" data-k="0.79" hidden>
+                    <svg class="sm-svg" viewBox="0 0 1084 678" preserveAspectRatio="xMidYMid meet" aria-label="Memory graph"></svg>
+                    <div class="sm-tl-host">
+                      <div class="sm-tl">
+                        <button class="sm-play" aria-label="Pause"><i class="codicon codicon-debug-pause" style="font-size:.8rem"></i></button>
+                        <div class="sm-track" role="slider" aria-label="Timeline scrubber" aria-valuenow="58" style="--starmap-reveal:0.58">
+                          <div class="sm-track__mid"></div><div class="sm-track__layer sm-track__dim"></div><div class="sm-track__layer sm-track__lit"></div><div class="sm-track__layer sm-track__ticks"></div><div class="sm-head"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="sm-share"><button class="btn btn--ghost btn--icon" aria-label="Import / export map"><i class="ti ti-upload" style="font-size:.875rem"></i></button></div>
+                    <div class="sm-legend">
+                      <span><span class="sm-sw-skill"></span> skill</span>
+                      <span><span class="sm-sw-mem"></span> memory</span>
+                      <span class="note">core = oldest · outer = newer</span>
+                      <span class="reveal">Jul 24, 2026</span>
+                    </div>
+                  </div>
+
+                  <div data-view="empty" class="pn-empty" hidden>
+                    <div class="pn-empty__inner">
+                      <i class="codicon codicon-lightbulb pn-empty__icon"></i>
+                      <p class="pn-empty__title">Nothing learned yet</p>
+                      <p class="pn-empty__desc">As Hermes builds skills and memories for your work, they appear here.</p>
+                    </div>
+                  </div>
+
+                  <div data-view="loading" class="pn-loader" role="status" aria-label="Loading…" hidden><span class="loader"></span></div>
+                </section>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Node context menu + share dialog ═══ -->
+          <section data-views="smdlg">
+            <div data-view="none"></div>
+            <div data-view="menu" hidden>
+              <div class="menu sm-menu" id="sm-node-menu" style="min-width:9rem;left:640px;top:300px">
+                <div class="sm-menu__head">docker-compose-debugging</div>
+                <button class="menu__item" data-show="smdlg:none">Edit skill…</button>
+                <button class="menu__item is-danger" data-show="smdlg:none">Archive skill</button>
+              </div>
+            </div>
+            <div data-view="share" hidden>
+              <div class="scrim" data-show="smdlg:none"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" data-show="smdlg:none"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Import / export map</h2>
+                  <p class="dialog__desc">Copy the code to share this map, or paste one to load. It only includes the layout, not your memory or skill text.</p>
+                </div>
+                <div class="sm-code">
+                  <textarea aria-label="Import / export map" spellcheck="false" placeholder="Paste a map code…">HSM1.eJxNkMtuwjAQRX8FzZoFDiEPdl200EqoUqVuqi6MPSQWjh05doBW_HsnoRRlNXPPnTsP_4DS0VOP4F3XoZfQA2dXk8bIxUMXf0M9bRDNm5VkfqHmW1MLdY47FjNRCXz6bEaUWJ1fhqjwc1tvkYcQzM3bVljh5tDZNnRDlkwaXS0cHS0PU2XtNXv2DnjIqJb9tW0B0Rro_aAufALoCcdiEaUdpY3hB9fJ4ZPr0lf8I7qKQvKmfp7VkJzrxfT8PM1u8f52n6FJpBC_c3nqjNnBtaV7ofWxuMWPDznIoPo6I2gd6J4YcGWsPpTWQnxs7O3kMfdjIH11vRL2d2Zst4Jxl1QzNCOgHjqUYyfFlCN7T6gRMnzhzmr8LS6X3xW6nW8</textarea>
+                  <button class="btn btn--ghost" aria-label="Copy map code"><i class="ti ti-copy i-xs"></i></button>
+                </div>
+                <button class="btn btn--default is-disabled" style="width:100%">Load</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="sm:map">Map</button>
+        <button class="btn btn--secondary btn--sm" data-show="sm:focus">Node focused</button>
+        <button class="btn btn--secondary btn--sm" data-show="sm:playing">Playing (58%)</button>
+        <button class="btn btn--secondary btn--sm" data-show="sm:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="sm:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="smdlg:menu">Node menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="smdlg:share">Share dialog</button>
+        <button class="btn btn--secondary btn--sm" data-show="smdlg:none">No dialog</button>
+        <button class="btn btn--secondary btn--sm" data-show="smimport:on">Imported map</button>
+        <button class="btn btn--secondary btn--sm" data-show="smimport:off">Own map</button>
+        <button class="btn btn--secondary btn--sm" data-show="smfilter:on">Filter strings</button>
+        <button class="btn btn--secondary btn--sm" data-show="smfilter:off">No filter</button>
+      </nav>
+    </div>
+
+    <script>
+      /*
+       * Draws the star map into every [data-starmap] as SVG. Deterministic (seeded), so every
+       * instance shows the same graph. Mirrors render.ts: bands → rings → links → nodes → date
+       * labels → tooltip/neighbour labels, plus the empty-core scramble (under the scene when a
+       * node is focused, over it otherwise). Colours are CSS custom properties only.
+       */
+      ;(function () {
+        var W = 1084, H = 678, CX = 542, CY = 356
+        var CORE = 75, BAND = 66.25, K_REST = 0.7
+        var LABELS = ['May 2026', 'Jun 2026', 'Jul 2026', 'Aug 2026', 'Sep 2026']
+        var COUNTS = [5, 8, 11, 14, 18]
+        var RATIO = [0.06, 0.295, 0.53, 0.765, 1]
+        var SKILLS = ['github-pr-workflow', 'systematic-debugging', 'release-notes', 'android-emulator', 'sqlite-fts', 'playwright-e2e', 'expo-router', 'gradle-cache', 'nous-theme-port', 'cron-authoring', 'webhook-relay', 'ssh-remote-setup', 'streaming-throttle', 'markdown-lowlight', 'windows-path-quirks', 'git-worktrees', 'tailwind-v4', 'react-query', 'eas-build', 'kanban-orchestration', 'voice-latency', 'profile-soul', 'mcp-install', 'log-triage', 'dependency-audit', 'inbox-digest', 'sentry-triage', 'api-key-rotation', 'oauth-loopback', 'hermes-js-quirks', 'pr-review', 'changelog-style', 'flaky-test-hunt', 'perf-tracing', 'icon-mapping', 'i18n-extract', 'crash-repro', 'backup-restore', 'curator-review', 'token-budgeting', 'schema-migrations', 'ci-matrix']
+        var MEMS = ['Prefers small, reviewable diffs', 'Runs tests before claiming done', 'Works on Windows with Git Bash', 'Pin mimo-v2.5 on verification runs', 'No emoji in commit messages', 'Timezone is PKT (UTC+5)', 'Android work lives in hermes-android', 'Deploys through EAS builds', 'Cron digests deliver to Telegram', 'Parity notes go in docs/PARITY.md', 'Default model is claude-opus-5', 'Reviews PRs in the morning', 'Keep README tone plain', 'Backend hosts on the desktop only', 'Prefers lowlight over shiki on mobile', 'Uses deepseek-v4-flash for cheap runs']
+        var SCRAMBLE = 'ﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾜﾝｦｱｳｴｵｶｷｹｺｻｼｽｾﾀﾁﾂﾃﾅﾆﾇﾈ0123456789:.=*+<>Ξ╳'
+        var NS = 'http://www.w3.org/2000/svg'
+
+        function rng(seed) { var a = seed >>> 0; return function () { a += 0x6d2b79f5; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }
+        function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
+        function recencyInk(rec) { var mid = 0.52, t = clamp(rec, 0, 1); if (t <= mid) { var p = t / mid; return 0.42 + (0.74 - 0.42) * (p * p * (3 - 2 * p)) } var q = (t - mid) / (1 - mid); return 0.74 + (0.95 - 0.74) * (q * q * (3 - 2 * q)) }
+        function ringR(i) { return CORE + i * BAND }
+
+        // ── Graph (shared by every instance) ──
+        var r = rng(20260911), nodes = [], si = 0, mi = 0
+        for (var i = 0; i < 5; i++) {
+          var outer = ringR(i), inner = i > 0 ? ringR(i - 1) : CORE - BAND * 0.5, lo = i > 0 ? RATIO[i - 1] : 0
+          for (var c = 0; c < COUNTS[i]; c++) {
+            var mem = r() < 0.28
+            var ang = r() * Math.PI * 2, h = r()
+            var rad = outer - (0.15 + 0.7 * h) * (outer - inner)
+            var use = mem ? 0 : Math.floor(r() * r() * 36)
+            nodes.push({ id: 'n' + nodes.length, kind: mem ? 'memory' : 'skill', label: mem ? MEMS[mi++ % MEMS.length] : SKILLS[si++ % SKILLS.length], ring: i, wx: Math.cos(ang) * rad, wy: Math.sin(ang) * rad, rec: lo + (RATIO[i] - lo) * (0.15 + 0.85 * r()), use: use })
+          }
+        }
+        // focus node: first skill in ring 3
+        var focus = null
+        for (var f = 0; f < nodes.length; f++) if (nodes[f].ring === 3 && nodes[f].kind === 'skill') { focus = nodes[f]; break }
+        focus.label = 'docker-compose-debugging'; focus.use = 14
+        var links = []
+        nodes.forEach(function (n, j) {
+          if (j === 0) return
+          var near = nodes.slice(0, j).map(function (m) { return { m: m, d: Math.hypot(m.wx - n.wx, m.wy - n.wy) } }).sort(function (a, b) { return a.d - b.d })
+          links.push([near[0].m, n])
+          if (near[1] && r() < 0.45) links.push([near[1].m, n])
+        })
+        var adj = {}; links.forEach(function (l) { (adj[l[0].id] = adj[l[0].id] || {})[l[1].id] = 1; (adj[l[1].id] = adj[l[1].id] || {})[l[0].id] = 1 })
+
+        function el(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e }
+
+        function draw(host) {
+          var svg = host.querySelector('svg')
+          var reveal = parseFloat(host.dataset.reveal || '1'), K = parseFloat(host.dataset.k || K_REST), focused = host.dataset.focus === '1'
+          var uid = 'sm' + Math.random().toString(36).slice(2, 7)
+          var px = function (w) { return CX + w * K }, py = function (w) { return CY + w * K }
+          var ringSeen = function (ri) { return ri === 0 || reveal + 1e-3 >= RATIO[ri - 1] }
+          var seen = function (n) { return n.rec <= reveal + 1e-3 && ringSeen(n.ring) }
+          var frontier = 0; nodes.forEach(function (n) { if (seen(n) && n.rec > frontier) frontier = n.rec })
+          var erec = function (rec) { return frontier > 0 ? clamp(rec / frontier, 0, 1) : 1 }
+          var fset = focused ? adj[focus.id] || {} : null
+
+          var defs = el('defs', {}, svg)
+          // orb sprite (sphereSprite): hot offset core → darkened body → translucent rim
+          var orb = el('radialGradient', { id: uid + 'orb', cx: '0.36', cy: '0.32', r: '0.75', fx: '0.32', fy: '0.3' }, defs)
+          el('stop', { offset: '0', style: 'stop-color:color-mix(in srgb, var(--sm-skill) 92%, var(--white))' }, orb)
+          el('stop', { offset: '0.55', style: 'stop-color:color-mix(in srgb, var(--sm-skill) 70%, var(--black))' }, orb)
+          el('stop', { offset: '1', style: 'stop-color:color-mix(in srgb, var(--sm-skill) 70%, var(--black));stop-opacity:.85' }, orb)
+          var wash = el('radialGradient', { id: uid + 'wash' }, defs)
+          el('stop', { offset: '0', style: 'stop-color:var(--dt-background);stop-opacity:.93' }, wash)
+          el('stop', { offset: '0.62', style: 'stop-color:var(--dt-background);stop-opacity:.88' }, wash)
+          el('stop', { offset: '1', style: 'stop-color:var(--dt-background);stop-opacity:0' }, wash)
+          var coreRx = CORE * K * 1.25
+          el('clipPath', { id: uid + 'core' }, defs).appendChild(el('circle', { cx: CX, cy: CY, r: coreRx }))
+
+          var scene = el('g', {}, svg)
+          // bands (light: wash on the inner edge; dark: faint rim on the outer edge)
+          var dark = document.documentElement.classList.contains('dark')
+          for (var b = 0; b < 4; b++) {
+            if (!ringSeen(b + 1)) continue
+            var ri = ringR(b) * K, ro = ringR(b + 1) * K
+            var g = el('radialGradient', { id: uid + 'band' + b, gradientUnits: 'userSpaceOnUse', cx: CX, cy: CY, r: ro, fr: ri }, defs)
+            if (dark) { el('stop', { offset: '0.36', style: 'stop-color:var(--sm-band);stop-opacity:0' }, g); el('stop', { offset: '1', style: 'stop-color:var(--sm-band);stop-opacity:var(--sm-band-a)' }, g) }
+            else { el('stop', { offset: '0', style: 'stop-color:var(--sm-band);stop-opacity:var(--sm-band-a)' }, g); el('stop', { offset: '0.27', style: 'stop-color:var(--sm-band);stop-opacity:0' }, g) }
+            el('path', { d: 'M' + (CX - ro) + ' ' + CY + 'a' + ro + ' ' + ro + ' 0 1 0 ' + 2 * ro + ' 0a' + ro + ' ' + ro + ' 0 1 0 ' + -2 * ro + ' 0ZM' + (CX - ri) + ' ' + CY + 'a' + ri + ' ' + ri + ' 0 1 1 ' + 2 * ri + ' 0a' + ri + ' ' + ri + ' 0 1 1 ' + -2 * ri + ' 0Z', 'fill-rule': 'evenodd', style: 'fill:url(#' + uid + 'band' + b + ')' }, scene)
+          }
+          for (var ring = 0; ring < 5; ring++) if (ringSeen(ring)) el('circle', { class: 'sm-ring', cx: CX, cy: CY, r: ringR(ring) * K }, scene)
+
+          // scramble layer (built once, placed under or over the scene)
+          var scr = el('g', { class: 'sm-scr-g' })
+          el('circle', { cx: CX, cy: CY, r: coreRx * 1.15, style: 'fill:url(#' + uid + 'wash)' }, scr)
+          var glyphs = el('g', { 'clip-path': 'url(#' + uid + 'core)' }, scr)
+          var cell = clamp(coreRx / 6, 5, 13), half = Math.max(3, Math.round(coreRx / cell))
+          for (var row = -half; row <= half; row++) {
+            var seedR = (row * 19349663) >>> 0 || 1, shift = ((seedR % 16) / 16) * cell
+            var ny = (row * cell) / coreRx, rowDim = 1 - 0.5 * Math.min(1, Math.abs(ny))
+            for (var k = -half - 1; k <= half + 1; k++) {
+              var sx = k * cell + shift, nx = sx / coreRx, d2 = nx * nx + ny * ny
+              if (d2 > 1) continue
+              var seed = (seedR ^ ((k >>> 0) * 73856093)) >>> 0
+              var edge = clamp((1 - Math.sqrt(d2)) / 0.4, 0, 1), flick = 0.7 + 0.3 * (((seed >>> 5) % 100) / 100)
+              var glow = Math.sin(nx * 4.5 + (seed & 7) * 0.35) * Math.sin(ny * 4.5 + (seed & 7) * 0.35)
+              var a = clamp(edge * flick * rowDim * (1 + clamp((glow - 0.25) / 0.75, 0, 1) * 2.6), 0, 3)
+              if (a < 0.07) continue
+              var t = el('text', { class: 'sm-scr', x: (CX + sx).toFixed(1), y: (CY + row * cell).toFixed(1), 'font-size': cell.toFixed(1), 'fill-opacity': clamp(a, 0, 1).toFixed(2) }, glyphs)
+              t.textContent = SCRAMBLE[seed % SCRAMBLE.length]
+            }
+          }
+          if (focused) svg.insertBefore(scr, scene)
+
+          // links
+          var lg = el('g', { class: 'sm-links' }, scene), lit = el('g', {}, scene)
+          links.forEach(function (l) {
+            var s = l[0], tt = l[1]
+            if (!seen(s) || !seen(tt)) return
+            var isLit = focused && (s === focus || tt === focus || (fset[s.id] && fset[tt.id]))
+            if (isLit) { el('line', { class: 'sm-link-lit', x1: px(s.wx), y1: py(s.wy), x2: px(tt.wx), y2: py(tt.wy) }, lit); return }
+            el('line', { class: 'sm-link', x1: px(s.wx).toFixed(1), y1: py(s.wy).toFixed(1), x2: px(tt.wx).toFixed(1), y2: py(tt.wy).toFixed(1), 'stroke-opacity': (focused ? 0.025 / 0.2 : recencyInk(erec((s.rec + tt.rec) / 2))).toFixed(2) }, lg)
+          })
+
+          // nodes
+          var ng = el('g', {}, scene)
+          nodes.forEach(function (n) {
+            if (!seen(n)) return
+            var high = focused && (n === focus || fset[n.id])
+            var er = erec(n.rec), age = high ? 1 : 0.34 + Math.min(1, er / 0.4) * 0.66
+            var rr = (n.kind === 'memory' ? 4.4 : 3 + Math.sqrt(n.use) * 0.55) * K_REST * age * 1.35
+            var alpha = high ? 1 : focused ? 0.16 : recencyInk(er)
+            var x = px(n.wx), y = py(n.wy)
+            if (n.kind === 'memory') el('path', { class: high ? 'sm-hi' : 'sm-memory', d: 'M' + x + ' ' + (y - rr) + 'L' + (x + rr) + ' ' + y + 'L' + x + ' ' + (y + rr) + 'L' + (x - rr) + ' ' + y + 'Z', opacity: alpha.toFixed(2) }, ng)
+            else el('circle', { class: high ? 'sm-hi' : '', cx: x.toFixed(1), cy: y.toFixed(1), r: rr.toFixed(2), style: high ? '' : 'fill:url(#' + uid + 'orb)', opacity: alpha.toFixed(2) }, ng)
+            n._x = x; n._y = y; n._r = rr
+          })
+          if (focused) el('circle', { class: 'sm-sel', cx: focus._x, cy: focus._y, r: focus._r + 4 }, ng)
+
+          // ring date labels (only rings that hold a revealed node)
+          var lastY = Infinity
+          for (var li = 0; li < 5; li++) {
+            if (!ringSeen(li) || !nodes.some(function (n) { return n.ring === li && seen(n) })) continue
+            var ly = CY - ringR(li) * K
+            if (ly < 8 || lastY - ly < 15) continue
+            lastY = ly
+            var bw = LABELS[li].length * 5.2 + 6
+            var lgp = el('g', { opacity: focused ? 0.33 : 1 }, scene)
+            el('rect', { class: 'sm-label-bg', x: CX - bw / 2, y: ly - 6, width: bw, height: 13 }, lgp)
+            var tx = el('text', { class: 'sm-label', x: CX, y: ly + 3, 'fill-opacity': 0.2 }, lgp); tx.textContent = LABELS[li]
+          }
+
+          if (!focused) svg.appendChild(scr)
+
+          if (focused) {
+            // tooltip geometry first, so neighbour labels can route around it (render.ts order)
+            var badges = ['Aug 28, 2026', 'devops', 'learned'], use = 'x14'
+            var titleW = focus.label.length * 6.3 + 12, rowW = 64 + 36 + 42 + 16 + 20
+            var totalW = Math.max(titleW, rowW), totalH = 14 + 3 + 24
+            var bx = clamp(focus._x - totalW / 2, 4, W - totalW - 4), by = clamp(focus._y - (focus._r + 8) - totalH, 4, H - totalH - 4)
+            // neighbour labels: ellipsized to min(180, w·0.32), greedy placement above the node then fanning
+            // out ±18px steps, skipped when nothing stays clear of the tooltip / date labels / other chips
+            var placed = [{ x: bx, y: by, w: totalW, h: totalH }]
+            for (var pl = 0; pl < 5; pl++) placed.push({ x: CX - 30, y: CY - ringR(pl) * K - 10, w: 60, h: 18 })
+            var overlaps = function (a) { return placed.some(function (p) { return a.x < p.x + p.w && a.x + a.w > p.x && a.y < p.y + p.h && a.y + a.h > p.y }) }
+            Object.keys(fset).forEach(function (id) {
+              var n = nodes.filter(function (m) { return m.id === id })[0]
+              if (!n || !seen(n)) return
+              var maxCh = Math.floor(Math.min(180, W * 0.32) / 5.9), text = n.label.length > maxCh ? n.label.slice(0, maxCh - 1).trimEnd() + '…' : n.label
+              var w = text.length * 5.9 + 8, x = clamp(n._x - w / 2, 6, W - w - 6), top = n._y - (n._r + 7) - 15 + 4, y = null
+              for (var kk = 0; kk <= 7 && y === null; kk++) {
+                var dys = kk === 0 ? [0] : [-kk * 18, kk * 18]
+                for (var di = 0; di < dys.length; di++) { var cand = { x: x, y: clamp(top + dys[di], 6, H - 21), w: w, h: 15 }; if (!overlaps(cand)) { y = cand.y; break } }
+              }
+              if (y === null) return
+              placed.push({ x: x, y: y, w: w, h: 15 })
+              el('rect', { class: 'sm-chip', x: x, y: y, width: w, height: 15 }, svg)
+              var ct = el('text', { class: 'sm-chip-t', x: x + w / 2, y: y + 11 }, svg); ct.textContent = text
+            })
+            // tooltip: badge row + inverted title chip
+            var cx = bx
+            badges.forEach(function (bt, bi) {
+              var te = el('text', { class: 'sm-tip-badge' + (bi ? ' mono' : ''), x: cx, y: by + 7, 'fill-opacity': 0.7 }, svg); te.textContent = bt
+              cx += (bi ? bt.length * 5.4 : 58) + 8
+            })
+            var ue = el('text', { class: 'sm-tip-badge mono', x: cx, y: by + 7, 'fill-opacity': 0.5 }, svg); ue.textContent = use
+            el('rect', { class: 'sm-tip-title-bg', x: bx, y: by + 17, width: titleW, height: 24 }, svg)
+            var tt2 = el('text', { class: 'sm-tip-title', x: bx + 6, y: by + 17 + 12 }, svg); tt2.textContent = focus.label
+            // park the node context menu (smdlg:menu) at this node, in frame coordinates
+            var menu = document.getElementById('sm-node-menu')
+            if (menu) { menu.style.left = Math.round(48 + 1 + 20 + focus._x + 6) + 'px'; menu.style.top = Math.round(48 + 1 + 10 + focus._y + 6) + 'px' }
+          }
+
+          // timeline constellation (buildStars over 72 recency buckets)
+          var buckets = []; for (var q = 0; q < 72; q++) buckets.push({ s: 0, m: 0, t: 0 })
+          nodes.forEach(function (n) { var bi = clamp(Math.floor(n.rec * 72), 0, 71); buckets[bi].t++; buckets[bi][n.kind === 'memory' ? 'm' : 's']++ })
+          var maxT = Math.max.apply(null, buckets.map(function (bk) { return bk.t }))
+          var dimL = host.querySelector('.sm-track__dim'), litL = host.querySelector('.sm-track__lit'), ticks = host.querySelector('.sm-track__ticks')
+          var dimH = '', litH = ''
+          buckets.forEach(function (bk, bi) {
+            if (!bk.t) return
+            var cnt = Math.max(1, Math.round(Math.sqrt(bk.t / maxT) * 7)), skillCnt = Math.round((bk.s / bk.t) * cnt), rr2 = rng(bi * 9973 + 7)
+            for (var s = 0; s < cnt; s++) {
+              var left = clamp((bi + 0.5) / 72 + (rr2() - 0.5) * (1 / 72) * 0.9, 0, 1) * 100, top = 12 + ((rr2() + rr2()) / 2) * 76
+              var o = 0.5 + rr2() * 0.5, size = 2 + Math.round(rr2() * rr2() * 2.2), col = s < skillCnt ? 'var(--theme-primary)' : 'var(--sm-memory)'
+              var base = 'left:' + left.toFixed(2) + '%;top:' + top.toFixed(1) + '%;width:' + size + 'px;height:' + size + 'px;background:' + col + ';'
+              dimH += '<div class="sm-star" style="' + base + 'opacity:.22"></div>'
+              litH += '<div class="sm-star" style="' + base + 'opacity:' + o.toFixed(2) + ';--o:' + o.toFixed(2) + ';--d:' + (2.4 + rr2() * 2.6).toFixed(1) + 's;--dl:' + (rr2() * 3).toFixed(1) + 's"></div>'
+            }
+          })
+          dimL.innerHTML = dimH; litL.innerHTML = litH
+          ticks.innerHTML = [0].concat(RATIO.slice(0, 4)).map(function (stop) { return '<div class="sm-tick' + (stop <= reveal ? ' is-on' : '') + '" style="left:' + stop * 100 + '%"></div>' }).join('')
+        }
+
+        function drawAll() { var hosts = document.querySelectorAll('[data-starmap]'); for (var i = 0; i < hosts.length; i++) { hosts[i].querySelector('svg').innerHTML = ''; draw(hosts[i]) } }
+        drawAll()
+        // repaint on theme change (the band direction flips between light and dark)
+        new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+      })()
+    </script>
+  </body>
+</html>

@@ -1,0 +1,410 @@
+/*
+ * hermes-desktop prototype tokens.
+ *
+ * A port of apps/desktop/src/styles.css (`@theme inline`, `:root`, `:root.dark`,
+ * l.94-584) with the default `nous` skin applied the way
+ * apps/desktop/src/themes/context.tsx `applyTheme()` (l.208-312) applies it at
+ * runtime: the skin's palette becomes the `--theme-*` seeds, and a handful of
+ * `--dt-*` slots are taken straight from the palette instead of the seed chain.
+ *
+ * THIS IS THE ONLY FILE IN THE PROTOTYPES THAT MAY CONTAIN COLOUR LITERALS.
+ * Every page and component uses var(--ui-*), var(--dt-*) or the aliases below.
+ *
+ * Pipeline:  palette → --theme-* seeds → --ui-* (color-mix) → --dt-* (shadcn) → --color-* (Tailwind)
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ── 1. Seeds: applyTheme(nous, 'light')  (context.tsx:233-245, presets.ts:178-205) ── */
+  --theme-foreground: #1f2328;
+  --theme-primary: #0053fd;
+  --theme-secondary: #deeaff;
+  --theme-accent-soft: #e3edff;
+  --theme-midground: #0053fd;
+  --theme-warm: #0053fd; /* applyTheme writes warm = primary */
+  --theme-background-seed: #ffffff;
+  --theme-sidebar-seed: #f6f8fa;
+  --theme-card-seed: #f6f8fa;
+  --theme-elevated-seed: #ffffff;
+  --theme-bubble-seed: #dae7fd;
+  --theme-neutral-chrome: #f3f3f3;
+  --theme-neutral-sidebar: #f3f3f3;
+  --theme-neutral-card: #fcfcfc;
+
+  /* Per-mode mix knobs (context.tsx mixesFor, l.200-206) */
+  --theme-mix-chrome: 92%;
+  --theme-mix-sidebar: 100%;
+  --theme-mix-card: 22%;
+  --theme-mix-elevated: 28%;
+  --theme-mix-bubble: 0%;
+
+  /* Accent-mix knobs (styles.css l.192-204) */
+  --theme-fill-primary-accent-mix: 16%;
+  --theme-fill-secondary-accent-mix: 11%;
+  --theme-fill-tertiary-accent-mix: 8%;
+  --theme-fill-quaternary-accent-mix: 5%;
+  --theme-fill-quinary-accent-mix: 3%;
+  --theme-stroke-primary-accent-mix: 24%;
+  --theme-stroke-secondary-accent-mix: 16%;
+  --theme-stroke-tertiary-accent-mix: 10%;
+  --theme-stroke-quaternary-accent-mix: 6%;
+  --theme-row-hover-accent-mix: 4%;
+  --theme-row-active-accent-mix: 8%;
+  --theme-control-hover-accent-mix: 6%;
+  --theme-control-active-accent-mix: 8%;
+
+  /* ── 2. Semantic palette (styles.css l.206-216) ── */
+  --ui-base: var(--theme-foreground);
+  --ui-accent: var(--theme-midground);
+  --ui-accent-secondary: var(--theme-primary);
+  --ui-warm: var(--theme-warm);
+  --ui-red: #cf2d56;
+  --ui-orange: #db704b;
+  --ui-yellow: #c08532;
+  --ui-green: #1f8a65;
+  --ui-cyan: #4c7f8c;
+  --ui-blue: #0053fd;
+  --ui-purple: #9e94d5;
+  /* Real app: harmonize('#10b981', midground, 0.25) in OKLCH (context.tsx:276).
+     Approximated here with an OKLCH mix. */
+  --ui-success: color-mix(in oklch, #10b981 75%, var(--theme-midground));
+
+  /* Context-usage bar (l.217-224) */
+  --context-usage-system: color-mix(in srgb, var(--ui-base) 55%, transparent);
+  --context-usage-tools: var(--ui-purple);
+  --context-usage-rules: var(--ui-green);
+  --context-usage-skills: var(--ui-yellow);
+  --context-usage-mcp: color-mix(in srgb, var(--ui-red) 72%, var(--ui-purple));
+  --context-usage-subagents: color-mix(in srgb, var(--ui-blue) 70%, var(--ui-cyan));
+  --context-usage-memory: color-mix(in srgb, var(--ui-orange) 80%, var(--ui-yellow));
+  --context-usage-conversation: var(--ui-cyan);
+
+  /* Memory-write "legendary" tool row (l.226-231) */
+  --tool-memory-legendary-from: color-mix(in srgb, var(--ui-yellow) 72%, #f5d08a);
+  --tool-memory-legendary-mid: color-mix(in srgb, var(--ui-orange) 55%, var(--ui-purple));
+  --tool-memory-legendary-to: color-mix(in srgb, var(--ui-purple) 82%, #c4b5fd);
+  --tool-memory-legendary-icon: color-mix(in srgb, var(--ui-yellow) 55%, var(--ui-purple));
+  --tool-memory-legendary-meta: color-mix(in srgb, var(--ui-purple) 58%, var(--ui-text-tertiary));
+  --tool-memory-legendary-glow: color-mix(in srgb, var(--ui-purple) 38%, transparent);
+
+  /* Diff (l.236-241) */
+  --ui-diff-add-border: var(--ui-green);
+  --ui-diff-add-background: color-mix(in srgb, var(--ui-green) 12%, transparent);
+  --ui-diff-add-foreground: color-mix(in srgb, var(--ui-green) 70%, #000);
+  --ui-diff-remove-border: var(--ui-red);
+  --ui-diff-remove-background: color-mix(in srgb, var(--ui-red) 12%, transparent);
+  --ui-diff-remove-foreground: color-mix(in srgb, var(--ui-red) 70%, #000);
+
+  /* ── 3. Z-index ladder (l.249-263) ── */
+  --z-modal-backdrop: 120;
+  --z-modal: 130;
+  --z-modal-popover: 140;
+  --z-over-modal: 200;
+  --z-over-modal-content: 210;
+  --z-switcher-backdrop: 219;
+  --z-switcher: 220;
+  --z-connecting: 1200;
+  --z-onboarding: 1300;
+  --z-onboarding-popover: 1310;
+  --z-setup: 1400;
+  --z-crash: 1500;
+
+  /* ── 4. Surfaces (l.264-330) ── */
+  --ui-bg-chrome: color-mix(in srgb, var(--theme-background-seed) var(--theme-mix-chrome), var(--theme-neutral-chrome));
+  --ui-bg-sidebar: color-mix(in srgb, var(--theme-sidebar-seed) var(--theme-mix-sidebar), var(--theme-neutral-sidebar));
+  --ui-bg-editor: color-mix(in srgb, var(--theme-card-seed) var(--theme-mix-card), var(--theme-neutral-card));
+  --ui-bg-elevated: color-mix(in srgb, var(--theme-elevated-seed) var(--theme-mix-elevated), var(--theme-neutral-card));
+  --ui-bg-card: color-mix(in srgb, var(--ui-accent) 4%, color-mix(in srgb, var(--ui-base) 4%, transparent));
+  --ui-bg-input: #fcfcfc;
+  --ui-bg-primary: color-mix(in srgb, var(--ui-accent) var(--theme-fill-primary-accent-mix), color-mix(in srgb, var(--ui-base) 10%, transparent));
+  --ui-bg-secondary: color-mix(in srgb, var(--ui-accent) var(--theme-fill-secondary-accent-mix), color-mix(in srgb, var(--ui-base) 7%, transparent));
+  --ui-bg-tertiary: color-mix(in srgb, var(--ui-accent) var(--theme-fill-tertiary-accent-mix), color-mix(in srgb, var(--ui-base) 5%, transparent));
+  --ui-bg-quaternary: color-mix(in srgb, var(--ui-accent) var(--theme-fill-quaternary-accent-mix), color-mix(in srgb, var(--ui-base) 4%, transparent));
+  --ui-bg-quinary: color-mix(in srgb, var(--ui-accent) var(--theme-fill-quinary-accent-mix), color-mix(in srgb, var(--ui-base) 3%, transparent));
+  --ui-row-hover-background: color-mix(in srgb, var(--ui-accent) var(--theme-row-hover-accent-mix), color-mix(in srgb, var(--ui-base) 3%, transparent));
+  --ui-row-active-background: color-mix(in srgb, var(--ui-accent) var(--theme-row-active-accent-mix), color-mix(in srgb, var(--ui-base) 5%, transparent));
+  --ui-row-open-background: color-mix(in srgb, var(--ui-row-active-background) 28%, transparent);
+  --ui-control-hover-background: color-mix(in srgb, var(--ui-accent) var(--theme-control-hover-accent-mix), color-mix(in srgb, var(--ui-base) 4%, transparent));
+  --ui-control-active-background: color-mix(in srgb, var(--ui-accent) var(--theme-control-active-accent-mix), color-mix(in srgb, var(--ui-base) 5%, transparent));
+
+  /* ── 5. Text (l.331-341) ── */
+  --ui-text-primary: color-mix(in srgb, var(--ui-base) 94%, transparent);
+  --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
+  --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);
+  --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 36%, transparent);
+  --conversation-scaffold-text: color-mix(in srgb, var(--ui-base) 64%, transparent);
+  --conversation-scaffold-meta: color-mix(in srgb, var(--ui-base) 44%, transparent);
+
+  /* ── 6. Strokes (l.342-363) ── */
+  --ui-stroke-primary: color-mix(in srgb, var(--ui-accent) var(--theme-stroke-primary-accent-mix), color-mix(in srgb, var(--ui-base) 10%, transparent));
+  --ui-stroke-secondary: color-mix(in srgb, var(--ui-accent) var(--theme-stroke-secondary-accent-mix), color-mix(in srgb, var(--ui-base) 7%, transparent));
+  --ui-stroke-tertiary: color-mix(in srgb, var(--ui-accent) var(--theme-stroke-tertiary-accent-mix), color-mix(in srgb, var(--ui-base) 5%, transparent));
+  --ui-stroke-quaternary: color-mix(in srgb, var(--ui-accent) var(--theme-stroke-quaternary-accent-mix), color-mix(in srgb, var(--ui-base) 3%, transparent));
+  --ui-sash-hover-border: color-mix(in srgb, var(--ui-accent) 18%, var(--ui-stroke-tertiary));
+  --ui-sash-hover-background: color-mix(in srgb, var(--ui-accent) 6%, transparent);
+
+  /* ── 7. Surface aliases (l.364-386) ── */
+  --ui-surface-background: var(--ui-bg-editor);
+  --ui-sidebar-surface-background: var(--ui-bg-sidebar);
+  --ui-chat-surface-background: var(--ui-bg-chrome);
+  --ui-editor-surface-background: var(--ui-bg-chrome);
+  --ui-terminal-surface-background: var(--ui-chat-surface-background);
+  --ui-widget-surface-background: var(--ui-bg-editor);
+  --ui-chat-bubble-background: color-mix(in srgb, var(--theme-bubble-seed) var(--theme-mix-bubble), var(--theme-neutral-card));
+  --ui-chat-bubble-opaque-background: var(--ui-bg-editor);
+  --ui-inline-code-background: color-mix(in srgb, #141414 5%, transparent);
+  --ui-inline-code-foreground: color-mix(in srgb, #141414 88%, transparent);
+  --ui-selection-background: color-mix(in srgb, #ffd24a 55%, transparent);
+
+  /* ── 8. shadcn layer --dt-* (l.388-441), with applyTheme's palette slots (context.tsx:248-280) ── */
+  --dt-background: var(--ui-bg-chrome);
+  --dt-foreground: var(--ui-text-primary);
+  --dt-card: var(--ui-bg-editor);
+  --dt-card-foreground: var(--ui-text-primary);
+  --dt-muted: #f6f6f6; /* palette.muted */
+  --dt-muted-foreground: var(--ui-text-tertiary);
+  --dt-popover: color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent);
+  --dt-popover-foreground: var(--ui-text-primary);
+  --dt-primary: var(--theme-primary);
+  --dt-primary-foreground: #ffffff; /* palette.primaryForeground */
+  --dt-primary-solid: #0053fd; /* ensureContrast(primary, #fcfcfc, 4.5): already passes */
+  --dt-primary-solid-foreground: #fcfcfc;
+  --dt-secondary: var(--theme-secondary);
+  --dt-secondary-foreground: #1f2328;
+  --dt-accent: var(--theme-accent-soft);
+  --dt-accent-foreground: #1f2328;
+  --dt-border: #d0d7de; /* palette.border overrides the stroke-secondary default */
+  --dt-input: #ffffff; /* palette.input */
+  --dt-input-border: 7%;
+  --dt-input-bg: 0%;
+  --dt-input-inset: inset 0 1px 1px color-mix(in srgb, #000 10%, transparent);
+  --ui-tab-hover-darken: 2.5%;
+  --dt-ring: #0053fd;
+  --dt-midground: var(--theme-midground);
+  --dt-midground-foreground: #ffffff;
+  --dt-scrollbar-thumb: oklch(from var(--dt-midground) l 0 h);
+  --dt-composer-ring: #0053fd;
+  --dt-destructive: #cf222e;
+  --dt-destructive-foreground: #ffffff;
+  --dt-sidebar-bg: var(--ui-bg-sidebar);
+  --dt-sidebar-border: #d0d7de;
+  --dt-user-bubble: color-mix(in srgb, var(--ui-chat-bubble-background) var(--user-bubble-keep, 100%), transparent);
+  --dt-user-bubble-border: #d0d7de;
+
+  /* Tailwind colour names (styles.css @theme inline l.95-116), for readability */
+  --color-background: var(--dt-background);
+  --color-foreground: var(--dt-foreground);
+  --color-card: var(--dt-card);
+  --color-muted: var(--dt-muted);
+  --color-muted-foreground: var(--dt-muted-foreground);
+  --color-popover: var(--dt-popover);
+  --color-primary: var(--dt-primary);
+  --color-primary-foreground: var(--dt-primary-foreground);
+  --color-secondary: var(--dt-secondary);
+  --color-accent: var(--dt-accent);
+  --color-border: var(--dt-border);
+  --color-input: var(--dt-input);
+  --color-ring: var(--dt-ring);
+  --color-destructive: var(--dt-destructive);
+  --color-midground: var(--dt-midground);
+
+  /* Tailwind stock colours the source uses directly (badge success/warn) */
+  --tw-emerald-400: #34d399;
+  --tw-emerald-500: #10b981;
+  --tw-emerald-600: #059669;
+  --tw-amber-500: #f59e0b;
+  --tw-amber-600: #d97706;
+  --tw-amber-300: #fcd34d;
+  --tw-amber-400: #fbbf24;
+
+  /* ── 9. Typography (presets.ts:29-33, styles.css l.443-457) ── */
+  --dt-font-sans:
+    'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
+  --dt-font-kbd: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --dt-font-mono:
+    Menlo, Monaco, 'SF Mono', 'Courier Prime', monospace, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji', emoji;
+  --font-terminal: 'JetBrains Mono', Menlo, Monaco, 'SF Mono', monospace;
+  --font-wordmark: 'Collapse', var(--dt-font-sans);
+  --font-tooltip: Arial, sans-serif;
+  --dt-base-size: 1rem;
+  --dt-line-height: 1.5;
+  --dt-letter-spacing: 0;
+
+  /* ── 10. Radius: every Tailwind radius is scalar × N, scalar pinned at 0.2 (l.123-130, 464) ── */
+  --radius-scalar: 0.2;
+  --radius-xs: calc(var(--radius-scalar) * 0.125rem); /* ≈0.4px */
+  --radius-sm: calc(var(--radius-scalar) * 0.5rem); /* 1.6px */
+  --radius-md: calc(var(--radius-scalar) * 0.625rem); /* 2px */
+  --radius-lg: calc(var(--radius-scalar) * 0.75rem); /* 2.4px */
+  --radius-xl: calc(var(--radius-scalar) * 1rem); /* 3.2px */
+  --radius-2xl: calc(var(--radius-scalar) * 1.5rem); /* 4.8px */
+  --radius-3xl: calc(var(--radius-scalar) * 2rem); /* 6.4px */
+  --radius-4xl: calc(var(--radius-scalar) * 2.5rem); /* 8px */
+  --radius-full: 9999px;
+
+  /* ── 11. Shadows and strokes (l.141-166) ── */
+  --shadow-xs: 0 0.0625rem 0.125rem color-mix(in srgb, #000 5%, transparent);
+  --shadow-sm:
+    0 0 0 0.0625rem color-mix(in srgb, var(--dt-foreground) 6%, transparent),
+    0 0.125rem 0.5rem color-mix(in srgb, #000 4%, transparent);
+  --shadow-md:
+    0 0 0 0.0625rem color-mix(in srgb, var(--dt-foreground) 8%, transparent),
+    0 0.25rem 1rem color-mix(in srgb, #000 8%, transparent),
+    0 1rem 2rem -1.5rem color-mix(in srgb, #000 18%, transparent);
+  --shadow-nous:
+    0 0.125rem 0.25rem -0.125rem color-mix(in srgb, #000 7%, transparent),
+    0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 6%, transparent),
+    0 1.25rem 1.75rem -0.875rem color-mix(in srgb, #000 6%, transparent),
+    0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
+  --stroke-nous: color-mix(in srgb, currentColor 3%, transparent);
+  --shadow-lg:
+    inset 0 0.0625rem 0 color-mix(in srgb, #fff 28%, transparent),
+    0 0 0 0.0625rem color-mix(in srgb, var(--dt-foreground) 8%, transparent),
+    0 0.75rem 2rem color-mix(in srgb, #000 12%, transparent);
+  --shadow-composer: 0 0.0625rem 0.125rem color-mix(in srgb, #000 5%, transparent);
+
+  /* ── 12. Conversation + composer metrics (l.472-520) ── */
+  --composer-shell-pad-block-end: 0.625rem;
+  --message-text-indent: 0.75rem;
+  --conversation-text-font-size: 0.8125rem;
+  --conversation-tool-font-size: 0.6875rem;
+  --conversation-caption-font-size: 0.75rem;
+  --conversation-line-height: 1.125rem;
+  --conversation-caption-line-height: 1rem;
+  --conversation-turn-gap: 0.375rem;
+  --turn-block-gap: 0.75rem;
+  --scaffold-block-gap: calc(var(--turn-block-gap) / 3);
+  --tool-row-gap: 0.375rem;
+  --paragraph-gap: 0.7rem;
+  --file-tree-row-height: 1.375rem;
+  --composer-control-size: 1.5rem;
+  --composer-control-primary-size: 1.625rem;
+  --composer-control-gap: 0.25rem;
+  --composer-row-gap: 0.25rem;
+  --composer-ring-strength: 1;
+  --composer-surface-pad-x: 0.5rem;
+  --composer-surface-pad-y: 0.3125rem;
+  --composer-input-min-height: 1.625rem;
+  --composer-input-max-height: 9.375rem;
+  --image-preview-max-width: 34rem;
+
+  /* ── 13. Chrome metrics (l.522-547, titlebar.ts, store/layout.ts) ── */
+  --titlebar-height: 34px;
+  --statusbar-height: 20px;
+  --sidebar-width: 14.8125rem; /* 237px */
+  --chat-min-width: 28rem;
+  --titlebar-control-size: 24px;
+  --titlebar-icon-size: 13.9px;
+  --sidebar-content-inline-padding: 1rem;
+  --sidebar-accent: var(--ui-control-active-background);
+  --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 7.5%, transparent);
+  --chrome-action-hover: var(--ui-control-hover-background);
+  --warm-glow: color-mix(in srgb, var(--ui-warm) 32%, color-mix(in srgb, var(--ui-accent) 6%, transparent));
+  --chat-unfocused-opacity: 0.62;
+
+  /* ── 14. Composer fill (l.1842-1853) ── */
+  --composer-fill: color-mix(in srgb, var(--dt-card) 72%, transparent);
+
+  /* ── 15. Literals the source uses outside the token chain (documented exceptions) ── */
+  --scrim: color-mix(in srgb, #000 22%, transparent); /* bg-black/22 overlay + dialog scrim */
+  --brand-tile: #ffffff; /* BrandMark white tile */
+  --hud-scrim: rgb(12 14 18 / 0.62);
+  --hud-ink: #ffffff;
+  --hud-user-ink: #ffcf6b;
+  --vibe-heart: #ff9ec4;
+  --black: #000;
+  --white: #fff;
+
+  /* ── 16. Theme-picker swatches: the 11 BUILTIN_THEMES (presets.ts:848-865) ──
+     side = sidebarBackground, bg = background, fg = foreground, accent = primary.
+     Light values here; dark values in :root.dark. Dark-only skins (midnight, ember,
+     mono, slate, cyberpunk) show their dark palette in both modes. */
+  --preset-nous-side: #f6f8fa; --preset-nous-bg: #ffffff; --preset-nous-fg: #1f2328; --preset-nous-accent: #0053fd;
+  --preset-github-side: #f6f8fa; --preset-github-bg: #ffffff; --preset-github-fg: #1f2328; --preset-github-accent: #196d31;
+  --preset-catppuccin-side: #e6e9ef; --preset-catppuccin-bg: #eff1f5; --preset-catppuccin-fg: #4c4f69; --preset-catppuccin-accent: #6d2ebf;
+  --preset-everforest-side: #fdf6e3; --preset-everforest-bg: #fdf6e3; --preset-everforest-fg: #5c6a72; --preset-everforest-accent: #586b35;
+  --preset-solarized-side: #eee8d5; --preset-solarized-bg: #fdf6e3; --preset-solarized-fg: #1f1f1f; --preset-solarized-accent: #675e34;
+  --preset-nous-alt-side: #f3f7ff; --preset-nous-alt-bg: #f8faff; --preset-nous-alt-fg: #17171a; --preset-nous-alt-accent: #0053fd;
+  --preset-midnight-side: #06061a; --preset-midnight-bg: #08081c; --preset-midnight-fg: #ddd6ff; --preset-midnight-accent: #ddd6ff;
+  --preset-ember-side: #100600; --preset-ember-bg: #160800; --preset-ember-fg: #ffd8b0; --preset-ember-accent: #ffd8b0;
+  --preset-mono-side: #0a0a0a; --preset-mono-bg: #0e0e0e; --preset-mono-fg: #eaeaea; --preset-mono-accent: #eaeaea;
+  --preset-slate-side: #090d13; --preset-slate-bg: #0d1117; --preset-slate-fg: #c9d1d9; --preset-slate-accent: #c9d1d9;
+  --preset-cyberpunk-side: #000600; --preset-cyberpunk-bg: #000a00; --preset-cyberpunk-fg: #00ff41; --preset-cyberpunk-accent: #00ff41;
+
+  /* Prototype-only: the desk the 1220×800 window sits on (not part of the app) */
+  --proto-desk: #d9dce1;
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  /* Seeds: applyTheme(nous, 'dark')  (presets.ts:206-233) */
+  --theme-foreground: #e6edf3;
+  --theme-primary: #4a84fe;
+  --theme-secondary: #1d2e4f;
+  --theme-accent-soft: #17243a;
+  --theme-midground: #4a84fe;
+  --theme-warm: #4a84fe;
+  --theme-background-seed: #0d1117;
+  --theme-sidebar-seed: #010409;
+  --theme-card-seed: #010409;
+  --theme-elevated-seed: #161b22;
+  --theme-bubble-seed: #07162c;
+  --theme-neutral-chrome: #0d0d0e;
+  --theme-neutral-sidebar: #0a0a0b;
+  --theme-neutral-card: #161618;
+
+  --theme-mix-chrome: 74%;
+  --theme-mix-sidebar: 100%;
+  --theme-mix-card: 38%;
+  --theme-mix-elevated: 46%;
+  --theme-mix-bubble: 46%;
+
+  /* Dark-only palette overrides (l.561-565) */
+  --ui-red: #e75e78;
+  --ui-green: #55a583;
+  --ui-cyan: #6f9ba6;
+  --ui-diff-add-foreground: color-mix(in srgb, var(--ui-green) 62%, #fff);
+  --ui-diff-remove-foreground: color-mix(in srgb, var(--ui-red) 62%, #fff);
+
+  --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
+  --composer-ring-strength: 1.3;
+  --dt-input-inset: inset 0 1px 1px color-mix(in srgb, #000 38%, transparent);
+  --ui-tab-hover-darken: 6%;
+  --dt-input-border: 4%;
+  --ui-inline-code-background: color-mix(in srgb, #ffffff 7%, transparent);
+  --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
+  --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
+  --ui-widget-surface-background: color-mix(in srgb, var(--ui-bg-editor) 88%, #000);
+  --chat-unfocused-opacity: 0.72;
+
+  /* applyTheme palette slots, dark */
+  --dt-muted: #1a1e24;
+  --dt-primary-foreground: #161616;
+  /* ensureContrast(#4a84fe, #fcfcfc, 4.5) deepens the hue until white text clears AA.
+     Approximated: the exact value is computed at runtime by themes/color.ts. */
+  --dt-primary-solid: #3f70d8;
+  --dt-secondary-foreground: #e6edf3;
+  --dt-accent-foreground: #e6edf3;
+  --dt-border: #30363d;
+  --dt-input: #0d1117;
+  --dt-ring: #4a84fe;
+  --dt-midground-foreground: #161616;
+  --dt-composer-ring: #4a84fe;
+  --dt-destructive: #f85149;
+  --dt-destructive-foreground: #ffffff;
+  --dt-sidebar-border: #30363d;
+  --dt-user-bubble-border: #30363d;
+
+  --preset-nous-side: #010409; --preset-nous-bg: #0d1117; --preset-nous-fg: #e6edf3; --preset-nous-accent: #4a84fe;
+  --preset-github-side: #010409; --preset-github-bg: #0d1117; --preset-github-fg: #e6edf3; --preset-github-accent: #4f9e5e;
+  --preset-catppuccin-side: #181825; --preset-catppuccin-bg: #1e1e2e; --preset-catppuccin-fg: #cdd6f4; --preset-catppuccin-accent: #cba6f7;
+  --preset-everforest-side: #2d353b; --preset-everforest-bg: #2d353b; --preset-everforest-fg: #d3c6aa; --preset-everforest-accent: #a7c080;
+  --preset-solarized-side: #001f26; --preset-solarized-bg: #002b36; --preset-solarized-fg: #839496; --preset-solarized-accent: #6ea1c4;
+  --preset-nous-alt-side: #09286f; --preset-nous-alt-bg: #0d2f86; --preset-nous-alt-fg: #ffe6cb; --preset-nous-alt-accent: #ffe6cb;
+
+  --proto-desk: #202227;
+}

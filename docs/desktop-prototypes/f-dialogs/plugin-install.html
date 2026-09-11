@@ -1,0 +1,262 @@
+<!doctype html>
+<!--
+  Screen:      Install plugin modal (F · dialogs), opened by a plugin install request / deep link
+  Replicates:  apps/desktop/src/app/settings/plugin-install-modal.tsx,
+               components/ui/{dialog,checkbox,switch,button}.tsx, lib/external-link.tsx
+               (copy: en.ts settings.plugins.installModal)
+  Views:       #dlg=review | #dlg=probing | #dlg=installing | #dlg=error | #dlg=insecure
+  Measurements:
+    - DialogContent "max-w-lg" → 32rem; body p-4, grid gap-3; radius-xl; --shadow-nous; X close
+      (onOpenAutoFocus prevented, so the X tip does not flash on open)
+    - content: space-y-4 (1rem)
+    - "Repository" label: 12px medium foreground, mb-1; repo box rounded-lg (2.4px), 1px --ui-stroke-tertiary,
+      --ui-bg-quinary, px-3 py-2, mono 12px, break-all
+    - security box: same border/fill, px-3 py-2.5, space-y-3. Heading 12px medium, intro 12px --ui-text-secondary.
+      Source block: border-t --ui-stroke-tertiary, pt-3, space-y-2: "Source code" (13px medium), ExternalLink
+      (.ref, --dt-primary, 12px, trailing ArrowUpRight .78em at 70%), "Git clone URL" label (tertiary, mb-1),
+      URL box rounded-md, 1px stroke-tertiary, --ui-bg-primary, px-2.5 py-1.5, mono, break-all
+    - component cards: label flex items-start gap-3, rounded-lg, 1px stroke-tertiary, px-3 py-2; Checkbox size-4;
+      title 13px medium foreground; hint 12px --ui-text-tertiary
+    - insecure/warnings: flex gap-2, rounded-lg, amber-500/30 border, amber-500/10 fill, px-3 py-2, 12px foreground;
+      AlertTriangle size-3.5 amber-600 (amber-400 in dark; tokens only carry amber-300, used here)
+    - switch rows: flex justify-between gap-3, 12px foreground label, Switch default (h-5 w-9)
+    - errors: rounded-lg, 1px destructive/30, destructive/10, px-3 py-2, 12px destructive, pre-wrap
+    - footer: Cancel OUTLINE (not ghost) + Install default
+  Behaviour:
+    - Opening while on /settings first navigates to the new-chat route, then the modal opens there.
+    - Opens in "Inspecting repository…" (probe). Install stays disabled until the probe is ready; Cancel is
+      disabled while probing or installing.
+    - Probe ready: checkboxes default to what the repo contains (a legacy hint can pre-select one side).
+      "Enable agent plugin after install" disables when the agent box is unchecked; it and the agent card are
+      hidden for desktop-only packages (which show the desktop-only note).
+    - Install with nothing checked → inline "Select at least one component to install."
+    - Success toasts per component, closes, navigates to Settings → Plugins. Partial failures stay open with the
+      joined errors inline (successes still toast). Missing env vars and warnings arrive as warning toasts.
+  Mobile:      Plugins are at parity on mobile for the agent side (docs/PARITY.md, Settings row, M09); the
+               Desktop UI half is absent by design (desktop plugin UIs have no mobile surface).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Install plugin · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .pi { display: grid; gap: 1rem; }
+      .cap { font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); }
+      .pi-label { margin-bottom: 0.25rem; font-weight: 500; color: var(--dt-foreground); }
+      .pi-box { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); background: var(--ui-bg-quinary); }
+      .pi-repo { padding: 0.5rem 0.75rem; font-family: var(--dt-font-mono); word-break: break-all; color: var(--dt-foreground); user-select: text; }
+      .pi-sec { display: grid; gap: 0.75rem; padding: 0.625rem 0.75rem; }
+      .pi-sec__intro { display: grid; gap: 0.5rem; }
+      .pi-sec__intro p { margin: 0; color: var(--ui-text-secondary); }
+      .pi-src { display: grid; gap: 0.5rem; border-top: 1px solid var(--ui-stroke-tertiary); padding-top: 0.75rem; }
+      .ref { color: var(--dt-primary); text-decoration: none; cursor: pointer; }
+      .ref:hover { text-decoration: underline; text-underline-offset: 0.15em; }
+      .ref .ti { margin-left: 0.25rem; font-size: 0.78em; opacity: 0.7; vertical-align: -0.08em; }
+      .pi-git { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-md); padding: 0.375rem 0.625rem; background: var(--ui-bg-primary); font-family: var(--dt-font-mono); word-break: break-all; color: var(--dt-foreground); user-select: text; }
+      .pi-ready { display: grid; gap: 0.75rem; }
+      .pi-card { display: flex; align-items: flex-start; gap: 0.75rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.5rem 0.75rem; cursor: pointer; }
+      .pi-card__title { display: block; font-weight: 500; color: var(--dt-foreground); }
+      .pi-card__hint { display: block; color: var(--ui-text-tertiary); }
+      .pi-warn { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--tw-amber-500) 30%, transparent); border-radius: var(--radius-lg); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--tw-amber-500) 10%, transparent); color: var(--dt-foreground); }
+      .pi-warn .ti { flex-shrink: 0; margin-top: 0.125rem; font-size: 0.875rem; color: var(--tw-amber-600); }
+      :root.dark .pi-warn .ti { color: var(--tw-amber-300); }
+      .pi-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; color: var(--dt-foreground); }
+      .pi-err { margin: 0; border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent); border-radius: var(--radius-lg); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); white-space: pre-wrap; }
+      .is-off { opacity: 0.5; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-nav="new" data-title="">
+            <div class="intro">
+              <h1 class="wordmark">Hermes</h1>
+              <div class="intro__copy">What are we working on?</div>
+            </div>
+            <div class="composer-dock" style="bottom:auto;top:58%">
+              <div class="composer">
+                <div class="composer__row">
+                  <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                  <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                  <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                  <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Review (probe ready) ── -->
+            <div data-view="review">
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Install plugin</h2>
+                  <p class="dialog__desc">Review what this repository contains before installing anything.</p>
+                </div>
+                <div class="pi">
+                  <div><div class="pi-label cap">Repository</div><div class="pi-box pi-repo cap">NousResearch/hermes-linear-plugin</div></div>
+                  <div class="pi-box pi-sec">
+                    <div class="pi-sec__intro cap"><div class="t-medium fg" style="color:var(--dt-foreground)">Before you install</div><p>Install only from sources you trust — review the repository below if you want to see what will be added.</p></div>
+                    <div class="pi-src">
+                      <div class="t-medium" style="color:var(--dt-foreground)">Source code</div>
+                      <a class="ref cap">View repository<i class="ti ti-arrow-up-right"></i></a>
+                      <div><div class="t-tertiary" style="margin-bottom:.25rem">Git clone URL</div><div class="pi-git">https://github.com/NousResearch/hermes-linear-plugin.git</div></div>
+                    </div>
+                  </div>
+                  <div class="pi-ready">
+                    <div class="cap t-medium" style="color:var(--dt-foreground)">This package includes</div>
+                    <label class="pi-card"><span class="checkbox is-on"></span><span class="t-truncate" style="white-space:normal"><span class="pi-card__title">Agent plugin</span><span class="pi-card__hint cap">Installs into the default backend (~/.hermes/plugins/) · linear-sync</span></span></label>
+                    <label class="pi-card"><span class="checkbox is-on"></span><span style="min-width:0"><span class="pi-card__title">Desktop UI</span><span class="pi-card__hint cap">Installs into this app's local desktop-plugins folder · linear-board</span></span></label>
+                    <label class="pi-row cap"><span>Enable agent plugin after install</span><span class="switch is-on"></span></label>
+                    <label class="pi-row cap"><span>Force reinstall (replace if already installed)</span><span class="switch"></span></label>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--outline">Cancel</button>
+                  <button type="button" class="btn btn--default">Install</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Probing ── -->
+            <div data-view="probing" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Install plugin</h2>
+                  <p class="dialog__desc">Review what this repository contains before installing anything.</p>
+                </div>
+                <div class="pi">
+                  <div><div class="pi-label cap">Repository</div><div class="pi-box pi-repo cap">NousResearch/hermes-linear-plugin</div></div>
+                  <div class="pi-box pi-sec">
+                    <div class="pi-sec__intro cap"><div class="t-medium" style="color:var(--dt-foreground)">Before you install</div><p>Install only from sources you trust — review the repository below if you want to see what will be added.</p></div>
+                    <div class="pi-src">
+                      <div class="t-medium" style="color:var(--dt-foreground)">Source code</div>
+                      <a class="ref cap">View repository<i class="ti ti-arrow-up-right"></i></a>
+                      <div><div class="t-tertiary" style="margin-bottom:.25rem">Git clone URL</div><div class="pi-git">https://github.com/NousResearch/hermes-linear-plugin.git</div></div>
+                    </div>
+                  </div>
+                  <p class="cap t-tertiary" style="margin:0">Inspecting repository…</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--outline" disabled>Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Install</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Installing ── -->
+            <div data-view="installing" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Install plugin</h2>
+                  <p class="dialog__desc">Review what this repository contains before installing anything.</p>
+                </div>
+                <div class="pi">
+                  <div><div class="pi-label cap">Repository</div><div class="pi-box pi-repo cap">NousResearch/hermes-linear-plugin</div></div>
+                  <div class="pi-box pi-sec">
+                    <div class="pi-sec__intro cap"><div class="t-medium" style="color:var(--dt-foreground)">Before you install</div><p>Install only from sources you trust — review the repository below if you want to see what will be added.</p></div>
+                    <div class="pi-src">
+                      <div class="t-medium" style="color:var(--dt-foreground)">Source code</div>
+                      <a class="ref cap">View repository<i class="ti ti-arrow-up-right"></i></a>
+                      <div><div class="t-tertiary" style="margin-bottom:.25rem">Git clone URL</div><div class="pi-git">https://github.com/NousResearch/hermes-linear-plugin.git</div></div>
+                    </div>
+                  </div>
+                  <div class="pi-ready">
+                    <div class="cap t-medium" style="color:var(--dt-foreground)">This package includes</div>
+                    <label class="pi-card"><span class="checkbox is-on is-off"></span><span style="min-width:0"><span class="pi-card__title">Agent plugin</span><span class="pi-card__hint cap">Installs into the default backend (~/.hermes/plugins/) · linear-sync</span></span></label>
+                    <label class="pi-card"><span class="checkbox is-off"></span><span style="min-width:0"><span class="pi-card__title">Desktop UI</span><span class="pi-card__hint cap">Installs into this app's local desktop-plugins folder · linear-board</span></span></label>
+                    <label class="pi-row cap"><span>Enable agent plugin after install</span><span class="switch is-on is-off"></span></label>
+                    <label class="pi-row cap"><span>Force reinstall (replace if already installed)</span><span class="switch is-off"></span></label>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--outline" disabled>Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Installing…</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Probe error ── -->
+            <div data-view="error" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Install plugin</h2>
+                  <p class="dialog__desc">Review what this repository contains before installing anything.</p>
+                </div>
+                <div class="pi">
+                  <div><div class="pi-label cap">Repository</div><div class="pi-box pi-repo cap">NousResearch/hermes-linaer-plugin</div></div>
+                  <div class="pi-box pi-sec">
+                    <div class="pi-sec__intro cap"><div class="t-medium" style="color:var(--dt-foreground)">Before you install</div><p>Install only from sources you trust — review the repository below if you want to see what will be added.</p></div>
+                    <div class="pi-src">
+                      <div class="t-medium" style="color:var(--dt-foreground)">Source code</div>
+                      <a class="ref cap">View repository<i class="ti ti-arrow-up-right"></i></a>
+                      <div><div class="t-tertiary" style="margin-bottom:.25rem">Git clone URL</div><div class="pi-git">https://github.com/NousResearch/hermes-linaer-plugin.git</div></div>
+                    </div>
+                  </div>
+                  <p class="pi-err cap">Could not clone https://github.com/NousResearch/hermes-linaer-plugin.git: repository not found.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--outline">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Install</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Desktop-only package from an insecure URL ── -->
+            <div data-view="insecure" hidden>
+              <div class="dialog" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Install plugin</h2>
+                  <p class="dialog__desc">Review what this repository contains before installing anything.</p>
+                </div>
+                <div class="pi">
+                  <div><div class="pi-label cap">Repository</div><div class="pi-box pi-repo cap">http://192.168.1.20:3000/ahmed/hermes-kanban-tweaks.git</div></div>
+                  <div class="pi-box pi-sec">
+                    <div class="pi-sec__intro cap"><div class="t-medium" style="color:var(--dt-foreground)">Before you install</div><p>Install only from sources you trust — review the repository below if you want to see what will be added.</p></div>
+                    <div class="pi-src">
+                      <div class="t-medium" style="color:var(--dt-foreground)">Source code</div>
+                      <div><div class="t-tertiary" style="margin-bottom:.25rem">Git clone URL</div><div class="pi-git">http://192.168.1.20:3000/ahmed/hermes-kanban-tweaks.git</div></div>
+                    </div>
+                  </div>
+                  <div class="pi-ready">
+                    <div class="cap t-medium" style="color:var(--dt-foreground)">This package includes</div>
+                    <label class="pi-card"><span class="checkbox is-on"></span><span style="min-width:0"><span class="pi-card__title">Desktop UI</span><span class="pi-card__hint cap">Installs into this app's local desktop-plugins folder · kanban-tweaks</span></span></label>
+                    <p class="cap t-tertiary" style="margin:0">Desktop-only packages do not install a backend agent plugin.</p>
+                    <div class="pi-warn cap"><i class="ti ti-alert-triangle" aria-hidden="true"></i><span>This URL uses an insecure or local scheme. Prefer https:// or git@ for production installs.</span></div>
+                    <label class="pi-row cap"><span>Force reinstall (replace if already installed)</span><span class="switch"></span></label>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--outline">Cancel</button>
+                  <button type="button" class="btn btn--default">Install</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:review">Review</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:probing">Inspecting</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:installing">Installing</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:error">Probe error</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:insecure">Desktop-only · insecure URL</button>
+      </nav>
+    </div>
+  </body>
+</html>

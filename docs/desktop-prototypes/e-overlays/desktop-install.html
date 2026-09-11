@@ -1,0 +1,204 @@
+<!doctype html>
+<!--
+  Screen:      Desktop install (E · app-wide overlay, boot-time)   DesktopInstallOverlay, always mounted
+  Replicates:  apps/desktop/src/components/desktop-install-overlay.tsx, components/{brand-mark,first-run-remote-form}.tsx,
+               components/ui/{progress,log-view,error-state}.tsx, i18n/en.ts (install.*)
+  Views:       #install=choice | progress | failed | unsupported      (Connect to existing → the remote form, see onboarding.html#onboarding=remote)
+  Measurements:
+    - layer: fixed inset-0, bg background/90 + backdrop-blur-md (12px), p-4, card centred
+    - card: max-w-2xl (42rem), rounded-xl (3.2px), 1px --stroke-nous, bg --dt-card, shadow-nous; progress card max-h 90vh, flex column
+    - header: p-8 pb-4, gap-4; 44px brand tile (white, rounded-md); title 20px/600 tracking-tight; desc mt-1.5 14px muted
+    - progress row: 12px muted "N of M steps complete -- now: X (m:ss)" + percent; bar 6px (h-1.5), track --ui-bg-tertiary, primary fill
+      (a running stage counts half a step)
+    - stage rows: px-3 py-1 gap-3; name 14px (running = 500, others muted); done/skipped = 13px codicon check muted + duration right;
+      pending = 6px hollow dot (1px --ui-stroke-secondary); running = 24px fourier-flow loader pulled out left (-ml-4 -mr-2), "Installing · 1:12"
+    - log toggle: ghost xs, 14px chevron + "Show installer output" + "(N lines)"; LogView max-h-64 (16rem), 96 (24rem) on failure
+    - footer p-4 on --dt-card: Cancel install (ghost sm) while active; on failure "Full transcript saved to …" + Copy output + Reload and retry
+    - setup choice: card p-8; two option buttons (2 columns, gap-3, mt-6): rounded-lg, 1px --ui-stroke-tertiary, bg --ui-bg-quinary, p-4,
+      hover --chrome-action-hover; 16px muted icon + 14px/500 title; body 14px/20px muted mt-2. Install path 12px muted, code secondary
+    - unsupported: max-w-xl, p-8; command pre rounded-md, 1px --stroke-nous, px-3 py-2.5, mono 12px
+  Behaviour:
+    - z rung: var(--z-setup) = 1400
+    - shows while a bootstrap is active, failed, waiting on the setup choice, or the platform is unsupported; hides after success so onboarding takes over
+    - running stages tick a live elapsed timer every second; the log panel auto-scrolls to the newest line and auto-opens on failure
+    - stderr lines render at muted/70; each log line is prefixed with a muted/60 "[stage] "
+    - Install locally: button disables with a spinning loader until main hands off; an error shows as a destructive line under the choices
+    - Copy output → "Copied!" for 1.5s; Reload and retry clears main's latched failure then reloads
+  Mobile:      Absent by design: backend spawn, bootstrap and update (docs/PARITY.md). The "Connect to existing Hermes" path maps to mobile's
+               connection setup, which is at parity.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Desktop install · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .tw-xs { font-size: 0.75rem; line-height: 1rem; }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .setup { position: absolute; inset: 0; z-index: var(--z-setup); display: flex; align-items: center; justify-content: center; padding: 1rem; background: color-mix(in srgb, var(--dt-background) 90%, transparent); backdrop-filter: blur(12px); }
+      .setup-card { width: 100%; max-width: 42rem; border: 1px solid var(--stroke-nous); border-radius: var(--radius-xl); background: var(--dt-card); box-shadow: var(--shadow-nous); color: var(--dt-foreground); }
+      .setup-card--flow { display: flex; flex-direction: column; max-height: 90%; }
+      .setup-title { margin: 0; font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; letter-spacing: -0.025em; }
+      .brandmark { display: inline-grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; overflow: hidden; border-radius: var(--radius-md); background: var(--brand-tile); color: var(--black); }
+      .brandmark .ti { font-size: 1.25rem; }
+      .code-path { font-family: var(--dt-font-mono); color: var(--ui-text-secondary); }
+
+      .choice { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 1rem; background: var(--ui-bg-quinary); text-align: left; cursor: pointer; transition: all 150ms; }
+      .choice:hover { background: var(--chrome-action-hover); }
+      .choice__title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 500; }
+      .choice__title .ti { font-size: 1rem; color: var(--dt-muted-foreground); }
+      .choice p { margin: 0.5rem 0 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--dt-muted-foreground); }
+
+      .pbar { position: relative; width: 100%; height: 0.375rem; overflow: hidden; border-radius: var(--radius-full); background: var(--ui-bg-tertiary); }
+      .pbar > span { display: block; height: 100%; border-radius: inherit; background: var(--dt-primary); }
+      .pbar--error > span { background: var(--dt-destructive); }
+
+      .stages { margin: 0 0 1rem; padding: 0; list-style: none; display: grid; gap: 0.125rem; }
+      .srow { display: flex; align-items: center; gap: 0.75rem; padding: 0.25rem 0.75rem; }
+      .stage__name { font-size: 0.875rem; line-height: 1.25rem; color: var(--dt-muted-foreground); }
+      .srow.is-running .stage__name { font-weight: 500; color: var(--dt-foreground); }
+      .stage__glyph { display: flex; width: 1rem; height: 1rem; flex-shrink: 0; align-items: center; justify-content: center; }
+      .stage__glyph .codicon-check { font-size: 0.8125rem; color: var(--dt-muted-foreground); }
+      .stage__glyph .codicon-error { font-size: 1rem; color: var(--dt-destructive); }
+      .stage__pending { width: 0.375rem; height: 0.375rem; border-radius: 50%; border: 1px solid var(--ui-stroke-secondary); }
+      .stage__runner { display: flex; width: 1.5rem; height: 1.5rem; flex-shrink: 0; align-items: center; justify-content: center; margin: 0 -0.5rem 0 -1rem; color: var(--dt-primary); }
+      .stage__reason { margin: 0.125rem 0 0; font-size: 0.75rem; color: var(--dt-muted-foreground); }
+      .stage__meta { flex-shrink: 0; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--dt-muted-foreground); }
+
+      /* fourier-flow / lemniscate canvas loaders are approximated by a travelling stroke on a figure-eight */
+      .lemni { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 26 120; animation: lemni 1.6s linear infinite; }
+      @keyframes lemni { to { stroke-dashoffset: -146; } }
+
+      .logview { overflow: auto; margin-top: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.375rem 0.625rem; font-family: var(--dt-font-mono); font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; color: var(--ui-text-tertiary); user-select: text; }
+      .logview .stg { color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .logview .err { color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .install-cmd { margin: 0; overflow-x: auto; border: 1px solid var(--stroke-nous); border-radius: var(--radius-md); padding: 0.625rem 0.75rem; font-family: var(--dt-font-mono); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event.</p></div>
+            </div></div>
+          </div>
+
+          <section data-views="install">
+            <!-- ── Setup choice (first launch, nothing installed) ── -->
+            <div data-view="choice" class="setup">
+              <div class="setup-card" style="padding:2rem">
+                <div class="flex" style="align-items:flex-start;gap:1rem">
+                  <span class="brandmark"><i class="ti ti-feather"></i></span>
+                  <div style="min-width:0"><h2 class="setup-title">Set up Hermes Desktop</h2><p class="t-sm t-muted" style="margin:.375rem 0 0">Connect this app to a Hermes gateway you already run, or install Hermes locally on this computer.</p></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:1.5rem">
+                  <button class="choice" type="button"><div class="choice__title"><i class="ti ti-globe"></i><span>Connect to existing Hermes</span></div><p>Use a remote backend with a session token or browser sign-in. No local install will start.</p></button>
+                  <button class="choice" type="button"><div class="choice__title"><i class="ti ti-device-desktop"></i><span>Install Hermes locally</span></div><p>Download Hermes, create its Python environment, and run the backend on this computer.</p></button>
+                </div>
+                <div class="tw-xs t-muted" style="margin-top:1.5rem">Will install to <code class="code-path">C:\Users\you\AppData\Local\hermes</code></div>
+              </div>
+            </div>
+
+            <!-- ── Installing (stage 4 of 7 running) ── -->
+            <div data-view="progress" class="setup" hidden>
+              <div class="setup-card setup-card--flow">
+                <div class="flex shrink-0" style="align-items:flex-start;gap:1rem;padding:2rem 2rem 1rem">
+                  <span class="brandmark"><i class="ti ti-feather"></i></span>
+                  <div style="min-width:0"><h2 class="setup-title">Setting up Hermes Agent</h2><p class="t-sm t-muted" style="margin:.375rem 0 0">This is a one-time setup. The Hermes installer is downloading dependencies and configuring your machine. Subsequent launches will skip this step.</p></div>
+                </div>
+                <div style="flex:1;min-height:0;overflow-y:auto;padding:0 2rem .5rem">
+                  <div style="margin-bottom:1rem">
+                    <div class="flex items-center justify-between tw-xs t-muted" style="margin-bottom:.25rem"><span>3 of 7 steps complete -- now: Python deps (1:12)</span><span style="font-variant-numeric:tabular-nums">50%</span></div>
+                    <div class="pbar" role="progressbar" aria-valuenow="50"><span style="width:50%"></span></div>
+                  </div>
+                  <ol class="stages">
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Preflight</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">640 ms</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">uv</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">4.2s</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Repository</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">18.7s</span></li>
+                    <li class="srow is-running"><div class="stage__runner"><svg class="lemni" viewBox="0 0 64 32" aria-hidden="true"><path d="M32 16 C 24 4, 6 4, 6 16 S 24 28, 32 16 S 58 4, 58 16 S 40 28, 32 16 Z" /></svg></div><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Python deps</span></div></div><span class="stage__meta">Installing · 1:12</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Browser</span><span class="stage__glyph"><span class="stage__pending"></span></span></div></div><span class="stage__meta"></span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Setup wizard</span><span class="stage__glyph"><span class="stage__pending"></span></span></div></div><span class="stage__meta"></span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Path</span><span class="stage__glyph"><span class="stage__pending"></span></span></div></div><span class="stage__meta"></span></li>
+                  </ol>
+                  <div style="padding-top:.75rem">
+                    <button class="btn btn--ghost btn--xs t-muted" type="button" style="margin-left:-.5rem"><i class="ti ti-chevron-right i-sm"></i><span>Show installer output</span><span style="margin-left:.25rem;font-variant-numeric:tabular-nums">(214 lines)</span></button>
+                  </div>
+                </div>
+                <div class="shrink-0" style="padding:1rem;background:var(--dt-card);border-radius:0 0 var(--radius-xl) var(--radius-xl)">
+                  <div class="flex items-center justify-end"><button class="btn btn--ghost btn--sm" type="button">Cancel install</button></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Failed (log auto-opens) ── -->
+            <div data-view="failed" class="setup" hidden>
+              <div class="setup-card setup-card--flow">
+                <div class="flex shrink-0" style="align-items:flex-start;gap:1rem;padding:2rem 2rem 1rem">
+                  <div style="min-width:0"><h2 class="setup-title">Installation failed</h2><p class="t-sm t-muted" style="margin:.375rem 0 0">One of the install steps failed. On Windows, this can happen if another Hermes CLI or desktop instance is running. Stop any running Hermes instances, then retry. Check the details below or the desktop log for the full transcript.</p></div>
+                </div>
+                <div style="flex:1;min-height:0;overflow-y:auto;padding:0 2rem .5rem">
+                  <div style="margin-bottom:1rem">
+                    <div class="flex items-center justify-between tw-xs t-muted" style="margin-bottom:.25rem"><span>3 of 7 steps complete</span><span style="font-variant-numeric:tabular-nums">43%</span></div>
+                    <div class="pbar pbar--error"><span style="width:43%"></span></div>
+                  </div>
+                  <div class="flex t-sm" style="align-items:flex-start;gap:.5rem;margin-bottom:1rem">
+                    <i class="codicon codicon-error t-danger" style="font-size:1rem;margin-top:.125rem;flex-shrink:0"></i>
+                    <div style="min-width:0"><div class="t-medium t-danger">Error</div><p style="margin:.125rem 0 0;white-space:pre-wrap;color:color-mix(in srgb,var(--dt-foreground) 90%,transparent)">Stage python-deps failed (exit 1): uv pip install could not replace hermes_cli\venv\Lib\site-packages\pydantic_core\_pydantic_core.pyd — the file is in use by another process.</p></div>
+                  </div>
+                  <ol class="stages">
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Preflight</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">640 ms</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">uv</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">4.2s</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Repository</span><span class="stage__glyph"><i class="codicon codicon-check"></i></span></div></div><span class="stage__meta">18.7s</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Python deps</span><span class="stage__glyph"><i class="codicon codicon-error"></i></span></div><p class="stage__reason t-truncate">file in use: _pydantic_core.pyd</p></div><span class="stage__meta">Failed</span></li>
+                    <li class="srow"><div class="grow"><div class="flex items-center gap-1-5"><span class="stage__name">Browser</span><span class="stage__glyph"><span class="stage__pending"></span></span></div></div><span class="stage__meta"></span></li>
+                  </ol>
+                  <div style="padding-top:.75rem">
+                    <button class="btn btn--ghost btn--xs t-muted" type="button" style="margin-left:-.5rem"><i class="ti ti-chevron-down i-sm"></i><span>Hide installer output</span><span style="margin-left:.25rem;font-variant-numeric:tabular-nums">(5 lines)</span></button>
+                    <div class="logview" style="max-height:24rem"><div><span class="stg">[repository] </span><span>HEAD is now at b973068 desktop: onboarding arc border</span></div><div><span class="stg">[python-deps] </span><span>Resolved 184 packages in 2.31s</span></div><div><span class="stg">[python-deps] </span><span>Prepared 12 packages in 41.02s</span></div><div class="err"><span class="stg">[python-deps] </span><span>error: failed to remove file `venv\Lib\site-packages\pydantic_core\_pydantic_core.pyd`: Access is denied. (os error 5)</span></div><div class="err"><span class="stg">[python-deps] </span><span>stage failed with exit code 1</span></div></div>
+                  </div>
+                </div>
+                <div class="shrink-0" style="padding:1rem;background:var(--dt-card);border-radius:0 0 var(--radius-xl) var(--radius-xl)">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="tw-xs t-muted">Full transcript saved to <code class="code-path">%LOCALAPPDATA%\hermes\logs\</code></span>
+                    <div class="flex gap-2"><button class="btn btn--secondary btn--sm" type="button">Copy output</button><button class="btn btn--default btn--sm" type="button">Reload and retry</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Unsupported platform (macOS / Linux packaged build) ── -->
+            <div data-view="unsupported" class="setup" hidden>
+              <div class="setup-card" style="max-width:36rem;padding:2rem">
+                <h2 class="setup-title">Hermes needs a one-time install</h2>
+                <p class="t-sm t-muted" style="margin:.5rem 0 0">Automated first-launch install isn’t available on macOS yet. Open Terminal and run the command below, then relaunch this app. Subsequent launches will skip this step.</p>
+                <div style="margin-top:1rem">
+                  <div class="tw-xs t-medium t-muted" style="margin-bottom:.375rem">Install command</div>
+                  <pre class="install-cmd"><code>curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash</code></pre>
+                  <div class="flex items-center gap-2" style="margin-top:.5rem"><button class="btn btn--secondary btn--sm" type="button">Copy command</button><button class="btn btn--ghost btn--sm" type="button">View install docs</button></div>
+                </div>
+                <div class="flex items-center justify-between" style="margin-top:1.5rem;padding-top:.5rem">
+                  <span class="tw-xs t-muted">Will install to <code class="code-path">~/.hermes</code></span>
+                  <div class="flex items-center gap-2"><button class="btn btn--secondary btn--sm" type="button"><i class="ti ti-globe i-md"></i>Connect existing</button><button class="btn btn--default btn--sm" type="button">I’ve run it -- retry</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="install:choice">Setup choice</button>
+        <button class="btn btn--secondary btn--sm" data-show="install:progress">Installing</button>
+        <button class="btn btn--secondary btn--sm" data-show="install:failed">Failed</button>
+        <button class="btn btn--secondary btn--sm" data-show="install:unsupported">Unsupported platform</button>
+      </nav>
+    </div>
+  </body>
+</html>

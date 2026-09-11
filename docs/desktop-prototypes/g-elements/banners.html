@@ -1,0 +1,171 @@
+<!doctype html>
+<!--
+  Screen:      Banners (G · small in-app elements) — remote-display notice and billing wall
+  Replicates:  apps/desktop/src/components/remote-display-banner.tsx (→ notify() toast),
+               src/components/notifications.tsx (TopCenterStack, NotificationItem, STACK_SURFACE),
+               src/components/ui/alert.tsx, src/components/billing-banner.tsx,
+               src/components/chat/status-row.tsx, src/app/chat/composer/status-stack/index.tsx,
+               src/i18n/en.ts (remoteDisplayBanner, billingBlock)
+  Views:       #banner=remote | #banner=billing (Nous) | #banner=billing-provider
+  Measurements:
+    - remote: a persistent (durationMs 0) info toast in the TOP-CENTRE stack: fixed, left 50%,
+      top = titlebar 34px + 0.75rem, width min(40rem, 100% − 2rem), z --z-over-modal
+    - toast = Alert + STACK_SURFACE: grid [auto | 1fr | auto], gap-x .75rem gap-y .25rem, radius-lg
+      (2.4px), padding .75rem 1rem (.625rem right), 14px text, 1px --stroke-nous, bg popover at 95%,
+      --shadow-nous, backdrop blur; icon Info 16px muted (nudged down .42ch); dismiss = ghost icon-xs
+      with codicon close 14px
+    - billing: a StatusRow at the very top of the composer status stack (a card fused to the top of
+      the composer: rounded top, square bottom, inset mx-2, composer fill)
+    - StatusRow: min-height 1.5rem, gap .5rem, radius-md, padding .25rem .375rem; leading slot 14px with
+      codicon credit-card 0.8rem in destructive/85; text 0.73rem / 1rem in foreground/92 — title
+      medium, " · message" in muted/80; trailing: Button text/micro CTA + ghost 16px dismiss (close 0.75rem)
+  Behaviour (not visible statically):
+    - remote toast fires once per launch when GPU acceleration was disabled for RDP/VNC; it stays
+      until dismissed; with more toasts the stack collapses to the latest with a "+N more" expander
+    - billing row only renders for the session the block belongs to; it never disables the composer
+      (/topup, /model, /login still work); Nous CTA opens Settings → Billing in-app, other providers
+      deep-link out; Dismiss clears the block for this session. The sticky toast is the loud surface;
+      this row is the calm reminder that outlives it.
+  Mobile:      Remote-display notice is desktop-only; the billing wall exists on mobile (docs/PARITY.md).
+  Unsure:      exact composerDockCard('top') border; approximated with the composer ring.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Banners · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Toast (notifications.tsx NotificationItem = Alert + STACK_SURFACE) */
+      .toast-region { position: absolute; top: 0.75rem; left: calc(610px - var(--sidebar-width)); z-index: var(--z-over-modal); display: flex; flex-direction: column; gap: 0.5rem; width: min(40rem, calc(100% - 2rem)); transform: translateX(-50%); pointer-events: none; }
+      .toast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; column-gap: 0.75rem; row-gap: 0.25rem; border: 1px solid var(--stroke-nous); border-radius: var(--radius-lg); padding: 0.75rem 0.625rem 0.75rem 1rem; background: color-mix(in srgb, var(--dt-popover) 95%, transparent); box-shadow: var(--shadow-nous); backdrop-filter: blur(12px); color: var(--dt-card-foreground); font-size: 0.875rem; line-height: 1.25rem; pointer-events: auto; }
+      .toast__icon { margin-top: 0.42ch; font-size: 1rem; color: var(--dt-muted-foreground); }
+      .toast p { margin: 0; overflow-wrap: break-word; }
+      .toast .btn { margin-right: -0.25rem; color: var(--dt-muted-foreground); }
+
+      /* Status stack card fused to the top of the composer. */
+      .dock-stack { display: flex; flex-direction: column; }
+      .stack-card { margin: 0 0.5rem; overflow: hidden; padding-top: 0.125rem; border: 1px solid color-mix(in srgb, var(--dt-composer-ring) calc(7% * var(--composer-ring-strength)), transparent); border-bottom-color: transparent; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--composer-fill); backdrop-filter: blur(0.75rem); }
+      .srow { display: flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; border-radius: var(--radius-md); padding: 0.25rem 0.375rem; }
+      .srow:hover { background: var(--ui-row-hover-background); }
+      .srow__lead { display: flex; align-items: center; justify-content: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .srow__lead .codicon { font-size: 0.8rem !important; color: color-mix(in srgb, var(--dt-destructive) 85%, transparent); }
+      .srow__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.73rem; line-height: 1rem; color: color-mix(in srgb, var(--dt-foreground) 92%, transparent); }
+      .srow__text .muted { color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .srow__trail { display: flex; flex-shrink: 0; align-items: center; gap: 0.125rem; }
+      .srow__cta { color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .srow__x { width: 1rem !important; height: 1rem !important; border-radius: var(--radius-md) !important; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .srow__x .codicon { font-size: 0.75rem !important; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-time">Today 10:42</div>
+                <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                    <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p></div>
+                </div>
+              </div>
+            </div>
+
+            <section data-views="banner">
+              <!-- ── View: remote-display toast ────────────────────────── -->
+              <div data-view="remote">
+                <div class="toast-region" role="region" aria-label="Notifications">
+                  <div class="toast" role="status">
+                    <i class="ti ti-info-circle toast__icon"></i>
+                    <div><p>Software rendering active — remote display detected (RDP session). GPU acceleration is disabled to prevent flickering.</p></div>
+                    <button class="btn btn--ghost btn--icon-xs" aria-label="Dismiss"><i class="codicon codicon-close" style="font-size:.875rem"></i></button>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                      <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: billing wall (Nous) ─────────────────────────── -->
+              <div data-view="billing" hidden>
+                <div class="composer-dock">
+                  <div class="dock-stack">
+                    <div class="stack-card" data-slot="composer-status-stack">
+                      <div class="srow">
+                        <span class="srow__lead"><i class="codicon codicon-credit-card"></i></span>
+                        <span class="srow__text"><span class="t-medium">Out of Nous credits</span><span class="muted"> · Your account is out of credits. Add credits to keep going.</span></span>
+                        <span class="srow__trail">
+                          <button class="btn btn--text btn--micro srow__cta" type="button">Open billing</button>
+                          <button class="btn btn--ghost btn--icon-xs srow__x" aria-label="Dismiss"><i class="codicon codicon-close"></i></button>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="composer">
+                      <div class="composer__row">
+                        <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                        <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                        <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                        <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                        <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: billing wall (other provider) ───────────────── -->
+              <div data-view="billing-provider" hidden>
+                <div class="composer-dock">
+                  <div class="dock-stack">
+                    <div class="stack-card" data-slot="composer-status-stack">
+                      <div class="srow">
+                        <span class="srow__lead"><i class="codicon codicon-credit-card"></i></span>
+                        <span class="srow__text"><span class="t-medium">Out of credits — OpenRouter</span><span class="muted"> · This request requires more credits than your account has.</span></span>
+                        <span class="srow__trail">
+                          <button class="btn btn--text btn--micro srow__cta" type="button">Add credits</button>
+                          <button class="btn btn--ghost btn--icon-xs srow__x" aria-label="Dismiss"><i class="codicon codicon-close"></i></button>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="composer">
+                      <div class="composer__row">
+                        <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                        <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                        <button class="model-pill" type="button">deepseek-v4-flash<i class="codicon codicon-chevron-down i-xs"></i></button>
+                        <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                        <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="banner:remote">Remote display</button>
+        <button class="btn btn--secondary btn--sm" data-show="banner:billing">Billing (Nous)</button>
+        <button class="btn btn--secondary btn--sm" data-show="banner:billing-provider">Billing (provider)</button>
+      </nav>
+    </div>
+  </body>
+</html>

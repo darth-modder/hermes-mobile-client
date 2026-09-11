@@ -1,0 +1,300 @@
+<!doctype html>
+<!--
+  Screen:      Layout edit mode (B · panel inside Chat)   ⌘K "Toggle layout edit mode" / Ctrl+Shift+\ ; titlebar layout button
+  Replicates:  apps/desktop/src/components/pane-shell/edit-mode.tsx ($layoutEditMode, Esc exits),
+               components/pane-shell/tree/renderer/{edit-bar.tsx (TreeEditBar), layout-picker.tsx (LayoutPicker,
+               PresetCard, TreeThumbnail), tree-group.tsx (edit veil l.723-750, ZoneDropOverlay l.838-920),
+               floating-panes.tsx}, components/ui/drop-affordance.tsx, app/contrib/controller.tsx (presets l.385-445)
+  Views:       #le=edit | #le=save | #le=drag
+  Measurements:
+    - edit mode forces toggle-hidden panes visible, so the whole default tree shows: sessions | workspace |
+      [review | files] / terminal
+    - edit veil per zone: absolute, below the zone's strip (top 28px when a strip shows, else 0), z-50;
+      1px dashed outline at -2px offset, accent 55%; fill = accent 6% over chrome 55%; backdrop blur 2px;
+      centered chip: gripper .8125rem + pane title, .64rem semibold uppercase tracking .16em, --ui-text-secondary,
+      px-2 py-1, radius-md, 1px --ui-stroke-secondary, --dt-popover
+    - "Layouts" card: w-26rem (max 100% - 2rem), rounded-xl (3.2px), 1px --ui-stroke-secondary, --dt-popover,
+      shadow-2xl; centered until dragged (header = drag handle; position survives toggles for the session)
+    - header px-4 pt-3 pb-2: title 14px semibold; hint 12px muted/80 + kbd (border stroke-secondary,
+      foreground/5, px-1, mono 10px); actions gap-1.5: Reset (ghost sm), Done (outline sm)
+    - body px-4 pb-4, sections gap-4; section label .6rem semibold uppercase tracking .16em quaternary
+    - preset grid 4 cols gap-2; card p-1.5 gap-1.5 rounded-lg (2.4px) border stroke-secondary; active = border
+      --ui-accent + --ui-row-active-background; thumbnail h-12 (48px), zones = currentColor 16% at radius 2px,
+      1px gaps, flex weights from the preset tree; name .68rem medium (active foreground, else muted/80)
+    - user preset: hover ✕ size-5 radius-md --ui-bg-elevated at top-1 right-1
+    - "New grid layout": ghost sm h-8 full width, 1px dashed stroke-secondary, add .875rem
+    - save: "Save current arrangement as a template" 12px muted/80 with save .8125rem; form = Input h-7 12px +
+      Save (outline sm, disabled until named) + Cancel (ghost sm)
+    - drop sheets while dragging: inset 6px, rounded-2xl (4.8px), 2px dashed; idle = accent 5% over card 25%,
+      border accent 28%; target = accent 18% over card 55%, border accent 75%, blur 2px; half-zone for edges
+  Behaviour:
+    - veils make each zone body a drag handle for its active pane; tabs stay interactive; right-click = zone menu
+    - drag a pane onto another zone's centre to stack, onto an edge half to split, onto a strip to insert
+      (1px caret); zone sheets fade in over 80ms and glide between full/half (150ms)
+    - a preset card applies instantly; Reset restores the default tree; Done or Esc leaves edit mode
+    - "New grid layout" opens the zone editor (see zone-editor.html)
+    - presets: Default, Focus, Terminal deck, Quad; Terminal deck turns the terminal on (revealOnPreset)
+  Mobile:      Absent on mobile (docs/PARITY.md doesn't list it; the phone has no pane layout to edit).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Layout edit mode · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ltree { position: relative; display: flex; flex: 1; min-height: 0; }
+      .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+      .row { display: flex; min-height: 0; min-width: 0; }
+      .z { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--ui-editor-surface-background); }
+      .z--side { background: var(--ui-sidebar-surface-background); }
+      .vs { flex-shrink: 0; width: 1px; background: var(--ui-stroke-tertiary); }
+      .hs { flex-shrink: 0; height: 1px; background: var(--ui-stroke-tertiary); }
+      .strip { display: flex; height: 1.75rem; flex-shrink: 0; background: var(--ui-sidebar-surface-background); }
+      .ztab { display: flex; align-items: center; height: 100%; padding: 0 0.5rem; color: var(--ui-text-tertiary); font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; white-space: nowrap; }
+      .ztab + .ztab { border-left: 1px solid var(--ui-stroke-quaternary); }
+      .ztab.is-active { color: var(--dt-foreground); box-shadow: inset 0 -2px 0 var(--theme-primary); }
+      .panel-label { display: flex; align-items: center; gap: 0.5rem; padding-left: 0.5rem; color: var(--theme-primary); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+      .panel-label::before { content: ''; width: 0.5rem; height: 0.5rem; border-radius: 1px; background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      .frow { display: flex; align-items: center; gap: 0.25rem; height: 22px; padding: 0 0.75rem 0 17px; font-size: 0.75rem; color: var(--ui-text-secondary); white-space: nowrap; }
+      .frow .codicon { font-size: 0.875rem; color: var(--ui-text-tertiary); }
+      /* Edit veil (tree-group.tsx:726) */
+      .veil { position: absolute; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; justify-content: center; cursor: grab;
+        outline: 1px dashed color-mix(in srgb, var(--ui-accent) 55%, transparent); outline-offset: -2px;
+        background: color-mix(in srgb, var(--ui-accent) 6%, color-mix(in srgb, var(--ui-bg-chrome) 55%, transparent)); backdrop-filter: blur(2px); }
+      .veil__chip { display: flex; align-items: center; gap: 0.375rem; max-width: calc(100% - 1rem); padding: 0.25rem 0.5rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md);
+        background: var(--dt-popover); color: var(--ui-text-secondary); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
+      .veil__chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .veil__chip .codicon { font-size: 0.8125rem; flex-shrink: 0; }
+      /* Drop sheets (ZoneDropOverlay) */
+      .dsheet { position: absolute; inset: 6px; z-index: 40; border: 2px dashed color-mix(in srgb, var(--ui-accent) 28%, transparent); border-radius: var(--radius-2xl);
+        background: color-mix(in srgb, var(--ui-accent) 5%, color-mix(in srgb, var(--dt-card) 25%, transparent)); pointer-events: none; }
+      .dsheet.is-target { border-color: color-mix(in srgb, var(--ui-accent) 75%, transparent); background: color-mix(in srgb, var(--ui-accent) 18%, color-mix(in srgb, var(--dt-card) 55%, transparent)); backdrop-filter: blur(2px); }
+      .dsheet--right { left: 50%; }
+      .ghost { position: absolute; z-index: 60; display: flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.5rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); background: var(--dt-popover); box-shadow: var(--shadow-md);
+        font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ui-text-secondary); pointer-events: none; }
+      /* Layouts card (edit-bar.tsx) */
+      .lcard { position: absolute; z-index: 55; display: flex; flex-direction: column; width: 26rem; max-width: calc(100% - 2rem); border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-xl);
+        background: var(--dt-popover); color: var(--dt-popover-foreground); box-shadow: var(--shadow-lg); backdrop-filter: blur(0.75rem); }
+      .lcard--center { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+      .lcard__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem 0.5rem; cursor: grab; user-select: none; }
+      .lcard__title { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--dt-foreground); }
+      .lcard__hint { margin: 0; font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .lkbd { border: 1px solid var(--ui-stroke-secondary); border-radius: 4px; padding: 0 0.25rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-family: var(--dt-font-mono); font-size: 10px; }
+      .lcard__body { display: flex; flex-direction: column; gap: 1rem; padding: 0 1rem 1rem; }
+      .lsec { display: flex; flex-direction: column; gap: 0.5rem; }
+      .lsec__label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .pgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+      .preset { position: relative; }
+      .preset__btn { display: flex; flex-direction: column; gap: 0.375rem; width: 100%; padding: 0.375rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-lg); background: transparent; text-align: left; cursor: pointer; color: var(--dt-foreground); }
+      .preset__btn:hover { border-color: var(--ui-stroke-primary); background: var(--ui-row-hover-background); }
+      .preset__btn.is-active { border-color: var(--ui-accent); background: var(--ui-row-active-background); }
+      .preset__thumb { display: flex; height: 3rem; width: 100%; }
+      .preset__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 500; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .preset__btn.is-active .preset__name { color: var(--dt-foreground); }
+      .preset__del { position: absolute; top: 0.25rem; right: 0.25rem; z-index: 10; display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border: 0; border-radius: var(--radius-md); background: var(--ui-bg-elevated); color: var(--ui-text-tertiary); opacity: 0; transition: opacity 150ms; }
+      .preset:hover .preset__del, .preset__del.is-shown { opacity: 1; }
+      .preset__del .codicon { font-size: 0.7rem; }
+      .th { display: flex; flex: 1; gap: 1px; min-width: 0; min-height: 0; }
+      .th--col { flex-direction: column; }
+      .thc { display: flex; min-width: 0; min-height: 0; }
+      .thz { flex: 1; min-width: 0; min-height: 0; border-radius: 2px; background: color-mix(in srgb, currentColor 16%, transparent); }
+      .newgrid { width: 100%; height: 2rem; justify-content: center; border: 1px dashed var(--ui-stroke-secondary); color: var(--dt-muted-foreground); }
+      .newgrid:hover { border-color: var(--ui-stroke-primary); color: var(--dt-foreground); }
+      .savelink { display: flex; align-items: center; gap: 0.375rem; align-self: flex-start; border: 0; padding: 0; background: transparent; font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); cursor: pointer; }
+      .savelink:hover { color: var(--dt-foreground); }
+      .savelink .codicon { font-size: 0.8125rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="none" data-session="auth" data-title="">
+            <div class="ltree">
+              <!-- sessions zone (strip always shown: hideOnly) -->
+              <div class="z z--side" style="width:237px;flex-shrink:0">
+                <div class="strip"><span class="ztab is-active">sessions</span><span class="ztab">bots</span></div>
+                <div style="padding:.375rem .625rem">
+                  <div class="side-nav"><i class="ti ti-edit"></i>New session</div>
+                  <div class="side-nav"><i class="ti ti-puzzle"></i>Capabilities</div>
+                  <div class="side-nav"><i class="ti ti-message-circle"></i>Messaging</div>
+                  <div class="side-nav"><i class="ti ti-photo"></i>Artifacts</div>
+                  <div class="s-row is-selected" style="margin-top:2.5rem"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div></div>
+                  <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div></div>
+                  <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Draft README for the Android client</span></div></div>
+                </div>
+                <section data-views="v1"><div data-view="on" class="veil" style="top:28px"><span class="veil__chip"><i class="codicon codicon-gripper"></i><span>sessions</span></span></div><div data-view="drag" hidden><div class="dsheet"></div></div><div data-view="off" hidden></div></section>
+              </div>
+              <div class="vs"></div>
+              <!-- workspace zone (lone uncloseable → no strip) -->
+              <div class="z" style="flex:1">
+                <div class="thread"><div class="thread__inner" style="padding-inline:1.25rem">
+                  <div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div>
+                  <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p></div>
+                </div></div>
+                <section data-views="v2"><div data-view="on" class="veil" style="top:0"><span class="veil__chip"><i class="codicon codicon-gripper"></i><span>Refactor gateway auth handshake</span></span></div><div data-view="drag" hidden><div class="dsheet"></div></div><div data-view="off" hidden></div></section>
+                <section data-views="v2t"><div data-view="off"></div><div data-view="on" hidden><div class="dsheet dsheet--right is-target"></div></div></section>
+              </div>
+              <div class="vs"></div>
+              <!-- right column: [review | files] / terminal -->
+              <div class="col" style="width:400px;flex-shrink:0">
+                <div class="row" style="flex:1.6 1.6 0">
+                  <div class="z z--side" style="flex:1 1 0">
+                    <div class="flex items-center" style="height:1.75rem;padding:0 .625rem"><span class="panel-label">review</span></div>
+                    <div class="frow"><i class="codicon codicon-diff-modified" style="color:var(--tw-amber-500)"></i>use-gateway-boot.ts</div>
+                    <div class="frow"><i class="codicon codicon-diff-added" style="color:var(--ui-green)"></i>auth-revoked.spec.ts</div>
+                    <section data-views="v3"><div data-view="on" class="veil" style="top:0"><span class="veil__chip"><i class="codicon codicon-gripper"></i><span>review</span></span></div><div data-view="drag" hidden><div class="dsheet"></div></div><div data-view="off" hidden></div></section>
+                  </div>
+                  <div class="vs"></div>
+                  <div class="z z--side" style="flex:1.2 1.2 0">
+                    <div class="flex items-center" style="height:1.75rem;padding:0 .625rem"><span class="panel-label">hermes-android</span></div>
+                    <div class="frow"><i class="codicon codicon-folder"></i>android</div>
+                    <div class="frow"><i class="codicon codicon-folder"></i>docs</div>
+                    <div class="frow"><i class="codicon codicon-folder"></i>src</div>
+                    <div class="frow"><i class="codicon codicon-file"></i>package.json</div>
+                    <section data-views="v4"><div data-view="on" class="veil" style="top:0"><span class="veil__chip"><i class="codicon codicon-gripper"></i><span>files</span></span></div><div data-view="off" hidden></div></section>
+                  </div>
+                </div>
+                <div class="hs"></div>
+                <div class="z" style="flex:1 1 0">
+                  <div class="strip"><span class="ztab is-active">terminal</span></div>
+                  <div class="terminal" style="padding:.25rem .5rem;color:var(--ui-text-secondary)"><span class="prompt">PS</span> <span class="path">D:\Stuff\Code\git\hermes-android</span>&gt; npx expo start</div>
+                  <section data-views="v5"><div data-view="on" class="veil" style="top:28px"><span class="veil__chip"><i class="codicon codicon-gripper"></i><span>terminal</span></span></div><div data-view="drag" hidden><div class="dsheet"></div></div><div data-view="off" hidden></div></section>
+                </div>
+              </div>
+
+              <!-- ═══ Layouts card ═══ -->
+              <section data-views="le">
+                <div data-view="edit">
+                  <div class="lcard lcard--center" role="dialog" aria-label="Layouts">
+                    <header class="lcard__head">
+                      <div><h2 class="lcard__title">Layouts</h2><p class="lcard__hint">Pick a layout, or drag panes between zones. <kbd class="lkbd">Ctrl+Shift+\</kbd></p></div>
+                      <div class="flex items-center gap-1-5"><button class="btn btn--ghost btn--sm">Reset</button><button class="btn btn--outline btn--sm">Done</button></div>
+                    </header>
+                    <div class="lcard__body">
+                      <section class="lsec">
+                        <span class="lsec__label">Templates</span>
+                        <div class="pgrid">
+                          <div class="preset"><button class="preset__btn is-active"><span class="preset__thumb"><span class="th">
+                            <span class="thc" style="flex:1 1 0"><span class="thz"></span></span>
+                            <span class="thc" style="flex:3.4 3.4 0"><span class="thz"></span></span>
+                            <span class="thc" style="flex:1.25 1.25 0"><span class="th th--col"><span class="thc" style="flex:1.6 1.6 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span>
+                          </span></span><span class="preset__name">Default</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th">
+                            <span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:4.6 4.6 0"><span class="thz"></span></span>
+                          </span></span><span class="preset__name">Focus</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col">
+                            <span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3.2 3.2 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span>
+                            <span class="thc" style="flex:1 1 0"><span class="thz"></span></span>
+                          </span></span><span class="preset__name">Terminal deck</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col">
+                            <span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3 3 0"><span class="thz"></span></span></span></span>
+                            <span class="thc" style="flex:1 1 0"><span class="th"><span class="thc" style="flex:1.4 1.4 0"><span class="thz"></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span>
+                          </span></span><span class="preset__name">Quad</span></button></div>
+                        </div>
+                      </section>
+                      <section class="lsec">
+                        <span class="lsec__label">Custom</span>
+                        <div class="pgrid">
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col">
+                            <span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:2.4 2.4 0"><span class="thz"></span></span><span class="thc" style="flex:1.4 1.4 0"><span class="thz"></span></span></span></span>
+                            <span class="thc" style="flex:1 1 0"><span class="thz"></span></span>
+                          </span></span><span class="preset__name">Review deck</span></button><button class="preset__del is-shown" aria-label="Delete Review deck"><i class="codicon codicon-close"></i></button></div>
+                        </div>
+                        <button class="btn btn--ghost btn--sm newgrid"><i class="codicon codicon-add"></i>New grid layout</button>
+                      </section>
+                      <button class="savelink" type="button"><i class="codicon codicon-save"></i>Save current arrangement as a template</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div data-view="save" hidden>
+                  <div class="lcard lcard--center" role="dialog" aria-label="Layouts">
+                    <header class="lcard__head">
+                      <div><h2 class="lcard__title">Layouts</h2><p class="lcard__hint">Pick a layout, or drag panes between zones. <kbd class="lkbd">Ctrl+Shift+\</kbd></p></div>
+                      <div class="flex items-center gap-1-5"><button class="btn btn--ghost btn--sm">Reset</button><button class="btn btn--outline btn--sm">Done</button></div>
+                    </header>
+                    <div class="lcard__body">
+                      <section class="lsec">
+                        <span class="lsec__label">Templates</span>
+                        <div class="pgrid">
+                          <div class="preset"><button class="preset__btn is-active"><span class="preset__thumb"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3.4 3.4 0"><span class="thz"></span></span><span class="thc" style="flex:1.25 1.25 0"><span class="th th--col"><span class="thc" style="flex:1.6 1.6 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span></span></span><span class="preset__name">Default</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:4.6 4.6 0"><span class="thz"></span></span></span></span><span class="preset__name">Focus</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col"><span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3.2 3.2 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span><span class="preset__name">Terminal deck</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col"><span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3 3 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="th"><span class="thc" style="flex:1.4 1.4 0"><span class="thz"></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span></span></span><span class="preset__name">Quad</span></button></div>
+                        </div>
+                      </section>
+                      <section class="lsec">
+                        <span class="lsec__label">Custom</span>
+                        <button class="btn btn--ghost btn--sm newgrid"><i class="codicon codicon-add"></i>New grid layout</button>
+                      </section>
+                      <form class="flex items-center gap-1-5" onsubmit="return false">
+                        <input class="control is-focused" style="height:1.75rem;flex:1" placeholder="Name this layout…" value="Pairing setup" />
+                        <button class="btn btn--outline btn--sm" type="submit">Save</button>
+                        <button class="btn btn--ghost btn--sm" type="button">Cancel</button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                <div data-view="drag" hidden>
+                  <!-- Dragging the files pane over the workspace's right half → split right. Card moved aside by the user. -->
+                  <div class="ghost" style="left:700px;top:300px"><i class="codicon codicon-gripper"></i>files</div>
+                  <div class="lcard" style="left:14px;top:auto;bottom:14px;transform:none" role="dialog" aria-label="Layouts">
+                    <header class="lcard__head"><div><h2 class="lcard__title">Layouts</h2><p class="lcard__hint">Pick a layout, or drag panes between zones. <kbd class="lkbd">Ctrl+Shift+\</kbd></p></div><div class="flex items-center gap-1-5"><button class="btn btn--ghost btn--sm">Reset</button><button class="btn btn--outline btn--sm">Done</button></div></header>
+                    <div class="lcard__body">
+                      <section class="lsec">
+                        <span class="lsec__label">Templates</span>
+                        <div class="pgrid">
+                          <div class="preset"><button class="preset__btn is-active"><span class="preset__thumb"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3.4 3.4 0"><span class="thz"></span></span><span class="thc" style="flex:1.25 1.25 0"><span class="th th--col"><span class="thc" style="flex:1.6 1.6 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span></span></span><span class="preset__name">Default</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:4.6 4.6 0"><span class="thz"></span></span></span></span><span class="preset__name">Focus</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col"><span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3.2 3.2 0"><span class="thz"></span></span><span class="thc" style="flex:1.2 1.2 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span><span class="preset__name">Terminal deck</span></button></div>
+                          <div class="preset"><button class="preset__btn"><span class="preset__thumb"><span class="th th--col"><span class="thc" style="flex:3 3 0"><span class="th"><span class="thc" style="flex:1 1 0"><span class="thz"></span></span><span class="thc" style="flex:3 3 0"><span class="thz"></span></span></span></span><span class="thc" style="flex:1 1 0"><span class="th"><span class="thc" style="flex:1.4 1.4 0"><span class="thz"></span></span><span class="thc" style="flex:1 1 0"><span class="thz"></span></span></span></span></span></span><span class="preset__name">Quad</span></button></div>
+                        </div>
+                      </section>
+                      <section class="lsec">
+                        <span class="lsec__label">Custom</span>
+                        <button class="btn btn--ghost btn--sm newgrid"><i class="codicon codicon-add"></i>New grid layout</button>
+                      </section>
+                      <button class="savelink" type="button"><i class="codicon codicon-save"></i>Save current arrangement as a template</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="le:edit">Edit mode</button>
+        <button class="btn btn--secondary btn--sm" data-show="le:save">Save as template</button>
+        <button class="btn btn--secondary btn--sm" data-show="le:drag">Dragging a pane</button>
+      </nav>
+    </div>
+    <script>
+      // Veils hide while a pane is dragged; drop sheets appear instead. Keep the per-zone groups in step.
+      function sync(v) {
+        var drag = v === 'drag'
+        HDProto.showView('v1', drag ? 'drag' : 'on')
+        HDProto.showView('v2', drag ? 'off' : 'on')
+        HDProto.showView('v2t', drag ? 'on' : 'off')
+        HDProto.showView('v3', drag ? 'drag' : 'on')
+        HDProto.showView('v4', drag ? 'off' : 'on')
+        HDProto.showView('v5', drag ? 'drag' : 'on')
+      }
+      document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-show^="le:"]')
+        if (t) sync(t.dataset.show.slice(3))
+      })
+      document.addEventListener('DOMContentLoaded', function () {
+        var m = /le=(\w+)/.exec(location.hash)
+        sync(m ? m[1] : 'edit')
+      })
+    </script>
+  </body>
+</html>

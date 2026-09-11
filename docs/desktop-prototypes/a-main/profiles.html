@@ -1,0 +1,293 @@
+<!doctype html>
+<!--
+  Screen:      Profiles (A · overlay screen)   route `/profiles`
+  Replicates:  apps/desktop/src/app/profiles/index.tsx (ProfilesView, ProfileRow, ProfileDetail, SoulEditor),
+               components/ui/profile-glyph.tsx, components/chat/code-editor.tsx (framed mode),
+               app/overlays/panel.tsx (Panel primitives). Create / Rename / Delete dialogs are separate screens
+               (profiles/*-profile-dialog.tsx, section F) and are only referenced here.
+  Views:       #pv=list | #pv=empty | #pv=loading
+               #prof=default | #prof=work | #prof=researcher | #prof=dirty (SOUL.md edited, unsaved)
+               #profdlg=menu (row kebab / right-click menu)
+  Measurements:
+    - Panel content px-5 pb-4, pt titlebar/2-0.4375rem; header title 14px semibold, subtitle 12px muted/80
+    - PanelList 13rem with SearchField (h-7, 12px); rows h-7 radius-md .78rem, title medium fg/85, kebab 20px
+    - ProfileGlyph size-4 (16px): default = codicon home .75rem quaternary; others rounded 3px, soft tint 22%
+      of the profile colour, initial .5rem semibold uppercase in the profile colour
+    - detail h3 .95rem semibold; pills .62rem (Default = good, .env = muted);
+      path mono .66rem muted/55 mt-1 truncate; PanelMeta [5rem|1fr] .7rem
+    - SOUL.md label .7rem tracking .14em uppercase muted/50; description text-xs muted; "Unsaved changes" .65rem muted
+    - framed CodeEditor: rounded-md border stroke-tertiary, p-2 mount, mono .7rem, row 1.25rem, wraps, no gutter;
+      container min-h-48 (12rem)
+    - Save button size sm, device-floppy icon, right aligned; disabled until dirty
+  Behaviour:
+    - selection defaults to the default profile (else the first); search filters name + model
+    - default profile's menu has only "Rename…" (sets a display name; the id stays "default");
+      other profiles get "Rename…" and "Delete" (danger); right-click opens the same menu
+    - SOUL.md loads per profile (PageLoader "Loading SOUL.md..." min-h-44); Cmd/Ctrl+S saves inside the editor;
+      save toasts "SOUL.md saved"; load/save errors render a destructive banner under the editor
+    - "+" at the end of the list opens Create profile; F5 / Cmd-R refreshes; Esc or X closes
+  Mobile:      Profiles is at parity on mobile (docs/PARITY.md, Settings · M09).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Profiles · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Panel primitives (overlays/panel.tsx) — same block as cron.html / webhooks.html */
+      .panel { padding-bottom: 1rem; }
+      .pn-fill { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .pn-body { display: flex; flex: 1; gap: 1.25rem; min-height: 0; overflow: hidden; }
+      .pn-list { display: flex; flex-direction: column; flex-shrink: 0; width: 13rem; min-height: 0; }
+      .pn-list > .search-field { flex-shrink: 0; width: 100%; margin-bottom: 0.25rem; padding: 0 0.125rem; }
+      .pn-list__scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; }
+      .pn-row { position: relative; display: flex; flex-shrink: 0; align-items: center; width: 100%; height: 1.75rem; border-radius: var(--radius-md); color: var(--ui-text-secondary); font-size: 0.78rem; cursor: pointer; transition: background-color 100ms ease-out; }
+      .pn-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .pn-row.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .pn-row__main { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; height: 100%; padding: 0 0.25rem 0 0.5rem; }
+      .pn-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-kebab { display: grid; flex-shrink: 0; place-items: center; width: 1.25rem; height: 1.25rem; margin-right: 0.25rem; border: 0; border-radius: 4px; background: transparent; color: var(--ui-text-tertiary); opacity: 0; cursor: pointer; transition: color 100ms, background-color 100ms; }
+      .pn-row:hover .pn-kebab, .pn-kebab.is-open { opacity: 1; }
+      .pn-kebab:hover, .pn-kebab.is-open { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .pn-add { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 100%; height: 1.75rem; border: 0; border-radius: 2.5px; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); cursor: pointer; }
+      .pn-add:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .pn-section-label { font-size: 0.6rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-detail { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+      .pn-detail__inner { display: flex; flex-direction: column; gap: 1rem; padding: 0 0.5rem 1.5rem 0.25rem; }
+      .pn-h3 { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.025em; color: var(--dt-foreground); }
+      .pn-meta { display: grid; grid-template-columns: 5rem 1fr; gap: 0.25rem 0.5rem; margin: 0; font-size: 0.7rem; }
+      .pn-meta dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .pn-meta dd { min-width: 0; margin: 0; overflow-wrap: break-word; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .pn-pill { display: inline-flex; align-items: center; border-radius: var(--radius-full); padding: 0.125rem 0.375rem; font-size: 0.62rem; font-weight: 500; text-transform: capitalize; }
+      .pn-pill--good { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+      .pn-pill--muted { background: color-mix(in srgb, var(--dt-foreground) 10%, transparent); color: var(--dt-muted-foreground); }
+      .pn-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .pn-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .pn-empty__icon { font-size: 1.25rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .pn-empty__desc { max-width: 24rem; margin: 0; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pn-loader { display: grid; flex: 1; place-items: center; }
+      .pn-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; border-top-color: color-mix(in srgb, var(--dt-primary) 70%, transparent); }
+      .t-dim55 { color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+
+      /* ProfileGlyph */
+      .pglyph { display: grid; flex-shrink: 0; place-items: center; width: 1rem; height: 1rem; border-radius: 3px; font-size: 0.5rem; font-weight: 600; line-height: 1; text-transform: uppercase; }
+      .pglyph--default { border-radius: 0; color: var(--ui-text-quaternary); }
+      .pglyph--default .codicon { font-size: 0.75rem; }
+      .pglyph--purple { background: color-mix(in srgb, var(--ui-purple) 22%, transparent); color: var(--ui-purple); }
+      .pglyph--green { background: color-mix(in srgb, var(--ui-green) 22%, transparent); color: var(--ui-green); }
+
+      /* SOUL.md framed CodeEditor (CodeMirror 6, markdown) */
+      .soul-editor { display: flex; flex-direction: column; min-height: 12rem; overflow: hidden; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-md); }
+      .soul-editor__host { flex: 1; min-height: 0; overflow: auto; padding: 0.5rem; font-family: var(--dt-font-mono); font-size: 0.7rem; line-height: 1.25rem; color: var(--dt-foreground); white-space: pre-wrap; word-break: break-word; user-select: text; }
+      .soul-editor__host .md-h { font-weight: 600; color: var(--dt-primary); }
+      .soul-editor__host .md-m { color: var(--ui-text-tertiary); }
+      .soul-editor__host .caret { display: inline-block; width: 1px; height: 0.85rem; margin-bottom: -2px; background: var(--dt-foreground); }
+      .soul-error { display: flex; align-items: flex-start; gap: 0.5rem; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event and raise the sign-in prompt.</p></div></div></div>
+          </div>
+
+          <!-- ═══ Profiles overlay (Panel) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close profiles"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <section data-views="pv" class="panel">
+                  <!-- ── List + detail ── -->
+                  <div data-view="list" class="pn-fill">
+                    <header class="panel__header">
+                      <div class="grow"><h2 class="panel__title">Profiles</h2><p class="panel__subtitle" style="margin:0">3 profiles</p></div>
+                    </header>
+                    <div class="pn-body">
+                      <div class="pn-list">
+                        <label class="search-field"><i class="ti ti-search" style="color:color-mix(in srgb,var(--dt-muted-foreground) 70%,transparent)"></i><input placeholder="Search profiles..." /></label>
+                        <div class="pn-list__scroll">
+                          <div class="pn-row" data-show="prof:default"><div class="pn-row__main"><span class="pglyph pglyph--default" aria-hidden="true"><i class="codicon codicon-home"></i></span><span class="pn-row__title">default</span></div><button class="pn-kebab" aria-label="default" data-show="profdlg:menu-default"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="prof:work"><div class="pn-row__main"><span class="pglyph pglyph--purple" aria-hidden="true">w</span><span class="pn-row__title">work</span></div><button class="pn-kebab" aria-label="work" data-show="profdlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <div class="pn-row" data-show="prof:researcher"><div class="pn-row__main"><span class="pglyph pglyph--green" aria-hidden="true">r</span><span class="pn-row__title">researcher</span></div><button class="pn-kebab" aria-label="researcher" data-show="profdlg:menu"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                          <button class="pn-add" aria-label="New profile" title="New profile"><i class="codicon codicon-add"></i></button>
+                        </div>
+                      </div>
+
+                      <section data-views="prof" data-default="default" class="pn-fill" style="min-width:0">
+                        <!-- default (clean SOUL.md, Save disabled) -->
+                        <div data-view="default" class="pn-detail">
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div style="min-width:0">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap"><h3 class="pn-h3">default</h3><span class="pn-pill pn-pill--good">Default</span><span class="pn-pill pn-pill--muted" style="text-transform:none">.env</span></div>
+                                <p class="t-mono t-truncate t-dim55" style="margin:.25rem 0 0;font-size:.66rem" title="~/.hermes">~/.hermes</p>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Model</dt><dd><span class="t-mono">claude-opus-5<span class="t-dim55"> · anthropic</span></span></dd>
+                                <dt>Skills</dt><dd>42</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-2">
+                              <div class="flex justify-between gap-2" style="flex-wrap:wrap;align-items:baseline">
+                                <div><div class="pn-section-label" style="font-size:.7rem;letter-spacing:.14em">SOUL.md</div><p class="t-muted" style="margin:0;font-size:.75rem">The system prompt and persona instructions baked into this profile.</p></div>
+                              </div>
+                              <div class="soul-editor"><div class="soul-editor__host"><span class="md-h"># Hermes</span>
+
+You are Hermes, a pragmatic engineering partner for you.
+
+<span class="md-h">## How to work</span>
+<span class="md-m">-</span> Prefer small, reviewable diffs over sweeping rewrites.
+<span class="md-m">-</span> Run the tests before you say something works.
+<span class="md-m">-</span> Ask before touching anything outside the current repo.
+<span class="md-m">-</span> On Windows, use Git Bash paths in commands.
+
+<span class="md-h">## Voice</span>
+Plain, direct, no emoji. Say what you checked and what you did not.</div></div>
+                              <div class="flex justify-end"><button class="btn btn--default btn--sm is-disabled"><i class="ti ti-device-floppy"></i>Save SOUL.md</button></div>
+                            </section>
+                          </div>
+                        </div>
+
+                        <!-- default, edited (dirty) -->
+                        <div data-view="dirty" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div style="min-width:0">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap"><h3 class="pn-h3">default</h3><span class="pn-pill pn-pill--good">Default</span><span class="pn-pill pn-pill--muted" style="text-transform:none">.env</span></div>
+                                <p class="t-mono t-truncate t-dim55" style="margin:.25rem 0 0;font-size:.66rem">~/.hermes</p>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Model</dt><dd><span class="t-mono">claude-opus-5<span class="t-dim55"> · anthropic</span></span></dd>
+                                <dt>Skills</dt><dd>42</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-2">
+                              <div class="flex justify-between gap-2" style="flex-wrap:wrap;align-items:baseline">
+                                <div><div class="pn-section-label" style="font-size:.7rem;letter-spacing:.14em">SOUL.md</div><p class="t-muted" style="margin:0;font-size:.75rem">The system prompt and persona instructions baked into this profile.</p></div>
+                                <span class="t-muted" style="font-size:.65rem">Unsaved changes</span>
+                              </div>
+                              <div class="soul-editor"><div class="soul-editor__host"><span class="md-h"># Hermes</span>
+
+You are Hermes, a pragmatic engineering partner for you.
+
+<span class="md-h">## How to work</span>
+<span class="md-m">-</span> Prefer small, reviewable diffs over sweeping rewrites.
+<span class="md-m">-</span> Run the tests before you say something works.
+<span class="md-m">-</span> Ask before touching anything outside the current repo.
+<span class="md-m">-</span> On Windows, use Git Bash paths in commands.
+<span class="md-m">-</span> Pin mimo-v2.5 on verification sessions.<span class="caret"></span>
+
+<span class="md-h">## Voice</span>
+Plain, direct, no emoji. Say what you checked and what you did not.</div></div>
+                              <div class="flex justify-end"><button class="btn btn--default btn--sm"><i class="ti ti-device-floppy"></i>Save SOUL.md</button></div>
+                            </section>
+                          </div>
+                        </div>
+
+                        <!-- work -->
+                        <div data-view="work" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div style="min-width:0">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap"><h3 class="pn-h3">work</h3><span class="pn-pill pn-pill--muted" style="text-transform:none">.env</span></div>
+                                <p class="t-mono t-truncate t-dim55" style="margin:.25rem 0 0;font-size:.66rem">~/.hermes/profiles/work</p>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Model</dt><dd><span class="t-mono">deepseek-v4-flash<span class="t-dim55"> · deepseek</span></span></dd>
+                                <dt>Skills</dt><dd>18</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-2">
+                              <div><div class="pn-section-label" style="font-size:.7rem;letter-spacing:.14em">SOUL.md</div><p class="t-muted" style="margin:0;font-size:.75rem">The system prompt and persona instructions baked into this profile.</p></div>
+                              <div class="soul-editor"><div class="soul-editor__host">You handle client work. Keep answers short, cite the ticket number, and never push to a client repo without asking.</div></div>
+                              <div class="flex justify-end"><button class="btn btn--default btn--sm is-disabled"><i class="ti ti-device-floppy"></i>Save SOUL.md</button></div>
+                            </section>
+                          </div>
+                        </div>
+
+                        <!-- researcher: no model, SOUL.md failed to load -->
+                        <div data-view="researcher" class="pn-detail" hidden>
+                          <div class="pn-detail__inner">
+                            <header class="col gap-3">
+                              <div style="min-width:0">
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap"><h3 class="pn-h3">researcher</h3></div>
+                                <p class="t-mono t-truncate t-dim55" style="margin:.25rem 0 0;font-size:.66rem">~/.hermes/profiles/researcher</p>
+                              </div>
+                              <dl class="pn-meta">
+                                <dt>Model</dt><dd><span class="t-dim55">Not set</span></dd>
+                                <dt>Skills</dt><dd>7</dd>
+                              </dl>
+                            </header>
+                            <section class="col gap-2">
+                              <div><div class="pn-section-label" style="font-size:.7rem;letter-spacing:.14em">SOUL.md</div><p class="t-muted" style="margin:0;font-size:.75rem">The system prompt and persona instructions baked into this profile.</p></div>
+                              <div class="soul-editor"><div class="soul-editor__host"></div></div>
+                              <div class="soul-error"><i class="ti ti-alert-triangle" style="margin-top:2px;flex-shrink:0"></i><span>Failed to load SOUL.md</span></div>
+                              <div class="flex justify-end"><button class="btn btn--default btn--sm is-disabled"><i class="ti ti-device-floppy"></i>Save SOUL.md</button></div>
+                            </section>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+
+                  <!-- ── Empty (no header in this branch) ── -->
+                  <div data-view="empty" class="pn-empty" hidden>
+                    <div class="pn-empty__inner">
+                      <i class="codicon codicon-organization pn-empty__icon"></i>
+                      <p class="pn-empty__title">No profiles yet.</p>
+                      <p class="pn-empty__desc">Profiles are independent Hermes environments: separate config, skills, and SOUL.md.</p>
+                      <div style="margin-top:.5rem"><button class="btn btn--default btn--sm">New profile</button></div>
+                    </div>
+                  </div>
+
+                  <!-- ── Loading ── -->
+                  <div data-view="loading" class="pn-loader" role="status" aria-label="Loading profiles..." hidden><span class="loader"></span></div>
+                </section>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ Row menus (ActionsMenu w-40) ═══ -->
+          <section data-views="profdlg">
+            <div data-view="none"></div>
+            <div data-view="menu" hidden>
+              <div class="menu" style="left:232px;top:196px;width:10rem">
+                <button class="menu__item" data-show="profdlg:none"><i class="codicon codicon-edit"></i>Rename…</button>
+                <button class="menu__item is-danger" data-show="profdlg:none"><i class="codicon codicon-trash"></i>Delete</button>
+              </div>
+            </div>
+            <div data-view="menu-default" hidden>
+              <div class="menu" style="left:232px;top:168px;width:10rem">
+                <button class="menu__item" data-show="profdlg:none"><i class="codicon codicon-edit"></i>Rename…</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="pv:list">List</button>
+        <button class="btn btn--secondary btn--sm" data-show="pv:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="pv:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="prof:default">default</button>
+        <button class="btn btn--secondary btn--sm" data-show="prof:dirty">default · unsaved</button>
+        <button class="btn btn--secondary btn--sm" data-show="prof:work">work</button>
+        <button class="btn btn--secondary btn--sm" data-show="prof:researcher">researcher · error</button>
+        <button class="btn btn--secondary btn--sm" data-show="profdlg:menu">Row menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="profdlg:menu-default">Default row menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="profdlg:none">No menu</button>
+      </nav>
+    </div>
+  </body>
+</html>

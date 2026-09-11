@@ -1,0 +1,122 @@
+<!doctype html>
+<!--
+  Screen:      Wake indicator (D · ambient window, macOS only)   renderer `?win=wake#/`; shown while the
+               "Hey Hermes" wake word is detected / capturing (createWakeIndicatorWindowController)
+  Replicates:  apps/desktop/src/app/wake-indicator/{wake-indicator-app.tsx, wake-indicator.css, wake-indicator-root.tsx},
+               electron/wake-indicator-window.ts, electron/wake-indicator.ts
+  Views:       #wake=detected (breathing) | #wake=capturing (solid) | #wake=hidden (fading out)
+  Measurements:
+    - BrowserWindow 176×52 (WAKE_INDICATOR_WINDOW_WIDTH/HEIGHT), x = display centre − 88, y = display top
+      (over the menu bar), on the INTERNAL display if there is one, else the primary
+    - frameless, transparent, no shadow, NSPanel 'floating', not focusable, not movable, ignores the mouse
+      (setIgnoreMouseEvents(true, {forward:true})), visible on all Spaces and over fullscreen apps
+    - surface: flex, centred horizontally, padding-top 5px, pointer-events none
+    - light: 120×28 pill (radius 999px), backdrop blur 20px saturate 1.2, fill Tailwind violet-600 at 62%,
+      1px border purple-300 at 82%, glow 0 0 10px violet-600/70 + 0 0 24px purple-500/48
+      (here derived from --ui-purple with relative OKLCH: lightness/chroma fixed, hue from the token)
+  Behaviour (not visible statically):
+    - hidden: opacity 0, scale .96 (transition 500ms ease-out on opacity + transform); the window itself
+      hides 500ms after the state goes 'hidden' (WAKE_INDICATOR_FADE_MS)
+    - detected: 'wake-indicator-breathe' 2.5s ease-in-out infinite — opacity .34 → .94, scale .96 → 1
+    - capturing: opacity 1, scale 1
+    - reduced motion: no breathing (static at .72), 200ms opacity-only transition
+    - no gateway: the active renderer pushes only the visual phase
+  Mobile:      Wake indicator is absent on mobile by design (docs/PARITY.md).
+  Note:        on a notched MacBook display the 28px pill sits behind the notch and only its glow shows
+               around it; the notch is not drawn here.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wake indicator · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      /* macOS-style menu bar (prototype stand-in). */
+      .menubar { position: absolute; inset: 0 0 auto; height: 24px; display: flex; align-items: center; gap: 18px; padding: 0 14px; background: color-mix(in srgb, var(--ui-bg-elevated) 70%, transparent); backdrop-filter: blur(20px); color: var(--ui-text-primary); font-size: 12px; }
+      .menubar b { font-weight: 600; }
+      .menubar .ml-auto { display: flex; gap: 14px; align-items: center; }
+      .mock-app { position: absolute; overflow: hidden; border-radius: 10px; background: var(--ui-bg-editor); box-shadow: var(--shadow-md); }
+      .mock-app__bar { height: 28px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-sidebar); }
+      .mock-app__main { padding: 28px 36px; display: grid; gap: 11px; align-content: start; }
+      .mock-app i.line { display: block; height: 8px; border-radius: 2px; background: var(--ui-bg-secondary); }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+      .win-bounds { position: absolute; outline: 1px dashed color-mix(in srgb, var(--ui-text-quaternary) 70%, transparent); pointer-events: none; }
+
+      /* ── wake-indicator.css, colours derived from --ui-purple ─────────── */
+      .wake { display: flex; align-items: flex-start; justify-content: center; width: 176px; height: 52px; padding-top: 5px; pointer-events: none; }
+      .wake__light {
+        width: 120px;
+        height: 28px;
+        border: 1px solid oklch(from var(--ui-purple) 0.83 0.11 h / 0.82);
+        border-radius: 999px;
+        background: oklch(from var(--ui-purple) 0.54 0.25 h / 0.62);
+        box-shadow: 0 0 10px oklch(from var(--ui-purple) 0.54 0.25 h / 0.7), 0 0 24px oklch(from var(--ui-purple) 0.63 0.25 h / 0.48);
+        backdrop-filter: blur(20px) saturate(1.2);
+        opacity: 0;
+        transform: scale(0.96);
+        transition: opacity 500ms ease-out, transform 500ms ease-out;
+      }
+      .wake[data-state='detected'] .wake__light { animation: wake-breathe 2.5s ease-in-out infinite; }
+      .wake[data-state='capturing'] .wake__light { opacity: 1; transform: scale(1); }
+      .wake[data-state='hidden'] .wake__light { animation: wake-fade 2s ease-out infinite; }
+      @keyframes wake-breathe { 0%, 100% { opacity: 0.34; transform: scale(0.96); } 50% { opacity: 0.94; transform: scale(1); } }
+      /* Prototype-only loop so the 500ms fade-out can be seen on a static page. */
+      @keyframes wake-fade { 0%, 20% { opacity: 1; transform: scale(1); } 45%, 100% { opacity: 0; transform: scale(0.96); } }
+      @media (prefers-reduced-motion: reduce) {
+        .wake__light { transition: opacity 200ms ease-out; }
+        .wake[data-state='detected'] .wake__light { animation: none; opacity: 0.72; transform: scale(1); }
+      }
+      .wake-at { position: absolute; left: 522px; top: 0; }
+      /* 3× magnified callout of the same window. */
+      .zoom { position: absolute; left: 346px; top: 300px; width: 528px; height: 156px; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-xl); background: var(--proto-desk); box-shadow: var(--shadow-md); }
+      .zoom .menubar { position: absolute; transform-origin: top left; }
+      .zoom__inner { position: absolute; left: 0; top: 0; width: 176px; height: 52px; transform: scale(3); transform-origin: top left; }
+      .zoom__inner .menubar { width: 176px; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="mock-app" style="left:120px;top:70px;width:980px;height:640px" aria-hidden="true">
+              <div class="mock-app__bar"></div>
+              <div class="mock-app__main"><i class="line" style="width:34%;height:16px"></i><i class="line" style="width:92%"></i><i class="line" style="width:88%"></i><i class="line" style="width:60%"></i></div>
+            </div>
+            <div class="menubar" aria-hidden="true"><b>Hermes</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span class="ml-auto"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i><span>Thu 11 Sep 10:42</span></span></div>
+
+            <section data-views="wake">
+              <div data-view="detected">
+                <div class="wake-at"><div class="wake" data-state="detected"><div class="wake__light"></div></div></div>
+                <div class="zoom"><div class="zoom__inner"><div class="menubar" aria-hidden="true"></div><div class="wake" data-state="detected" style="position:absolute;inset:0"><div class="wake__light"></div></div></div></div>
+              </div>
+              <div data-view="capturing" hidden>
+                <div class="wake-at"><div class="wake" data-state="capturing"><div class="wake__light"></div></div></div>
+                <div class="zoom"><div class="zoom__inner"><div class="menubar" aria-hidden="true"></div><div class="wake" data-state="capturing" style="position:absolute;inset:0"><div class="wake__light"></div></div></div></div>
+              </div>
+              <div data-view="hidden" hidden>
+                <div class="wake-at"><div class="wake" data-state="hidden"><div class="wake__light"></div></div></div>
+                <div class="zoom"><div class="zoom__inner"><div class="menubar" aria-hidden="true"></div><div class="wake" data-state="hidden" style="position:absolute;inset:0"><div class="wake__light"></div></div></div></div>
+              </div>
+            </section>
+
+            <div class="win-bounds" style="left:522px;top:0;width:176px;height:52px"></div>
+            <div class="proto-note" style="left:522px;top:56px">Wake window 176×52 · top-centre</div>
+            <div class="proto-note" style="left:346px;top:462px">3× detail of the same window (light 120×28, 5px from the top)</div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="wake:detected">Detected (breathing)</button>
+        <button class="btn btn--secondary btn--sm" data-show="wake:capturing">Capturing</button>
+        <button class="btn btn--secondary btn--sm" data-show="wake:hidden">Hidden (fade-out)</button>
+      </nav>
+    </div>
+  </body>
+</html>

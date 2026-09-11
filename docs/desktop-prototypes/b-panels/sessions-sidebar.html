@@ -1,0 +1,598 @@
+<!doctype html>
+<!--
+  Screen:      Sessions sidebar (B · panel inside Chat)   pane id `sessions` (placement left, hideOnly)
+  Replicates:  apps/desktop/src/app/chat/sidebar/index.tsx (l.1474-1956 render), sessions-section.tsx (header l.60-102),
+               session-row.tsx (one-line row l.490-531, inbox card l.533-596), chrome.tsx (SidebarDateDivider,
+               SidebarRowShell, SidebarGroupRow), row-geometry.ts, filter-menu.tsx, projects/{overview-row,
+               workspace-group,workspace-header,entered-content}.tsx, cron-jobs-section.tsx, profile-switcher.tsx
+               (ProfileRail l.394-537, ProfileDropdown l.735-831), connection-switcher.tsx (statusbar, compact),
+               section-states.tsx, shell/sidebar-label.tsx (SidebarPanelLabel), app/contrib/controller.tsx l.159-179
+  Views:       #sb=recents | #sb=cards | #sb=projects | #sb=project | #sb=filter | #sb=profiles | #sb=connections
+               | #sb=search | #sb=empty
+  Measurements:
+    - pane width 237px (SIDEBAR_DEFAULT_WIDTH), max 360px; SidebarContent px-2.5 (.625rem)
+    - zone strip on top: sessions (and Bots, Bot Mode on by default) are hideOnly panes, which strip-visibility
+      treats as stranded at any count → the 28px PaneTabStrip always shows SESSIONS | BOTS (9px uppercase, no ✕,
+      right-click offers Show/Hide rows; minimize chevron hover-revealed)
+    - contrib shell: titlebar is a separate full-width 34px bar ABOVE the tree, and --titlebar-height is 0 inside
+      the tree, so the nav starts at pt .375rem (pt-[calc(var(--titlebar-height)+0.375rem)]), pb-2
+    - nav row h-7 (28px), gap-2, px-2, radius-md (2px), 13px medium, icon size-4 at 72% currentColor;
+      active = 1px --ui-stroke-tertiary + --ui-control-active-background. "New session" carries a kbd group at 55%
+    - search wrapper px-2 pb-1 pt-1; SearchField h-7, 12px, 30% opacity until focused/filled
+    - section header: flex justify-between gap-1 pb-1 pt-1.5; label = SidebarPanelLabel (.64rem semibold,
+      uppercase, tracking .16em, --theme-primary, 8px 2×2 dither square before it, pl-2); caret .75rem on hover
+    - header actions: icon-xs buttons (24px) in size-6 cells; "+"/check-all hover-revealed (opacity 0 → 1)
+    - row shell min-h 1.625rem (26px), pr-2, radius-md; body pl-2 pr-2 py-0.5 gap-1.5; lead cell size-3.5 (14px);
+      label 13px --ui-text-secondary, leading 1.35; age .625rem tertiary; kebab size-5 radius 4px
+    - density (Settings → Session List Density): comfortable adds min-h 2.75rem + a .625rem tertiary metadata line
+      (mt-0.5); detailed min-h 3.875rem + a .625rem quaternary preview line (mt-1)
+    - inbox card: min-h 3.375rem, body flex-col py-1.5 gap .4rem; header = lead + context (11px tertiary) + age +
+      kebab; title 13px medium --ui-text-primary; preview .625rem quaternary (gap .15rem); meta .625rem tertiary
+      (model · size … tasks n/m right-aligned)
+    - date divider: px-2 pb-0.5 pt-2 gap-2; caption .64rem semibold uppercase tracking .12em quaternary + 1px rule
+    - group row (project/profile): row shell + cluster; lead icon .875rem; label 13px link; totals .625rem tertiary
+      (tokens · $cost, only when Show → Tokens/Cost are on); nested previews pl-2 pb-1
+    - worktree lane header: min-h-6 px-2 pt-1 gap-1, .6875rem medium tertiary (repo level: semibold secondary);
+      lane body pl-2.5; empty lane "No sessions yet" min-h-7 pl-2 .75rem quaternary
+    - cron row: lead = size-1 dot (running: size-1.5 pulsing); countdown .6875rem tabular; hover swaps it for
+      zap / watch buttons (size-5)
+    - profile rail: px-0.5 pb-1 pt-0.5, gap-0.5; pills icon-xs 24px; profile squares size-5, radius 3px, 9px semibold
+      uppercase initial, soft hue fill (30% active / 22% idle), opacity 1 active / .55 idle; add/import size-5 at .55
+    - filter menu min-w-52 (13rem); profile dropdown min-w-48 max-w-72, opens upward (side top);
+      connection switcher lives in the STATUS BAR (compact), min-w-52, opens upward
+  Behaviour:
+    - rows: hover lands instantly and fades out 100ms; the age hides and the kebab shows on hover; a working row
+      paints a rotating arc border (.arc-border.arc-row); title marquees on hover when truncated
+    - click resumes; Shift-click pins; Ctrl/Cmd-click opens in a new tab; Ctrl/Cmd+Shift-click pops to a window;
+      Alt+Shift-click archives; middle-click opens in a new tab; the row is a drag source (drop on a zone to
+      stack/split); pinned rows and manual order reorder by drag (grabber swaps in for the dot on hover)
+    - "New session" row and the header "+" are drag sources too (drop onto a zone strip/edge to create there)
+    - date dividers and section labels collapse their groups; carets rotate 90deg (150ms)
+    - filter menu option rows keep the menu open; only the bottom actions dismiss it
+    - search runs FTS on the backend; results include sessions not in the loaded page
+    - hover a row from another profile pre-warms that profile's backend
+  Mobile:      Sessions are at parity on mobile (docs/PARITY.md); cards density, worktree lanes and the fleet rail
+               are thinner (projects are at parity through M10, worktree lanes need local git: absent).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sessions sidebar · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ws-row { display: flex; flex: 1; min-height: 0; }
+      .sb-host { display: flex; flex-direction: column; width: 237px; flex-shrink: 0; min-height: 0; border-right: 1px solid var(--sidebar-edge-border); background: var(--ui-sidebar-surface-background); }
+      .sb-host > [data-view] { display: flex; flex: 1; width: 100%; min-height: 0; }
+      /* Zone tab strip: hide-only chrome is always "stranded", so the sessions zone keeps its strip */
+      .strip { position: relative; display: flex; height: 1.75rem; flex-shrink: 0; background: var(--ui-sidebar-surface-background); }
+      .strip__tabs { display: flex; flex: 1; min-width: 0; }
+      .ztab { display: flex; align-items: center; height: 100%; max-width: 12rem; color: var(--ui-text-tertiary); font-size: 0.6875rem; font-weight: 500; cursor: grab; }
+      .ztab + .ztab { border-left: 1px solid var(--ui-stroke-quaternary); }
+      .ztab:not(.is-active):hover { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--black) var(--ui-tab-hover-darken), transparent); color: var(--ui-text-secondary); }
+      .ztab.is-active { color: var(--dt-foreground); box-shadow: inset 0 -2px 0 var(--theme-primary); }
+      .ztab span { padding: 0 0.5rem; font-size: 9px; letter-spacing: 0.025em; text-transform: uppercase; white-space: nowrap; }
+      .strip__min { display: grid; place-items: center; align-self: center; width: 1.25rem; height: 1.25rem; margin: 0 0.25rem; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ui-text-tertiary); opacity: 0; transition: opacity 150ms; }
+      .strip:hover .strip__min { opacity: 1; }
+      .strip__min .codicon { font-size: 0.75rem; }
+      /* Sidebar pane (index.tsx:1474) — own copy so the list can change per view */
+      .sb { display: flex; flex-direction: column; width: 100%; min-height: 0; overflow: hidden; padding: 0 0.625rem;
+        background: var(--ui-sidebar-surface-background); }
+      .sb__nav { display: grid; gap: 1px; padding: 0.375rem 0 0.5rem; flex-shrink: 0; }
+      .sb__search { flex-shrink: 0; padding: 0.25rem 0.5rem; }
+      .sb__scroll { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 0.4375rem; }
+      .sb__foot { flex-shrink: 0; padding: 0.125rem 0.125rem 0.25rem; }
+      /* SidebarPanelLabel (shell/sidebar-label.tsx) */
+      .panel-label { display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding-left: 0.5rem; color: var(--theme-primary);
+        font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+      .panel-label::before { content: ''; flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 1px;
+        background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      /* Section header (sessions-section.tsx:81) */
+      .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 0.25rem; flex-shrink: 0; padding: 0.375rem 0 0.25rem; }
+      .sec-head__label { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+      .caret { font-size: 0.75rem !important; color: var(--ui-text-tertiary); opacity: 0; transition: transform 150ms, opacity 150ms; }
+      .caret.is-open { transform: rotate(90deg); }
+      .sec-head:hover .caret, .g-row2:hover .caret, .lane:hover .caret { opacity: 1; }
+      .sec-head__acts { display: flex; align-items: center; gap: 0.125rem; }
+      .sec-head__acts .cell { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; }
+      .hover-act { opacity: 0; transition: opacity 150ms; }
+      .sec-head:hover .hover-act, .g-row2:hover .hover-act, .lane:hover .hover-act { opacity: 1; }
+      .btn.is-engaged { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+      .rows--pinned { padding: 0.25rem 0 0.5rem; }
+      .nest { display: grid; gap: 1px; padding: 0 0 0.25rem 0.5rem; }
+      /* Density: comfortable */
+      .s-row__sub { display: block; margin-top: 0.125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-tertiary); line-height: 1.35; }
+      /* Inbox card (session-row.tsx:533) */
+      .s-card { grid-template-columns: minmax(0, 1fr); min-height: 3.375rem; }
+      .s-card__body { display: flex; flex-direction: column; justify-content: center; gap: 0.4rem; min-width: 0; padding: 0.375rem 0 0.375rem 0.5rem; }
+      .s-card__head { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .s-card__ctx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--ui-text-tertiary); line-height: 1.35; }
+      .s-card__main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+      .s-card__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; color: var(--ui-text-primary); line-height: 1.35; }
+      .s-card__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-quaternary); line-height: 1.35; }
+      .s-card__meta { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; font-size: 0.625rem; color: var(--ui-text-tertiary); line-height: 1.35; font-variant-numeric: tabular-nums; }
+      .s-card:hover .s-row__age { opacity: 0; }
+      /* Group row (chrome.tsx SidebarGroupRow) */
+      .g-row2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; min-height: 1.625rem; padding-right: 0.5rem; border-radius: var(--radius-md); }
+      .g-row2__cluster { display: flex; align-items: center; gap: 0.375rem; min-width: 0; padding: 0.125rem 0.5rem; }
+      .g-row2__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .g-row2__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; color: var(--ui-text-secondary); line-height: 1.35; cursor: pointer; }
+      .g-row2__label:hover { color: var(--dt-foreground); text-decoration: underline; text-underline-offset: 0.25rem; }
+      .g-row2__label.is-active { color: var(--dt-foreground); }
+      .g-row2__side { position: relative; display: flex; align-items: center; }
+      .g-row2__totals { min-width: 2.25rem; text-align: right; white-space: nowrap; font-size: 0.625rem; line-height: 1; color: var(--ui-text-tertiary); transition: opacity 150ms; }
+      .g-row2:hover .g-row2__totals { opacity: 0; }
+      .g-row2__side .hover-act-wrap { position: absolute; right: 0; display: flex; align-items: center; }
+      .lead-dot { width: 0.25rem; height: 0.25rem; border-radius: var(--radius-full); }
+      .mini-btn { display: grid; place-items: center; width: 1rem; height: 1rem; flex-shrink: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ui-text-quaternary); cursor: pointer; }
+      .mini-btn:hover { background: var(--ui-control-hover-background); color: var(--dt-foreground); }
+      .mini-btn .codicon { font-size: 0.75rem; }
+      /* Worktree lane header (workspace-header.tsx:195) */
+      .lane { display: flex; align-items: center; gap: 0.25rem; min-height: 1.5rem; padding: 0.25rem 0.5rem 0; font-size: 0.6875rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .lane--repo { font-weight: 600; color: var(--ui-text-secondary); }
+      .lane__btn { display: flex; align-items: center; gap: 0.375rem; flex: 1; min-width: 0; }
+      .lane__btn .codicon { font-size: 0.75rem; }
+      .lane__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .lane-body { display: grid; gap: 1px; padding-left: 0.625rem; }
+      .lane-empty { min-height: 1.75rem; padding-left: 0.5rem; font-size: 0.75rem; line-height: 1.75rem; color: var(--ui-text-quaternary); }
+      .back-row { display: flex; align-items: center; gap: 0.375rem; min-height: 1.625rem; padding: 0.125rem 0.5rem; color: var(--ui-text-tertiary); opacity: 0.4; font-size: 0.75rem; cursor: pointer; }
+      .back-row:hover { opacity: 1; color: var(--dt-foreground); text-decoration: underline; text-underline-offset: 0.25rem; }
+      /* Cron row */
+      .cron-dot { width: 0.25rem; height: 0.25rem; border-radius: var(--radius-full); background: var(--ui-green); }
+      .cron-dot--running { width: 0.375rem; height: 0.375rem; background: var(--dt-primary); animation: sb-pulse 1.4s ease-in-out infinite; }
+      .cron-dot--paused { background: var(--ui-text-quaternary); }
+      @keyframes sb-pulse { 50% { opacity: 0.35; } }
+      .cron-meta { font-size: 0.6875rem; color: var(--ui-text-tertiary); font-variant-numeric: tabular-nums; }
+      .cron-acts { display: none; gap: 0.125rem; }
+      .cron-row:hover .cron-meta { display: none; }
+      .cron-row:hover .cron-acts { display: flex; }
+      .cron-acts button { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ui-text-tertiary); }
+      /* Profile rail (profile-switcher.tsx:394) */
+      .rail { display: flex; align-items: center; gap: 0.125rem; min-width: 0; }
+      .rail__strip { display: flex; align-items: center; gap: 0.25rem; flex: 1; min-width: 0; overflow: hidden; }
+      .pill.is-active { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .pill { color: var(--ui-text-tertiary); }
+      .psq { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; flex-shrink: 0; border: 0; border-radius: 3px; font-size: 0.5625rem; font-weight: 600; text-transform: uppercase; line-height: 1; opacity: 0.55; cursor: grab; }
+      .psq.is-active { opacity: 1; }
+      .psq--purple { color: var(--ui-purple); background: color-mix(in srgb, var(--ui-purple) 22%, transparent); }
+      .psq--purple.is-active { background: color-mix(in srgb, var(--ui-purple) 30%, transparent); }
+      .psq--green { color: var(--ui-green); background: color-mix(in srgb, var(--ui-green) 22%, transparent); }
+      .psq--orange { color: var(--ui-orange); background: color-mix(in srgb, var(--ui-orange) 22%, transparent); }
+      .rail-add { display: grid; place-items: center; width: 1.25rem; height: 1.25rem; flex-shrink: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ui-text-tertiary); opacity: 0.55; }
+      .rail-add .codicon { font-size: 0.75rem; }
+      .pdrop { flex: 1; min-width: 0; justify-content: space-between; padding: 0.125rem 0.25rem; color: var(--ui-text-secondary); }
+      .pdrop.is-open { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .pglyph { display: inline-grid; place-items: center; width: 0.875rem; height: 0.875rem; border-radius: 3px; font-size: 0.5rem; font-weight: 600; text-transform: uppercase; }
+      .conn-glyph { display: inline-grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; color: var(--ui-text-quaternary); }
+      .conn-glyph .ti { font-size: 0.75rem; }
+      .menu__item.is-radio.is-checked::after { content: '\eab2'; font-family: codicon; margin-left: auto; padding-left: 0.5rem; font-size: 0.75rem; color: var(--dt-foreground); }
+      .menu__item .sub-hint { margin-left: auto; display: flex; align-items: center; gap: 0.25rem; padding-left: 1rem; color: var(--ui-text-tertiary); }
+      .menu__item .sub-hint .codicon, .menu__item > .codicon-chevron-right { font-size: 1rem; }
+      .menu__item > .codicon-chevron-right { margin-left: auto; color: var(--ui-text-tertiary); }
+      .menu__label2 { padding: 0.25rem 0.5rem; font-size: 0.75rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .menu__section { display: flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.625rem 0.125rem; font-size: 0.625rem; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; color: var(--ui-text-tertiary); }
+      .warn-dot { width: 0.375rem; height: 0.375rem; border-radius: var(--radius-full); background: var(--tw-amber-500); }
+      .blank { display: grid; flex: 1; place-items: center; padding: 0 1rem; text-align: center; }
+      .fts-hit { color: var(--dt-foreground); font-weight: 500; }
+      .chat { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="none" data-session="auth" data-title="">
+            <div class="ws-row">
+              <section class="sb-host" data-views="sb">
+                <!-- Zone strip (tree-group.tsx + strip-visibility.ts): sessions + Bots are hideOnly → always shown, no ✕ -->
+                <div class="strip" data-zone-tabstrip="grp-sessions">
+                  <div class="strip__tabs" role="tablist"><div class="ztab is-active" role="tab" aria-selected="true"><span>sessions</span></div><div class="ztab" role="tab"><span>bots</span></div></div>
+                  <button class="strip__min" aria-label="Minimize"><i class="codicon codicon-chevron-down"></i></button>
+                </div>
+
+                <!-- ═══ View: recents — flat list, one-line rows (compact density) ═══ -->
+                <div data-view="recents">
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head"><button class="sec-head__label btn--text" type="button" style="border:0;background:transparent"><span class="panel-label">Pinned</span><i class="codicon codicon-chevron-right caret is-open"></i></button></div>
+                      <div class="rows rows--pinned">
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><i class="codicon codicon-pinned i-xs"></i></span><span class="s-row__label">Release checklist for v0.9</span></div><div class="s-row__meta"><span class="s-row__age">2d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                      </div>
+                      <div class="sec-head">
+                        <button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Sessions</span><i class="codicon codicon-chevron-right caret is-open"></i></button>
+                        <div class="sec-head__acts">
+                          <button class="btn btn--ghost btn--icon-xs hover-act" aria-label="Mark all as read"><i class="codicon codicon-check-all i-xs"></i></button>
+                          <button class="btn btn--ghost btn--icon-xs hover-act" aria-label="New session"><i class="codicon codicon-add i-xs"></i></button>
+                          <span class="cell"><button class="btn btn--ghost btn--icon-xs" aria-label="Filters"><i class="codicon codicon-list-filter i-xs"></i></button></span>
+                        </div>
+                      </div>
+                      <div class="rows">
+                        <div class="date-divider"><span class="date-divider__label">Earlier today</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--needs-you"></span></span><span class="s-row__label">Rotate staging API keys</span></div><div class="s-row__meta"><span class="s-row__age">4m</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div><div class="s-row__meta"><span class="s-row__age">12m</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row is-open"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Draft README for the Android client</span></div><div class="s-row__meta"><span class="s-row__age">1h</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Summarize inbox every morning</span></div><div class="s-row__meta"><span class="s-row__age">3h</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="date-divider"><span class="date-divider__label">Yesterday</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Port nous theme tokens to mobile</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Benchmark streaming throttle</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--error"></span></span><span class="s-row__label">SQLite FTS for session search</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="date-divider"><span class="date-divider__label">Earlier this week</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Kanban board orchestration ideas</span></div><div class="s-row__meta"><span class="s-row__age">5d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Voice mode latency notes</span></div><div class="s-row__meta"><span class="s-row__age">6d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                      </div>
+                      <div class="sec-head" style="margin-top:.25rem"><button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Cron jobs</span><i class="codicon codicon-chevron-right caret is-open"></i></button></div>
+                      <div class="rows">
+                        <div class="s-row cron-row"><div class="s-row__body"><span class="s-row__lead"><span class="cron-dot cron-dot--running"></span></span><span class="s-row__label">Morning inbox digest</span></div><div class="s-row__meta"><span class="cron-meta">running</span><span class="cron-acts"><button aria-label="Trigger now"><i class="codicon codicon-zap i-xs"></i></button><button aria-label="Manage"><i class="codicon codicon-watch i-xs"></i></button></span></div></div>
+                        <div class="s-row cron-row"><div class="s-row__body"><span class="s-row__lead"><span class="cron-dot"></span></span><span class="s-row__label">Nightly dependency audit</span></div><div class="s-row__meta"><span class="cron-meta">in 6h</span><span class="cron-acts"><button aria-label="Trigger now"><i class="codicon codicon-zap i-xs"></i></button><button aria-label="Manage"><i class="codicon codicon-watch i-xs"></i></button></span></div></div>
+                        <div class="s-row cron-row"><div class="s-row__body"><span class="s-row__lead"><span class="cron-dot cron-dot--paused"></span></span><span class="s-row__label">Weekly release notes</span></div><div class="s-row__meta"><span class="cron-meta">Paused</span><span class="cron-acts"><button aria-label="Trigger now"><i class="codicon codicon-zap i-xs"></i></button><button aria-label="Manage"><i class="codicon codicon-watch i-xs"></i></button></span></div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot">
+                      <div class="rail" role="group" aria-label="Profiles">
+                        <button class="btn btn--ghost btn--icon-xs pill is-active" aria-label="Show all profiles"><i class="codicon codicon-home"></i></button>
+                        <div class="rail__strip">
+                          <button class="psq psq--purple" aria-label="work">w</button>
+                          <button class="psq psq--green" aria-label="researcher">r</button>
+                          <button class="rail-add" aria-label="New profile"><i class="codicon codicon-add"></i></button>
+                          <button class="rail-add" aria-label="Import profile…"><i class="codicon codicon-cloud-download"></i></button>
+                        </div>
+                        <button class="btn btn--ghost btn--icon-xs pill" aria-label="Manage profiles…"><i class="codicon codicon-ellipsis"></i></button>
+                        <button class="btn btn--ghost btn--icon-xs pill" aria-label="Manage gateways…"><i class="codicon codicon-plug"></i></button>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+
+                <!-- ═══ View: cards — Inbox style (filter menu → Inbox style) ═══ -->
+                <div data-view="cards" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head">
+                        <button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Sessions</span><i class="codicon codicon-chevron-right caret is-open"></i></button>
+                        <div class="sec-head__acts"><button class="btn btn--ghost btn--icon-xs hover-act" aria-label="New session"><i class="codicon codicon-add i-xs"></i></button><span class="cell"><button class="btn btn--ghost btn--icon-xs is-engaged" aria-label="Filters"><i class="codicon codicon-list-filter i-xs"></i></button></span></div>
+                      </div>
+                      <div class="rows">
+                        <div class="date-divider"><span class="date-divider__label">Earlier today</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row s-card is-selected"><div class="s-card__body">
+                          <div class="s-card__head"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-card__ctx">hermes-agent</span><span class="s-row__age">now</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div>
+                          <div class="s-card__main"><span class="s-card__title">Refactor gateway auth handshake</span><span class="s-card__preview">The gateway auth handshake retries forever when the token is revoked…</span></div>
+                          <span class="s-card__meta"><span class="t-truncate">claude-opus-5</span><span>24 messages</span><span class="ml-auto">3/5</span></span>
+                        </div></div>
+                        <div class="s-row s-card"><div class="s-card__body">
+                          <div class="s-card__head"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-card__ctx">hermes-android</span><span class="s-row__age">12m</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div>
+                          <div class="s-card__main"><span class="s-card__title">Why is the e2e suite flaky on Windows?</span><span class="s-card__preview">Playwright times out on the reconnect spec about one run in five…</span></div>
+                          <span class="s-card__meta"><span class="t-truncate">deepseek-v4-flash</span><span>11 messages</span></span>
+                        </div></div>
+                        <div class="s-row s-card"><div class="s-card__body">
+                          <div class="s-card__head"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-card__ctx">hermes-android</span><span class="s-row__age">1h</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div>
+                          <div class="s-card__main"><span class="s-card__title">Draft README for the Android client</span><span class="s-card__preview">Write a README that covers pairing, the ws ticket and build flavours.</span></div>
+                          <span class="s-card__meta"><span class="t-truncate">mimo-v2.5</span><span>8 messages</span></span>
+                        </div></div>
+                        <div class="date-divider"><span class="date-divider__label">Yesterday</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row s-card"><div class="s-card__body">
+                          <div class="s-card__head"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-card__ctx">Home</span><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div>
+                          <div class="s-card__main"><span class="s-card__title">Port nous theme tokens to mobile</span><span class="s-card__preview">Map the --ui-* surface chain onto the NativeWind palette.</span></div>
+                          <span class="s-card__meta"><span class="t-truncate">claude-opus-5</span><span>37 messages</span><span class="ml-auto">5/5</span></span>
+                        </div></div>
+                        <div class="s-row s-card"><div class="s-card__body">
+                          <div class="s-card__head"><span class="s-row__lead"><span class="status-dot status-dot--error"></span></span><span class="s-card__ctx">hermes-agent</span><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div>
+                          <div class="s-card__main"><span class="s-card__title">SQLite FTS for session search</span><span class="s-card__preview">Add an FTS5 table over message text and wire it into session.search.</span></div>
+                          <span class="s-card__meta"><span class="t-truncate">claude-opus-5</span><span>19 messages</span></span>
+                        </div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active" aria-label="Show all profiles"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="psq psq--purple">w</button><button class="psq psq--green">r</button><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button></div></div>
+                  </aside>
+                </div>
+
+                <!-- ═══ View: projects — Grouping → Project (overview rows + previews) ═══ -->
+                <div data-view="projects" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head">
+                        <button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Projects</span><i class="codicon codicon-chevron-right caret is-open"></i></button>
+                        <div class="sec-head__acts"><button class="btn btn--ghost btn--icon-xs hover-act" aria-label="New project"><i class="codicon codicon-add i-xs"></i></button><span class="cell"><button class="btn btn--ghost btn--icon-xs is-engaged" aria-label="Filters"><i class="codicon codicon-list-filter i-xs"></i></button></span></div>
+                      </div>
+                      <div class="rows">
+                        <div>
+                          <div class="g-row2"><div class="g-row2__cluster"><span class="g-row2__lead"><i class="codicon codicon-folder-library i-sm"></i></span><span class="g-row2__label is-active">hermes-android</span><i class="codicon codicon-chevron-right caret is-open"></i><span class="grow"></span></div>
+                            <div class="g-row2__side"><span class="g-row2__totals">412k · $3.18</span><span class="hover-act-wrap hover-act"><button class="mini-btn" aria-label="Actions"><i class="codicon codicon-kebab-vertical"></i></button><button class="mini-btn" aria-label="New session in hermes-android"><i class="codicon codicon-add"></i></button></span></div></div>
+                          <div class="nest">
+                            <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                            <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div><div class="s-row__meta"><span class="s-row__age">12m</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                            <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Draft README for the Android client</span></div><div class="s-row__meta"><span class="s-row__age">1h</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                          </div>
+                        </div>
+                        <div>
+                          <div class="g-row2"><div class="g-row2__cluster"><span class="g-row2__lead" style="color:var(--ui-purple)"><i class="codicon codicon-rocket i-sm"></i></span><span class="g-row2__label">hermes-agent</span><i class="codicon codicon-chevron-right caret is-open"></i><span class="grow"></span></div>
+                            <div class="g-row2__side"><span class="g-row2__totals">1.2M · $9.40</span></div></div>
+                          <div class="nest">
+                            <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--error"></span></span><span class="s-row__label">SQLite FTS for session search</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                            <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Benchmark streaming throttle</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                          </div>
+                        </div>
+                        <div class="g-row2"><div class="g-row2__cluster"><span class="g-row2__lead"><span class="lead-dot" style="background:var(--ui-orange)"></span></span><span class="g-row2__label">Skunkworks</span><i class="codicon codicon-chevron-right caret"></i><span class="grow"></span></div><div class="g-row2__side"><span class="g-row2__totals">38k · $0.22</span></div></div>
+                        <div class="g-row2"><div class="g-row2__cluster"><span class="g-row2__lead"><i class="codicon codicon-home i-sm"></i></span><span class="g-row2__label">Home</span><i class="codicon codicon-chevron-right caret"></i><span class="grow"></span></div><div class="g-row2__side"><span class="g-row2__totals">96k · $0.61</span></div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="psq psq--purple">w</button><button class="psq psq--green">r</button><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button></div></div>
+                  </aside>
+                </div>
+
+                <!-- ═══ View: project — entered project, repo + worktree lanes ═══ -->
+                <div data-view="project" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head">
+                        <div class="sec-head__label"><span class="panel-label">hermes-android</span></div>
+                        <div class="sec-head__acts" style="gap:.125rem">
+                          <button class="mini-btn hover-act" style="opacity:1" aria-label="New worktree"><i class="codicon codicon-git-branch"></i></button>
+                          <button class="mini-btn" aria-label="Actions"><i class="codicon codicon-kebab-vertical"></i></button>
+                          <span class="cell"><button class="btn btn--ghost btn--icon-xs" aria-label="Show projects"><i class="codicon codicon-list-unordered i-xs"></i></button></span>
+                        </div>
+                      </div>
+                      <div class="back-row"><span class="s-row__lead"><i class="codicon codicon-arrow-left i-sm"></i></span>All projects</div>
+                      <div class="lane lane--repo"><div class="lane__btn"><span class="lane__lead"><i class="codicon codicon-repo"></i></span><span class="t-truncate">hermes-android</span><i class="codicon codicon-chevron-right caret is-open"></i></div><button class="mini-btn hover-act" aria-label="New session in hermes-android"><i class="codicon codicon-add"></i></button></div>
+                      <div class="lane-body">
+                        <div class="lane"><div class="lane__btn"><span class="lane__lead"><i class="codicon codicon-home"></i></span><span class="t-truncate">main</span><i class="codicon codicon-chevron-right caret is-open"></i></div><button class="mini-btn hover-act" aria-label="New session in main"><i class="codicon codicon-add"></i></button></div>
+                        <div class="rows">
+                          <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                          <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Draft README for the Android client</span></div><div class="s-row__meta"><span class="s-row__age">1h</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        </div>
+                        <div class="lane"><div class="lane__btn"><span class="lane__lead"><i class="codicon codicon-git-branch"></i></span><span class="t-truncate">m13-design-parity</span><i class="codicon codicon-chevron-right caret is-open"></i></div><button class="mini-btn hover-act"><i class="codicon codicon-add"></i></button><button class="mini-btn hover-act" aria-label="Actions"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                        <div class="rows">
+                          <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div><div class="s-row__meta"><span class="s-row__age">12m</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                          <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Port nous theme tokens to mobile</span></div><div class="s-row__meta"><span class="s-row__age">1d</span><span class="s-row__kebab"><i class="codicon codicon-kebab-vertical i-sm"></i></span></div></div>
+                        </div>
+                        <div class="lane"><div class="lane__btn"><span class="lane__lead"><i class="codicon codicon-git-branch"></i></span><span class="t-truncate">fix/reconnect-backoff</span><i class="codicon codicon-chevron-right caret is-open"></i></div></div>
+                        <div class="lane-empty">No sessions yet</div>
+                        <div class="lane"><div class="lane__btn"><span class="lane__lead"><i class="codicon codicon-checklist"></i></span><span class="t-truncate">kanban/task-42</span><i class="codicon codicon-chevron-right caret"></i></div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="psq psq--purple">w</button><button class="psq psq--green">r</button><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button></div></div>
+                  </aside>
+                </div>
+
+                <!-- ═══ View: filter — filter menu open with the Grouping submenu ═══ -->
+                <div data-view="filter" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head">
+                        <button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Sessions</span></button>
+                        <div class="sec-head__acts"><span class="cell"><button class="btn btn--ghost btn--icon-xs is-engaged" data-state="open" aria-label="Filters"><i class="codicon codicon-list-filter i-xs"></i></button></span></div>
+                      </div>
+                      <div class="rows">
+                        <div class="date-divider"><span class="date-divider__label">Earlier today</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div><div class="s-row__meta"><span class="s-row__age">12m</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Draft README for the Android client</span></div><div class="s-row__meta"><span class="s-row__age">1h</span></div></div>
+                        <div class="date-divider"><span class="date-divider__label">Yesterday</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Port nous theme tokens to mobile</span></div><div class="s-row__meta"><span class="s-row__age">1d</span></div></div>
+                      </div>
+                    </div>
+                  </aside>
+                  <!-- DropdownMenuContent align=start min-w-52 under the filter trigger -->
+                  <div class="menu" style="left:203px;top:228px;min-width:13rem" role="menu" aria-label="Filters">
+                    <button class="menu__item is-focused">Grouping<span class="sub-hint">Updated<i class="codicon codicon-chevron-right"></i></span></button>
+                    <button class="menu__item">Ordering<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item">Show<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item is-checked"><i class="codicon codicon-inbox"></i>Inbox style</button>
+                    <div class="menu__sep"></div>
+                    <div class="menu__label2">Filters</div>
+                    <button class="menu__item">Status<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item">Pull request<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item">Profile<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item">Project<i class="codicon codicon-chevron-right"></i></button>
+                    <button class="menu__item">All profiles</button>
+                    <button class="menu__item">Archived</button>
+                    <button class="menu__item">Reset to defaults</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item">Collapse all</button>
+                    <button class="menu__item">Mark all as read</button>
+                  </div>
+                  <!-- Grouping submenu (radio, keeps menu open on select) -->
+                  <div class="menu" style="left:415px;top:228px;min-width:9rem" role="menu" aria-label="Grouping">
+                    <button class="menu__item is-radio is-checked"><i class="codicon codicon-clock"></i>Updated</button>
+                    <button class="menu__item is-radio"><i class="codicon codicon-root-folder"></i>Project</button>
+                    <button class="menu__item is-radio"><i class="codicon codicon-pulse"></i>Status</button>
+                    <button class="menu__item is-radio"><i class="codicon codicon-account"></i>Profile</button>
+                  </div>
+                  <!-- Other submenus, for reference (not open): Ordering = Updated/Created/Status/Tokens/Cost/(Manual);
+                       Show = Updated/Preview(cards only)/Tokens/Cost/PR/Profile checkboxes; Status = dots Needs input /
+                       Working / Unread / Draft / Idle; Pull request = Open/Draft/Merged/Closed/No PR -->
+                </div>
+
+                <!-- ═══ View: profiles — condensed profile rail dropdown open (side top) ═══ -->
+                <div data-view="profiles" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head"><button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Sessions</span></button><div class="sec-head__acts"><span class="cell"><button class="btn btn--ghost btn--icon-xs"><i class="codicon codicon-list-filter i-xs"></i></button></span></div></div>
+                      <div class="rows">
+                        <div class="date-divider"><span class="date-divider__label">Earlier today</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Grant proposal outline</span></div><div class="s-row__meta"><span class="s-row__age">2h</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--done"></span></span><span class="s-row__label">Literature scan: speculative decoding</span></div><div class="s-row__meta"><span class="s-row__age">5h</span></div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot">
+                      <div class="rail">
+                        <button class="btn btn--ghost btn--icon-xs pill" aria-label="Switch to default"><i class="codicon codicon-home"></i></button>
+                        <button class="btn btn--ghost btn--xs pdrop is-open" aria-label="Profiles"><span class="flex items-center gap-1 t-truncate"><span class="pglyph psq--green" style="opacity:1">r</span><span class="t-truncate">researcher</span></span><i class="codicon codicon-chevron-down" style="opacity:.6"></i></button>
+                        <button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button>
+                        <button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button>
+                      </div>
+                    </div>
+                  </aside>
+                  <div class="menu" style="left:30px;bottom:34px;min-width:12rem;max-width:18rem" role="menu" aria-label="Profiles">
+                    <button class="menu__item"><i class="codicon codicon-add"></i>New profile</button>
+                    <button class="menu__item"><i class="codicon codicon-cloud-download"></i>Import profile…</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item is-radio"><span class="pglyph psq--purple">w</span>work</button>
+                    <button class="menu__item is-radio is-checked is-focused"><span class="pglyph psq--green">r</span>researcher</button>
+                    <button class="menu__item is-radio"><span class="pglyph psq--orange">s</span>support-bot</button>
+                    <div class="menu__sep"></div>
+                    <div class="menu__section"><span class="conn-glyph"><i class="ti ti-network"></i></span>Studio Mac<span class="warn-dot"></span></div>
+                    <button class="menu__item"><span class="pglyph" style="background:var(--ui-bg-secondary)"><i class="codicon codicon-home" style="font-size:.5rem;color:inherit"></i></span>default</button>
+                    <button class="menu__item"><span class="pglyph psq--purple">d</span>designer</button>
+                  </div>
+                </div>
+
+                <!-- ═══ View: connections — status-bar connection switcher open (side top) ═══ -->
+                <div data-view="connections" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions…" aria-label="Search sessions" /></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head"><button class="sec-head__label" type="button" style="border:0;background:transparent;padding:0"><span class="panel-label">Sessions</span></button><div class="sec-head__acts"><span class="cell"><button class="btn btn--ghost btn--icon-xs"><i class="codicon codicon-list-filter i-xs"></i></button></span></div></div>
+                      <div class="rows">
+                        <div class="date-divider"><span class="date-divider__label">Earlier today</span><span class="date-divider__rule"></span></div>
+                        <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor gateway auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--unread"></span></span><span class="s-row__label">Why is the e2e suite flaky on Windows?</span></div><div class="s-row__meta"><span class="s-row__age">12m</span></div></div>
+                      </div>
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="psq psq--purple">w</button><button class="psq psq--green">r</button><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button></div></div>
+                  </aside>
+                  <!-- Anchored to the status-bar "Local gateway" item (ConnectionSwitcher compact) -->
+                  <div class="menu" style="left:22px;bottom:4px;min-width:13rem;max-width:18rem" role="menu" aria-label="Registered gateways">
+                    <button class="menu__item is-radio is-checked"><span class="conn-glyph"><i class="ti ti-device-desktop"></i></span>Local</button>
+                    <button class="menu__item is-radio is-focused"><span class="conn-glyph"><i class="ti ti-network"></i></span>Studio Mac</button>
+                    <button class="menu__item is-radio"><span class="conn-glyph"><i class="ti ti-cloud"></i></span>Hermes Cloud</button>
+                    <button class="menu__item is-radio"><span class="conn-glyph"><i class="ti ti-terminal-2"></i></span>build-box</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item" style="color:var(--ui-text-secondary)"><i class="codicon codicon-settings-gear"></i>Manage gateways…</button>
+                  </div>
+                </div>
+
+                <!-- ═══ View: search — FTS results replace every section ═══ -->
+                <div data-view="search" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="sb__search"><label class="search-field is-filled"><i class="codicon codicon-search i-xs"></i><input value="gateway" aria-label="Search sessions" /><button class="btn btn--ghost btn--icon-xs" style="width:1.25rem;height:1.25rem" aria-label="Clear search"><i class="codicon codicon-close i-xs"></i></button></label></div>
+                    <div class="sb__scroll">
+                      <div class="sec-head"><div class="sec-head__label"><span class="panel-label">Results</span></div></div>
+                      <div class="rows">
+                        <div class="s-row is-selected"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--working"></span></span><span class="s-row__label">Refactor <span class="fts-hit">gateway</span> auth handshake</span></div><div class="s-row__meta"><span class="s-row__age">now</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label"><span class="fts-hit">Gateway</span> connecting overlay polish</span></div><div class="s-row__meta"><span class="s-row__age">3d</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">SSH remote backend setup</span></div><div class="s-row__meta"><span class="s-row__age">6d</span></div></div>
+                        <div class="s-row"><div class="s-row__body"><span class="s-row__lead"><span class="status-dot status-dot--idle"></span></span><span class="s-row__label">Summarize what changed in the <span class="fts-hit">gateway</span></span></div><div class="s-row__meta"><span class="s-row__age">3w</span></div></div>
+                      </div>
+                      <!-- No match: grid min-h-24 place-items-center, 12px tertiary: No sessions match “gateway”. -->
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="psq psq--purple">w</button><button class="psq psq--green">r</button><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button></div></div>
+                  </aside>
+                </div>
+
+                <!-- ═══ View: empty — no sessions at all (SidebarBlankState) ═══ -->
+                <div data-view="empty" hidden>
+                  <aside class="sb" aria-label="Sessions sidebar">
+                    <nav class="sb__nav">
+                      <button class="side-nav is-active" type="button"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-puzzle"></i><span class="t-truncate">Capabilities</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-message-circle"></i><span class="t-truncate">Messaging</span></button>
+                      <button class="side-nav" type="button"><i class="ti ti-photo"></i><span class="t-truncate">Artifacts</span></button>
+                    </nav>
+                    <div class="blank">
+                      <div class="col items-center gap-2">
+                        <i class="codicon codicon-root-folder" style="font-size:1.25rem;color:var(--ui-text-quaternary)"></i>
+                        <p class="t-tertiary" style="margin:0;font-size:.75rem">No sessions yet</p>
+                        <button class="btn btn--ghost btn--sm t-secondary" style="margin-top:.125rem"><i class="codicon codicon-add i-xs"></i>New project</button>
+                      </div>
+                    </div>
+                    <div class="sb__foot"><div class="rail"><button class="btn btn--ghost btn--icon-xs pill is-active"><i class="codicon codicon-home"></i></button><div class="rail__strip"><button class="rail-add"><i class="codicon codicon-add"></i></button><button class="rail-add"><i class="codicon codicon-cloud-download"></i></button></div><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-ellipsis"></i></button><button class="btn btn--ghost btn--icon-xs pill"><i class="codicon codicon-plug"></i></button></div></div>
+                  </aside>
+                </div>
+              </section>
+
+              <!-- Workspace zone (chat) -->
+              <div class="chat">
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                        <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">tui_gateway/server.py</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="sb:recents">Recents</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:cards">Inbox cards</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:projects">Projects</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:project">Project + worktrees</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:filter">Filter menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:profiles">Profile switcher</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:connections">Connection switcher</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:search">Search results</button>
+        <button class="btn btn--secondary btn--sm" data-show="sb:empty">Empty</button>
+      </nav>
+    </div>
+  </body>
+</html>

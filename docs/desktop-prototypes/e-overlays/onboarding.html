@@ -1,0 +1,394 @@
+<!doctype html>
+<!--
+  Screen:      Onboarding (E · app-wide overlay, boot-time)   DesktopOnboardingOverlay, always mounted
+  Replicates:  apps/desktop/src/components/onboarding/{index,flow,providers,glyph}.tsx,
+               components/first-run-remote-form.tsx, components/ui/{progress,button,input}.tsx,
+               i18n/en.ts (onboarding.*, install.*)
+  Views:       #onboarding=preparing | picker | picker-all | api-key | device-code | confirm-model | remote | remote-token
+  Measurements:
+    - overlay: fixed inset-0, bg --ui-chat-surface-background, p-6 (1.5rem), content centred; masks the whole window (data-glass-opaque)
+    - card: w-full max-w-[45rem], rounded-xl (3.2px), 1px --stroke-nous, bg --ui-chat-bubble-background, shadow-nous, overflow hidden
+    - header (picker / preparing only): px-5 pt-5 pb-1; title 15px/600 tracking-tight; desc mt-1 13px/20px tertiary, max-w-xl (36rem)
+    - body: grid gap-3 p-5 (1.25rem)
+    - Preparing: 14px muted line, Progress size lg (8px track, bg muted, primary fill, min 2%), 12px muted message + percent row
+    - featured row (Nous Portal): rounded-[8px], bg primary/6% (hover /10%), px-3 py-2.5, 20px icon tile, travelling arc border
+      (.arc-border.arc-nous.arc-reverse: 1.25px ring standing 2px off the row, 3.27s loop)
+      RECOMMENDED tag: bg primary, no radius, px-2 py-0.5, 0.64rem/600 uppercase tracking .16em, 8px dither square
+    - provider rows: rounded-[6px] px-3 py-2.5 gap-3, hover --ui-control-hover-background; title 13px/600; pitch mt-1 12px/20px muted;
+      trailing 16px chevron (terminal glyph for external CLI flows). Connected tag: bg primary/10, px-2 py-0.5, 12px/500 primary
+    - picker scroller: max-h 60dvh, p-1, gap-2. Footer: "choose later" left, "I have an API key" right (text buttons, xs, 500)
+    - API-key grid: 2 columns, gap-2, max-h 42dvh, p-1; card rounded-2xl (4.8px) p-3, bg background/60, hover accent/50,
+      selected = border primary + 2px ring primary/20; name 14px/500; short 12px muted
+    - device code: one 40×40 cell per char, gap-1.5, rounded-md, 1px --stroke-nous, mono 20px/600 uppercase; dashes are 6px quiet en-dashes
+    - confirm (bare, no card chrome): grid gap-7 py-6 centred; decoded label mono 12px/600 uppercase tracking .28em primary + 8px dither cursor;
+      eyebrow mono 10px tracking .2em muted; model mono 16px; price mono 12px muted;
+      [ BEGIN ]: rounded-md, 1px --stroke-nous, px-6 py-2.5, mono 12px/600 uppercase, label tracking .25em, primary; brackets primary/40 (hover primary)
+    - remote form: own layer, bg background/90 + backdrop-blur-md, p-4; card max-w-xl (36rem), rounded-xl, p-8, bg --dt-card, shadow-nous;
+      44px brand tile; title 20px/600; fields gap-4, labels 12px/500 muted; footer mt-7
+  Behaviour:
+    - z rung: var(--z-onboarding) 1300. "Change" opens the model picker lifted to --z-onboarding-popover 1310. The remote form is mounted by the
+      desktop-install overlay (setup choice → Connect to existing) and sits on --z-setup 1400.
+    - mounts from frame 1 over the boot overlay; hides when a provider is configured or after "I'll choose a provider later" (persisted skip)
+    - manual mode (Settings → Providers → Connect): adds a 32px ghost close X at top-3 right-3 (16px codicon close) and hides "choose later"
+    - "Other providers" expands the list and is persisted (localStorage hermes-onboarding-show-all-v1); the chevron rotates 180°
+    - featured arc loops forever; provider chevrons nudge 2px right on hover and go from muted to foreground
+    - API-key form: picking a card scrolls the entry field into view and focuses it; Enter submits; any non-empty value can save;
+      the Local / custom endpoint option swaps the input to a plain-text base URL and adds an optional API-key field
+    - device code: the whole row is the copy button; after copy the cells turn primary (border primary/50)
+    - confirm: "X CONNECTED" decodes left→right from ascii noise (45ms ticks, the last 4 chars of each word churn) with a blinking cursor.
+      Begin → exit: label fades down 8px (360ms) while model + button scramble into cuneiform, hold 300ms, surface fades 520ms (delay 660ms)
+    - prefers-reduced-motion: no decode, no exit choreography
+  Mobile:      Provider sign-in is at parity (Settings → Providers and Auth: API keys, Nous Portal OAuth, M04/M08/M09 in docs/PARITY.md);
+               the remote form maps to mobile's connection setup. "Preparing" (local install) and "Run models locally" are absent by
+               design: the phone never hosts a backend.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Onboarding · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .tw-xs { font-size: 0.75rem; line-height: 1rem; }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .dither { display: inline-block; flex-shrink: 0; width: 0.5rem; height: 0.5rem; background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      @keyframes ob-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+
+      /* Overlay + card (index.tsx:306-356) */
+      .ob { position: absolute; inset: 0; z-index: var(--z-onboarding); display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: var(--ui-chat-surface-background); }
+      .ob-card { position: relative; width: 100%; max-width: 45rem; overflow: hidden; border: 1px solid var(--stroke-nous); border-radius: var(--radius-xl); background: var(--ui-chat-bubble-background); box-shadow: var(--shadow-nous); color: var(--dt-foreground); }
+      .ob-bare { position: relative; width: 100%; max-width: 45rem; }
+      .ob-head { padding: 1.25rem 1.25rem 0.25rem; background: var(--ui-chat-bubble-background); }
+      .ob-head h2 { margin: 0; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.025em; }
+      .ob-head p { margin: 0.25rem 0 0; max-width: 36rem; font-size: 0.8125rem; line-height: 1.25rem; color: var(--ui-text-tertiary); }
+      .ob-body { display: grid; gap: 0.75rem; padding: 1.25rem; }
+      .ob-close { position: absolute; top: 0.75rem; right: 0.75rem; z-index: 10; color: var(--ui-text-tertiary); }
+
+      /* Progress (ui/progress.tsx) */
+      .pbar { position: relative; width: 100%; height: 0.375rem; overflow: hidden; border-radius: var(--radius-full); background: var(--dt-muted); }
+      .pbar--lg { height: 0.5rem; }
+      .pbar > span { display: block; height: 100%; border-radius: inherit; background: var(--dt-primary); transition: width 300ms ease-out; }
+
+      /* Provider rows (providers.tsx) */
+      .ob-scroll { display: grid; gap: 0.5rem; max-height: 60dvh; overflow-y: auto; padding: 0.25rem; }
+      .prov-row, .prov-featured { position: relative; display: flex; width: 100%; align-items: center; justify-content: space-between; border: 0; background: transparent; text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .prov-featured { gap: 1rem; border-radius: 8px; padding: 0.625rem 0.75rem; background: color-mix(in srgb, var(--dt-primary) 6%, transparent); }
+      .prov-featured:hover { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); }
+      .prov-row { gap: 0.75rem; border-radius: 6px; padding: 0.625rem 0.75rem; }
+      .prov-row:hover { background: var(--ui-control-hover-background); }
+      .prov-title { font-size: var(--conversation-text-font-size); font-weight: 600; color: var(--dt-foreground); }
+      .prov-pitch { margin: 0.25rem 0 0; font-size: 0.75rem; line-height: 1.25rem; color: var(--dt-muted-foreground); }
+      .prov-chev { font-size: 1rem !important; flex-shrink: 0; color: var(--dt-muted-foreground); transition: transform 150ms, color 150ms; }
+      .prov-row:hover .prov-chev { color: var(--dt-foreground); }
+      .prov-featured .prov-chev { color: var(--dt-primary); }
+      .prov-featured:hover .prov-chev { transform: translateX(0.125rem); }
+      .nous-tile { display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--brand-tile); color: var(--black); }
+      .nous-tile .ti { font-size: 0.8125rem; }
+      .rec-tag { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.125rem 0.5rem; background: var(--dt-primary); color: var(--dt-primary-foreground); font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em; }
+      .conn-tag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); font-size: 0.75rem; font-weight: 500; }
+      .conn-tag .ti { font-size: 0.75rem; }
+      .ob-toggle { align-self: center; justify-self: center; margin-top: 0.25rem; font-weight: 500; }
+      .ob-toggle .ti { font-size: 0.875rem; transition: transform 150ms; }
+      .ob-toggle.is-open .ti { transform: rotate(180deg); }
+
+      /* Arc border (styles.css .arc-border.arc-nous.arc-reverse). The nous arc's hard-coded blue → orange pair is approximated with --ui-blue → --ui-orange. */
+      .arc { pointer-events: none; position: absolute; inset: -0.125rem; overflow: hidden; border-radius: calc(8px + 0.125rem); padding: 0.078125rem;
+        -webkit-mask: linear-gradient(var(--black) 0 0) content-box, linear-gradient(var(--black) 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+      .arc::before { content: ''; position: absolute; top: 0; left: 0; width: 300%; height: 300%;
+        background: linear-gradient(160deg, transparent 0%, transparent 15%, var(--ui-blue) 20%, var(--ui-orange) 25%, transparent 35%, transparent 40%, transparent 55%, var(--ui-blue) 60%, var(--ui-orange) 65%, transparent 75%, transparent 80%, transparent 95%, var(--ui-blue) 100%);
+        animation: ob-arc 3.27s linear infinite reverse; }
+      @keyframes ob-arc { 0% { transform: translate(-10%, -10%) } 100% { transform: translate(-50%, -50%) } }
+
+      /* API key form (index.tsx:562-727) */
+      .key-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; max-height: 42dvh; overflow-y: auto; padding: 0.25rem; }
+      .key-card { border: 1px solid transparent; border-radius: var(--radius-2xl); padding: 0.75rem; background: color-mix(in srgb, var(--dt-background) 60%, transparent); text-align: left; cursor: pointer; transition: all 150ms; }
+      .key-card:hover { background: color-mix(in srgb, var(--dt-accent) 50%, transparent); }
+      .key-card.is-on { border-color: var(--dt-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dt-primary) 20%, transparent); }
+      .key-card__name { font-size: 0.875rem; font-weight: 500; color: var(--dt-foreground); }
+      .key-card__short { margin: 0.25rem 0 0; font-size: 0.75rem; color: var(--dt-muted-foreground); }
+
+      /* Device code (flow.tsx:149-180) */
+      .dcode { display: flex; width: 100%; align-items: center; justify-content: center; gap: 0.375rem; border: 0; background: transparent; cursor: pointer; }
+      .dcode__cell { display: flex; width: 2.5rem; height: 2.5rem; align-items: center; justify-content: center; border: 1px solid var(--stroke-nous); border-radius: var(--radius-md); font-family: var(--dt-font-mono); font-size: 1.25rem; font-weight: 600; text-transform: uppercase; color: var(--dt-foreground); transition: color 150ms, border-color 150ms; }
+      .dcode:hover .dcode__cell { border-color: var(--ui-stroke-secondary); }
+      .dcode__dash { width: 0.375rem; text-align: center; font-size: 1.125rem; color: var(--dt-muted-foreground); }
+
+      /* Confirm model (flow.tsx:217-331, glyph.tsx) */
+      .confirm { display: grid; place-items: center; gap: 1.75rem; padding: 1.5rem 0; text-align: center; }
+      .decoded { display: inline-flex; align-items: center; white-space: pre; font-family: var(--dt-font-mono); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.28em; font-variant-numeric: tabular-nums; color: var(--dt-primary); }
+      .decoded__cursor { margin-left: 0.375rem; margin-right: -0.875rem; border-radius: 1px; transform: translateY(-1px); animation: ob-blink 1s step-end infinite; }
+      .eyebrow { font-family: var(--dt-font-mono); font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--dt-muted-foreground); }
+      .tier { border-radius: var(--radius-sm); padding: 0.125rem 0.25rem; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.025em; }
+      .tier--pro { background: color-mix(in srgb, var(--dt-primary) 15%, transparent); color: var(--dt-primary); }
+      .hackery { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--stroke-nous); border-radius: var(--radius-md); padding: 0.625rem 1.5rem; background: transparent; font-family: var(--dt-font-mono); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--dt-primary); cursor: pointer; transition: all 150ms; }
+      .hackery:hover { border-color: color-mix(in srgb, var(--dt-primary) 60%, transparent); background: color-mix(in srgb, var(--dt-primary) 6%, transparent); }
+      .hackery__br { color: color-mix(in srgb, var(--dt-primary) 40%, transparent); transition: color 150ms; }
+      .hackery:hover .hackery__br { color: var(--dt-primary); }
+      .hackery__label { margin-right: -0.25em; padding-left: 0.25em; letter-spacing: 0.25em; }
+
+      /* First-run remote form (first-run-remote-form.tsx:225-345) */
+      .setup { position: absolute; inset: 0; z-index: var(--z-setup); display: flex; align-items: center; justify-content: center; padding: 1rem; background: color-mix(in srgb, var(--dt-background) 90%, transparent); backdrop-filter: blur(12px); }
+      .setup-card { display: flex; flex-direction: column; width: 100%; max-width: 36rem; border: 1px solid var(--stroke-nous); border-radius: var(--radius-xl); padding: 2rem; background: var(--dt-card); box-shadow: var(--shadow-nous); color: var(--dt-foreground); }
+      .setup-title { margin: 0; font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; letter-spacing: -0.025em; }
+      .brandmark { display: inline-grid; place-items: center; flex-shrink: 0; overflow: hidden; border-radius: var(--radius-md); background: var(--brand-tile); color: var(--black); }
+      .auth-box { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-md); padding: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <!-- App underneath (fully masked while onboarding is up) -->
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+            </div></div>
+          </div>
+
+          <section data-views="onboarding">
+            <!-- ── Preparing (boot still running; Header + Preparing) ── -->
+            <div data-view="preparing" class="ob">
+              <div class="ob-card">
+                <div class="ob-head"><h2>Let's get you setup with Hermes Agent</h2><p>Connect a model provider to start chatting. Most options take one click.</p></div>
+                <div class="ob-body">
+                  <div class="grid gap-3" role="status" style="display:grid">
+                    <p class="t-sm t-muted" style="margin:0">Starting Hermes…</p>
+                    <div class="pbar pbar--lg" role="progressbar" aria-valuenow="42"><span style="width:42%"></span></div>
+                    <div class="flex items-center justify-between gap-3 tw-xs t-muted"><span class="t-truncate">Loading Hermes settings</span><span>42%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Picker, collapsed (default: only the featured row) ── -->
+            <div data-view="picker" class="ob" hidden>
+              <div class="ob-card">
+                <div class="ob-head"><h2>Let's get you setup with Hermes Agent</h2><p>Connect a model provider to start chatting. Most options take one click.</p></div>
+                <div class="ob-body">
+                  <div class="col gap-2">
+                    <div class="ob-scroll">
+                      <button class="prov-featured" type="button">
+                        <span class="arc" aria-hidden="true"></span>
+                        <div class="grow">
+                          <div class="flex items-center gap-2"><span class="nous-tile"><i class="ti ti-feather"></i></span><span class="prov-title">Nous Portal</span><span class="rec-tag"><span class="dither"></span>Recommended</span></div>
+                          <p class="prov-pitch">One subscription, 300+ frontier models — the recommended way to run Hermes</p>
+                        </div>
+                        <i class="ti ti-chevron-right prov-chev"></i>
+                      </button>
+                    </div>
+                    <button class="btn btn--text btn--xs ob-toggle" type="button">Other providers<i class="ti ti-chevron-down"></i></button>
+                    <div class="flex items-center justify-between gap-3" style="padding-top:.25rem">
+                      <button class="btn btn--text btn--xs t-medium" type="button">I'll choose a provider later</button>
+                      <button class="btn btn--text btn--xs t-medium" type="button" style="margin-right:-.5rem">I have an API key</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Picker, expanded ("Other providers" open) ── -->
+            <div data-view="picker-all" class="ob" hidden>
+              <div class="ob-card">
+                <div class="ob-head"><h2>Let's get you setup with Hermes Agent</h2><p>Connect a model provider to start chatting. Most options take one click.</p></div>
+                <div class="ob-body">
+                  <div class="col gap-2">
+                    <div class="ob-scroll">
+                      <button class="prov-featured" type="button">
+                        <span class="arc" aria-hidden="true"></span>
+                        <div class="grow">
+                          <div class="flex items-center gap-2"><span class="nous-tile"><i class="ti ti-feather"></i></span><span class="prov-title">Nous Portal</span><span class="rec-tag"><span class="dither"></span>Recommended</span></div>
+                          <p class="prov-pitch">One subscription, 300+ frontier models — the recommended way to run Hermes</p>
+                        </div>
+                        <i class="ti ti-chevron-right prov-chev"></i>
+                      </button>
+                      <button class="prov-row" type="button"><div class="grow"><span class="prov-title">Fireworks AI</span><p class="prov-pitch">Direct model API — Fireworks-hosted frontier models</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">ChatGPT or Codex Subscription</span></div><p class="prov-pitch">Opens a verification page in your browser — Hermes connects automatically</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">MiniMax</span></div><p class="prov-pitch">Opens your browser to sign in, then continues here</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">Qwen Code</span><span class="conn-tag"><i class="ti ti-check"></i>Connected</span></div><p class="prov-pitch">Opens a verification page in your browser — Hermes connects automatically</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">xAI Grok</span></div><p class="prov-pitch">Opens your browser to sign in, then continues here</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">Anthropic API Key</span></div><p class="prov-pitch">Opens your browser to sign in, then continues here</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-title">Anthropic OAuth: Required Extra Usage Credits to Use Subscription</span></div><p class="prov-pitch">Sign in once in your terminal, then come back to chat</p></div><i class="ti ti-terminal-2 prov-chev"></i></button>
+                      <button class="prov-row" type="button"><div class="grow"><span class="prov-title">OpenRouter</span><p class="prov-pitch">One key, hundreds of models — a solid default</p></div><i class="ti ti-chevron-right prov-chev"></i></button>
+                    </div>
+                    <button class="btn btn--text btn--xs ob-toggle is-open" type="button">Collapse<i class="ti ti-chevron-down"></i></button>
+                    <div class="flex items-center justify-between gap-3" style="padding-top:.25rem">
+                      <button class="btn btn--text btn--xs t-medium" type="button">I'll choose a provider later</button>
+                      <button class="btn btn--text btn--xs t-medium" type="button" style="margin-right:-.5rem">I have an API key</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── API key form (mode = apikey; OpenRouter preselected) ── -->
+            <div data-view="api-key" class="ob" hidden>
+              <div class="ob-card">
+                <div class="ob-head"><h2>Let's get you setup with Hermes Agent</h2><p>Connect a model provider to start chatting. Most options take one click.</p></div>
+                <div class="ob-body">
+                  <div class="col gap-3">
+                    <div class="col gap-4">
+                      <button class="btn btn--text btn--xs t-medium" type="button" style="align-self:flex-start;margin-top:-.25rem"><i class="ti ti-chevron-left i-xs"></i>Back to sign in</button>
+                      <div class="key-grid">
+                        <button class="key-card" type="button"><div class="key-card__name">Fireworks AI</div><p class="key-card__short">direct model API</p></button>
+                        <button class="key-card is-on" type="button"><div class="key-card__name">OpenRouter</div><p class="key-card__short">one key, many models</p></button>
+                        <button class="key-card" type="button"><div class="key-card__name">OpenAI</div><p class="key-card__short">GPT-class models</p></button>
+                        <button class="key-card" type="button"><div class="key-card__name">Google Gemini</div><p class="key-card__short">Gemini models</p></button>
+                        <button class="key-card" type="button"><div class="key-card__name">xAI Grok</div><p class="key-card__short">Grok models</p></button>
+                        <button class="key-card" type="button"><div class="key-card__name">Local / custom endpoint</div><p class="key-card__short">self-hosted</p></button>
+                        <button class="key-card" type="button"><div class="key-card__name">DeepSeek</div></button>
+                        <button class="key-card" type="button"><div class="key-card__name">Groq</div></button>
+                        <button class="key-card" type="button"><div class="key-card__name">Mistral AI</div></button>
+                        <button class="key-card" type="button"><div class="key-card__name">Xiaomi MiMo</div></button>
+                      </div>
+                      <div class="col gap-2">
+                        <div class="flex items-center justify-between gap-3">
+                          <p class="t-muted" style="margin:0;font-size:.875rem;line-height:1.5rem">Hosts hundreds of models behind a single key. Good default for new installs.</p>
+                          <a class="btn btn--text btn--xs" href="#"><i class="ti ti-external-link i-xs"></i>Get a key</a>
+                        </div>
+                        <input class="control is-focused t-mono" type="password" value="sk-or-v1-3f9c2a7e81d0" placeholder="Paste API key" />
+                      </div>
+                      <div class="flex items-center justify-between gap-3">
+                        <div></div>
+                        <button class="btn btn--default" type="button"><i class="ti ti-key"></i>Connect</button>
+                      </div>
+                    </div>
+                    <div class="flex" style="justify-content:center;padding-top:.25rem"><button class="btn btn--text btn--xs t-medium" type="button">I'll choose a provider later</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Device-code sign-in (flow.status = polling; no header) ── -->
+            <div data-view="device-code" class="ob" hidden>
+              <div class="ob-card">
+                <div class="ob-body">
+                  <div class="col gap-4">
+                    <h3 class="t-semibold" style="margin:0;font-size:.875rem;line-height:1.25rem">Sign in with Nous Portal</h3>
+                    <p class="t-sm t-muted" style="margin:0">We opened Nous Portal in your browser. Enter this code there:</p>
+                    <button class="dcode" type="button" aria-label="Copy">
+                      <span class="dcode__cell">W</span><span class="dcode__cell">D</span><span class="dcode__cell">J</span><span class="dcode__cell">B</span>
+                      <span class="dcode__dash">–</span>
+                      <span class="dcode__cell">M</span><span class="dcode__cell">J</span><span class="dcode__cell">H</span><span class="dcode__cell">T</span>
+                    </button>
+                    <div class="flex items-center justify-between gap-3">
+                      <div style="min-width:0"><a class="btn btn--text btn--xs" href="#"><i class="ti ti-external-link i-xs"></i>Re-open verification page</a></div>
+                      <div class="flex items-center gap-3">
+                        <span class="flex items-center gap-2 tw-xs t-muted"><i class="ti ti-loader-2 spin i-xs"></i>Waiting for you to authorize...</span>
+                        <button class="btn btn--ghost btn--sm" type="button">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Confirm model (bare: no card chrome) ── -->
+            <div data-view="confirm-model" class="ob" hidden>
+              <div class="ob-bare">
+                <div class="ob-body">
+                  <div class="confirm">
+                    <span class="decoded" data-decode="NOUS PORTAL CONNECTED">NOUS PORTAL CONNECTED<span class="dither decoded__cursor" aria-hidden="true"></span></span>
+                    <div style="display:grid;justify-items:center;gap:.375rem">
+                      <div class="flex items-center gap-2"><span class="eyebrow">Default model</span><span class="tier tier--pro">Pro</span></div>
+                      <p class="t-mono" style="margin:0;font-size:1rem;line-height:1.5rem">xiaomi/mimo-v2.5</p>
+                      <p class="t-mono tw-xs t-muted" style="margin:0">$0.30 in / $1.20 out per Mtok</p>
+                      <button class="btn btn--text tw-xs" type="button" style="padding:0;margin-top:.125rem">Change</button>
+                    </div>
+                    <button class="hackery" type="button"><span class="hackery__br">[</span><span class="hackery__label">Begin</span><span class="hackery__br">]</span></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── First-run remote form: URL probed, OAuth gateway, not yet signed in ── -->
+            <div data-view="remote" class="setup" hidden>
+              <div class="setup-card">
+                <div class="flex" style="align-items:flex-start;gap:1rem">
+                  <span class="brandmark" style="width:2.75rem;height:2.75rem"><i class="ti ti-feather i-lg"></i></span>
+                  <div style="min-width:0"><h2 class="setup-title">Connect to existing Hermes</h2><p class="t-sm t-muted" style="margin:.375rem 0 0">Enter your gateway URL. Hermes Desktop will detect whether it needs a token or browser sign-in.</p></div>
+                </div>
+                <div class="col gap-4" style="margin-top:1.5rem">
+                  <label class="col" style="gap:.375rem"><span class="tw-xs t-medium t-muted">Gateway URL</span><input class="control" value="https://hermes.example.dev" placeholder="https://gateway.example.com/hermes" /><span class="tw-xs t-muted">Use the base URL of the Hermes gateway, including https:// when remote.</span></label>
+                  <div class="auth-box">
+                    <div class="flex items-center justify-between gap-3">
+                      <div><div class="t-sm t-medium">Authentication</div><p class="tw-xs t-muted" style="margin:.25rem 0 0">Sign in with GitHub before testing this gateway.</p></div>
+                      <button class="btn btn--default btn--sm" type="button"><i class="ti ti-login"></i>Sign in with GitHub</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-3" style="margin-top:1.75rem;flex-wrap:wrap">
+                  <button class="btn btn--ghost btn--sm" type="button">Back</button>
+                  <div class="flex items-center gap-2"><button class="btn btn--secondary btn--sm" type="button" disabled>Test connection</button><button class="btn btn--default btn--sm" type="button" disabled>Apply and reconnect</button></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── First-run remote form: token gateway, tested OK (Apply enabled) ── -->
+            <div data-view="remote-token" class="setup" hidden>
+              <div class="setup-card">
+                <div class="flex" style="align-items:flex-start;gap:1rem">
+                  <span class="brandmark" style="width:2.75rem;height:2.75rem"><i class="ti ti-feather i-lg"></i></span>
+                  <div style="min-width:0"><h2 class="setup-title">Connect to existing Hermes</h2><p class="t-sm t-muted" style="margin:.375rem 0 0">Enter your gateway URL. Hermes Desktop will detect whether it needs a token or browser sign-in.</p></div>
+                </div>
+                <div class="col gap-4" style="margin-top:1.5rem">
+                  <label class="col" style="gap:.375rem"><span class="tw-xs t-medium t-muted">Gateway URL</span><input class="control" value="http://192.168.1.40:9119" /><span class="tw-xs t-muted">Use the base URL of the Hermes gateway, including https:// when remote.</span></label>
+                  <label class="col" style="gap:.375rem"><span class="tw-xs t-medium t-muted">Session token</span><input class="control is-focused" type="password" value="hms_7c1e0b54a2" placeholder="Paste session token" /><span class="tw-xs t-muted">Paste the session token from the remote gateway .env file.</span></label>
+                  <div class="flex items-center gap-2 t-sm t-accent"><i class="ti ti-check i-md"></i><span>Connected to http://192.168.1.40:9119 (v0.9.2).</span></div>
+                </div>
+                <div class="flex items-center justify-between gap-3" style="margin-top:1.75rem;flex-wrap:wrap">
+                  <button class="btn btn--ghost btn--sm" type="button">Back</button>
+                  <div class="flex items-center gap-2"><button class="btn btn--secondary btn--sm" type="button">Test connection</button><button class="btn btn--default btn--sm" type="button">Apply and reconnect</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:preparing">Preparing</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:picker">Picker</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:picker-all">Picker · all providers</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:api-key">API key</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:device-code">Device code</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:confirm-model">Confirm model</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:remote">Remote · OAuth</button>
+        <button class="btn btn--secondary btn--sm" data-show="onboarding:remote-token">Remote · token tested</button>
+      </nav>
+    </div>
+    <script>
+      // Prototype-only: replays the DecodedLabel decode (glyph.tsx useDecoded) so the motion is visible.
+      ;(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        var G = '/\\|-_=+<>~:*'
+        function run(el) {
+          var chars = Array.from(el.getAttribute('data-decode'))
+          var scr = chars.map(function () { return false })
+          for (var i = 0; i < chars.length; ) {
+            if (!/[a-z0-9]/i.test(chars[i])) { i++; continue }
+            var j = i
+            while (j < chars.length && /[a-z0-9]/i.test(chars[j])) j++
+            for (var k = Math.max(i, j - 4); k < j; k++) scr[k] = true
+            i = j
+          }
+          var tails = []
+          scr.forEach(function (s, idx) { if (s) tails.push(idx) })
+          var node = el.firstChild
+          var resolved = 0
+          var id = setInterval(function () {
+            resolved += 0.5
+            var settled = tails.slice(0, Math.floor(resolved))
+            node.nodeValue = chars.map(function (ch, idx) { return scr[idx] && settled.indexOf(idx) < 0 ? G[(Math.random() * G.length) | 0] : ch }).join('')
+            if (Math.floor(resolved) >= tails.length) { clearInterval(id); setTimeout(function () { run(el) }, 2400) }
+          }, 45)
+        }
+        document.addEventListener('DOMContentLoaded', function () { document.querySelectorAll('[data-decode]').forEach(run) })
+      })()
+    </script>
+  </body>
+</html>

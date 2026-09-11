@@ -1,0 +1,158 @@
+<!doctype html>
+<!--
+  Screen:      Send diagnostics dialog (F · dialogs), consent-gated debug-bundle upload
+  Replicates:  apps/desktop/src/components/send-diagnostics-dialog.tsx, store/send-diagnostics.ts (phases),
+               components/ui/{dialog,button,copy-button}.tsx, lib/external-link.tsx (copy: en.ts sendDiagnostics)
+  Views:       #dlg=consent | #dlg=uploading | #dlg=done | #dlg=error
+  Measurements:
+    - DialogContent "max-w-[30rem]" → 30rem; body p-4, grid gap-3; radius-xl; --shadow-nous; X close
+    - consent title: Lock icon size-4 in --ui-text-tertiary (NOT primary) + "Send diagnostics to Nous";
+      description 12px/16px tertiary, whitespace pre-line, left aligned
+    - done: link row flex gap-2, rounded-md (2px), 1px --ui-stroke-tertiary, px-3 py-2; link .78rem mono, truncates
+      (the source asks for --ui-text-secondary, but the unlayered .ref rule wins, so it paints --dt-primary);
+      CopyButton "inline": rounded-sm, px-1.5 py-0.5, 12px --dt-muted-foreground, Copy icon size-3.5, hover
+      --dt-accent fill + foreground; handoff lead .8rem --ui-text-secondary; support buttons flex-wrap gap-1.5,
+      each outline size sm (px-2.5 py-1) with ExternalLink size-3
+    - footer: consent/uploading Cancel ghost + Upload default; error/done Close ghost only
+  Behaviour:
+    - Nothing is sent until Upload. While uploading, Upload shows a spinner + "Uploading…" and disables, but
+      Cancel / Esc / backdrop still dismiss (a dismissed upload's completion is ignored).
+    - Done shows the private view link: left-click opens it in the system browser (not the in-app preview,
+      which would open behind the modal); the row stays drag-selectable. With no link, it shows
+      "No view link returned — quote upload ID <id> to support". Support buttons open GitHub Issues,
+      Nous Portal Support, Discord.
+    - Error: the error text and the CLI hint run together in one paragraph (the "\n" between them collapses,
+      because this description has no whitespace-pre-line).
+  Mobile:      Not listed in docs/PARITY.md; the bundle collects server-side logs, so a mobile trigger would be thinner.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Send diagnostics · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      /* grid-cols-[minmax(0,1fr)] from dialog.tsx's body: keeps the nowrap URL from widening the track. */
+      .dialog--30 { max-width: 30rem; grid-template-columns: minmax(0, 1fr); }
+      .dialog--30 .dialog__desc { white-space: pre-line; text-align: left; }
+      .dialog__title .ti.lock { color: var(--ui-text-tertiary); }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .link-row { display: flex; align-items: center; gap: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; user-select: text; }
+      .link-row .ref { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dt-primary); font-family: var(--dt-font-mono); font-size: 0.78rem; text-decoration: none; cursor: pointer; }
+      .link-row .ref:hover { text-decoration: underline; text-underline-offset: 0.15em; }
+      .copy-inline { display: inline-flex; flex-shrink: 0; align-items: center; gap: 0.25rem; border: 0; border-radius: var(--radius-sm); padding: 0.125rem 0.375rem; background: transparent; color: var(--dt-muted-foreground); font-size: 0.75rem; cursor: pointer; transition: color 150ms, background-color 150ms; }
+      .copy-inline:hover { background: var(--dt-accent); color: var(--dt-foreground); }
+      .copy-inline .ti { font-size: 0.875rem; }
+      .handoff { font-size: 0.8rem; color: var(--ui-text-secondary); }
+      .support { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+      .support .btn .ti { font-size: 0.75rem; }
+      .fail-card { display: grid; gap: 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="sql">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Add SQLite FTS5 to session search and backfill the existing rows.</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran</span><span class="tool-row__meta">python -m hermes.db migrate --to fts5</span></div>
+                  </div>
+                  <div class="fail-card" style="padding:0 var(--message-text-indent)">
+                    <div class="error-state"><i class="ti ti-alert-triangle i-sm" style="margin-top:.2rem"></i><span>The turn failed: provider returned 500 (upstream timeout after 120s).</span></div>
+                    <div class="flex gap-2"><button class="btn btn--secondary btn--sm"><i class="ti ti-refresh"></i>Retry</button><button class="btn btn--ghost btn--sm" style="background:var(--chrome-action-hover);color:var(--dt-foreground)"><i class="ti ti-bug"></i>Send diagnostics</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Consent ── -->
+            <div data-view="consent">
+              <div class="dialog dialog--30" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-lock lock"></i>Send diagnostics to Nous</h2>
+                  <p class="dialog__desc">This uploads a debug bundle to Nous-internal storage (not a public paste). It includes system info (OS, versions, provider, which API keys are configured — never the keys themselves) and full agent, gateway, and desktop logs (up to 512 KB each), which likely contain conversation content, tool outputs, and file paths. Secrets are redacted before upload. The bundle is viewable only by Nous staff and allowlisted Discord moderators, and auto-deletes after 14 days.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Upload</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Uploading ── -->
+            <div data-view="uploading" hidden>
+              <div class="dialog dialog--30" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title"><i class="ti ti-lock lock"></i>Send diagnostics to Nous</h2>
+                  <p class="dialog__desc">This uploads a debug bundle to Nous-internal storage (not a public paste). It includes system info (OS, versions, provider, which API keys are configured — never the keys themselves) and full agent, gateway, and desktop logs (up to 512 KB each), which likely contain conversation content, tool outputs, and file paths. Secrets are redacted before upload. The bundle is viewable only by Nous staff and allowlisted Discord moderators, and auto-deletes after 14 days.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled><span class="flex items-center gap-1-5"><i class="ti ti-loader-2 spin"></i>Uploading…</span></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Done ── -->
+            <div data-view="done" hidden>
+              <div class="dialog dialog--30" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Diagnostics sent</h2>
+                  <p class="dialog__desc">Your bundle was uploaded privately. Share the link below in your support thread so the team can see your logs.</p>
+                </div>
+                <div class="link-row">
+                  <a class="ref" title="https://debug.nousresearch.com/b/7f3c91e2-4d0a-4b8e-9a51-2c6e0f1d8a44">https://debug.nousresearch.com/b/7f3c91e2-4d0a-4b8e-9a51-2c6e0f1d8a44</a>
+                  <button type="button" class="copy-inline" aria-label="Copy link"><i class="ti ti-copy"></i>Copy link</button>
+                </div>
+                <div class="handoff">Pick up the discussion in:</div>
+                <div class="support">
+                  <button type="button" class="btn btn--outline btn--sm"><i class="ti ti-external-link"></i>GitHub Issues</button>
+                  <button type="button" class="btn btn--outline btn--sm"><i class="ti ti-external-link"></i>Nous Portal Support</button>
+                  <button type="button" class="btn btn--outline btn--sm"><i class="ti ti-external-link"></i>Discord</button>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Close</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Error ── -->
+            <div data-view="error" hidden>
+              <div class="dialog dialog--30" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Upload failed</h2>
+                  <p class="dialog__desc" style="white-space:normal">Upload rejected: the bundle is 9.4 MB after redaction (limit 8 MB). You can also run `hermes debug share --nous` from a terminal, or `hermes debug share --local` to print the report without uploading.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Close</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:consent">Consent</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:uploading">Uploading</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:done">Done</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:error">Failed</button>
+      </nav>
+    </div>
+  </body>
+</html>

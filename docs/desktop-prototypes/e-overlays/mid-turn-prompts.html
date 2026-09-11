@@ -1,0 +1,316 @@
+<!doctype html>
+<!--
+  Screen:      Mid-turn prompts (E · approvals and questions while the agent works)
+  Replicates:  apps/desktop/src/components/prompt-overlays.tsx (PendingApprovalFallback, SudoDialog, SecretDialog),
+               components/assistant-ui/tool/approval.tsx (inline ApprovalBar + "Always allow" confirm),
+               components/assistant-ui/clarify-tool.tsx (single-question card), components/chat/widget-shell.ts, components/ui/{kbd,dialog}.tsx,
+               i18n/en.ts (assistant.approval.*, assistant.clarify.*, prompts.*)
+  Views:       #prompt=approval | approval-command | approval-menu | fallback | always | clarify | secret | sudo
+  Measurements:
+    - approval strip (inline, under the pending tool row): mt-1, ps-5 (1.25rem); gap-2.5
+      split button h-6 (24px), rounded-md, 1px primary/25, bg primary/10, text primary: "Run" 12px/500 px-2 + "Ctrl⏎" 10px primary/60,
+      1px primary/20 divider, 20px chevron segment; hover segments primary/15
+      Reject / Command: ghost h-6 px-1.5 rounded-md 12px tertiary (hover foreground); "Esc" 10px at .55
+      command reveal: pre mt-1.5, max-h-40, rounded-md, 1px --ui-stroke-tertiary, bg chat surface, px-2.5 py-1.5, mono 12px snug
+      options menu (min-w-44): Allow this session · Always allow… · Reject (destructive)
+    - floating fallback (no tool row mounted, e.g. remote sessions): centred above the composer (bottom = composer height + .875rem),
+      w-[calc(100%-2rem)] max-w-2xl; card rounded-xl, 1px primary/30, bg chat surface, px-3 py-2, shadow-lg, backdrop blur;
+      header 14px primary: 16px alert-circle + "Approval needed" (500) + description tertiary; strip mt-2
+    - "Always allow" confirm: dialog max-w-md, title 15px/600, description 12px/16px tertiary, command pre max-h-32, footer ghost sm + destructive sm
+    - clarify card (WIDGET_SHELL): rounded-3xl (6.4px), px-3.5 py-3, bg --ui-widget-surface-background, 13px primary; grid gap-2
+      question 500, 18px leading + 16px tertiary message-question icon; options grid gap-px: rows rounded-[.25rem] px-1.5 py-1 gap-2,
+      text secondary, hover/cursor bg --chrome-action-hover; letter badge Kbd sm (18px): selected = primary fill + white, cursor = primary outline;
+      "(Recommended)" in tertiary; last row = letter + one-line Textarea sm "Other (type your answer)"
+      actions sit OUTSIDE the card (form gap-4): Skip (text xs) + Continue ⏎ (default xs, ⏎ at 10px/.7), right-aligned gap-1
+    - sudo / secret: standard dialog max-w-lg (32rem), no close X; title with 16px primary icon (lock / key); description 12px tertiary;
+      password Input; footer Cancel (ghost) + Send (default; secret needs a value)
+  Behaviour:
+    - z rungs: dialogs use scrim var(--z-modal-backdrop) 120 + var(--z-modal) 130; the floating fallback is z-30 inside the chat pane;
+      the options menu is a dropdown popover
+    - approval keys: Ctrl/⌘+Enter = Run (once), Esc = Reject; they stand down while the Always-allow confirm is open. One approval at a
+      time per session; the strip binds to the single pending terminal / execute_code / patch / write_file row
+    - "Always allow" writes the pattern to ~/.hermes/config.yaml, so it always confirms first; hidden when the backend disallows permanent allows
+    - clarify keys (only on the visible card, never while a field or button has focus): ↑/↓ move the cursor, 1–9 or A–Z pick, Enter confirms
+      (or picks the highlighted row), the last letter/number focuses "Other"; typing replaces a picked choice and vice versa.
+      Skip answers "" and the card collapses to a settled Q&A; after a timeout the options stay clickable and draft a follow-up message
+    - multi-question batches stage every answer locally and send them in one "Confirm and continue"
+    - sudo / secret: any close path (Esc, backdrop) sends an empty answer = a refusal, never consent
+  Mobile:      At parity: approval / clarify / sudo / secret cards (Chat, M06 in docs/PARITY.md); mobile also pushes approvals while
+               backgrounded (M11).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mid-turn prompts · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .views-host { display: contents; }
+      .tool-row.is-pending { opacity: 1; }
+
+      /* Approval strip (approval.tsx:916-1000) */
+      .appr { position: relative; }
+      .appr--inline { margin-top: 0.25rem; padding-inline-start: 1.25rem; }
+      .appr--floating { margin-top: 0.5rem; }
+      .appr__row { display: flex; align-items: center; gap: 0.625rem; }
+      .appr-split { display: inline-flex; height: 1.5rem; align-items: stretch; overflow: hidden; border: 1px solid color-mix(in srgb, var(--dt-primary) 25%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+      .appr-run { display: inline-flex; height: 100%; align-items: center; gap: 0.25rem; border: 0; padding: 0 0.5rem; background: transparent; color: inherit; font-size: 0.75rem; font-weight: 500; cursor: pointer; }
+      .appr-run:hover, .appr-more:hover, .appr-more.is-open { background: color-mix(in srgb, var(--dt-primary) 15%, transparent); }
+      .appr-hint { font-size: 0.625rem; color: color-mix(in srgb, var(--dt-primary) 60%, transparent); }
+      .appr-div { width: 1px; align-self: stretch; background: color-mix(in srgb, var(--dt-primary) 20%, transparent); }
+      .appr-more { display: grid; width: 1.25rem; place-items: center; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; }
+      .appr-more .ti { font-size: 0.75rem; }
+      .appr-ghost { display: inline-flex; height: 1.5rem; align-items: center; gap: 0.375rem; border: 0; border-radius: var(--radius-md); padding: 0 0.375rem; background: transparent; font-size: 0.75rem; color: var(--ui-text-tertiary); cursor: pointer; }
+      .appr-ghost:hover { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .appr-ghost .ti { font-size: 0.75rem; transition: transform 150ms; }
+      .appr-ghost.is-open .ti { transform: rotate(180deg); }
+      .appr-esc { font-size: 0.625rem; opacity: 0.55; }
+      .cmd-pre { margin: 0.375rem 0 0; max-height: 10rem; overflow: auto; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-md); padding: 0.375rem 0.625rem; background: var(--ui-chat-surface-background); font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1.375; color: var(--dt-foreground); user-select: text; }
+      .appr .menu { top: 1.75rem; left: 1.25rem; min-width: 11rem; z-index: 60; }
+      .fallback { position: absolute; left: 50%; bottom: 4.75rem; z-index: 30; width: calc(100% - 2rem); max-width: 42rem; transform: translateX(-50%); pointer-events: none; }
+      .fallback__card { pointer-events: auto; border: 1px solid color-mix(in srgb, var(--dt-primary) 30%, transparent); border-radius: var(--radius-xl); padding: 0.5rem 0.75rem; background: var(--ui-chat-surface-background); box-shadow: var(--shadow-lg); backdrop-filter: blur(1rem); }
+      .fallback__head { display: flex; min-width: 0; align-items: center; gap: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--dt-primary); }
+      .fallback__head .ti { font-size: 1rem; flex-shrink: 0; }
+
+      /* Clarify card (clarify-tool.tsx:722-827) */
+      .clar { display: grid; gap: 1rem; margin: 0.375rem 0; padding: 0 var(--message-text-indent); }
+      .clar-card { display: grid; gap: 0.5rem; font-size: var(--conversation-text-font-size); color: var(--ui-text-primary); }
+      .clar-q { flex: 1; white-space: pre-wrap; font-weight: 500; line-height: var(--conversation-line-height); }
+      .clar-icon { flex-shrink: 0; margin-top: 1px; font-size: 1rem !important; color: var(--ui-text-tertiary); }
+      .clar-opts { display: grid; gap: 1px; }
+      .clar-opt { display: flex; width: 100%; align-items: flex-start; gap: 0.5rem; border: 0; border-radius: 0.25rem; padding: 0.25rem 0.375rem; background: transparent; text-align: left; font-size: inherit; color: var(--ui-text-secondary); cursor: pointer; }
+      .clar-opt:hover, .clar-opt.is-active { background: var(--chrome-action-hover); color: var(--ui-text-primary); }
+      .clar-opt.is-selected { color: var(--ui-text-primary); }
+      .clar-opt--other { align-items: center; }
+      .clar-opt .rec { color: var(--ui-text-tertiary); }
+      .ckbd { display: inline-flex; flex-shrink: 0; width: 1.125rem; height: 1.125rem; align-items: center; justify-content: center; margin-top: 1px;
+        border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 75%, transparent); border-radius: 0.2rem;
+        background: color-mix(in srgb, var(--ui-bg-elevated) 94%, var(--dt-foreground) 6%); color: color-mix(in srgb, var(--dt-foreground) 58%, transparent);
+        box-shadow: 0 1px 0 0 color-mix(in srgb, var(--ui-stroke-tertiary) 85%, transparent), 0 1px 2px 0 color-mix(in srgb, var(--dt-foreground) 7%, transparent);
+        font-family: var(--dt-font-kbd); font-size: 0.625rem; line-height: 1; }
+      .ckbd.is-selected { border-color: var(--dt-primary); background: var(--dt-primary); color: var(--white); box-shadow: none; }
+      .ckbd.is-preview { border-color: var(--dt-primary); color: var(--dt-primary); box-shadow: none; }
+      .clar-ta { min-height: 0 !important; max-height: 10rem; height: 1.625rem; resize: none; }
+      .clar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.25rem; }
+      .clar-actions .enter { margin-left: 0.125rem; font-size: 0.625rem; opacity: 0.7; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-views="prompt" class="views-host">
+            <div data-shell="app" data-session="readme">
+              <!-- ── Approval: inline strip under the pending row ── -->
+              <div data-view="approval" class="workspace">
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Clean-install the Android workspace dependencies and rebuild the dev client.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 4s</span></div>
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">package.json</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Running</span><span class="tool-row__meta t-truncate">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</span></div>
+                    <div class="appr appr--inline"><div class="appr__row">
+                      <div class="appr-split"><button class="appr-run" type="button">Run<span class="appr-hint">Ctrl⏎</span></button><span class="appr-div" aria-hidden="true"></span><button class="appr-more" type="button" aria-label="More approval options"><i class="ti ti-chevron-down"></i></button></div>
+                      <button class="appr-ghost" type="button">Reject<span class="appr-esc">Esc</span></button>
+                      <button class="appr-ghost" type="button" aria-expanded="false">Command<i class="ti ti-chevron-down"></i></button>
+                    </div></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Approval: command revealed ── -->
+              <div data-view="approval-command" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Clean-install the Android workspace dependencies and rebuild the dev client.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 4s</span></div>
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">package.json</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Running</span><span class="tool-row__meta t-truncate">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</span></div>
+                    <div class="appr appr--inline"><div class="appr__row">
+                      <div class="appr-split"><button class="appr-run" type="button">Run<span class="appr-hint">Ctrl⏎</span></button><span class="appr-div" aria-hidden="true"></span><button class="appr-more" type="button" aria-label="More approval options"><i class="ti ti-chevron-down"></i></button></div>
+                      <button class="appr-ghost" type="button">Reject<span class="appr-esc">Esc</span></button>
+                      <button class="appr-ghost is-open" type="button" aria-expanded="true">Command<i class="ti ti-chevron-down"></i></button>
+                    </div>
+                    <pre class="cmd-pre">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</pre></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Transcript behind the "Always allow" confirm ── -->
+              <div data-view="always" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Clean-install the Android workspace dependencies and rebuild the dev client.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 4s</span></div>
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">package.json</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Running</span><span class="tool-row__meta t-truncate">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</span></div>
+                    <div class="appr appr--inline"><div class="appr__row">
+                      <div class="appr-split"><button class="appr-run" type="button">Run<span class="appr-hint">Ctrl⏎</span></button><span class="appr-div" aria-hidden="true"></span><button class="appr-more" type="button" aria-label="More approval options"><i class="ti ti-chevron-down"></i></button></div>
+                      <button class="appr-ghost" type="button">Reject<span class="appr-esc">Esc</span></button>
+                      <button class="appr-ghost" type="button">Command<i class="ti ti-chevron-down"></i></button>
+                    </div></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Approval: options menu open ── -->
+              <div data-view="approval-menu" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Clean-install the Android workspace dependencies and rebuild the dev client.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 4s</span></div>
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">package.json</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Running</span><span class="tool-row__meta t-truncate">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</span></div>
+                    <div class="appr appr--inline"><div class="appr__row">
+                      <div class="appr-split"><button class="appr-run" type="button">Run<span class="appr-hint">Ctrl⏎</span></button><span class="appr-div" aria-hidden="true"></span><button class="appr-more is-open" type="button" aria-label="More approval options"><i class="ti ti-chevron-down"></i></button></div>
+                      <button class="appr-ghost" type="button">Reject<span class="appr-esc">Esc</span></button>
+                      <button class="appr-ghost" type="button">Command<i class="ti ti-chevron-down"></i></button>
+                    </div>
+                    <div class="menu" role="menu" data-menu-open>
+                      <button class="menu__item is-focused" type="button" role="menuitem">Allow this session</button>
+                      <button class="menu__item" type="button" role="menuitem">Always allow…</button>
+                      <button class="menu__item is-danger" type="button" role="menuitem">Reject</button>
+                    </div></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Approval: floating fallback (no pending row mounted) ── -->
+              <div data-view="fallback" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Free up disk on the build box before the next release build.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 7s</span></div>
+                  </div>
+                  <div class="msg-ai"><p>The Gradle caches account for 38 GB. I'll clear them and the stale Metro bundles.</p></div></div>
+                </div></div>
+                <div class="fallback" data-slot="tool-approval-fallback">
+                  <div class="fallback__card">
+                    <div class="fallback__head"><i class="ti ti-alert-circle"></i><span class="t-medium" style="flex-shrink:0">Approval needed</span><span class="t-truncate t-tertiary">Recursive delete outside the project</span></div>
+                    <div class="appr appr--floating"><div class="appr__row">
+                      <div class="appr-split"><button class="appr-run" type="button">Run<span class="appr-hint">Ctrl⏎</span></button><span class="appr-div" aria-hidden="true"></span><button class="appr-more" type="button" aria-label="More approval options"><i class="ti ti-chevron-down"></i></button></div>
+                      <button class="appr-ghost" type="button">Reject<span class="appr-esc">Esc</span></button>
+                      <button class="appr-ghost" type="button">Command<i class="ti ti-chevron-down"></i></button>
+                    </div></div>
+                  </div>
+                </div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Clarify: single question with choices (B picked) ── -->
+              <div data-view="clarify" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Set up the Android workspace so a fresh clone builds with one command.</div>
+                  <div class="turn">
+                    <div class="scaffold"><div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 5s</span></div><div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">lockfiles in the repo · 2 results</span></div></div>
+                    <form class="clar" data-clarify-choices="3" onsubmit="return false">
+                      <div class="widget clar-card">
+                        <div class="flex" style="align-items:flex-start;gap:.5rem"><span class="clar-q">I found both package-lock.json and pnpm-lock.yaml. Which package manager should the workspace standardise on?</span><i class="ti ti-message-question clar-icon" aria-hidden="true"></i></div>
+                        <div class="clar-opts" role="group">
+                          <button class="clar-opt" type="button" aria-keyshortcuts="A 1"><span class="ckbd">A</span><span class="grow">npm</span></button>
+                          <button class="clar-opt is-active is-selected" type="button" aria-pressed="true" aria-keyshortcuts="B 2"><span class="ckbd is-selected">B</span><span class="grow">pnpm <span class="rec">(Recommended)</span></span></button>
+                          <button class="clar-opt" type="button" aria-keyshortcuts="C 3"><span class="ckbd">C</span><span class="grow">Yarn Berry</span></button>
+                          <label class="clar-opt clar-opt--other"><span class="ckbd">D</span><textarea class="control control--sm clar-ta" rows="1" placeholder="Other (type your answer)"></textarea></label>
+                        </div>
+                      </div>
+                      <div class="clar-actions">
+                        <button class="btn btn--text btn--xs" type="button">Skip</button>
+                        <button class="btn btn--default btn--xs" type="submit">Continue<span class="enter" aria-hidden="true">⏎</span></button>
+                      </div>
+                    </form>
+                  </div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Transcript behind the secret dialog ── -->
+              <div data-view="secret" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Open a PR for the onboarding copy fixes.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 3s</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Loading skill</span><span class="tool-row__meta">github-pr</span></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+
+              <!-- ── Transcript behind the sudo dialog ── -->
+              <div data-view="sudo" class="workspace" hidden>
+                <div class="thread"><div class="thread__inner">
+                  <div class="msg-user">Install adb on the build box so the e2e suite can reach the emulator.</div>
+                  <div class="turn"><div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 2s</span></div>
+                    <div class="tool-row is-pending"><i class="ti ti-loader-2 spin"></i><span>Running</span><span class="tool-row__meta">sudo apt-get install -y android-sdk-platform-tools</span></div>
+                  </div></div>
+                </div></div>
+                <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+              </div>
+            </div>
+
+            <!-- ── Dialogs (outside the shell; same view ids) ── -->
+            <div data-view="always" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" aria-modal="true" style="max-width:28rem">
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Always allow this command?</h2>
+                  <p class="dialog__desc">This adds the “recursive delete” pattern to your permanent allowlist (~/.hermes/config.yaml). Hermes won’t ask again for commands like this — in this session or any future one.</p>
+                </div>
+                <pre class="cmd-pre" style="margin:0;max-height:8rem">rm -rf node_modules &amp;&amp; npm ci &amp;&amp; npx expo prebuild --clean</pre>
+                <div class="dialog__footer"><button class="btn btn--ghost btn--sm" type="button">Cancel</button><button class="btn btn--destructive btn--sm" type="button">Always allow</button></div>
+                <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close" type="button" style="color:var(--ui-text-tertiary)"><i class="ti ti-x i-md"></i></button>
+              </div>
+            </div>
+
+            <div data-view="secret" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <div class="dialog__header" style="padding-right:0">
+                  <h2 class="dialog__title"><i class="ti ti-key"></i>GITHUB_TOKEN</h2>
+                  <p class="dialog__desc">The github-pr skill needs a personal access token with repo scope to open pull requests.</p>
+                </div>
+                <form style="display:grid;gap:.75rem" onsubmit="return false">
+                  <input class="control is-focused" type="password" value="ghp_4Wc8xYz2Lq" placeholder="GITHUB_TOKEN" />
+                  <div class="dialog__footer"><button class="btn btn--ghost" type="button">Cancel</button><button class="btn btn--default" type="submit">Send</button></div>
+                </form>
+              </div>
+            </div>
+
+            <div data-view="sudo" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="dialog" aria-modal="true">
+                <div class="dialog__header" style="padding-right:0">
+                  <h2 class="dialog__title"><i class="ti ti-lock"></i>Administrator password</h2>
+                  <p class="dialog__desc">Hermes needs your sudo password to run a privileged command. It is sent only to your local agent.</p>
+                </div>
+                <form style="display:grid;gap:.75rem" onsubmit="return false">
+                  <input class="control is-focused" type="password" placeholder="sudo password" />
+                  <div class="dialog__footer"><button class="btn btn--ghost" type="button">Cancel</button><button class="btn btn--default" type="submit">Send</button></div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="prompt:approval">Approval</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:approval-command">Approval · command</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:approval-menu">Approval · options</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:fallback">Approval · floating</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:always">Always allow confirm</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:clarify">Clarify</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:secret">Secret</button>
+        <button class="btn btn--secondary btn--sm" data-show="prompt:sudo">Sudo</button>
+      </nav>
+    </div>
+  </body>
+</html>

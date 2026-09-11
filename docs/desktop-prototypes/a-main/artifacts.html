@@ -1,0 +1,478 @@
+<!doctype html>
+<!--
+  Screen:      Artifacts (A · full page)   route `/artifacts` (?tab=all|image|file|link)
+  Replicates:  apps/desktop/src/app/artifacts/index.tsx (ArtifactsView, ArtifactsPagination, ArtifactImageCard,
+               ArtifactTable + PrimaryCell/LocationCell/SessionCell), artifacts/artifact-utils.ts (kinds, labels),
+               app/page-search-shell.tsx, components/ui/{pagination,text-tab,tab-dropdown,skeleton,copy-button}.tsx,
+               components/chat/zoomable-image.tsx (ImageLightbox)
+  Views:       #art=all (gallery: 24-card image page + items table) | #art=image | #art=file | #art=link
+               #art=search (query "release": counts stay global, sections filter) | #art=empty | #art=loading
+               #lb=open (image lightbox over the current view; click the image or scrim to close)
+  Measurements:
+    - page header (PageSearchShell): grid [1fr | auto | 1fr], gap .75rem, px .75rem, pb .5rem (real pt is
+      titlebar-height + .5rem; the stamped titlebar supplies the 34px here). Search left, TextTab row centred,
+      refresh button right (ghost icon-titlebar 24px, codicon refresh 13.9px, tertiary → foreground on hover).
+    - TextTab: h-7, px .25rem, 12px medium, tertiary; active = foreground + underline (offset 4px, 25% current);
+      count meta .72em regular tertiary, not underlined; loading counts are 14×8px pulsing chips (bg current/25).
+    - body: scroll area (scrollbar-gutter stable), inner flex col gap .75rem, px .75rem pb .5rem.
+    - section bar: sticky top-0, h-7, -mx .75rem px .75rem, background fill; pagination right-aligned:
+      range "1-24 of 31 images" 10px (.62rem) muted; Pagination buttons h-5 (20px), min-w 20px, px .25rem,
+      11px, radius-sm; active page = 1px border + background + shadow-xs; Prev/Next carry a 12px chevron.
+    - image grid: repeat(auto-fill, minmax(11rem, 1fr)), gap .5rem, pt .375rem; 24 per page.
+    - image card: radius-lg (2.4px), 1px stroke-tertiary, chat-bubble fill; media box h-40 (10rem), p .375rem,
+      bg-quinary, border-b; image object-contain, radius-md; body p .5rem, rows gap .375rem:
+      kind line 10px uppercase tracking .08em tertiary with 12px photo glyph; label 12px medium truncate;
+      value 10px tertiary truncate; session · time 10px tertiary; "Chat" textStrong xs button with folder-open glyph.
+    - table: wrapper radius-lg, 1px stroke-tertiary, chat-bubble fill, overflow-x auto; table-fixed, min-w 44rem,
+      12px; thead border-b, bg-quinary, 10px uppercase tracking .08em tertiary, th px .625rem py .375rem medium.
+      Column widths: all/file = 35% / 41% / 24%; link = 50% / 30% / 20%. 100 rows per page.
+    - primary cell: whole cell is the click target, px .625rem py .375rem, gap .5rem, 12px/16px secondary;
+      icon tile 24px radius-md bg-tertiary tertiary (14px glyph: file-text, link, or a brand mark for known hosts).
+      Links wrap anywhere and end with a small external-link glyph; files truncate.
+    - location cell: 12px tertiary (mono for paths, host+path for URLs) + icon-xs copy button (hover reveal).
+    - session cell: title truncate + time 11px tertiary. Time format: Intl { month: short, day, hour, minute }.
+    - lightbox: dialog with no chrome; image max (100vh-12rem) × (100vw-12rem), radius-lg, shadow-2xl;
+      download button 32px round, 1px border/70, background/80 + blur, top-right, shows on hover.
+  Behaviour:
+    - Indexes the 30 most recent sessions (one transcript at a time) on mount and on refresh (button or the
+      refresh hotkey). Partial failures toast "Artifacts failed to load — Skipped n of m recent sessions…".
+    - Tab counts always reflect ALL artifacts; search filters label, value (path/URL) and session title.
+      Changing tab/query resets both paginators to page 1. Search is hidden when there are no artifacts.
+    - Search placeholder is a random data hint per mount: file extensions (Try “.png”) or session titles.
+    - Image cards resolve their src through the media resolver (local file → data URL, remote gateway → fs bridge);
+      a failed load leaves the media box empty. Clicking an image opens the lightbox; "Chat" opens that session.
+    - File rows open with the OS (remote gateway: downloads over the authenticated bridge); link rows open in the
+      browser; link titles are fetched lazily (falls back to a title made from the URL slug).
+    - Copy buttons appear on row hover; the tab row collapses into a dropdown below the md breakpoint.
+  Mobile:      at parity ("Management: artifacts with system share", docs/PARITY.md).
+  Notes:       Real images are drawn as token-coloured gradient placeholders with a glyph (no image assets).
+               The 24 gallery cards live once in <template id="art-image-cards"> and are copied into each grid
+               by the small script at the end of <body> (prototype plumbing only).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Artifacts · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── PageSearchShell (app/page-search-shell.tsx) ── */
+      .pss { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--ui-chat-surface-background); }
+      .pss__head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; flex-shrink: 0; padding: 0.5rem 0.75rem; }
+      .pss__lead, .pss__trail { display: flex; min-width: 0; align-items: center; }
+      .pss__trail { justify-content: flex-end; }
+      .pss__tabs { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 0.5rem; }
+      .pss__body { flex: 1; min-height: 0; overflow: hidden; }
+      .pss .search-field { max-width: calc(var(--vw) * 45); padding: 0 0.125rem; }
+      .pss .search-field > .ti { font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pss .search-field input { field-sizing: content; height: 1.75rem; }
+      .pss .search-field input::placeholder { color: var(--dt-muted-foreground); }
+      .pss .text-tab { font-weight: 500; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, currentColor 25%, transparent); }
+      .tab-meta { display: inline-block; font-size: 0.72em; font-weight: 400; color: var(--ui-text-tertiary); }
+      .count-skel { display: inline-block; width: 0.875rem; height: 0.5rem; transform: translateY(1px); border-radius: var(--radius-sm); background: color-mix(in srgb, currentColor 25%, transparent); animation: art-pulse 2s ease-in-out infinite; }
+      @keyframes art-pulse { 50% { opacity: 0.5; } }
+      .refresh-btn { color: var(--ui-text-tertiary); }
+      .refresh-btn:hover { color: var(--dt-foreground); }
+
+      /* ── Body ── */
+      .art-scroll { height: 100%; overflow-y: auto; scrollbar-gutter: stable; }
+      .art-inner { display: flex; flex-direction: column; gap: 0.75rem; padding: 0 0.75rem 0.5rem; }
+      .art-section { display: flex; flex-direction: column; }
+      .art-bar { position: sticky; top: 0; z-index: 10; display: flex; height: 1.75rem; align-items: center; gap: 0.75rem; overflow-x: auto; margin: 0 -0.75rem; padding: 0 0.75rem; background: var(--dt-background); }
+
+      /* ArtifactsPagination + Pagination (components/ui/pagination.tsx) */
+      .art-pager { display: flex; height: 1.5rem; margin-left: auto; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+      .art-pager__range { flex-shrink: 0; font-size: 0.62rem; color: var(--dt-muted-foreground); }
+      .pg { display: flex; height: 1.25rem; align-items: center; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+      .pg button { display: inline-flex; height: 1.25rem; min-width: 1.25rem; align-items: center; justify-content: center; gap: 0.125rem; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 0 0.25rem; background: transparent; color: var(--dt-muted-foreground); font-size: 0.6875rem; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; transition: color 150ms, background-color 150ms; }
+      .pg button:hover { background: var(--dt-accent); color: var(--dt-foreground); }
+      .pg button:disabled { opacity: 0.45; pointer-events: none; }
+      .pg button.is-current { border-color: var(--dt-border); background: var(--dt-background); color: var(--dt-foreground); box-shadow: var(--shadow-xs); }
+      .pg .codicon { font-size: 0.75rem; }
+
+      /* Image grid + ArtifactImageCard */
+      .art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); align-items: start; gap: 0.5rem; padding-top: 0.375rem; }
+      .art-card { overflow: hidden; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); background: var(--ui-chat-bubble-background); }
+      .art-card__media { position: relative; display: flex; height: 10rem; width: 100%; align-items: center; justify-content: center; overflow: hidden; border-bottom: 1px solid var(--ui-stroke-tertiary); padding: 0.375rem; background: var(--ui-bg-quinary); }
+      .art-card__body { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.5rem; }
+      .art-card__kind { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.125rem; font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ui-text-tertiary); }
+      .art-card__kind .ti { font-size: 0.75rem; }
+      .art-card__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--conversation-caption-font-size); font-weight: 500; }
+      .art-card__sub { margin-top: 0.125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.625rem; color: var(--ui-text-tertiary); }
+      .art-card .btn--text-strong { align-self: flex-start; }
+
+      /* Image placeholders (stand-ins for real image content) */
+      .ph { display: grid; max-width: 100%; max-height: 100%; place-items: center; border-radius: var(--radius-md); color: color-mix(in srgb, var(--white) 78%, transparent); cursor: zoom-in; }
+      .ph .ti { font-size: 1.75rem; }
+      .ph--wide { width: 100%; aspect-ratio: 16 / 9; }
+      .ph--square { height: 100%; aspect-ratio: 1; }
+      .ph--tall { height: 100%; aspect-ratio: 3 / 4; }
+      .ph--a { background: linear-gradient(135deg, var(--ui-blue), var(--ui-purple)); }
+      .ph--b { background: linear-gradient(160deg, var(--ui-cyan), var(--ui-green)); }
+      .ph--c { background: linear-gradient(135deg, var(--ui-orange), var(--ui-yellow)); }
+      .ph--d { background: linear-gradient(135deg, var(--ui-purple), var(--ui-red)); }
+      .ph--ui { border: 1px solid var(--ui-stroke-tertiary); background: linear-gradient(var(--ui-bg-tertiary) 0 14%, var(--ui-bg-editor) 14%); color: var(--ui-text-quaternary); }
+      .ph--plot { border: 1px solid var(--ui-stroke-tertiary); background: var(--dt-background); color: var(--dt-primary); }
+
+      /* ArtifactTable */
+      .art-table-wrap { overflow-x: auto; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); background: var(--ui-chat-bubble-background); }
+      .art-table { width: 100%; min-width: 44rem; table-layout: fixed; border-collapse: collapse; text-align: left; font-size: var(--conversation-caption-font-size); }
+      .art-table thead { border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-quinary); font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ui-text-tertiary); }
+      .art-table th { padding: 0.375rem 0.625rem; font-weight: 500; }
+      .art-table td { padding: 0; vertical-align: middle; }
+      .art-table td.td-pad { padding: 0.375rem 0.625rem; }
+      .cell-action { display: flex; width: 100%; height: 100%; min-width: 0; align-items: center; gap: 0.5rem; border: 0; padding: 0.375rem 0.625rem; background: transparent; color: var(--ui-text-secondary); font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); font-weight: 400; text-align: left; text-decoration: none; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, currentColor 20%, transparent); cursor: pointer; transition: color 150ms; }
+      .cell-action:hover { color: var(--dt-foreground); text-decoration-line: underline; }
+      .cell-icon { display: grid; width: 1.5rem; height: 1.5rem; flex-shrink: 0; align-self: flex-start; margin-top: 0.125rem; place-items: center; border-radius: var(--radius-md); background: var(--ui-bg-tertiary); color: var(--ui-text-tertiary); }
+      .cell-icon .ti { font-size: 0.875rem; }
+      .cell-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .cell-text--wrap { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+      .cell-text--wrap .ti { margin-left: 0.25rem; font-size: 0.75rem; vertical-align: -1px; opacity: 0.7; }
+      .loc { display: flex; min-width: 0; align-items: center; gap: 0.375rem; }
+      .loc__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--conversation-caption-font-size); color: var(--ui-text-tertiary); }
+      .loc__text.is-mono { font-family: var(--dt-font-mono); }
+      .loc .btn { flex-shrink: 0; color: var(--dt-muted-foreground); opacity: 0; transition: opacity 150ms; }
+      .art-table tr:hover .loc .btn { opacity: 1; }
+      .sess { display: flex; min-width: 0; flex-direction: column; }
+      .sess > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sess__time { font-size: 0.6875rem; color: var(--ui-text-tertiary); }
+
+      /* Empty + loader */
+      .art-empty { display: grid; height: 100%; place-items: center; padding: 0 1.5rem; text-align: center; }
+      .art-empty__title { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+      .art-empty__desc { margin-top: 0.25rem; font-size: 0.75rem; color: var(--dt-muted-foreground); }
+      .page-loader { display: grid; height: 100%; place-items: center; }
+      .page-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; }
+
+      /* ImageLightbox (components/chat/zoomable-image.tsx) */
+      .lightbox { position: absolute; top: 50%; left: 50%; z-index: var(--z-modal); transform: translate(-50%, -50%); }
+      .lightbox__img { display: grid; width: min(56rem, calc(var(--frame-w) - 12rem)); max-height: calc(var(--frame-h) - 12rem); aspect-ratio: 16 / 9; place-items: center; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--ui-blue), var(--ui-purple)); color: color-mix(in srgb, var(--white) 78%, transparent); box-shadow: 0 25px 50px -12px color-mix(in srgb, var(--black) 25%, transparent); cursor: zoom-out; }
+      .lightbox__img .ti { font-size: 4rem; }
+      .lightbox__dl { position: absolute; top: 0.5rem; right: 0.5rem; display: grid; width: 2rem; height: 2rem; place-items: center; border: 1px solid color-mix(in srgb, var(--dt-border) 70%, transparent); border-radius: var(--radius-full); background: color-mix(in srgb, var(--dt-background) 80%, transparent); color: var(--dt-muted-foreground); box-shadow: var(--shadow-sm); backdrop-filter: blur(8px); opacity: 0; cursor: pointer; transition: opacity 150ms; }
+      .lightbox:hover .lightbox__dl { opacity: 1; }
+      .lightbox__dl:hover { background: var(--dt-accent); color: var(--dt-foreground); }
+      .lightbox__dl .ti { font-size: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-nav="artifacts" data-title="">
+            <section data-views="art" class="workspace">
+
+              <!-- ═══════════════ View: All ═══════════════ -->
+              <div data-view="all" class="pss">
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “.png”" aria-label="Search artifacts..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="art:all" type="button">All <span class="tab-meta">45</span></button>
+                    <button class="text-tab" data-show="art:image" type="button">Images <span class="tab-meta">31</span></button>
+                    <button class="text-tab" data-show="art:file" type="button">Files <span class="tab-meta">8</span></button>
+                    <button class="text-tab" data-show="art:link" type="button">Links <span class="tab-meta">6</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-scroll">
+                    <div class="art-inner">
+                      <section class="art-section">
+                        <div class="art-bar">
+                          <div class="art-pager">
+                            <div class="art-pager__range">1-24 of 31 images</div>
+                            <nav aria-label="Pagination"><ul class="pg">
+                              <li><button type="button" disabled aria-label="Go to previous page"><i class="codicon codicon-chevron-left"></i><span>Prev</span></button></li>
+                              <li><button type="button" class="is-current" aria-current="page" aria-label="Go to images page 1">1</button></li>
+                              <li><button type="button" aria-label="Go to images page 2">2</button></li>
+                              <li><button type="button" aria-label="Go to next page"><span>Next</span><i class="codicon codicon-chevron-right"></i></button></li>
+                            </ul></nav>
+                          </div>
+                        </div>
+                        <div class="art-grid" data-fill="art-image-cards"></div>
+                      </section>
+
+                      <section class="art-section">
+                        <div class="art-bar"><div class="art-pager"><div class="art-pager__range">1-14 of 14 items</div></div></div>
+                        <div class="art-table-wrap">
+                          <table class="art-table">
+                            <thead><tr><th style="width:35%">Title / name</th><th style="width:41%">Location</th><th style="width:24%">Session</th></tr></thead>
+                            <tbody>
+                              <tr><td><a class="cell-action" href="#" onclick="return false" title="fix(gateway): fail fast on revoked tokens · Pull Request #4127"><span class="cell-icon"><i class="ti ti-brand-github"></i></span><span class="cell-text cell-text--wrap">fix(gateway): fail fast on revoked tokens · Pull Request #4127 · NousResearch/hermes-agent<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">github.com/NousResearch/hermes-agent/pull/4127</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Refactor gateway auth handshake</span><span class="sess__time">Sep 11, 10:45 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">gateway-audit.pdf</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/output/gateway-audit.pdf</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Refactor gateway auth handshake</span><span class="sess__time">Sep 11, 10:44 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">README.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">D:\Stuff\Code\git\hermes-android\README.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Draft README for the Android client</span><span class="sess__time">Sep 11, 10:21 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Skills Hub | Hermes Agent<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">hermes-agent.nousresearch.com/docs/skills</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Draft README for the Android client</span><span class="sess__time">Sep 11, 10:20 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">playwright-report.zip</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">D:\Stuff\Code\git\hermes-agent\apps\desktop\playwright-report.zip</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Why is the e2e suite flaky on Windows?</span><span class="sess__time">Sep 11, 9:47 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">release-notes-v0.9.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/output/release-notes-v0.9.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 11, 8:05 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">inbox-summary-2026-09-11.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/cron/output/inbox-summary-2026-09-11.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Summarize inbox every morning</span><span class="sess__time">Sep 11, 7:00 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Expo SDK 54 changelog<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">expo.dev/changelog/sdk-54</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 10, 5:30 PM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">bench-results.csv</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">/tmp/hermes/bench/bench-results.csv</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Benchmark streaming throttle</span><span class="sess__time">Sep 10, 3:10 PM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">[2409.01234] Adaptive throttling for streamed token delivery<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">arxiv.org/abs/2409.01234</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Benchmark streaming throttle</span><span class="sess__time">Sep 10, 3:05 PM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">session-export.json</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/exports/session-export.json</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>SQLite FTS for session search</span><span class="sess__time">Sep 10, 11:02 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">SQLite FTS5 Extension<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">sqlite.org/fts5.html</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>SQLite FTS for session search</span><span class="sess__time">Sep 10, 10:58 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Entering/Exiting animations | React Native Reanimated<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">docs.swmansion.com/react-native-reanimated/docs/layout-animations/entering-exiting-animations</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Port nous theme tokens to mobile</span><span class="sess__time">Sep 10, 9:14 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">tts-reply-0142.mp3</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/audio_cache/tts-reply-0142.mp3</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Voice mode latency notes</span><span class="sess__time">Sep 5, 4:40 PM</span></span></button></td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: Images ═══════════════ -->
+              <div data-view="image" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “.svg”" aria-label="Search artifacts..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="art:all" type="button">All <span class="tab-meta">45</span></button>
+                    <button class="text-tab" data-show="art:image" type="button">Images <span class="tab-meta">31</span></button>
+                    <button class="text-tab" data-show="art:file" type="button">Files <span class="tab-meta">8</span></button>
+                    <button class="text-tab" data-show="art:link" type="button">Links <span class="tab-meta">6</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-scroll">
+                    <div class="art-inner">
+                      <section class="art-section">
+                        <div class="art-bar">
+                          <div class="art-pager">
+                            <div class="art-pager__range">1-24 of 31 images</div>
+                            <nav aria-label="Pagination"><ul class="pg">
+                              <li><button type="button" disabled aria-label="Go to previous page"><i class="codicon codicon-chevron-left"></i><span>Prev</span></button></li>
+                              <li><button type="button" class="is-current" aria-current="page">1</button></li>
+                              <li><button type="button">2</button></li>
+                              <li><button type="button" aria-label="Go to next page"><span>Next</span><i class="codicon codicon-chevron-right"></i></button></li>
+                            </ul></nav>
+                          </div>
+                        </div>
+                        <div class="art-grid" data-fill="art-image-cards"></div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: Files ═══════════════ -->
+              <div data-view="file" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “.md”" aria-label="Search artifacts..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="art:all" type="button">All <span class="tab-meta">45</span></button>
+                    <button class="text-tab" data-show="art:image" type="button">Images <span class="tab-meta">31</span></button>
+                    <button class="text-tab" data-show="art:file" type="button">Files <span class="tab-meta">8</span></button>
+                    <button class="text-tab" data-show="art:link" type="button">Links <span class="tab-meta">6</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-scroll">
+                    <div class="art-inner">
+                      <section class="art-section">
+                        <div class="art-bar"><div class="art-pager"><div class="art-pager__range">1-8 of 8 files</div></div></div>
+                        <div class="art-table-wrap">
+                          <table class="art-table">
+                            <thead><tr><th style="width:35%">Name</th><th style="width:41%">Path</th><th style="width:24%">Session</th></tr></thead>
+                            <tbody>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">gateway-audit.pdf</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/output/gateway-audit.pdf</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Refactor gateway auth handshake</span><span class="sess__time">Sep 11, 10:44 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">README.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">D:\Stuff\Code\git\hermes-android\README.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Draft README for the Android client</span><span class="sess__time">Sep 11, 10:21 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">playwright-report.zip</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">D:\Stuff\Code\git\hermes-agent\apps\desktop\playwright-report.zip</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Why is the e2e suite flaky on Windows?</span><span class="sess__time">Sep 11, 9:47 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">release-notes-v0.9.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/output/release-notes-v0.9.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 11, 8:05 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">inbox-summary-2026-09-11.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/cron/output/inbox-summary-2026-09-11.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Summarize inbox every morning</span><span class="sess__time">Sep 11, 7:00 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">bench-results.csv</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">/tmp/hermes/bench/bench-results.csv</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Benchmark streaming throttle</span><span class="sess__time">Sep 10, 3:10 PM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">session-export.json</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/exports/session-export.json</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>SQLite FTS for session search</span><span class="sess__time">Sep 10, 11:02 AM</span></span></button></td></tr>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">tts-reply-0142.mp3</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/audio_cache/tts-reply-0142.mp3</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Voice mode latency notes</span><span class="sess__time">Sep 5, 4:40 PM</span></span></button></td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: Links ═══════════════ -->
+              <div data-view="link" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “Benchmark streaming throttle”" aria-label="Search artifacts..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="art:all" type="button">All <span class="tab-meta">45</span></button>
+                    <button class="text-tab" data-show="art:image" type="button">Images <span class="tab-meta">31</span></button>
+                    <button class="text-tab" data-show="art:file" type="button">Files <span class="tab-meta">8</span></button>
+                    <button class="text-tab" data-show="art:link" type="button">Links <span class="tab-meta">6</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-scroll">
+                    <div class="art-inner">
+                      <section class="art-section">
+                        <div class="art-bar"><div class="art-pager"><div class="art-pager__range">1-6 of 6 links</div></div></div>
+                        <div class="art-table-wrap">
+                          <table class="art-table">
+                            <thead><tr><th style="width:50%">Link title</th><th style="width:30%">URL</th><th style="width:20%">Session</th></tr></thead>
+                            <tbody>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-brand-github"></i></span><span class="cell-text cell-text--wrap">fix(gateway): fail fast on revoked tokens · Pull Request #4127 · NousResearch/hermes-agent<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">github.com/NousResearch/hermes-agent/pull/4127</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Refactor gateway auth handshake</span><span class="sess__time">Sep 11, 10:45 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Skills Hub | Hermes Agent<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">hermes-agent.nousresearch.com/docs/skills</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Draft README for the Android client</span><span class="sess__time">Sep 11, 10:20 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Expo SDK 54 changelog<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">expo.dev/changelog/sdk-54</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 10, 5:30 PM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">[2409.01234] Adaptive throttling for streamed token delivery<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">arxiv.org/abs/2409.01234</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Benchmark streaming throttle</span><span class="sess__time">Sep 10, 3:05 PM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">SQLite FTS5 Extension<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">sqlite.org/fts5.html</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>SQLite FTS for session search</span><span class="sess__time">Sep 10, 10:58 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Entering/Exiting animations | React Native Reanimated<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">docs.swmansion.com/react-native-reanimated/docs/layout-animations/entering-exiting-animations</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Port nous theme tokens to mobile</span><span class="sess__time">Sep 10, 9:14 AM</span></span></button></td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: search "release" (All tab) ═══════════════ -->
+              <div data-view="search" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field is-filled"><i class="ti ti-search"></i><input type="text" value="release" aria-label="Search artifacts..." /><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Clear search"><i class="codicon codicon-close"></i></button></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">All <span class="tab-meta">45</span></button>
+                    <button class="text-tab" type="button">Images <span class="tab-meta">31</span></button>
+                    <button class="text-tab" type="button">Files <span class="tab-meta">8</span></button>
+                    <button class="text-tab" type="button">Links <span class="tab-meta">6</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-scroll">
+                    <div class="art-inner">
+                      <section class="art-section">
+                        <div class="art-bar"><div class="art-pager"><div class="art-pager__range">1-3 of 3 images</div></div></div>
+                        <div class="art-grid">
+                          <article class="art-card"><div class="art-card__media"><div class="ph ph--a ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">icon-512.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\icon-512.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:12 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+                          <article class="art-card"><div class="art-card__media"><div class="ph ph--d ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">adaptive-icon.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\adaptive-icon.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:11 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+                          <article class="art-card"><div class="art-card__media"><div class="ph ph--b ph--tall" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">splash.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\splash.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:10 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+                        </div>
+                      </section>
+                      <section class="art-section">
+                        <div class="art-bar"><div class="art-pager"><div class="art-pager__range">1-2 of 2 items</div></div></div>
+                        <div class="art-table-wrap">
+                          <table class="art-table">
+                            <thead><tr><th style="width:35%">Title / name</th><th style="width:41%">Location</th><th style="width:24%">Session</th></tr></thead>
+                            <tbody>
+                              <tr><td><button class="cell-action" type="button"><span class="cell-icon"><i class="ti ti-file-text"></i></span><span class="cell-text">release-notes-v0.9.md</span></button></td><td class="td-pad"><div class="loc"><div class="loc__text is-mono">~/.hermes/output/release-notes-v0.9.md</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy path"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 11, 8:05 AM</span></span></button></td></tr>
+                              <tr><td><a class="cell-action" href="#" onclick="return false"><span class="cell-icon"><i class="ti ti-link"></i></span><span class="cell-text cell-text--wrap">Expo SDK 54 changelog<i class="ti ti-external-link"></i></span></a></td><td class="td-pad"><div class="loc"><div class="loc__text">expo.dev/changelog/sdk-54</div><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Copy URL"><i class="ti ti-copy"></i></button></div></td><td><button class="cell-action" type="button"><span class="sess"><span>Release checklist for v0.9</span><span class="sess__time">Sep 10, 5:30 PM</span></span></button></td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: empty (no artifacts yet; search hidden, counts 0) ═══════════════ -->
+              <div data-view="empty" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">All <span class="tab-meta">0</span></button>
+                    <button class="text-tab" type="button">Images <span class="tab-meta">0</span></button>
+                    <button class="text-tab" type="button">Files <span class="tab-meta">0</span></button>
+                    <button class="text-tab" type="button">Links <span class="tab-meta">0</span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn" type="button" aria-label="Refresh artifacts"><i class="codicon codicon-refresh"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="art-empty">
+                    <div>
+                      <div class="art-empty__title">No artifacts found</div>
+                      <div class="art-empty__desc">Generated images and file outputs will appear here as sessions produce them.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════ View: loading (indexing; count skeletons, spinning refresh) ═══════════════ -->
+              <div data-view="loading" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">All <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">Images <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">Files <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">Links <span class="tab-meta"><span class="count-skel"></span></span></button>
+                  </div>
+                  <div class="pss__trail"><button class="btn btn--ghost btn--icon-titlebar refresh-btn is-disabled" type="button" aria-label="Refreshing artifacts"><i class="codicon codicon-loading codicon-modifier-spin"></i></button></div>
+                </div>
+                <div class="pss__body">
+                  <div class="page-loader" role="status" aria-label="Indexing recent session artifacts"><span class="loader"></span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- ═══ ImageLightbox (opens from any image card) ═══ -->
+          <section data-views="lb">
+            <div data-view="none"></div>
+            <div data-view="open" hidden>
+              <div class="scrim" data-show="lb:none"></div>
+              <div class="lightbox" role="dialog" aria-modal="true" aria-label="latency-p95.png">
+                <div class="lightbox__img" data-show="lb:none"><i class="ti ti-chart-line"></i></div>
+                <button class="lightbox__dl" type="button" aria-label="Download image"><i class="ti ti-download"></i></button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="art:all">All</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:image">Images</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:file">Files</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:link">Links</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:search">Search “release”</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:empty">Empty</button>
+        <button class="btn btn--secondary btn--sm" data-show="art:loading">Indexing</button>
+        <button class="btn btn--secondary btn--sm" data-show="lb:open">Image preview</button>
+        <button class="btn btn--secondary btn--sm" data-show="lb:none">Close preview</button>
+      </nav>
+    </div>
+
+    <!-- Page 1 of the image gallery (24 of 31), newest first. Copied into each [data-fill] grid below. -->
+    <template id="art-image-cards">
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--wide" data-show="lb:open"><i class="ti ti-browser"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">error-dialog.png</div><div class="art-card__sub">~/.hermes/cache/screenshots/error-dialog.png</div></div><div class="art-card__sub" style="margin:0">Refactor gateway auth handshake · Sep 11, 10:40 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--a ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">flux-9c2e41.png</div><div class="art-card__sub">~/.hermes/cache/images/flux-9c2e41.png</div></div><div class="art-card__sub" style="margin:0">Draft README for the Android client · Sep 11, 10:18 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--d ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">flux-4b7d10.png</div><div class="art-card__sub">~/.hermes/cache/images/flux-4b7d10.png</div></div><div class="art-card__sub" style="margin:0">Draft README for the Android client · Sep 11, 10:16 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--c ph--wide" data-show="lb:open"><i class="ti ti-photo"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">hero-banner.png</div><div class="art-card__sub">~/.hermes/cache/images/hero-banner.png</div></div><div class="art-card__sub" style="margin:0">Draft README for the Android client · Sep 11, 10:15 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--wide" data-show="lb:open"><i class="ti ti-browser"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">browser_screenshot_3f1a.png</div><div class="art-card__sub">~/.hermes/cache/screenshots/browser_screenshot_3f1a.png</div></div><div class="art-card__sub" style="margin:0">Why is the e2e suite flaky on Windows? · Sep 11, 9:58 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--wide" data-show="lb:open"><i class="ti ti-browser"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">browser_screenshot_27c0.png</div><div class="art-card__sub">~/.hermes/cache/screenshots/browser_screenshot_27c0.png</div></div><div class="art-card__sub" style="margin:0">Why is the e2e suite flaky on Windows? · Sep 11, 9:51 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--c ph--wide" data-show="lb:open"><i class="ti ti-chart-bar"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">inbox-heatmap.png</div><div class="art-card__sub">~/.hermes/output/inbox-heatmap.png</div></div><div class="art-card__sub" style="margin:0">Summarize inbox every morning · Sep 11, 7:00 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--tall" data-show="lb:open"><i class="ti ti-device-mobile"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">settings-dark.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\docs\screens\settings-dark.png</div></div><div class="art-card__sub" style="margin:0">Port nous theme tokens to mobile · Sep 10, 6:42 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--tall" data-show="lb:open"><i class="ti ti-device-mobile"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">settings-light.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\docs\screens\settings-light.png</div></div><div class="art-card__sub" style="margin:0">Port nous theme tokens to mobile · Sep 10, 6:41 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--d ph--wide" data-show="lb:open"><i class="ti ti-palette"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">mood-board.jpg</div><div class="art-card__sub">~/Pictures/hermes/mood-board.jpg</div></div><div class="art-card__sub" style="margin:0">Port nous theme tokens to mobile · Sep 10, 6:20 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--plot ph--wide" data-show="lb:open"><i class="ti ti-chart-line"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">latency-p95.png</div><div class="art-card__sub">/tmp/hermes/plots/latency-p95.png</div></div><div class="art-card__sub" style="margin:0">Benchmark streaming throttle · Sep 10, 3:12 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--plot ph--wide" data-show="lb:open"><i class="ti ti-chart-bar"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">throughput.svg</div><div class="art-card__sub">/tmp/hermes/plots/throughput.svg</div></div><div class="art-card__sub" style="margin:0">Benchmark streaming throttle · Sep 10, 3:11 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--plot ph--wide" data-show="lb:open"><i class="ti ti-chart-pie"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">token-cost.png</div><div class="art-card__sub">/tmp/hermes/plots/token-cost.png</div></div><div class="art-card__sub" style="margin:0">Benchmark streaming throttle · Sep 10, 3:09 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--plot ph--wide" data-show="lb:open"><i class="ti ti-chart-bar"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">fts-query-plan.png</div><div class="art-card__sub">/tmp/hermes/plots/fts-query-plan.png</div></div><div class="art-card__sub" style="margin:0">SQLite FTS for session search · Sep 10, 11:05 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--tall" data-show="lb:open"><i class="ti ti-device-mobile"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">onboarding-01.png</div><div class="art-card__sub">~/.hermes/cache/screenshots/onboarding-01.png</div></div><div class="art-card__sub" style="margin:0">Port nous theme tokens to mobile · Sep 10, 9:30 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--tall" data-show="lb:open"><i class="ti ti-device-mobile"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">onboarding-02.png</div><div class="art-card__sub">~/.hermes/cache/screenshots/onboarding-02.png</div></div><div class="art-card__sub" style="margin:0">Port nous theme tokens to mobile · Sep 10, 9:29 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--a ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">icon-512.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\icon-512.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:12 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--d ph--square" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">adaptive-icon.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\adaptive-icon.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:11 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--b ph--tall" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">splash.png</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\assets\splash.png</div></div><div class="art-card__sub" style="margin:0">Release checklist for v0.9 · Sep 9, 4:10 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--wide" data-show="lb:open"><i class="ti ti-layout-kanban"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">kanban-board-v2.png</div><div class="art-card__sub">~/Pictures/hermes/kanban-board-v2.png</div></div><div class="art-card__sub" style="margin:0">Kanban board orchestration ideas · Sep 6, 2:02 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--plot ph--wide" data-show="lb:open"><i class="ti ti-chart-line"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">voice-latency.png</div><div class="art-card__sub">/tmp/hermes/plots/voice-latency.png</div></div><div class="art-card__sub" style="margin:0">Voice mode latency notes · Sep 5, 4:31 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--b ph--wide" data-show="lb:open"><i class="ti ti-sitemap"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">arch-diagram.svg</div><div class="art-card__sub">~/.hermes/cache/images/arch-diagram.svg</div></div><div class="art-card__sub" style="margin:0">SSH remote backend setup · Sep 5, 11:48 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--c ph--square" data-show="lb:open"><i class="ti ti-photo"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">output.webp</div><div class="art-card__sub">https://fal.media/files/lion/7Qe2kxP1/output.webp</div></div><div class="art-card__sub" style="margin:0">SSH remote backend setup · Sep 5, 11:20 AM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+      <article class="art-card"><div class="art-card__media"><div class="ph ph--ui ph--wide" data-show="lb:open"><i class="ti ti-feather"></i></div></div><div class="art-card__body"><div><div class="art-card__kind"><i class="ti ti-photo"></i>image</div><div class="art-card__label">wordmark.svg</div><div class="art-card__sub">D:\Stuff\Code\git\hermes-android\docs\brand\wordmark.svg</div></div><div class="art-card__sub" style="margin:0">Draft README for the Android client · Sep 4, 5:02 PM</div><button class="btn btn--text-strong btn--xs" type="button"><i class="ti ti-folder-open"></i>Chat</button></div></article>
+    </template>
+    <script>
+      // Prototype plumbing: copy the shared card list into every gallery grid before the shell stamp runs.
+      ;(function () {
+        var tpl = document.getElementById('art-image-cards')
+        var grids = document.querySelectorAll('[data-fill="art-image-cards"]')
+        for (var i = 0; i < grids.length; i++) grids[i].innerHTML = tpl.innerHTML
+      })()
+    </script>
+  </body>
+</html>

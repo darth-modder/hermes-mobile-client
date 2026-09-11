@@ -1,0 +1,329 @@
+<!doctype html>
+<!--
+  Screen:      Primitives reference sheet (G) — every primitive in assets/components.css
+  Replicates:  apps/desktop/src/components/ui/{button,badge,control,input,textarea,select,switch,segmented-control,
+               checkbox,tabs,text-tab,pane-tab,kbd,search-field,tooltip,popover,dropdown-menu,dialog,sheet,
+               empty-state,error-state,skeleton,loader,progress,log-view,alert}.tsx,
+               src/components/status-dot.tsx, src/app/overlays/panel.tsx, src/app/settings/primitives.tsx,
+               src/app/settings/appearance-settings.tsx (theme card), src/app/overlays/overlay-split-layout.tsx (nav item)
+  Views:       single scrolling sheet (the frame scrolls vertically on this page only)
+  Measurements (from the source classes, mirrored in components.css):
+    - Button: text buttons radius 2.5px, 12px / 16px medium; default px-3 py-1.5; xs px-2 py-0.5 11px;
+      sm px-2.5 py-1; lg px-5 py-2 14px; micro px-1 py-0 12px regular; icon sizes 36 / 24 (icon-xs) /
+      32 (icon-sm) / 40 (icon-lg) / titlebar 24 with radius 4px; disabled opacity .5
+    - Badge: radius 3px, default px-1.5 py-0.5 0.65rem; xs px-1 py-px 0.6rem; overlay 8px tall, 7px text
+    - Control: radius 2.5px, border composer-ring at 7% (4% dark) → 14% hover → solid on focus,
+      inset shadow; default pad .375rem .625rem 12px; xs .125rem .5rem 11px; sm .25rem .5rem; lg .5rem .75rem 14px
+    - Switch 36×20 (knob 16) / xs 28×16 (knob 12); SegmentedControl pad 2px radius 5px, options radius 3px 11px
+    - Checkbox 16×16 radius-sm; Tabs 36px tall on muted; TextTab 28px caption underline; PaneTab 11px,
+      active = inset 2px primary underline; Kbd 22px (sm 18px); Tooltip Arial 11px bold marker chip, no fade
+    - Popover w-72 radius-lg pad .5rem; Menu min-w-36 pad .25rem, items radius-md pad .25rem .5rem 12px
+    - Dialog max-w-lg (32rem) radius-xl pad 1rem, shadow-nous, bubble bg; scrim black/22 + 2px blur
+    - Sheet 75% / max 24rem, sidebar surface, left stroke
+  Behaviour (not visible statically):
+    - buttons: 100ms transitions; link/text underline only the label on hover; no focus rings anywhere
+      (focus shows as the control's border colour)
+    - row hover lands instantly and fades out over 100ms (row-hover utility)
+    - tooltips appear instantly (no fade) with the marker-chip look; menus zoom-in-95 + fade on open
+  Mobile:      The mobile app has its own primitives mapped from these tokens (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Primitives · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .frame.is-sheet { overflow-y: auto; user-select: text; }
+      .psheet { display: grid; gap: 1.5rem; padding: 1.5rem 1.75rem 4rem; }
+      .psheet > header h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+      .psheet > header p { margin: 0.25rem 0 0; color: var(--ui-text-tertiary); font-size: 0.75rem; }
+      .psec { display: grid; gap: 0.625rem; padding-top: 1rem; border-top: 1px solid var(--ui-stroke-tertiary); }
+      .psec > h2 { display: flex; align-items: baseline; gap: 0.625rem; margin: 0; font-size: 0.8125rem; font-weight: 600; }
+      .psec > h2 small { color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.625rem; font-weight: 400; }
+      .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.75rem 1rem; }
+      .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; }
+      .pitem { display: grid; gap: 0.375rem; align-content: start; }
+      .plabel { color: var(--ui-text-quaternary); font-family: var(--dt-font-mono); font-size: 0.625rem; line-height: 1.3; }
+      .pmatrix { border-collapse: collapse; font-size: 0.6875rem; }
+      .pmatrix th { padding: 0 0.75rem 0.375rem 0; color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.625rem; font-weight: 400; text-align: left; }
+      .pmatrix td { padding: 0.25rem 0.75rem 0.25rem 0; vertical-align: middle; }
+      .pmatrix td:first-child { color: var(--ui-text-quaternary); font-family: var(--dt-font-mono); font-size: 0.625rem; white-space: nowrap; }
+      .demo-box { position: relative; overflow: hidden; height: 17rem; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-lg); background: var(--ui-chat-surface-background); }
+      .demo-box .dialog, .demo-box .scrim { z-index: 1; }
+      .demo-box .sheet { z-index: 1; }
+      .stack-surface { position: relative; }
+      /* status-dot.tsx tones (not in components.css) */
+      .sdot { display: inline-block; width: 0.375rem; height: 0.375rem; border-radius: var(--radius-full); }
+      .sdot--good { background: var(--dt-primary); }
+      .sdot--warn { background: var(--tw-amber-500); }
+      .sdot--bad { background: var(--dt-destructive); }
+      .sdot--muted { background: color-mix(in srgb, var(--dt-muted-foreground) 40%, transparent); }
+      /* log-view.tsx (not in components.css) */
+      .logview { overflow: auto; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.375rem 0.625rem; color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; }
+      /* alert.tsx toast surface (not in components.css) */
+      .toast { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; column-gap: 0.75rem; row-gap: 0.25rem; border: 1px solid var(--stroke-nous); border-radius: var(--radius-lg); padding: 0.75rem 0.625rem 0.75rem 1rem; background: color-mix(in srgb, var(--dt-popover) 95%, transparent); box-shadow: var(--shadow-nous); color: var(--dt-card-foreground); font-size: 0.875rem; line-height: 1.25rem; }
+      .toast p { margin: 0; }
+      .toast__icon { margin-top: 0.42ch; font-size: 1rem; color: var(--dt-muted-foreground); }
+      .toast--destructive { border-color: color-mix(in srgb, var(--dt-destructive) 35%, transparent); background: color-mix(in srgb, var(--dt-card) 96%, var(--dt-destructive)); }
+      .toast--destructive .toast__icon { color: var(--dt-destructive); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame is-sheet">
+          <div class="psheet">
+            <header>
+              <h1>Primitives</h1>
+              <p>Every class in assets/components.css with the source component it mirrors. Label format: <span class="code-inline">.class · src/components/ui/file.tsx</span>.</p>
+            </header>
+
+            <!-- ── Button ──────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>Button <small>.btn .btn--{variant} .btn--{size} · ui/button.tsx</small></h2>
+              <table class="pmatrix">
+                <thead><tr><th>variant \ size</th><th>--xs</th><th>--sm</th><th>(default)</th><th>--lg</th><th>--micro</th><th>+ icon</th><th>disabled</th></tr></thead>
+                <tbody>
+                  <tr><td>.btn--default</td><td><button class="btn btn--default btn--xs">Save</button></td><td><button class="btn btn--default btn--sm">Save</button></td><td><button class="btn btn--default">Save</button></td><td><button class="btn btn--default btn--lg">Save</button></td><td><button class="btn btn--default btn--micro">Save</button></td><td><button class="btn btn--default"><i class="codicon codicon-add"></i>New</button></td><td><button class="btn btn--default" disabled>Save</button></td></tr>
+                  <tr><td>.btn--destructive</td><td><button class="btn btn--destructive btn--xs">Delete</button></td><td><button class="btn btn--destructive btn--sm">Delete</button></td><td><button class="btn btn--destructive">Delete</button></td><td><button class="btn btn--destructive btn--lg">Delete</button></td><td><button class="btn btn--destructive btn--micro">Delete</button></td><td><button class="btn btn--destructive"><i class="codicon codicon-trash"></i>Delete</button></td><td><button class="btn btn--destructive" disabled>Delete</button></td></tr>
+                  <tr><td>.btn--outline</td><td><button class="btn btn--outline btn--xs">Export</button></td><td><button class="btn btn--outline btn--sm">Export</button></td><td><button class="btn btn--outline">Export</button></td><td><button class="btn btn--outline btn--lg">Export</button></td><td><button class="btn btn--outline btn--micro">Export</button></td><td><button class="btn btn--outline"><i class="ti ti-download"></i>Export</button></td><td><button class="btn btn--outline" disabled>Export</button></td></tr>
+                  <tr><td>.btn--secondary</td><td><button class="btn btn--secondary btn--xs">Install</button></td><td><button class="btn btn--secondary btn--sm">Install</button></td><td><button class="btn btn--secondary">Install</button></td><td><button class="btn btn--secondary btn--lg">Install</button></td><td><button class="btn btn--secondary btn--micro">Install</button></td><td><button class="btn btn--secondary"><i class="ti ti-package"></i>Install</button></td><td><button class="btn btn--secondary" disabled>Install</button></td></tr>
+                  <tr><td>.btn--ghost</td><td><button class="btn btn--ghost btn--xs">Cancel</button></td><td><button class="btn btn--ghost btn--sm">Cancel</button></td><td><button class="btn btn--ghost">Cancel</button></td><td><button class="btn btn--ghost btn--lg">Cancel</button></td><td><button class="btn btn--ghost btn--micro">Cancel</button></td><td><button class="btn btn--ghost"><i class="codicon codicon-add"></i>Add fallback</button></td><td><button class="btn btn--ghost" disabled>Cancel</button></td></tr>
+                  <tr><td>.btn--link</td><td><button class="btn btn--link btn--xs">Release notes</button></td><td><button class="btn btn--link btn--sm">Release notes</button></td><td><button class="btn btn--link">Release notes</button></td><td><button class="btn btn--link btn--lg">Release notes</button></td><td><button class="btn btn--link btn--micro">Release notes</button></td><td><button class="btn btn--link"><i class="codicon codicon-link-external"></i>Docs</button></td><td><button class="btn btn--link" disabled>Release notes</button></td></tr>
+                  <tr><td>.btn--text</td><td><button class="btn btn--text btn--xs">Clear</button></td><td><button class="btn btn--text btn--sm">Clear</button></td><td><button class="btn btn--text">Clear</button></td><td><button class="btn btn--text btn--lg">Clear</button></td><td><button class="btn btn--text btn--micro">Clear</button></td><td><button class="btn btn--text"><i class="codicon codicon-close"></i>Clear</button></td><td><button class="btn btn--text" disabled>Clear</button></td></tr>
+                  <tr><td>.btn--text-strong</td><td><button class="btn btn--text-strong btn--xs">Change</button></td><td><button class="btn btn--text-strong btn--sm">Change</button></td><td><button class="btn btn--text-strong">Change</button></td><td><button class="btn btn--text-strong btn--lg">Change</button></td><td><button class="btn btn--text-strong btn--micro">Change</button></td><td><button class="btn btn--text-strong"><i class="codicon codicon-edit"></i>Change</button></td><td><button class="btn btn--text-strong" disabled>Change</button></td></tr>
+                  <tr><td>.btn--solid <span class="t-quaternary">(primary-solid)</span></td><td><button class="btn btn--solid btn--xs">Got it</button></td><td><button class="btn btn--solid btn--sm">Got it</button></td><td><button class="btn btn--solid">Got it</button></td><td><button class="btn btn--solid btn--lg">Got it</button></td><td></td><td></td><td></td></tr>
+                </tbody>
+              </table>
+              <table class="pmatrix">
+                <thead><tr><th>icon sizes</th><th>--icon-xs 24</th><th>--icon-sm 32</th><th>--icon 36</th><th>--icon-lg 40</th><th>--icon-titlebar 24</th></tr></thead>
+                <tbody>
+                  <tr><td>.btn--ghost</td><td><button class="btn btn--ghost btn--icon-xs" aria-label="Close"><i class="codicon codicon-close"></i></button></td><td><button class="btn btn--ghost btn--icon-sm" aria-label="Settings"><i class="codicon codicon-settings-gear"></i></button></td><td><button class="btn btn--ghost btn--icon" aria-label="Search"><i class="codicon codicon-search"></i></button></td><td><button class="btn btn--ghost btn--icon-lg" aria-label="Add"><i class="codicon codicon-add"></i></button></td><td><button class="btn btn--ghost btn--icon-titlebar" aria-label="Layout"><i class="codicon codicon-layout"></i></button></td></tr>
+                  <tr><td>.btn--secondary</td><td><button class="btn btn--secondary btn--icon-xs" aria-label="Close"><i class="codicon codicon-close"></i></button></td><td><button class="btn btn--secondary btn--icon-sm" aria-label="Settings"><i class="codicon codicon-settings-gear"></i></button></td><td><button class="btn btn--secondary btn--icon" aria-label="Search"><i class="codicon codicon-search"></i></button></td><td><button class="btn btn--secondary btn--icon-lg" aria-label="Add"><i class="codicon codicon-add"></i></button></td><td><button class="btn btn--secondary btn--icon-titlebar" aria-label="Layout"><i class="codicon codicon-layout"></i></button></td></tr>
+                  <tr><td>.btn--default</td><td><button class="btn btn--default btn--icon-xs" aria-label="Send"><i class="ti ti-arrow-up"></i></button></td><td><button class="btn btn--default btn--icon-sm" aria-label="Send"><i class="ti ti-arrow-up"></i></button></td><td><button class="btn btn--default btn--icon" aria-label="Send"><i class="ti ti-arrow-up"></i></button></td><td><button class="btn btn--default btn--icon-lg" aria-label="Send"><i class="ti ti-arrow-up"></i></button></td><td></td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <!-- ── Badge ───────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>Badge <small>.badge .badge--{variant} .badge--{xs|overlay} · ui/badge.tsx</small></h2>
+              <table class="pmatrix">
+                <thead><tr><th>variant</th><th>default</th><th>--xs</th><th>with icon</th></tr></thead>
+                <tbody>
+                  <tr><td>.badge (default)</td><td><span class="badge">Beta</span></td><td><span class="badge badge--xs">Beta</span></td><td><span class="badge"><i class="ti ti-sparkles i-xs"></i>New</span></td></tr>
+                  <tr><td>.badge--muted</td><td><span class="badge badge--muted">Local</span></td><td><span class="badge badge--muted badge--xs">Local</span></td><td><span class="badge badge--muted"><i class="ti ti-cpu i-xs"></i>Local</span></td></tr>
+                  <tr><td>.badge--success</td><td><span class="badge badge--success">Connected</span></td><td><span class="badge badge--success badge--xs">Connected</span></td><td><span class="badge badge--success"><i class="ti ti-check i-xs"></i>Passed</span></td></tr>
+                  <tr><td>.badge--warn</td><td><span class="badge badge--warn">Retrying</span></td><td><span class="badge badge--warn badge--xs">Retrying</span></td><td><span class="badge badge--warn"><i class="ti ti-alert-triangle i-xs"></i>Degraded</span></td></tr>
+                  <tr><td>.badge--destructive</td><td><span class="badge badge--destructive">Failed</span></td><td><span class="badge badge--destructive badge--xs">Failed</span></td><td><span class="badge badge--destructive"><i class="ti ti-alert-circle i-xs"></i>Error</span></td></tr>
+                  <tr><td>.badge--outline</td><td><span class="badge badge--outline">v0.9.2</span></td><td><span class="badge badge--outline badge--xs">v0.9.2</span></td><td><span class="badge badge--outline"><i class="ti ti-git-branch i-xs"></i>main</span></td></tr>
+                  <tr><td>.badge--solid</td><td><span class="badge badge--solid">3</span></td><td><span class="badge badge--solid badge--xs">3</span></td><td><span style="position:relative;display:inline-flex"><i class="ti ti-bell i-md t-secondary"></i><span class="badge badge--solid badge--overlay" style="position:absolute;top:-2px;right:-4px">2</span></span> <span class="plabel">.badge--overlay</span></td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <!-- ── Controls ────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>Input · Textarea · Select trigger <small>.control .control--{xs|sm|lg} · ui/control.ts, input.tsx, textarea.tsx, select.tsx</small></h2>
+              <div class="pgrid">
+                <div class="pitem"><span class="plabel">.control--xs</span><input class="control control--xs" placeholder="Enter address" /></div>
+                <div class="pitem"><span class="plabel">.control--sm</span><input class="control control--sm" placeholder="Filter…" /></div>
+                <div class="pitem"><span class="plabel">.control (default)</span><input class="control" placeholder="publisher.extension" /></div>
+                <div class="pitem"><span class="plabel">.control--lg</span><input class="control control--lg" placeholder="Paste API key" /></div>
+                <div class="pitem"><span class="plabel">.control.is-focused</span><input class="control is-focused" value="claude-opus-5" /></div>
+                <div class="pitem"><span class="plabel">.control.is-invalid (aria-invalid)</span><input class="control is-invalid" value="htp:/broken" /></div>
+                <div class="pitem"><span class="plabel">.control[disabled]</span><input class="control" value="Managed by profile" disabled style="opacity:.5" /></div>
+                <div class="pitem"><span class="plabel">.control--affix</span><div class="control control--affix"><input value="D:\Stuff\Code\git\hermes-android" /><i class="codicon codicon-folder-opened t-tertiary"></i></div></div>
+                <div class="pitem"><span class="plabel">textarea.control · textarea.tsx</span><textarea class="control" placeholder="System prompt override…"></textarea></div>
+                <div class="pitem"><span class="plabel">.control.select-trigger · select.tsx</span><button class="control select-trigger">Ask for risky commands</button></div>
+                <div class="pitem"><span class="plabel">.select-trigger[data-state=open]</span><button class="control select-trigger" data-state="open">Local (Whisper)</button></div>
+                <div class="pitem field"><label class="field__label">.field · ui/field.tsx</label><input class="control" placeholder="https://gateway.example.com" /><span class="field__hint">.field__hint — shown under the control.</span></div>
+              </div>
+            </section>
+
+            <!-- ── Toggles ─────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>Switch · SegmentedControl · Checkbox <small>ui/switch.tsx, segmented-control.tsx, checkbox.tsx</small></h2>
+              <div class="prow">
+                <div class="pitem"><span class="plabel">.switch</span><span class="switch" role="switch" aria-checked="false"></span></div>
+                <div class="pitem"><span class="plabel">.switch.is-on</span><span class="switch is-on" role="switch" aria-checked="true"></span></div>
+                <div class="pitem"><span class="plabel">.switch--xs</span><span class="switch switch--xs" role="switch" aria-checked="false"></span></div>
+                <div class="pitem"><span class="plabel">.switch--xs.is-on</span><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                <div class="pitem"><span class="plabel">.seg .seg__opt(.is-active)</span><div class="seg"><button class="seg__opt"><i class="ti ti-sun"></i>Light</button><button class="seg__opt"><i class="ti ti-moon"></i>Dark</button><button class="seg__opt is-active"><i class="ti ti-device-desktop"></i>System</button></div></div>
+                <div class="pitem"><span class="plabel">.seg (text only)</span><div class="seg"><button class="seg__opt is-active">Auto</button><button class="seg__opt">Always</button><button class="seg__opt">Never</button></div></div>
+                <div class="pitem"><span class="plabel">.checkbox / .checkbox.is-on</span><span class="flex items-center gap-2"><span class="checkbox"></span><span class="checkbox is-on"></span><span class="t-secondary t-caption">Remember choice</span></span></div>
+              </div>
+            </section>
+
+            <!-- ── Tabs ────────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>Tabs · TextTab · PaneTab <small>ui/tabs.tsx, text-tab.tsx, pane-tab.tsx</small></h2>
+              <div class="prow" style="align-items:flex-start;gap:1.5rem">
+                <div class="pitem"><span class="plabel">.tabs .tabs__tab(.is-active)</span><div class="tabs"><button class="tabs__tab is-active">Skills</button><button class="tabs__tab">Toolsets</button><button class="tabs__tab">MCP</button></div></div>
+                <div class="pitem"><span class="plabel">.text-tab(.is-active) .count</span><div class="flex gap-3"><button class="text-tab is-active">Sessions</button><button class="text-tab">Bots <span class="count">4</span></button><button class="text-tab">Archived <span class="count">12</span></button></div></div>
+                <div class="pitem" style="min-width:26rem"><span class="plabel">.zone-tabs .pane-tab(.is-active) .pane-tab__close</span>
+                  <div class="zone-tabs" style="border:1px solid var(--ui-stroke-tertiary)">
+                    <button class="pane-tab is-active"><i class="codicon codicon-comment-discussion"></i><span class="t-truncate">Chat</span><i class="codicon codicon-close pane-tab__close"></i></button>
+                    <button class="pane-tab"><i class="codicon codicon-files"></i><span>Files</span><i class="codicon codicon-close pane-tab__close"></i></button>
+                    <button class="pane-tab"><i class="codicon codicon-terminal"></i><span>Terminal</span><i class="codicon codicon-close pane-tab__close"></i></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── Kbd, SearchField, Tooltip ───────────────────────── -->
+            <section class="psec">
+              <h2>Kbd · SearchField · Tooltip <small>ui/kbd.tsx, search-field.tsx, tooltip.tsx</small></h2>
+              <div class="prow" style="gap:1.5rem;align-items:flex-start">
+                <div class="pitem"><span class="plabel">.kbd / .kbd--sm / .kbd--ghost / .kbd-group</span><span class="flex items-center gap-2"><span class="kbd">Esc</span><span class="kbd kbd--sm">/</span><span class="kbd kbd--ghost">⌘</span><span class="kbd-group"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">Space</span></span></span></div>
+                <div class="pitem" style="width:14rem"><span class="plabel">.search-field (idle, 30% opacity)</span><div class="search-field"><i class="codicon codicon-search i-xs"></i><input placeholder="Search sessions" /></div></div>
+                <div class="pitem" style="width:14rem"><span class="plabel">.search-field.is-filled</span><div class="search-field is-filled"><i class="codicon codicon-search i-xs"></i><input value="gateway" /><i class="codicon codicon-close i-xs t-tertiary"></i></div></div>
+                <div class="pitem"><span class="plabel">.tip (+ .kbd inside)</span><div style="position:relative;height:3.5rem;width:12rem"><button class="btn btn--ghost btn--icon-titlebar" aria-label="Open settings" style="position:absolute;left:4.5rem;top:1.9rem"><i class="codicon codicon-settings-gear"></i></button><span class="tip" style="left:1.25rem;top:0">Open settings<span class="kbd">Ctrl ,</span></span></div></div>
+              </div>
+            </section>
+
+            <!-- ── Popover + menu ──────────────────────────────────── -->
+            <section class="psec">
+              <h2>Popover · DropdownMenu <small>.popover .popover--accent · ui/popover.tsx · .menu · ui/dropdown-menu.tsx, context-menu.tsx</small></h2>
+              <div class="prow" style="align-items:flex-start;gap:1.5rem">
+                <div class="pitem"><span class="plabel">.popover</span>
+                  <div class="popover" style="position:relative">
+                    <div class="t-medium" style="margin-bottom:.25rem">Working directory</div>
+                    <div class="t-tertiary t-caption" style="margin-bottom:.5rem">Tools and the terminal start here.</div>
+                    <div class="control control--affix control--sm"><input value="~/code/hermes-android" /><i class="codicon codicon-folder-opened t-tertiary"></i></div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.popover.popover--accent (onboarding tip)</span>
+                  <div class="popover popover--accent" style="position:relative;width:15rem">
+                    <div class="t-semibold" style="margin-bottom:.25rem">Try HUD mode</div>
+                    <div style="font-size:.75rem;opacity:.85;margin-bottom:.625rem">Float this chat over any app. Press the bubble in the titlebar.</div>
+                    <div class="flex justify-end gap-2"><button class="btn btn--sm" style="color:inherit">Later</button><button class="btn btn--sm" style="background:var(--dt-primary-solid-foreground);color:var(--dt-primary-solid)">Got it</button></div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.menu.menu--static</span>
+                  <div class="menu menu--static" style="width:14rem">
+                    <div class="menu__label">Session</div>
+                    <button class="menu__item"><i class="codicon codicon-pinned"></i>Pin<span class="menu__shortcut">Ctrl P</span></button>
+                    <button class="menu__item is-focused"><i class="codicon codicon-edit"></i>Rename<span class="menu__shortcut">F2</span></button>
+                    <button class="menu__item"><i class="codicon codicon-empty-window"></i>Open in new window</button>
+                    <button class="menu__item is-checked"><i class="codicon codicon-eye"></i>Show in sidebar</button>
+                    <div class="menu__sep"></div>
+                    <button class="menu__item is-danger"><i class="codicon codicon-trash"></i>Delete</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── Dialog + Sheet ──────────────────────────────────── -->
+            <section class="psec">
+              <h2>Dialog · Sheet <small>.scrim .dialog · ui/dialog.tsx, confirm-dialog.tsx · .sheet · ui/sheet.tsx</small></h2>
+              <div class="pgrid" style="grid-template-columns:1fr 1fr">
+                <div class="pitem"><span class="plabel">.scrim + .dialog (__header __title __desc __banner __footer __close)</span>
+                  <div class="demo-box">
+                    <div class="scrim"></div>
+                    <div class="dialog" style="max-width:24rem">
+                      <button class="btn btn--ghost btn--icon-xs dialog__close" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                      <div class="dialog__header"><h3 class="dialog__title"><i class="ti ti-trash"></i>Delete profile “work”?</h3><p class="dialog__desc">Its sessions, memories and config are removed from this machine.</p></div>
+                      <div class="dialog__banner dialog__banner--error">This can't be undone.</div>
+                      <div class="dialog__footer"><button class="btn btn--ghost">Cancel</button><button class="btn btn--destructive">Delete</button></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.sheet (__header __footer)</span>
+                  <div class="demo-box">
+                    <div class="scrim"></div>
+                    <div class="sheet">
+                      <div class="sheet__header flex items-center justify-between"><span class="t-semibold">Task details</span><button class="btn btn--ghost btn--icon-xs" aria-label="Close"><i class="codicon codicon-close"></i></button></div>
+                      <div style="padding:0 .75rem" class="col gap-2"><span class="skeleton" style="height:.625rem;width:80%"></span><span class="skeleton" style="height:.625rem;width:60%"></span><span class="skeleton" style="height:.625rem;width:70%"></span></div>
+                      <div class="sheet__footer flex justify-end gap-2" style="margin-top:auto"><button class="btn btn--secondary btn--sm">Close</button></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.dialog__banner--warn / --info</span><div class="col gap-2"><div class="dialog__banner dialog__banner--warn">Restart the gateway to apply.</div><div class="dialog__banner dialog__banner--info">Keys are stored in the OS keychain.</div></div></div>
+                <div class="pitem"><span class="plabel">toast (Alert + STACK_SURFACE) · components/notifications.tsx, ui/alert.tsx — page-local</span>
+                  <div class="toast"><i class="ti ti-info-circle toast__icon"></i><p>Software rendering active — remote display detected (RDP session).</p><button class="btn btn--ghost btn--icon-xs" aria-label="Dismiss"><i class="codicon codicon-close"></i></button></div>
+                  <div class="toast toast--destructive"><i class="ti ti-alert-circle toast__icon"></i><p><strong>Autosave failed</strong><br />config.yaml is read-only.</p><button class="btn btn--ghost btn--icon-xs" aria-label="Dismiss"><i class="codicon codicon-close"></i></button></div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ── Panel rows + ListRow ────────────────────────────── -->
+            <section class="psec">
+              <h2>Panel rows · ListRow · Nav items <small>.panel-row .panel-meta .panel-block .panel-pill · overlays/panel.tsx · .list-row · settings/primitives.tsx · .nav-item · overlays/overlay-split-layout.tsx</small></h2>
+              <div class="pgrid" style="grid-template-columns:14rem 1fr 13rem">
+                <div class="pitem"><span class="plabel">.panel-row(.is-active) .panel-row__meta</span>
+                  <div class="panel__list">
+                    <button class="panel-row is-active"><i class="ti ti-clock i-sm"></i>Morning inbox digest<span class="panel-row__meta">07:00</span></button>
+                    <button class="panel-row"><i class="ti ti-clock i-sm"></i>Weekly release notes<span class="panel-row__meta">Fri</span></button>
+                    <button class="panel-row"><i class="ti ti-clock i-sm"></i>Nightly e2e<span class="panel-row__meta">02:00</span></button>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.list-row / .list-row__title __desc __hint __action · .section-heading</span>
+                  <div>
+                    <div class="section-heading"><i class="ti ti-lock"></i><span>Safety</span></div>
+                    <div class="list-row"><div><div class="list-row__title">Redact Secrets</div><div class="list-row__desc">Hide detected secrets from model-visible content when possible.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                    <div class="list-row"><div><div class="list-row__title">Approval Timeout</div><div class="list-row__desc">How long approval prompts wait before timing out.</div><div class="list-row__hint">approvals.timeout</div></div><div class="list-row__action"><input class="control" value="300" /></div></div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.nav-item(.is-active) · --nested</span>
+                  <div class="col" style="gap:.125rem">
+                    <button class="nav-item"><i class="ti ti-box"></i><span>Model</span></button>
+                    <button class="nav-item is-active"><i class="ti ti-palette"></i><span>Appearance</span></button>
+                    <button class="nav-item"><i class="ti ti-bolt"></i><span>Providers</span></button>
+                    <div class="nav-children"><button class="nav-item nav-item--nested is-active"><i class="codicon codicon-account"></i><span>Accounts</span></button><button class="nav-item nav-item--nested"><i class="ti ti-key"></i><span>API keys</span></button></div>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.panel-meta (dl) · .panel-pill</span>
+                  <dl class="panel-meta"><dt>Schedule</dt><dd>Every day at 07:00</dd><dt>Profile</dt><dd>default</dd><dt>Status</dt><dd><span class="panel-pill"><span class="status-dot status-dot--done"></span>Last run ok</span></dd></dl>
+                </div>
+                <div class="pitem"><span class="plabel">.panel-block</span><div class="panel-block t-mono">Summarize unread mail from the last 24h and post it to #inbox.</div></div>
+                <div class="pitem"><span class="plabel">.side-nav(.is-active) · shell.css</span><div class="col" style="gap:1px;background:var(--ui-sidebar-surface-background);padding:.375rem"><button class="side-nav is-active"><i class="ti ti-edit"></i><span class="t-truncate">New session</span><span class="kbd-group"><span class="kbd kbd--sm">Ctrl</span><span class="kbd kbd--sm">N</span></span></button><button class="side-nav"><i class="ti ti-puzzle"></i><span>Capabilities</span></button></div></div>
+              </div>
+            </section>
+
+            <!-- ── Feedback ────────────────────────────────────────── -->
+            <section class="psec">
+              <h2>EmptyState · ErrorState · Skeleton · Loader · Status dots · LogView <small>ui/empty-state.tsx, error-state.tsx, skeleton.tsx, loader.tsx · components/status-dot.tsx · ui/log-view.tsx</small></h2>
+              <div class="pgrid">
+                <div class="pitem"><span class="plabel">.empty-state __icon __title __desc</span><div class="empty-state card" style="min-height:9rem"><div><i class="ti ti-calendar-off empty-state__icon"></i><div class="empty-state__title">No scheduled jobs</div><div class="empty-state__desc">Create one from a template or ask Hermes.</div></div></div></div>
+                <div class="pitem"><span class="plabel">.error-state</span><div class="error-state"><i class="ti ti-alert-circle" style="margin-top:.2rem"></i><div>Couldn't load providers. The gateway returned 502.</div></div></div>
+                <div class="pitem"><span class="plabel">.skeleton</span><div class="col gap-2"><span class="skeleton" style="height:1rem;width:100%"></span><span class="skeleton" style="height:1rem;width:80%"></span><span class="skeleton" style="height:1rem;width:60%"></span></div></div>
+                <div class="pitem"><span class="plabel">.loader</span><span class="flex items-center gap-2"><span class="loader"></span><span class="t-tertiary t-caption">Loading breakdown…</span></span></div>
+                <div class="pitem"><span class="plabel">.status-dot--{idle|working|done|unread|error|needs-you} (session rows)</span><span class="flex items-center gap-3"><span class="status-dot status-dot--idle"></span><span class="status-dot status-dot--working"></span><span class="status-dot status-dot--done"></span><span class="status-dot status-dot--unread"></span><span class="status-dot status-dot--error"></span><span class="status-dot status-dot--needs-you"></span></span></div>
+                <div class="pitem"><span class="plabel">StatusDot tone good / warn / bad / muted (page-local .sdot)</span><span class="flex items-center gap-3"><span class="sdot sdot--good"></span><span class="sdot sdot--warn"></span><span class="sdot sdot--bad"></span><span class="sdot sdot--muted"></span></span></div>
+                <div class="pitem" style="grid-column:span 2"><span class="plabel">LogView (page-local .logview)</span><div class="logview" style="max-height:6rem">INFO gateway starting on 127.0.0.1:8642
+INFO session.resume runtime=desk-7f3a profile=default
+WARNING discord reconnecting in 8s (attempt 2)</div></div>
+              </div>
+            </section>
+
+            <!-- ── Progress, slider, theme card, misc ──────────────── -->
+            <section class="psec">
+              <h2>Progress · Slider · Theme card · Card · Widget · Avatar · Inline code <small>ui/progress.tsx · settings sliders · settings/appearance-settings.tsx</small></h2>
+              <div class="pgrid">
+                <div class="pitem"><span class="plabel">.progress &gt; span</span><div class="progress"><span style="width:62%"></span></div></div>
+                <div class="pitem"><span class="plabel">.slider __track __fill __thumb __value</span><div class="slider"><div class="slider__track"><div class="slider__fill" style="width:40%"></div><div class="slider__thumb" style="left:40%"></div></div><span class="slider__value">40</span></div></div>
+                <div class="pitem"><span class="plabel">.context-bar (statusbar)</span><span class="context-bar"><span style="width:22%;background:var(--context-usage-system)"></span><span style="width:18%;background:var(--context-usage-tools)"></span><span style="width:12%;background:var(--context-usage-conversation)"></span></span></div>
+                <div class="pitem"><span class="plabel">.avatar · .code-inline</span><span class="flex items-center gap-2"><span class="avatar">H</span><span class="avatar">W</span><span class="t-body">Run <span class="code-inline">hermes desktop --force-build</span></span></span></div>
+                <div class="pitem" style="grid-column:span 2"><span class="plabel">.theme-grid .theme-card(.is-active) __preview __name __desc</span>
+                  <div class="theme-grid">
+                    <button class="theme-card is-active" style="--sw-side:var(--preset-nous-side);--sw-bg:var(--preset-nous-bg);--sw-fg:var(--preset-nous-fg);--sw-accent:var(--preset-nous-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Nous</span><span class="theme-card__desc">GitHub chrome, Nous blue accent</span></button>
+                    <button class="theme-card" style="--sw-side:var(--preset-catppuccin-side);--sw-bg:var(--preset-catppuccin-bg);--sw-fg:var(--preset-catppuccin-fg);--sw-accent:var(--preset-catppuccin-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Catppuccin</span></button>
+                    <button class="theme-card" style="--sw-side:var(--preset-midnight-side);--sw-bg:var(--preset-midnight-bg);--sw-fg:var(--preset-midnight-fg);--sw-accent:var(--preset-midnight-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Midnight</span></button>
+                  </div>
+                </div>
+                <div class="pitem"><span class="plabel">.card</span><div class="card"><div class="t-medium">deepseek-v4-flash</div><div class="t-tertiary t-caption">DeepSeek · 128K context</div></div></div>
+                <div class="pitem"><span class="plabel">.widget (WIDGET_SHELL_CLASS)</span><div class="widget"><div class="t-medium">Weather · Lahore</div><div class="t-tertiary t-caption">34° · clear</div></div></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

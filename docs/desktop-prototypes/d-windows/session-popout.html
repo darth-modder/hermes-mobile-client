@@ -1,0 +1,147 @@
+<!doctype html>
+<!--
+  Screen:      Session pop-out (D · window)   electron/main.ts createSessionWindow(sessionId, {profile, watch})
+               → spawnSecondaryWindow; renderer URL `?win=secondary[&watch=1][&profile=…]#/<sessionId>`
+               (opened by Cmd/Ctrl-click on a session row, "Open in new window", or a subagent "watch").
+  Replicates:  apps/desktop/electron/main.ts l.13414-13493 (spawnSecondaryWindow, createSessionWindow),
+               electron/session-windows.ts (SESSION_WINDOW_MIN_WIDTH/HEIGHT, buildSessionWindowUrl),
+               the same chat surface as a-main/chat.html (app/chat/*, app/shell/titlebar.ts, statusbar)
+  Views:       #win=compact (opening size) | #win=wide (after the user resizes it)
+  Measurements:
+    - BrowserWindow width 420, height 620 (= minWidth/minHeight: it opens AT the minimum, "a compact
+      side panel, not a second full desktop"); titleBarStyle 'hidden' + titleBarOverlay (OS caption
+      buttons painted over the top-right, 46px each on Windows), vibrancy/translucency like the main window
+    - everything inside is the main chat surface: titlebar 34px, status bar 20px, thread column max 48rem
+      (padding 2rem 1.5rem), composer radius-2xl with 24px controls / 26px send
+    - no session sidebar (the `?win=secondary` flag suppresses it and the install/onboarding overlays)
+  Behaviour (not visible statically):
+    - one window per sessionId: re-opening the same session focuses the existing window (registry)
+    - `watch=1` = spectator window for a running subagent: resumed lazily, no agent is built for it
+    - shown only after ready-to-show (first themed paint), so no white flash on dark themes
+    - streams unthrottled while blurred (streamThrottle.register); a crashed renderer reloads under the
+      shared crash-loop budget
+    - `profile` in the query string makes the window boot against that profile's backend
+  Mobile:      No separate windows on mobile; a session is simply opened in the single chat screen (docs/PARITY.md).
+  Unsure:      at 420px the stamped titlebar's centred title would collide with the tool clusters; the
+               compact view omits the title (data-title=""). Whether secondary windows keep the full
+               status bar was not verified; it is shown and clips at 420px.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Session pop-out · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Prototype desk: the screen the separate window sits on. */
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      .os-win { position: absolute; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: 8px; background: var(--ui-chat-surface-background); box-shadow: var(--shadow-lg); }
+      .os-win > .app { height: 100%; }
+      /* Main Hermes window behind, just enough to read as "another window". */
+      .ghost-win { position: absolute; border-radius: 8px; background: var(--ui-bg-sidebar); box-shadow: var(--shadow-md); opacity: 0.75; overflow: hidden; }
+      .ghost-win::before { content: ''; position: absolute; inset: 0 0 auto; height: 34px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-chrome); }
+      .ghost-win::after { content: ''; position: absolute; top: 34px; bottom: 0; left: 237px; right: 0; background: var(--ui-bg-chrome); border-left: 1px solid var(--ui-stroke-tertiary); }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="ghost-win" style="left:24px;top:20px;width:820px;height:640px" aria-hidden="true"></div>
+
+            <section data-views="win">
+              <!-- ── View: opening size (420×620) ─────────────────────── -->
+              <div data-view="compact">
+                <div class="os-win" style="left:600px;top:52px;width:420px;height:620px">
+                  <div data-shell="app" data-sidebar="none" data-session="auth" data-title="">
+                    <div class="thread">
+                      <div class="thread__inner">
+                        <div class="msg-time">Today 10:42</div>
+                        <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Make it fail fast.</div>
+                        <div class="turn">
+                          <div class="scaffold">
+                            <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                            <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta t-truncate">tui_gateway/server.py</span></div>
+                            <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta t-truncate">use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                          </div>
+                          <div class="msg-ai">
+                            <p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p>
+                          </div>
+                          <div class="t-quaternary" style="font-size:.625rem;padding:0 var(--message-text-indent)">10:43 · 41s · Claude Opus 5</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="composer-dock">
+                      <div class="composer">
+                        <div class="composer__row">
+                          <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                          <div class="composer__input is-placeholder t-truncate">Ask Hermes anything…</div>
+                          <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                          <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                          <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="proto-note" style="left:600px;top:678px">Session window · 420×620 (opens at its minimum size) · no session sidebar</div>
+              </div>
+
+              <!-- ── View: resized wide ───────────────────────────────── -->
+              <div data-view="wide" hidden>
+                <div class="os-win" style="left:150px;top:22px;width:920px;height:700px">
+                  <div data-shell="app" data-sidebar="none" data-session="auth">
+                    <div class="thread">
+                      <div class="thread__inner">
+                        <div class="msg-time">Today 10:42</div>
+                        <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                        <div class="turn">
+                          <div class="scaffold">
+                            <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                            <div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div>
+                            <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                          </div>
+                          <div class="msg-ai">
+                            <p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p>
+                            <p>Want me to add an e2e spec that revokes the token mid-session?</p>
+                          </div>
+                          <div class="t-quaternary" style="font-size:.625rem;padding:0 var(--message-text-indent)">10:43 · 41s · Claude Opus 5</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="composer-dock">
+                      <div class="composer">
+                        <div class="composer__row">
+                          <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                          <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                          <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                          <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                          <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="win:compact">Opening size 420×620</button>
+        <button class="btn btn--secondary btn--sm" data-show="win:wide">Resized wide</button>
+      </nav>
+    </div>
+  </body>
+</html>

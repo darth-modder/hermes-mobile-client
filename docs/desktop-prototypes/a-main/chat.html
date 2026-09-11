@@ -1,0 +1,165 @@
+<!doctype html>
+<!--
+  Screen:      Chat (A · full page)   route `/` (new chat) and `/:sessionId`
+  Replicates:  apps/desktop/src/app/chat/index.tsx, app/chat/session-view.tsx,
+               components/assistant-ui/thread/{list,user-message,assistant-message}.tsx,
+               app/chat/composer/index.tsx, app/chat/sidebar/*, app/shell/*
+  Views:       #chat=conversation | #chat=streaming | #chat=new
+  Measurements:
+    - window 1220×800; titlebar 34px; status bar 20px; sidebar 237px (14.8125rem)
+    - thread column max 48rem, padding 2rem 1.5rem; turn gap .375rem; block gap .75rem
+    - user bubble: radius-xl (3.2px), 1px --dt-user-bubble-border, pad .5rem .75rem, 13px
+    - assistant prose 13px / 1.5, indented .75rem; tool rows 11px scaffold colour at .67 opacity
+    - composer: radius-2xl (4.8px), fill = card 72%, 1px ring at 7% composer-ring,
+      controls 24px, send 26px circle, input min 26px / max 150px
+  Behaviour (not visible statically):
+    - user message is sticky at the top while its turn scrolls
+    - tool rows fade to full opacity on hover (120ms); disclosure carets appear on hover
+    - the working session row in the sidebar paints a rotating arc border
+    - composer ring strengthens on focus; Enter sends, Shift+Enter newline, Esc cancels a turn
+  Mobile:      Chat is at parity on mobile (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <section data-views="chat" class="workspace">
+              <!-- ── View: conversation ─────────────────────────────── -->
+              <div data-view="conversation" class="workspace">
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-time">Today 10:42</div>
+                    <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                        <div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div>
+                        <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">tui_gateway/server.py</span></div>
+                        <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                      </div>
+
+                      <div class="diff">
+                        <div class="diff__head"><i class="codicon codicon-file-code"></i><span class="t-truncate">use-gateway-boot.ts</span><span class="ml-auto t-xs"><span style="color:var(--ui-diff-add-foreground)">+18</span> <span style="color:var(--ui-diff-remove-foreground)">−6</span></span></div>
+                        <div class="diff__line">   if (event.code === 'auth_required') {</div>
+                        <div class="diff__line diff__line--del">-    scheduleReconnect(backoff.next())</div>
+                        <div class="diff__line diff__line--add">+    $needsLogin.set(true)</div>
+                        <div class="diff__line diff__line--add">+    return stopReconnect('revoked')</div>
+                        <div class="diff__line">   }</div>
+                      </div>
+
+                      <div class="msg-ai">
+                        <p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p>
+                        <ul>
+                          <li><strong>Fail fast:</strong> <span class="code-inline">stopReconnect('revoked')</span> clears the timer and marks the connection degraded.</li>
+                          <li><strong>Prompt:</strong> <span class="code-inline">$needsLogin</span> drives the boot-failure overlay's re-auth card.</li>
+                        </ul>
+                        <p>Want me to add an e2e spec that revokes the token mid-session?</p>
+                      </div>
+                      <div class="t-quaternary" style="font-size:.625rem;padding:0 var(--message-text-indent)">10:43 · 41s · Claude Opus 5</div>
+                    </div>
+
+                    <div class="msg-user">Yes, add the spec. Use the mock backend fixture.</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-new-file"></i><span>Created</span><span class="tool-row__meta">e2e/auth-revoked.spec.ts</span><span style="color:var(--ui-diff-add-foreground)">+64</span></div>
+                        <div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran</span><span class="tool-row__meta">npx playwright test e2e/auth-revoked.spec.ts</span><span class="t-success">passed</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Added <span class="code-inline">e2e/auth-revoked.spec.ts</span>. It boots against the mock backend, revokes the session token, and asserts the sign-in card appears within one reconnect attempt. 1 passed (8.2s).</p></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="composer-dock">
+                  <div class="composer-strip">
+                    <button class="suggestion-pill" type="button"><i class="ti ti-sparkles i-xs"></i>Run the full e2e suite</button>
+                    <button class="suggestion-pill" type="button">Open a PR</button>
+                  </div>
+                  <div class="composer">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                      <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: streaming (a turn in flight) ─────────────── -->
+              <div data-view="streaming" class="workspace" hidden>
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-user">Summarize what changed in the gateway since last week.</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-git-commit"></i><span>Read git log</span><span class="tool-row__meta">42 commits</span></div>
+                        <div class="tool-row" style="opacity:1"><span class="loader" style="width:.7rem;height:.7rem"></span><span>Reading</span><span class="tool-row__meta">tui_gateway/methods_session.py</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Three themes stand out: session resume got lazier, the bot relay learned retries, and…</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="status-stack">
+                    <div class="status-row"><span class="loader" style="width:.7rem;height:.7rem"></span><span>Working</span><span class="t-tertiary">· 12s</span><span class="ml-auto t-tertiary">Esc to stop</span></div>
+                  </div>
+                  <div class="composer is-focused">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input">Also list any breaking config changes</div>
+                      <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send" aria-label="Queue message"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: new chat (empty intro) ───────────────────── -->
+              <div data-view="new" class="workspace" hidden>
+                <div class="intro">
+                  <h1 class="wordmark">Hermes</h1>
+                  <div class="intro__copy">What are we working on?</div>
+                </div>
+                <div class="composer-dock" style="bottom:auto;top:58%">
+                  <div class="composer">
+                    <div class="composer__row">
+                      <button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button>
+                      <div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div>
+                      <button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button>
+                      <button class="composer__ctl" aria-label="Voice"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                  <div class="composer-strip" style="justify-content:center;margin-top:.25rem">
+                    <button class="suggestion-pill" type="button"><i class="codicon codicon-folder i-xs"></i>hermes-android</button>
+                    <button class="suggestion-pill" type="button"><i class="ti ti-git-branch i-xs"></i>main</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="chat:conversation">Conversation</button>
+        <button class="btn btn--secondary btn--sm" data-show="chat:streaming">Streaming turn</button>
+        <button class="btn btn--secondary btn--sm" data-show="chat:new">New chat</button>
+      </nav>
+    </div>
+  </body>
+</html>

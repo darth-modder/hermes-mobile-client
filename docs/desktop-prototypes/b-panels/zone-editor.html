@@ -1,0 +1,179 @@
+<!doctype html>
+<!--
+  Screen:      Zone editor (B · panel inside Chat)   opened from Layouts → "New grid layout" ($zoneEditorOpen)
+  Replicates:  apps/desktop/src/components/pane-shell/tree/zone-editor.tsx (ZoneEditor), tree/grid-model.ts
+               (initColumns/initRows/initGrid/initPriorityGrid, splitZone, doMerge, dragResizer, MULTIPLIER),
+               tree/grid-to-tree.ts (gridIsTreeExpressible, gridToTree), renderer/layout-picker.tsx
+  Views:       #ze=priority (default, split preview) | #ze=merge (rubber band + Merge) | #ze=pinwheel (not expressible)
+  Measurements:
+    - overlay: absolute inset-0 over the layout tree (below the titlebar), z-70, flex-col gap-3 p-6 (24px);
+      background --ui-bg-chrome at 88% + backdrop blur 6px
+    - toolbar: title 14px semibold; hint 12px muted/80 with a ⇧ kbd (border stroke-secondary, foreground/5,
+      px-1, mono 10px); template buttons Columns / Rows / Grid / Priority (outline sm, gap-1.5); zone-count
+      Input h-7 w-14 centered 12px (1-8)
+    - canvas: flex-1, rounded-lg (2.4px), 1px --ui-stroke-secondary, crosshair cursor
+    - zone: absolute (percent geometry), radius 3px, 1px border; fill = --ui-accent 12% over --ui-bg-elevated
+      (selected 34%), border accent 40% (selected 90%); tag "ZONE n" .64rem semibold uppercase tracking .16em tertiary
+    - split preview: 2px --ui-accent line across the hovered zone, snapped to 0.5% (SPLIT_SNAP 50 of 10000)
+    - resizer thumbs on shared edges: 10px band centred on the edge, pill 4×40px, --ui-text-primary at 55%
+    - rubber band: 1px --ui-accent border, accent 10% fill; "Merge n zones" outline sm with shadow-lg at the
+      release point
+    - footer gap-1.5: name Input h-7 w-64 12px (placeholder "Layout name (Custom n-zone)"), Save & apply
+      (outline sm, disabled when not expressible), Cancel (ghost sm), reason text 12px muted/80, zone count
+      right-aligned 12px muted/60
+  Behaviour:
+    - move in a zone: a splitter line follows the cursor; click splits there; hold Shift to flip the line to a row
+      split; drag across zones (> 60 model units) to rubber-band select — the selection grows to its rectangular
+      closure — then Merge
+    - drag a shared edge to resize every zone on it (min-size clamped); template buttons rebuild the grid with the
+      current count
+    - Save & apply converts the grid to nested splits (guillotine cuts), assigns panes to zones by role
+      (main / left / right / bottom), saves a user preset and applies it; pinwheel arrangements can't be expressed
+      and disable Save with the reason; Esc closes (Esc inside the name field only clears it)
+  Mobile:      Absent on mobile (docs/PARITY.md doesn't list it; the phone has no pane layout).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Zone editor · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ltree { position: relative; display: flex; flex: 1; min-height: 0; }
+      .z { position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--ui-editor-surface-background); }
+      .z--side { background: var(--ui-sidebar-surface-background); }
+      .vs { flex-shrink: 0; width: 1px; background: var(--ui-stroke-tertiary); }
+      /* Zone editor overlay */
+      .ze { position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column; gap: 0.75rem; padding: 1.5rem;
+        background: color-mix(in srgb, var(--ui-bg-chrome) 88%, transparent); backdrop-filter: blur(6px); }
+      .ze > [data-view] { display: flex; flex: 1; flex-direction: column; gap: 0.75rem; min-height: 0; }
+      .ze__bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.75rem; }
+      .ze__title { margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--dt-foreground); }
+      .ze__hint { margin: 0; font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .lkbd { border: 1px solid var(--ui-stroke-secondary); border-radius: 4px; padding: 0 0.25rem; background: color-mix(in srgb, var(--dt-foreground) 5%, transparent); font-family: var(--dt-font-mono); font-size: 10px; }
+      .count { width: 3.5rem; height: 1.75rem; text-align: center; }
+      .canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-lg); cursor: crosshair; }
+      .zn { position: absolute; display: flex; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--ui-accent) 40%, transparent); border-radius: 3px;
+        background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-bg-elevated)); transition: background-color 150ms, border-color 150ms; }
+      .zn.is-sel { border-color: color-mix(in srgb, var(--ui-accent) 90%, transparent); background: color-mix(in srgb, var(--ui-accent) 34%, var(--ui-bg-elevated)); }
+      .zn span { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ui-text-tertiary); user-select: none; }
+      .splitline { position: absolute; background: var(--ui-accent); pointer-events: none; }
+      .rz { position: absolute; z-index: 10; display: flex; align-items: center; justify-content: center; }
+      .rz--v { width: 10px; transform: translateX(-50%); cursor: col-resize; }
+      .rz--h { height: 10px; transform: translateY(-50%); cursor: row-resize; }
+      .rz i { border-radius: var(--radius-full); background: color-mix(in srgb, var(--ui-text-primary) 55%, transparent); pointer-events: none; }
+      .rz--v i { width: 4px; height: 2.5rem; }
+      .rz--h i { width: 2.5rem; height: 4px; }
+      .band { position: absolute; border: 1px solid var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 10%, transparent); pointer-events: none; }
+      .mergebtn { position: absolute; z-index: 20; box-shadow: var(--shadow-lg); background: var(--ui-bg-elevated); }
+      .ze__foot { display: flex; align-items: center; gap: 0.375rem; }
+      .ze__foot .name { width: 16rem; height: 1.75rem; }
+      .ze__foot .reason { font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .ze__foot .zc { margin-left: auto; font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .cursor-dot { position: absolute; z-index: 30; width: 0.75rem; height: 0.75rem; pointer-events: none; }
+      .cursor-dot::before, .cursor-dot::after { content: ''; position: absolute; background: var(--ui-text-primary); }
+      .cursor-dot::before { left: 50%; top: 0; bottom: 0; width: 1px; }
+      .cursor-dot::after { top: 50%; left: 0; right: 0; height: 1px; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="none" data-session="auth" data-title="">
+            <div class="ltree">
+              <!-- The layout tree underneath (edit mode is on), mostly hidden by the 88% backdrop -->
+              <div class="z z--side" style="width:237px;flex-shrink:0"><div style="height:1.75rem;background:var(--ui-sidebar-surface-background)"></div><div style="padding:.5rem .625rem"><div class="side-nav"><i class="ti ti-edit"></i>New session</div><div class="side-nav"><i class="ti ti-puzzle"></i>Capabilities</div></div></div>
+              <div class="vs"></div>
+              <div class="z" style="flex:1"><div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div></div></div></div>
+              <div class="vs"></div>
+              <div class="z z--side" style="width:300px;flex-shrink:0"></div>
+
+              <!-- ═══ Zone editor ═══ -->
+              <section class="ze" data-views="ze" role="dialog" aria-label="Zone editor">
+
+                <!-- View: priority — default Priority(3) = 25 / 50 / 25, hovering zone 2 -->
+                <div data-view="priority">
+                  <div class="ze__bar">
+                    <div><h2 class="ze__title">Zone editor</h2><p class="ze__hint">click to split · <kbd class="lkbd">⇧</kbd> flips the line · drag across zones to merge · drag shared edges to resize</p></div>
+                    <div class="flex items-center gap-1-5"><button class="btn btn--outline btn--sm">Columns</button><button class="btn btn--outline btn--sm">Rows</button><button class="btn btn--outline btn--sm">Grid</button><button class="btn btn--outline btn--sm">Priority</button><input class="control count" type="number" min="1" max="8" value="3" /></div>
+                  </div>
+                  <div class="canvas">
+                    <div class="zn" style="left:0;top:0;width:25%;height:100%"><span>zone 1</span></div>
+                    <div class="zn" style="left:25%;top:0;width:50%;height:100%"><span>zone 2</span></div>
+                    <div class="zn" style="left:75%;top:0;width:25%;height:100%"><span>zone 3</span></div>
+                    <div class="splitline" style="left:58.5%;top:0;width:2px;height:100%"></div>
+                    <div class="cursor-dot" style="left:calc(58.5% - 5px);top:38%"></div>
+                    <div class="rz rz--v" style="left:25%;top:0;height:100%"><i></i></div>
+                    <div class="rz rz--v" style="left:75%;top:0;height:100%"><i></i></div>
+                  </div>
+                  <div class="ze__foot">
+                    <input class="control name" placeholder="Layout name (Custom 3-zone)" />
+                    <button class="btn btn--outline btn--sm">Save &amp; apply</button>
+                    <button class="btn btn--ghost btn--sm">Cancel</button>
+                    <span class="zc">3 zones</span>
+                  </div>
+                </div>
+
+                <!-- View: merge — Grid(4), top two zones rubber-banded, Merge at the release point -->
+                <div data-view="merge" hidden>
+                  <div class="ze__bar">
+                    <div><h2 class="ze__title">Zone editor</h2><p class="ze__hint">click to split · <kbd class="lkbd">⇧</kbd> flips the line · drag across zones to merge · drag shared edges to resize</p></div>
+                    <div class="flex items-center gap-1-5"><button class="btn btn--outline btn--sm">Columns</button><button class="btn btn--outline btn--sm">Rows</button><button class="btn btn--outline btn--sm">Grid</button><button class="btn btn--outline btn--sm">Priority</button><input class="control count" type="number" value="4" /></div>
+                  </div>
+                  <div class="canvas">
+                    <div class="zn is-sel" style="left:0;top:0;width:50%;height:50%"><span>zone 1</span></div>
+                    <div class="zn is-sel" style="left:50%;top:0;width:50%;height:50%"><span>zone 2</span></div>
+                    <div class="zn" style="left:0;top:50%;width:50%;height:50%"><span>zone 3</span></div>
+                    <div class="zn" style="left:50%;top:50%;width:50%;height:50%"><span>zone 4</span></div>
+                    <div class="band" style="left:22%;top:14%;width:52%;height:24%"></div>
+                    <div class="rz rz--v" style="left:50%;top:0;height:100%"><i></i></div>
+                    <div class="rz rz--h" style="top:50%;left:0;width:100%"><i></i></div>
+                    <button class="btn btn--outline btn--sm mergebtn" style="left:74%;top:38%">Merge 2 zones</button>
+                  </div>
+                  <div class="ze__foot">
+                    <input class="control name" placeholder="Layout name (Custom 4-zone)" value="Pairing grid" />
+                    <button class="btn btn--outline btn--sm">Save &amp; apply</button>
+                    <button class="btn btn--ghost btn--sm">Cancel</button>
+                    <span class="zc">4 zones</span>
+                  </div>
+                </div>
+
+                <!-- View: pinwheel — interlocking arrangement, Save disabled with the reason -->
+                <div data-view="pinwheel" hidden>
+                  <div class="ze__bar">
+                    <div><h2 class="ze__title">Zone editor</h2><p class="ze__hint">click to split · <kbd class="lkbd">⇧</kbd> flips the line · drag across zones to merge · drag shared edges to resize</p></div>
+                    <div class="flex items-center gap-1-5"><button class="btn btn--outline btn--sm">Columns</button><button class="btn btn--outline btn--sm">Rows</button><button class="btn btn--outline btn--sm">Grid</button><button class="btn btn--outline btn--sm">Priority</button><input class="control count" type="number" value="3" /></div>
+                  </div>
+                  <div class="canvas">
+                    <div class="zn" style="left:0;top:0;width:66.67%;height:33.33%"><span>zone 1</span></div>
+                    <div class="zn" style="left:66.67%;top:0;width:33.33%;height:66.67%"><span>zone 2</span></div>
+                    <div class="zn" style="left:33.33%;top:66.67%;width:66.67%;height:33.33%"><span>zone 3</span></div>
+                    <div class="zn" style="left:0;top:33.33%;width:33.33%;height:66.67%"><span>zone 4</span></div>
+                    <div class="zn" style="left:33.33%;top:33.33%;width:33.34%;height:33.34%"><span>zone 5</span></div>
+                  </div>
+                  <div class="ze__foot">
+                    <input class="control name" placeholder="Layout name (Custom 5-zone)" />
+                    <button class="btn btn--outline btn--sm is-disabled">Save &amp; apply</button>
+                    <button class="btn btn--ghost btn--sm">Cancel</button>
+                    <span class="reason">this arrangement interlocks (pinwheel) — not expressible as nested splits yet</span>
+                    <span class="zc">5 zones</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="ze:priority">Priority + split preview</button>
+        <button class="btn btn--secondary btn--sm" data-show="ze:merge">Rubber band + merge</button>
+        <button class="btn btn--secondary btn--sm" data-show="ze:pinwheel">Not expressible</button>
+      </nav>
+    </div>
+  </body>
+</html>

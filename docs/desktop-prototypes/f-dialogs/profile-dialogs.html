@@ -1,0 +1,278 @@
+<!doctype html>
+<!--
+  Screen:      Profile dialogs (F · dialogs): Create, Rename, Delete profile
+  Replicates:  apps/desktop/src/app/profiles/create-profile-dialog.tsx,
+               app/profiles/rename-profile-dialog.tsx, app/profiles/delete-profile-dialog.tsx,
+               components/ui/{dialog,confirm-dialog,field,action-status,select,textarea}.tsx
+  Views:       #dlg=create | #dlg=create-invalid | #dlg=creating | #dlg=create-error | #dlg=rename |
+               #dlg=rename-default | #dlg=delete
+  Measurements:
+    - all three: DialogContent className "max-w-md" → 28rem wide; body p-4 (1rem), grid gap-3 (.75rem);
+      radius-xl (3.2px), 1px --stroke-nous border, --shadow-nous, fill --ui-chat-bubble-background
+    - close X: ghost icon-xs (24px) at top/right .625rem, glyph size-4, --ui-text-tertiary
+    - header: flex-col gap-1; title .9375rem semibold tracking-tight; description 12px/16px --ui-text-tertiary
+    - form: grid gap-4 (1rem). Field = grid gap-1.5; label 12px medium foreground;
+      "optional" tag .65rem normal muted; FieldHint .66rem / 1rem muted (destructive when invalid)
+    - inputs: control default (px-2.5 py-1.5, 12px/16px, radius 2.5px);
+      Clone-from SelectTrigger overrides to h-9 (2.25rem) rounded-md (2px)
+    - SOUL.md textarea: min-h-28 (7rem), font-mono, text-xs, leading-5 (1.25rem)
+    - inline error: flex gap-2, rounded-md, 1px destructive/30 border, destructive/10 fill, px-3 py-2, 12px,
+      AlertTriangle size-3.5 mt-0.5
+    - footer: flex-row justify-end gap-2; Cancel = ghost, primary = default (px-3 py-1.5, 12px medium)
+  Behaviour:
+    - Create: name is slug-sanitised as you type (lowercase, digits, - and _). Valid = /^[a-z0-9][a-z0-9_-]{0,63}$/.
+      Create disabled while empty or invalid; the hint turns red when invalid. Clone-from defaults to "default";
+      "None (blank)" clones nothing. SOUL.md left blank keeps the cloned/blank persona.
+    - Rename: name starts as the current name; unchanged → Rename disabled (Enter closes as a no-op).
+      Default profile gets "Name this agent": free-text display name (Unicode ok), starts blank, no hint.
+    - Delete: ConfirmDialog — opens focused on Delete; Enter/Space confirm from anywhere in the dialog.
+    - Busy beat on all three: idle → spinner + "Creating..." / "Renaming..." / "Deleting..." → check +
+      "Profile created" / "Profile renamed" / "Profile deleted" → auto-close after 800ms (600ms for delete).
+      While busy both buttons disable and Esc / backdrop / X cannot close.
+    - Errors from the backend land in the inline error block and keep the dialog open.
+    - Enter submits (form submit); Esc closes when not busy. Name input autofocuses.
+  Mobile:      Profiles are at parity on mobile (docs/PARITY.md, Settings row, M09).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Profile dialogs · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; }
+      .form { display: grid; gap: 1rem; }
+      .f-label { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.75rem; font-weight: 500; color: var(--dt-foreground); }
+      .f-label__opt { font-size: 0.65rem; font-weight: 400; color: var(--dt-muted-foreground); }
+      .f-hint { margin: 0; font-size: 0.66rem; line-height: 1rem; color: var(--dt-muted-foreground); }
+      .f-hint.is-error { color: var(--dt-destructive); }
+      .ierr { display: flex; align-items: flex-start; gap: 0.5rem; border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--dt-destructive) 10%, transparent); color: var(--dt-destructive); font-size: 0.75rem; line-height: 1rem; }
+      .ierr .ti { flex-shrink: 0; margin-top: 0.125rem; font-size: 0.875rem; }
+      .spin { display: inline-block; animation: proto-spin 0.9s linear infinite; }
+      .soul { min-height: 7rem; font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1.25rem; }
+      .fg { color: var(--dt-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="readme">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Draft a README for the Android client. Keep it short: what it is, how to pair, how to build.</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-file"></i><span>Read</span><span class="tool-row__meta">docs/PARITY.md</span></div>
+                    <div class="tool-row"><i class="codicon codicon-new-file"></i><span>Created</span><span class="tool-row__meta">README.md</span><span style="color:var(--ui-diff-add-foreground)">+48</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Added <span class="code-inline">README.md</span> with three sections: what the app does, pairing with a desktop gateway, and building a debug APK.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Create ── -->
+            <div data-view="create">
+              <div class="dialog dialog--md" role="dialog" aria-labelledby="t-create">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title" id="t-create">New profile</h2>
+                  <p class="dialog__desc">Profiles are independent Hermes environments: separate config, skills, and SOUL.md.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label" for="np-name">Name</label>
+                    <input class="control is-focused" id="np-name" value="researcher" placeholder="my-profile" />
+                    <p class="f-hint">Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">Clone from</label>
+                    <button type="button" class="control select-trigger" style="height:2.25rem;border-radius:var(--radius-md)"><span>default</span></button>
+                    <p class="f-hint">Copies config, skills, and SOUL.md from the selected source profile.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">SOUL.md <span class="f-label__opt">optional</span></label>
+                    <textarea class="control soul" placeholder="The system prompt / persona for this profile.&#10;Leave blank to keep the cloned default."></textarea>
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default">Create profile</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Create: invalid name ── -->
+            <div data-view="create-invalid" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New profile</h2>
+                  <p class="dialog__desc">Profiles are independent Hermes environments: separate config, skills, and SOUL.md.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label">Name</label>
+                    <input class="control is-invalid" aria-invalid="true" value="_scratch" placeholder="my-profile" />
+                    <p class="f-hint is-error">Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">Clone from</label>
+                    <button type="button" class="control select-trigger" style="height:2.25rem;border-radius:var(--radius-md)"><span>None (blank)</span></button>
+                    <p class="f-hint">Copies config, skills, and SOUL.md from the selected source profile.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">SOUL.md <span class="f-label__opt">optional</span></label>
+                    <textarea class="control soul" placeholder="The system prompt / persona for this profile.&#10;Leave blank to keep the empty default."></textarea>
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default" disabled>Create profile</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Create: busy + (then) backend error ── -->
+            <div data-view="creating" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New profile</h2>
+                  <p class="dialog__desc">Profiles are independent Hermes environments: separate config, skills, and SOUL.md.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label">Name</label>
+                    <input class="control" value="work" />
+                    <p class="f-hint">Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">Clone from</label>
+                    <button type="button" class="control select-trigger" style="height:2.25rem;border-radius:var(--radius-md)"><span>default</span></button>
+                    <p class="f-hint">Copies config, skills, and SOUL.md from the selected source profile.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">SOUL.md <span class="f-label__opt">optional</span></label>
+                    <textarea class="control soul">You are a terse staff engineer. Prefer small diffs, explain trade-offs in one line, and never touch CI config without asking.</textarea>
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost" disabled>Cancel</button>
+                    <button type="submit" class="btn btn--default" disabled><i class="ti ti-loader-2 spin"></i>Creating...</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Create: backend error (status back to idle, dialog stays open) ── -->
+            <div data-view="create-error" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New profile</h2>
+                  <p class="dialog__desc">Profiles are independent Hermes environments: separate config, skills, and SOUL.md.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label">Name</label>
+                    <input class="control" value="work" />
+                    <p class="f-hint">Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">Clone from</label>
+                    <button type="button" class="control select-trigger" style="height:2.25rem;border-radius:var(--radius-md)"><span>default</span></button>
+                    <p class="f-hint">Copies config, skills, and SOUL.md from the selected source profile.</p>
+                  </div>
+                  <div class="field">
+                    <label class="f-label">SOUL.md <span class="f-label__opt">optional</span></label>
+                    <textarea class="control soul">You are a terse staff engineer. Prefer small diffs, explain trade-offs in one line, and never touch CI config without asking.</textarea>
+                  </div>
+                  <div class="ierr"><i class="ti ti-alert-triangle"></i><span>Profile 'work' already exists</span></div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default">Create profile</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Rename ── -->
+            <div data-view="rename" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Rename profile</h2>
+                  <p class="dialog__desc">Renaming updates the profile directory and any wrapper scripts in <span class="t-mono">~/.local/bin</span>.</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label">New name</label>
+                    <input class="control is-focused" value="research-lab" />
+                    <p class="f-hint">Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.</p>
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default">Rename</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Rename: default profile (display name) ── -->
+            <div data-view="rename-default" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Name this agent</h2>
+                  <p class="dialog__desc">Sets a display name shown across the app. The internal profile ID stays "default".</p>
+                </div>
+                <form class="form" onsubmit="return false">
+                  <div class="field">
+                    <label class="f-label">Display name</label>
+                    <input class="control is-focused" value="Hermès" />
+                  </div>
+                  <div class="dialog__footer">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="submit" class="btn btn--default">Rename</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- ── Delete (ConfirmDialog, destructive) ── -->
+            <div data-view="delete" hidden>
+              <div class="dialog dialog--md" role="alertdialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Delete profile?</h2>
+                  <p class="dialog__desc">This will delete <span class="t-medium fg">researcher</span> and remove its <span class="t-mono t-xs">~/.hermes/profiles/researcher</span> directory. This cannot be undone.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--destructive">Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:create">Create</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:create-invalid">Create · invalid name</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:creating">Create · busy</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:create-error">Create · backend error</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:rename">Rename</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:rename-default">Rename · default profile</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:delete">Delete</button>
+      </nav>
+    </div>
+  </body>
+</html>

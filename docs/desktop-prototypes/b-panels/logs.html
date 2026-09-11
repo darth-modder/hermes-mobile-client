@@ -1,0 +1,137 @@
+<!doctype html>
+<!--
+  Screen:      Logs (B · panel inside Chat)   pane id `logs` (placement bottom, docked right of the terminal)
+  Replicates:  apps/desktop/src/app/contrib/controller.tsx l.646-715 ($logsOpen, syncLogsPane, ⌘K "Toggle logs"),
+               app/contrib/panes.tsx l.36-62 (LogsPane), components/ui/decode-text.tsx (loading),
+               components/pane-shell/tree/renderer/{tree-group.tsx, strip-visibility.ts, tree-split.tsx}
+  Views:       #logs=tail | #logs=loading | #logs=error
+  Measurements:
+    - its own zone beside the terminal (dock { pane: 'terminal', pos: 'right' }), never a tab in the terminal
+      strip; height 20vh, max 80vh, no minHeight (folds to the 28px strip like the terminal)
+    - a lone tool panel keeps its strip: h-7, one LOGS tab (9px uppercase), minimize chevron hover-revealed
+    - body: <pre> h-full overflow-auto, p-2.5, whitespace-pre-wrap + break-words, mono .66rem leading-relaxed
+      (1.625), --ui-text-secondary; no chrome of its own
+    - loading: DecodeText "LOGS" (prefix 1, blinking cursor) centered, --ui-text-quaternary
+    - error: p-3 12px --ui-text-quaternary "log unavailable: …"
+    - row sash between terminal and logs: 1px hairline --ui-stroke-secondary at 10%, 8px grab band
+  Behaviour:
+    - off by default and session-only: the pane contribution exists only while ⌘K → "Toggle logs" is on; a fresh
+      boot never reopens it; no preset or adoption path brings it back
+    - summoning it reveals and fronts the pane; tab ✕, ⌘W or the toggle removes it again
+    - tails the last 300 lines of the agent log, refetched every 5 s; the palette row reads the on-screen state
+  Mobile:      Not listed in docs/PARITY.md. The phone has no agent-log tail (treat as thinner: gateway errors
+               surface as toasts / connection states only).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Logs · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ws-col { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .ws-row { display: flex; flex: 1; min-height: 0; }
+      .chat { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+      .hsash { position: relative; flex-shrink: 0; height: 1px; background: color-mix(in srgb, var(--ui-stroke-secondary) 10%, transparent); }
+      .vsash { position: relative; flex-shrink: 0; width: 1px; background: color-mix(in srgb, var(--ui-stroke-secondary) 10%, transparent); cursor: col-resize; }
+      .vsash:hover { background: var(--ui-stroke-secondary); box-shadow: 0 0 0 1.5px var(--ui-sash-hover-border); }
+      .bottom { display: flex; flex-shrink: 0; height: 250px; min-height: 0; }
+      .tzone { display: flex; flex: 1; flex-direction: column; min-width: 0; background: var(--ui-editor-surface-background); }
+      .strip { position: relative; display: flex; height: 1.75rem; flex-shrink: 0; background: var(--ui-sidebar-surface-background); }
+      .strip__tabs { display: flex; flex: 1; min-width: 0; }
+      .ztab { position: relative; display: flex; align-items: center; height: 100%; min-width: 3.25rem; max-width: 12rem; color: var(--ui-text-tertiary); font-size: 0.6875rem; font-weight: 500; }
+      .ztab.is-active { color: var(--dt-foreground); box-shadow: inset 0 -2px 0 var(--theme-primary); }
+      .ztab__label { padding: 0 0.5rem; font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; white-space: nowrap; }
+      .strip__min { display: grid; place-items: center; align-self: center; width: 1.25rem; height: 1.25rem; margin: 0 0.25rem; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--ui-text-tertiary); opacity: 0; transition: opacity 150ms; }
+      .strip:hover .strip__min { opacity: 1; }
+      .strip__min .codicon { font-size: 0.75rem; }
+      .tbody { position: relative; display: flex; flex: 1; min-height: 0; }
+      .tinst { flex: 1; padding: 0 0.5rem 0.5rem; background: var(--ui-terminal-surface-background); }
+      .tinst .terminal { padding: 0.25rem 0; color: var(--ui-text-secondary); height: 100%; }
+      .trail { display: flex; flex-direction: column; align-items: center; width: 2.25rem; flex-shrink: 0; padding: 0.25rem 0; gap: 0.125rem; border-left: 1px solid var(--ui-stroke-quaternary); background: var(--ui-terminal-surface-background); }
+      .trail__item { position: relative; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .trail__item.is-active { background: var(--chrome-action-hover); color: var(--dt-foreground); }
+      .trail__item .codicon { font-size: 0.875rem; }
+      .trail__add { color: var(--ui-text-quaternary); }
+      .logs-pane { position: relative; flex: 1; min-height: 0; }
+      .logs { height: 100%; min-height: 0; margin: 0; overflow: auto; padding: 0.625rem; white-space: pre-wrap; overflow-wrap: break-word;
+        font-family: var(--dt-font-mono); font-size: 0.66rem; line-height: 1.625; color: var(--ui-text-secondary); user-select: text; }
+      .decode { display: grid; height: 100%; place-items: center; }
+      .decode span { font-family: var(--dt-font-mono); font-size: 0.75rem; letter-spacing: 0.2em; color: var(--ui-text-quaternary); }
+      .decode .blink { animation: logs-blink 1s steps(1) infinite; }
+      @keyframes logs-blink { 50% { opacity: 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth" data-title="">
+            <div class="ws-col">
+              <div class="ws-row">
+                <div class="chat">
+                  <div class="thread"><div class="thread__inner">
+                    <div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div>
+                    <div class="turn"><div class="scaffold"><div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div></div>
+                    <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div></div>
+                  </div></div>
+                  <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything…</div><button class="composer__send is-idle"><i class="ti ti-arrow-up"></i></button></div></div></div>
+                </div>
+              </div>
+              <div class="hsash"></div>
+              <div class="bottom">
+                <!-- Terminal zone -->
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">terminal</span></div></div><button class="strip__min"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <div class="tbody">
+                    <div class="tinst">
+<div class="terminal"><span class="prompt">PS</span> <span class="path">D:\Stuff\Code\git\hermes-agent</span>&gt; hermes gateway --port 8642
+<span class="dim">[gateway] listening on 127.0.0.1:8642</span>
+<span class="dim">[gateway] session store: ~/.hermes/sessions.db</span>
+</div>
+                    </div>
+                    <div class="trail"><span class="trail__item is-active"><i class="codicon codicon-terminal"></i></span><span class="trail__item trail__add"><i class="codicon codicon-add"></i></span></div>
+                  </div>
+                </div>
+                <div class="vsash" role="separator" aria-orientation="vertical"></div>
+                <!-- Logs zone -->
+                <div class="tzone">
+                  <div class="strip"><div class="strip__tabs"><div class="ztab is-active"><span class="ztab__label">logs</span></div></div><button class="strip__min" aria-label="Minimize"><i class="codicon codicon-chevron-down"></i></button></div>
+                  <section class="logs-pane" data-views="logs">
+                    <div data-view="tail" style="height:100%">
+<pre class="logs">2026-09-11 10:42:13,204 INFO tui_gateway.server: ws connect peer=127.0.0.1:53211 client=hermes-desktop/0.9.2
+2026-09-11 10:42:13,219 INFO tui_gateway.auth: ticket accepted sid=auth-7f3c profile=default
+2026-09-11 10:42:13,240 INFO tui_gateway.methods_session: session.resume id=20260911-auth-7f3c messages=24
+2026-09-11 10:42:14,002 INFO agent.loop: turn start model=claude-opus-5 tools=41 context=52%
+2026-09-11 10:42:15,871 INFO agent.tools: search_files pattern="reconnect" path=tui_gateway/ hits=14
+2026-09-11 10:42:17,113 INFO agent.tools: read_file path=tui_gateway/server.py lines=1-420
+2026-09-11 10:42:21,660 INFO agent.tools: patch path=apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts +18 -6
+2026-09-11 10:42:21,662 INFO checkpoints: snapshot created id=cp-0193 files=1
+2026-09-11 10:42:29,508 WARNING tui_gateway.relay: slow consumer sid=auth-7f3c queued=38 frames
+2026-09-11 10:42:34,977 INFO agent.loop: turn done duration=41.0s tokens_in=18204 tokens_out=1932 cost=$0.41
+2026-09-11 10:43:02,120 INFO cron.scheduler: next run job=morning-digest at=2026-09-12T07:00:00
+2026-09-11 10:43:05,771 ERROR tui_gateway.server: auth_required sid=flaky-19ab reason=token_revoked
+2026-09-11 10:43:05,772 INFO tui_gateway.server: reconnect stopped sid=flaky-19ab reason=revoked
+2026-09-11 10:43:10,004 INFO agent.loop: turn start model=deepseek-v4-flash tools=41 context=18%</pre>
+                    </div>
+                    <div data-view="loading" style="height:100%" hidden><div class="decode"><span>L<span style="opacity:.55">7Ø§</span><span class="blink">▌</span></span></div></div>
+                    <div data-view="error" hidden><div style="padding:.75rem;font-size:.75rem;color:var(--ui-text-quaternary)">log unavailable: Error: gateway request timed out after 10000ms</div></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="logs:tail">Tail</button>
+        <button class="btn btn--secondary btn--sm" data-show="logs:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="logs:error">Error</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,206 @@
+<!doctype html>
+<!--
+  Screen:      New worktree dialog (F · dialogs), with the base-branch picker and the "Convert a branch" variant
+  Replicates:  apps/desktop/src/app/chat/sidebar/projects/worktree-dialog.tsx,
+               app/chat/sidebar/projects/base-branch-picker.tsx,
+               components/ui/{dialog,popover,command,button,sanitized-input}.tsx
+  Views:       #dlg=new (base-branch picker open) | #dlg=new-closed | #dlg=convert
+  Measurements:
+    - DialogContent "max-w-md" → 28rem; body p-4, grid gap-3; radius-xl; --shadow-nous
+    - Project picker + base-branch trigger: Button variant "text" size "inline" (p-0, h-auto), w-full,
+      justify-start, gap-1.5, 12px/16px medium, --dt-muted-foreground; codicon folder / git-branch .8rem tertiary;
+      value span in --dt-primary (underline on hover, offset 4px, decoration 20%); chevron-down .75rem tertiary.
+      Project picker only renders when 2+ projects have a working root.
+    - branch Input: control default (px-2.5 py-1.5, 12px), placeholder "e.g. my-feature", sanitised as a git ref
+    - PopoverContent: align start, sideOffset 6, p-0, w-72 (18rem) but min-w = trigger width (the trigger is
+      full-width, so the popover spans the dialog's content box); rounded-lg (2.4px), 1px --ui-stroke-secondary,
+      surface elevated 92% + backdrop-blur-md, NO shadow; CSS arrow 16×7 (11px rotated square, border on its two
+      outer edges), centred on the trigger
+    - Command: input row h-11 (2.75rem), px-3, border-b --dt-border, search icon size-4 muted, input 14px;
+      list max-h-64 (16rem); group p-1; item px-2 py-1.5, 14px, rounded-sm, gap-2; highlighted item =
+      --dt-accent fill + --dt-accent-foreground. Base-branch row: icon (repo for remote, git-branch for local),
+      ★ (.625rem tertiary) on the default branch, name, check (--ui-accent) on the selected value.
+    - Convert mode: Command gets rounded-md + 1px --ui-stroke-tertiary; trailing action label .625rem tertiary
+    - footer (new): justify-between — link "Convert an existing branch" (px-0, --ui-text-secondary) | Cancel ghost +
+      "New worktree" default. Footer (convert): justify-start, a single link "Cancel".
+  Behaviour:
+    - Base branch loads on mount and defaults to origin/HEAD (else local main/master); the button reads
+      "branch off ..." while loading. The current session's branch is pinned to the top of the list.
+    - Filter is a plain case-insensitive substring match. Picking a row sets the base and closes the popover.
+    - Changing the project clears the branch list and base (the picker remounts per repo).
+    - "New worktree" disabled until a branch name is typed. Enter in the name field submits; Esc closes.
+      While pending everything disables and Esc / backdrop cannot close; failure = toast "Could not create worktree".
+    - Convert: rows act immediately on select. Label rules, in order: checked out → "open"; remote → "track remote";
+      default branch → "switch home"; otherwise "new worktree". Empty list reads "Loading branches…" while loading,
+      then "No branches found".
+  Mobile:      Absent on mobile: local git and worktrees are machine-bound (docs/PARITY.md, Absent by design).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>New worktree · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; }
+      .dialog--open-popover { overflow: visible; }
+      .inline-trigger { display: flex; align-items: center; justify-content: flex-start; gap: 0.375rem; width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; color: var(--dt-muted-foreground); font-size: 0.75rem; line-height: 1rem; font-weight: 500; text-align: left; cursor: pointer; }
+      .inline-trigger .codicon { flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .inline-trigger__value { color: var(--dt-primary); text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, currentColor 20%, transparent); }
+      .inline-trigger:hover .inline-trigger__value { text-decoration-line: underline; }
+      .inline-trigger .shrink-0 { flex-shrink: 0; }
+      .i8 { font-size: 0.8rem !important; }
+      .i75 { font-size: 0.75rem !important; }
+      .wt-pop { position: absolute; left: 1rem; right: 1rem; z-index: var(--z-modal-popover); border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent); backdrop-filter: blur(0.75rem); }
+      .wt-pop__arrow { position: absolute; top: -6px; left: 50%; width: 11px; height: 11px; transform: translateX(-50%) rotate(45deg); border-top: 1px solid var(--ui-stroke-secondary); border-left: 1px solid var(--ui-stroke-secondary); background: color-mix(in srgb, var(--ui-bg-elevated) 92%, transparent); }
+      .cmd { position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); background: var(--dt-popover); color: var(--dt-popover-foreground); }
+      .cmd--bordered { border: 1px solid var(--ui-stroke-tertiary); }
+      .cmd__input { display: flex; align-items: center; gap: 0.5rem; height: 2.75rem; padding: 0 0.75rem; border-bottom: 1px solid var(--dt-border); }
+      .cmd__input .ti { flex-shrink: 0; font-size: 1rem; color: var(--dt-muted-foreground); }
+      .cmd__input input { flex: 1; min-width: 0; height: 2.5rem; border: 0; padding: 0.75rem 0; background: transparent; outline: none; font-size: 0.875rem; }
+      .cmd__input input::placeholder { color: var(--dt-muted-foreground); }
+      .cmd__list { max-height: 16rem; overflow-x: hidden; overflow-y: auto; }
+      .cmd__group { padding: 0.25rem; }
+      .cmd__item { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-sm); padding: 0.375rem 0.5rem; font-size: 0.875rem; line-height: 1.25rem; cursor: default; user-select: none; }
+      .cmd__item.is-selected { background: var(--dt-accent); color: var(--dt-accent-foreground); }
+      .cmd__item .codicon { flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .cmd__inner { display: flex; align-items: center; justify-content: flex-start; gap: 0.375rem; }
+      .cmd__star { flex-shrink: 0; margin-left: auto; font-size: 0.625rem; color: var(--ui-text-tertiary); }
+      .cmd__check { color: var(--ui-accent) !important; }
+      .cmd__action { flex-shrink: 0; margin-left: auto; font-size: 0.625rem; color: var(--ui-text-tertiary); }
+      .cmd__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .foot-between { justify-content: space-between; align-items: center; }
+      .foot-start { justify-content: flex-start; }
+      .link-quiet { color: var(--ui-text-secondary); }
+      .link-quiet:hover { color: var(--dt-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                <div class="turn">
+                  <div class="scaffold">
+                    <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                    <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                  </div>
+                  <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── New worktree, base-branch picker open ── -->
+            <div data-view="new">
+              <div class="dialog dialog--md dialog--open-popover" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New worktree</h2>
+                  <p class="dialog__desc">Name the branch for this worktree.</p>
+                </div>
+                <button type="button" class="inline-trigger"><i class="codicon codicon-folder i8"></i><span class="shrink-0">Project</span><span class="inline-trigger__value t-truncate">hermes-agent</span><i class="codicon codicon-chevron-down i75"></i></button>
+                <input class="control" value="fix-auth-revoke" placeholder="e.g. my-feature" />
+                <div style="position:relative">
+                  <button type="button" class="inline-trigger" aria-expanded="true"><i class="codicon codicon-git-branch i8"></i><span class="shrink-0">branch off </span><span class="inline-trigger__value shrink-0">origin/main</span><i class="codicon codicon-chevron-down i75"></i><span class="shrink-0"></span></button>
+                </div>
+                <div class="dialog__footer foot-between">
+                  <button type="button" class="btn btn--link link-quiet">Convert an existing branch</button>
+                  <div class="flex items-center gap-2">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="button" class="btn btn--default">New worktree</button>
+                  </div>
+                </div>
+
+                <!-- Popover (portalled into the dialog; the shell does not clip it) -->
+                <div class="wt-pop" style="top:10.1rem" role="dialog" aria-label="Base branch">
+                  <span class="wt-pop__arrow" aria-hidden="true"></span>
+                  <div class="cmd">
+                    <div class="cmd__input"><i class="ti ti-search"></i><input placeholder="Search branches…" /></div>
+                    <div class="cmd__list">
+                      <div class="cmd__group">
+                        <div class="cmd__item is-selected"><div class="cmd__inner"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">m13-parity</span></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-repo i8"></i><span class="cmd__star">★</span><span class="cmd__name">origin/main</span><i class="codicon codicon-check i8 cmd__check"></i></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">main</span></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-repo i8"></i><span class="cmd__name">origin/m13-parity</span></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">feat/voice-latency</span></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">fix/sqlite-fts</span></div></div>
+                        <div class="cmd__item"><div class="cmd__inner"><i class="codicon codicon-repo i8"></i><span class="cmd__name">origin/feat/bot-relay</span></div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── New worktree, picker closed ── -->
+            <div data-view="new-closed" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New worktree</h2>
+                  <p class="dialog__desc">Name the branch for this worktree.</p>
+                </div>
+                <button type="button" class="inline-trigger"><i class="codicon codicon-folder i8"></i><span class="shrink-0">Project</span><span class="inline-trigger__value t-truncate">hermes-agent</span><i class="codicon codicon-chevron-down i75"></i></button>
+                <input class="control is-focused" value="" placeholder="e.g. my-feature" />
+                <div>
+                  <button type="button" class="inline-trigger"><i class="codicon codicon-git-branch i8"></i><span class="shrink-0">branch off </span><span class="inline-trigger__value shrink-0">origin/main</span><i class="codicon codicon-chevron-down i75"></i><span class="shrink-0"></span></button>
+                </div>
+                <div class="dialog__footer foot-between">
+                  <button type="button" class="btn btn--link link-quiet">Convert an existing branch</button>
+                  <div class="flex items-center gap-2">
+                    <button type="button" class="btn btn--ghost">Cancel</button>
+                    <button type="button" class="btn btn--default" disabled>New worktree</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Convert a branch ── -->
+            <div data-view="convert" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Convert a branch</h2>
+                  <p class="dialog__desc">Open checked-out branches, or create a worktree for a free branch.</p>
+                </div>
+                <button type="button" class="inline-trigger"><i class="codicon codicon-folder i8"></i><span class="shrink-0">Project</span><span class="inline-trigger__value t-truncate">hermes-agent</span><i class="codicon codicon-chevron-down i75"></i></button>
+                <div class="cmd cmd--bordered">
+                  <div class="cmd__input"><i class="ti ti-search"></i><input placeholder="Search branches…" /></div>
+                  <div class="cmd__list">
+                    <div class="cmd__group">
+                      <div class="cmd__item is-selected"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">main</span><span class="cmd__action">open</span></div>
+                      <div class="cmd__item"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">m13-parity</span><span class="cmd__action">open</span></div>
+                      <div class="cmd__item"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">feat/voice-latency</span><span class="cmd__action">new worktree</span></div>
+                      <div class="cmd__item"><i class="codicon codicon-git-branch i8"></i><span class="cmd__name">fix/sqlite-fts</span><span class="cmd__action">new worktree</span></div>
+                      <div class="cmd__item"><i class="codicon codicon-repo i8"></i><span class="cmd__name">origin/feat/bot-relay</span><span class="cmd__action">track remote</span></div>
+                      <div class="cmd__item"><i class="codicon codicon-repo i8"></i><span class="cmd__name">origin/release/0.9</span><span class="cmd__action">track remote</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="dialog__footer foot-start">
+                  <button type="button" class="btn btn--link link-quiet">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:new">New · base-branch picker open</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:new-closed">New · picker closed</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:convert">Convert a branch</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<!--
+  Screen:      Quick Entry (D · always-on-top window)   renderer `?win=quick#/`, summoned by the global
+               shortcut (default CommandOrControl+Shift+Space; Settings → Advanced → Quick Entry)
+  Replicates:  apps/desktop/src/app/quick-entry/{quick-entry-app.tsx, quick-entry-root.tsx},
+               src/store/quick-entry (quickComposerReducer), electron/quick-entry.ts (quickEntryWindowBounds),
+               electron/main.ts l.14387-14467 (spawnQuickEntryWindow)
+  Views:       #qe=ready | #qe=typing | #qe=disconnected
+  Measurements:
+    - BrowserWindow 640×168 (clamped to the work area), frameless, transparent, hasShadow, alwaysOnTop
+      ('screen-saver' level on Windows/Linux, 'floating' NSPanel on macOS), on the display under the
+      cursor: centred horizontally, top at 22% of the work-area height (QUICK_ENTRY_TOP_FRACTION)
+    - root: flex centre, padding 12px (the card is vertically centred in the 168px window)
+    - card: bg --ui-bg-elevated, 1px --ui-stroke-secondary, radius 12px (literal, not a radius token),
+      shadow 0 18px 48px black/.38, padding 10px 14px, column gap 8px
+    - row 1: "›" 15px muted + input 15px, gap 10px, no border/outline
+    - row 2: "Send to" 11px muted + native <select> 11px, 1px --ui-stroke-secondary, radius 6px,
+      padding 2px 6px, max-width 320px; options: Current chat, New session, then recent sessions
+    - muted ink = the source's fallback grey (var(--muted-foreground) is not defined in the app, so
+      the literal fallback wins in both themes); here color-mix(white 54%, black)
+  Behaviour (not visible statically):
+    - Enter submits (trimmed text + target) and hides; an empty Enter does nothing
+    - Esc (in the input or the select) and losing window focus dismiss without sending
+    - re-summoning resets the draft and refocuses the input
+    - the window has no gateway: connection state + recent sessions are pushed from the main renderer;
+      disconnected disables input and select (input at 55% opacity) and swaps the placeholder
+  Mobile:      Quick Entry is absent on mobile by design (docs/PARITY.md).
+  Unsure:      placeholder colour (Chromium default placeholder, approximated with --dt-muted-foreground).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quick Entry · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .desk { position: absolute; inset: 0; overflow: hidden; background: var(--proto-desk); }
+      .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; background: color-mix(in srgb, var(--ui-bg-sidebar) 88%, transparent); border-top: 1px solid var(--ui-stroke-tertiary); }
+      .taskbar > span { width: 32px; height: 32px; border-radius: var(--radius-3xl); background: var(--ui-bg-tertiary); }
+      .taskbar > span.is-hermes { display: grid; place-items: center; background: var(--brand-tile); color: var(--black); box-shadow: inset 0 0 0 1px var(--ui-stroke-secondary); }
+      .mock-app { position: absolute; overflow: hidden; border-radius: 8px; background: var(--ui-bg-editor); box-shadow: var(--shadow-md); }
+      .mock-app__bar { height: 30px; border-bottom: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-sidebar); }
+      .mock-app__main { padding: 28px 36px; display: grid; gap: 11px; align-content: start; }
+      .mock-app i.line { display: block; height: 8px; border-radius: 2px; background: var(--ui-bg-secondary); }
+      .proto-note { position: absolute; font: 500 10px/1.3 var(--dt-font-sans); letter-spacing: 0.02em; color: var(--ui-text-tertiary); }
+      .win-bounds { position: absolute; outline: 1px dashed color-mix(in srgb, var(--ui-text-quaternary) 70%, transparent); pointer-events: none; }
+
+      /* ── Quick Entry window (640×168, transparent) ─────────────────────── */
+      .qe {
+        --qe-muted: color-mix(in srgb, var(--white) 54%, var(--black)); /* source fallback grey */
+        position: absolute;
+        left: 290px;
+        top: 165px;
+        width: 640px;
+        height: 168px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        font-family: var(--dt-font-sans);
+      }
+      .qe__card { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 10px 14px; border: 1px solid var(--ui-stroke-secondary); border-radius: 12px; background: var(--ui-bg-elevated); box-shadow: 0 18px 48px color-mix(in srgb, var(--black) 38%, transparent); }
+      .qe__row { display: flex; align-items: center; gap: 10px; }
+      .qe__row--target { gap: 8px; }
+      .qe__chev { flex-shrink: 0; color: var(--qe-muted); font-size: 15px; line-height: 1; }
+      .qe__input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--dt-foreground); font: inherit; font-size: 15px; }
+      .qe__input::placeholder { color: var(--dt-muted-foreground); }
+      .qe__input:disabled { opacity: 0.55; }
+      .qe__label { flex-shrink: 0; color: var(--qe-muted); font-size: 11px; }
+      .qe__select { max-width: 320px; border: 1px solid var(--ui-stroke-secondary); border-radius: 6px; padding: 2px 6px; background: transparent; color: var(--dt-foreground); font-size: 11px; }
+      .caret { display: inline-block; width: 1px; height: 18px; margin-left: 1px; background: var(--dt-foreground); animation: caret 1s steps(1) infinite; }
+      @keyframes caret { 50% { opacity: 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div class="desk">
+            <div class="mock-app" style="left:90px;top:40px;width:1040px;height:640px" aria-hidden="true">
+              <div class="mock-app__bar"></div>
+              <div class="mock-app__main">
+                <i class="line" style="width:34%;height:16px"></i><i class="line" style="width:92%"></i><i class="line" style="width:88%"></i><i class="line" style="width:95%"></i><i class="line" style="width:60%"></i>
+                <i class="line" style="width:90%;margin-top:14px"></i><i class="line" style="width:84%"></i><i class="line" style="width:93%"></i><i class="line" style="width:71%"></i>
+                <i class="line" style="width:89%;margin-top:14px"></i><i class="line" style="width:94%"></i><i class="line" style="width:80%"></i><i class="line" style="width:52%"></i>
+              </div>
+            </div>
+
+            <div class="win-bounds" style="left:290px;top:165px;width:640px;height:168px"></div>
+            <div class="proto-note" style="left:290px;top:338px">Quick Entry window 640×168 · centred, top at 22% of the work area · dashed = window bounds</div>
+
+            <section data-views="qe">
+              <!-- ── View: ready (just summoned) ───────────────────────── -->
+              <div data-view="ready">
+                <div class="qe">
+                  <div class="qe__card">
+                    <div class="qe__row">
+                      <span class="qe__chev" aria-hidden="true">›</span>
+                      <input class="qe__input" aria-label="Quick Entry" placeholder="Ask Hermes…" spellcheck="false" />
+                    </div>
+                    <div class="qe__row qe__row--target">
+                      <label class="qe__label" for="qe-target-1">Send to</label>
+                      <select class="qe__select" id="qe-target-1" aria-label="Target session">
+                        <option>Current chat</option>
+                        <option>New session</option>
+                        <option>Refactor gateway auth handshake</option>
+                        <option>Why is the e2e suite flaky on Windows?</option>
+                        <option>Draft README for the Android client</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: typing, a recent session picked as the target ── -->
+              <div data-view="typing" hidden>
+                <div class="qe">
+                  <div class="qe__card">
+                    <div class="qe__row">
+                      <span class="qe__chev" aria-hidden="true">›</span>
+                      <span class="qe__input" style="display:flex;align-items:center">Also check the retry path in the Windows runner<span class="caret"></span></span>
+                    </div>
+                    <div class="qe__row qe__row--target">
+                      <label class="qe__label" for="qe-target-2">Send to</label>
+                      <select class="qe__select" id="qe-target-2" aria-label="Target session">
+                        <option>Current chat</option>
+                        <option>New session</option>
+                        <option selected>Why is the e2e suite flaky on Windows?</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── View: disconnected ────────────────────────────────── -->
+              <div data-view="disconnected" hidden>
+                <div class="qe">
+                  <div class="qe__card">
+                    <div class="qe__row">
+                      <span class="qe__chev" aria-hidden="true">›</span>
+                      <input class="qe__input" aria-label="Quick Entry" placeholder="Not connected — open Hermes to reconnect" disabled />
+                    </div>
+                    <div class="qe__row qe__row--target">
+                      <label class="qe__label" for="qe-target-3">Send to</label>
+                      <select class="qe__select" id="qe-target-3" aria-label="Target session" disabled>
+                        <option>Current chat</option>
+                        <option>New session</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="taskbar" aria-hidden="true"><span></span><span class="is-hermes"><i class="ti ti-feather"></i></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="qe:ready">Ready</button>
+        <button class="btn btn--secondary btn--sm" data-show="qe:typing">Typing</button>
+        <button class="btn btn--secondary btn--sm" data-show="qe:disconnected">Disconnected</button>
+      </nav>
+    </div>
+  </body>
+</html>

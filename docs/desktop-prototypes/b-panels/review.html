@@ -1,0 +1,403 @@
+<!doctype html>
+<!--
+  Screen:      Review — git diff, commit, PR (B · panel inside Chat)   pane id `review` (placement right, ⌘G)
+  Replicates:  apps/desktop/src/app/right-sidebar/review/index.tsx (ReviewPane), review/file-tree.tsx
+               (ReviewFileTree, ReviewDirRow, ReviewFileRow, ReviewFileContextMenu), review/ship-bar.tsx
+               (ReviewShipBar), review/tree-data.ts, review/churn-bar.tsx (NOT wired in), components/chat/diff-lines.tsx
+               (FileDiffPanel), components/ui/{split-button,generate-button,diff-count}.tsx,
+               app/chat/composer/status-stack/coding-row.tsx (branch + ahead/behind strip that opens this pane),
+               app/contrib/controller.tsx l.232-247 + DEFAULT_TREE l.394-416
+  Views:       #rv=changes | #rv=list | #rv=commit (split menu open + PR tip) | #rv=revert | #rv=empty | #rv=scopes
+  Measurements:
+    - default tree: right column = review | files (weights 1 : 1.2), each min 10rem / max 20rem; drawn wider here
+      (240px + 237px) so the diff is legible — at 1220px the real weights give ~160px each
+    - header: h-7 px-2.5; label REVIEW (SidebarPanelLabel; hidden when the zone tab strip already says "review");
+      actions size-5 (20px) ghost icon-xs, codicons .8125rem: list-flat|list-tree, add (Stage all),
+      discard (Revert all), refresh (spins while loading), close
+    - tree scroller px-1 py-1; rows h-6 (24px), gap-1.5, radius-md, pr-1.5, 12px --ui-text-secondary;
+      indent 12px per level + 14px base (lines depth-0 icons up with the header's dither square)
+    - status glyph .8rem: A/C diff-added --ui-green, M diff-modified amber-500/85, D diff-removed --ui-red,
+      R diff-renamed sky-500/85, U warning --ui-red, ? diff-added muted/60
+    - list mode shows the parent dir after the name (.68rem tertiary, shrinks first)
+    - DiffCount .64rem leading-4 (+green −red, tabular); staged dot size-1.5 --ui-green/70
+    - hover: stage/unstage + revert buttons (size-4, .7rem codicons) replace the diff count
+    - selected-diff block: border-t --ui-stroke-secondary, max-h 55%; header px-2.5 py-1.5 gap-1 with the path in
+      mono .66rem; body px-1 pb-1; FileDiffPanel mono .7rem leading-relaxed; gutter sticky, muted/55, numbers
+      h-5 w-9 pr-2 right-aligned; lines h-5 px-2.5 with --ui-diff-add/remove-background tints
+    - ship bar p-2 gap-1.5: Textarea sm (pr-9, auto-grows to max-h-40) + GenerateButton (absolute top-px
+      right-px, h-6 w-8, sparkle .85rem); SplitButton default variant: primary half flex-1 rounded-r-none with
+      check icon, menu half rounded-l-none border-l currentColor/25 px-2 chevron-down .8rem, menu min-w-44;
+      agent row: ghost sm flex-1 px-7 .7rem muted/85 underlined + PR icon button size-7 pinned right
+    - coding status strip (in the composer): min-h-7, px-3.5 py-1.5, border-b --ui-stroke-tertiary; branch 12px
+      muted/92 after a --ui-green git-branch glyph; ↑ahead ↓behind .68rem muted/75; DiffCount .72rem
+  Behaviour:
+    - single-click a file shows its inline diff (after a 200ms double-click window); double-click opens it in a
+      preview tile; rows drag out as paths to the composer; right-click: Open changes / Open file / Stage·Unstage /
+      Revert / Reveal in filetree / Reveal in File Explorer / Copy path / Copy relative path (/ Download remote)
+    - rows animate in/out with a stiff spring (layout slide + fade) once the pane has settled; above 60 nodes the
+      list virtualizes and folders start collapsed
+    - Ctrl/Cmd+Enter in the message commits with the split's current default; the split's menu picks the default
+      (Commit | Commit & Push, persisted); sparkle drafts a message (press again to regenerate, square to stop)
+    - "Ask Hermes to open PR" sends a commit+push+PR task through the composer of the chat that owns the changes;
+      the PR icon creates the PR (or opens it once one exists) and is disabled with a tip when gh is missing
+    - revert (one / all) asks for confirmation; the ship bar disappears when there is nothing to commit
+    - scopes: HermesReviewScope 'uncommitted' | 'branch' | 'lastTurn' exists in the git bridge API and i18n
+      (Uncommitted / Branch / Last turn) but NO component renders a scope switcher at b973068 (see #rv=scopes)
+  Mobile:      Absent on mobile by design (docs/PARITY.md): local filesystem and git are machine-bound.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Review · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .ws-row { display: flex; flex: 1; min-height: 0; }
+      .chat { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+      .rv { width: 240px; flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .rv > [data-view] { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .files { width: 237px; flex-shrink: 0; color: var(--ui-text-tertiary); }
+      .panel-label { display: flex; align-items: center; gap: 0.5rem; min-width: 0; padding-left: 0.5rem; color: var(--theme-primary);
+        font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; line-height: 1; white-space: nowrap; }
+      .panel-label::before { content: ''; flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 1px;
+        background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; }
+      .panel-label--muted { padding-left: 0; color: var(--ui-text-quaternary); }
+      .rs-head { display: flex; align-items: center; height: 1.75rem; flex-shrink: 0; padding: 0 0.625rem; }
+      .act5 { width: 1.25rem; height: 1.25rem; padding: 0; border-radius: 4px; color: var(--ui-text-secondary); }
+      .act5 .codicon { font-size: 0.8125rem; }
+      /* Review file tree */
+      .rtree { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0.25rem; }
+      .rrow { display: flex; align-items: center; gap: 0.375rem; height: 1.5rem; padding-right: 0.375rem; border-radius: var(--radius-md); font-size: 0.75rem; color: var(--ui-text-secondary); cursor: default; }
+      .rrow:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .rrow.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .rrow .codicon { font-size: 0.8rem; flex-shrink: 0; }
+      .rrow__name { display: flex; align-items: baseline; gap: 0.375rem; flex: 1; min-width: 0; }
+      .rrow__name > span:first-child { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .rrow__dir { min-width: 0; flex-shrink: 9999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; color: var(--ui-text-tertiary); }
+      .rrow__acts { display: none; align-items: center; gap: 0.125rem; flex-shrink: 0; }
+      .rrow:hover .rrow__acts { display: flex; }
+      .rrow:hover .dcount { display: none; }
+      .rrow__acts button { display: grid; place-items: center; width: 1rem; height: 1rem; border: 0; border-radius: 4px; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .rrow__acts .codicon { font-size: 0.7rem; }
+      .p0 { padding-left: 14px; } .p1 { padding-left: 26px; } .p2 { padding-left: 38px; }
+      .g-add { color: var(--ui-green); } .g-del { color: var(--ui-red); }
+      .g-mod { color: color-mix(in srgb, var(--tw-amber-500) 85%, transparent); }
+      .g-ren { color: color-mix(in srgb, var(--ui-blue) 85%, transparent); }
+      .g-unt { color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .dcount { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; font-size: 0.64rem; line-height: 1rem; font-variant-numeric: tabular-nums; }
+      .dcount .add { color: var(--ui-green); } .dcount .del { color: var(--ui-red); }
+      .staged { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-full); background: color-mix(in srgb, var(--ui-green) 70%, transparent); }
+      /* Selected diff */
+      .sel { display: flex; flex-direction: column; flex-shrink: 0; max-height: 55%; border-top: 1px solid var(--ui-stroke-secondary); }
+      .sel__head { display: flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.625rem; }
+      .sel__path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--dt-font-mono); font-size: 0.66rem; color: var(--ui-text-secondary); }
+      .sel__body { flex: 1; min-height: 0; overflow: auto; padding: 0 0.25rem 0.25rem; }
+      .fdp { display: grid; grid-template-columns: auto minmax(0, 1fr); min-width: max-content; font-family: var(--dt-font-mono); font-size: 0.7rem; color: var(--ui-text-secondary); }
+      .fdp__gutter { position: sticky; left: 0; z-index: 1; padding: 0.75rem 0; background: var(--ui-editor-surface-background); color: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .fdp__gutter span { display: block; width: 2.25rem; height: 1.25rem; padding-right: 0.5rem; line-height: 1.25rem; text-align: right; font-variant-numeric: tabular-nums; }
+      .fdp__body { padding: 0.75rem 0; }
+      .fdp__body span { display: block; height: 1.25rem; padding: 0 0.625rem; line-height: 1.25rem; white-space: pre; }
+      .fdp__body .add { background: var(--ui-diff-add-background); color: var(--ui-diff-add-foreground); }
+      .fdp__body .del { background: var(--ui-diff-remove-background); color: var(--ui-diff-remove-foreground); }
+      .fdp__body .hunk { color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      /* Ship bar */
+      .ship { display: flex; flex-direction: column; gap: 0.375rem; flex-shrink: 0; padding: 0.5rem; }
+      .ship__msg { position: relative; }
+      .ship__msg textarea.control { min-height: 0; height: auto; padding-right: 2.25rem; resize: none; }
+      .gen { position: absolute; top: 1px; right: 1px; height: 1.5rem; width: 2rem; padding: 0; border-radius: 0 2px 2px 0; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .gen .codicon { font-size: 0.85rem; }
+      .splitbtn { display: flex; min-width: 0; }
+      .splitbtn .btn:first-child { flex: 1; min-width: 0; border-radius: 2.5px 0 0 2.5px; }
+      .splitbtn .btn:last-child { border-radius: 0 2.5px 2.5px 0; border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent); padding: 0 0.5rem; }
+      .splitbtn .codicon { font-size: 0.85rem; }
+      .agent-row { position: relative; display: flex; align-items: center; min-width: 0; }
+      .agent-row > .btn { flex: 1; min-width: 0; justify-content: center; padding-inline: 1.75rem; font-size: 0.7rem; color: color-mix(in srgb, var(--dt-muted-foreground) 85%, transparent); }
+      .agent-row > .btn span { text-decoration: underline; text-underline-offset: 2px; }
+      .agent-row .pr { position: absolute; inset: 0 0 0 auto; display: flex; align-items: center; }
+      .agent-row .pr .btn { width: 1.75rem; height: 1.75rem; padding: 0; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .empty2 { display: flex; flex: 1; min-height: 0; align-items: center; justify-content: center; padding: 0 1rem; }
+      .scope-note { margin: 0 0.625rem 0.375rem; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-lg); padding: 0.375rem; }
+      .scope-note p { margin: 0.375rem 0 0; font-size: 0.625rem; line-height: 1.4; color: var(--ui-text-tertiary); }
+      /* Files neighbour (compact) */
+      .frow { display: flex; align-items: center; gap: 0.25rem; height: 22px; padding-right: 0.75rem; font-size: 0.75rem; color: var(--ui-text-secondary); white-space: nowrap; }
+      .frow .codicon { width: 0.875rem; font-size: 0.875rem; color: var(--ui-text-tertiary); }
+      .d0 { padding-left: 17px; } .d1 { padding-left: 27px; } .d2 { padding-left: 37px; }
+      /* Coding status strip inside the composer */
+      .coding { display: flex; align-items: center; gap: 0.5rem; min-height: 1.75rem; margin: calc(var(--composer-surface-pad-y) * -1) calc(var(--composer-surface-pad-x) * -1) 0; padding: 0.375rem 0.875rem; border-bottom: 1px solid var(--ui-stroke-tertiary); border-top-left-radius: inherit; border-top-right-radius: inherit; }
+      .coding__branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 92%, transparent); }
+      .coding__ab { margin-left: auto; display: flex; align-items: center; gap: 0.375rem; flex-shrink: 0; font-size: 0.68rem; line-height: 1rem; color: color-mix(in srgb, var(--dt-muted-foreground) 75%, transparent); font-variant-numeric: tabular-nums; }
+      .coding .dcount { font-size: 0.72rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth" data-title="">
+            <div class="ws-row">
+              <!-- Chat (workspace) with the coding status strip that opens this pane -->
+              <div class="chat">
+                <div class="thread">
+                  <div class="thread__inner" style="padding-inline:1rem">
+                    <div class="msg-user">Yes, add the spec. Use the mock backend fixture.</div>
+                    <div class="turn">
+                      <div class="scaffold">
+                        <div class="tool-row"><i class="codicon codicon-new-file"></i><span>Created</span><span class="tool-row__meta">e2e/auth-revoked.spec.ts</span><span style="color:var(--ui-diff-add-foreground)">+64</span></div>
+                        <div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran</span><span class="tool-row__meta">npx playwright test e2e/auth-revoked.spec.ts</span><span class="t-success">passed</span></div>
+                      </div>
+                      <div class="msg-ai"><p>Added <span class="code-inline">e2e/auth-revoked.spec.ts</span>. It boots against the mock backend, revokes the session token, and asserts the sign-in card appears within one reconnect attempt.</p></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="composer">
+                    <div class="coding">
+                      <i class="codicon codicon-git-branch" style="color:var(--ui-green);font-size:.8rem"></i>
+                      <span class="coding__branch">m13-design-parity</span>
+                      <span class="coding__ab"><span title="2 ahead">↑2</span><span title="1 behind">↓1</span></span>
+                      <span class="dcount"><span class="add">+95</span><span class="del">−51</span></span>
+                    </div>
+                    <div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything…</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div>
+                  </div>
+                </div>
+              </div>
+              <div class="sash"></div>
+
+              <!-- ═══ Review pane ═══ -->
+              <aside class="pane pane--side rv" aria-label="Review" data-views="rv">
+
+                <!-- View: changes (tree mode, one file selected, message typed) -->
+                <div data-view="changes">
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5" aria-label="View as list"><i class="codicon codicon-list-flat"></i></button>
+                    <button class="btn btn--ghost act5" aria-label="Stage all"><i class="codicon codicon-add"></i></button>
+                    <button class="btn btn--ghost act5" aria-label="Revert all"><i class="codicon codicon-discard"></i></button>
+                    <button class="btn btn--ghost act5" aria-label="Refresh tree"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="rtree">
+                    <div class="rrow p0"><i class="codicon codicon-folder-opened t-tertiary"></i><span class="rrow__name"><span>src/gateway</span></span></div>
+                    <div class="rrow p1 is-active"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>use-gateway-boot.ts</span></span><span class="rrow__acts"><button aria-label="Stage"><i class="codicon codicon-add"></i></button><button aria-label="Revert"><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="add">+18</span><span class="del">−6</span></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>reconnect.ts</span></span><span class="rrow__acts"><button aria-label="Unstage"><i class="codicon codicon-remove"></i></button><button aria-label="Revert"><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="add">+9</span><span class="del">−4</span></span><span class="staged" title="Staged"></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-removed g-del"></i><span class="rrow__name"><span>legacy-boot.ts</span></span><span class="rrow__acts"><button><i class="codicon codicon-add"></i></button><button><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="del">−41</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-folder-opened t-tertiary"></i><span class="rrow__name"><span>e2e</span></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-added g-add"></i><span class="rrow__name"><span>auth-revoked.spec.ts</span></span><span class="rrow__acts"><button><i class="codicon codicon-add"></i></button><button><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="add">+64</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-folder t-tertiary"></i><span class="rrow__name"><span>docs</span></span><span class="dcount"><span class="add">+22</span><span class="del">−3</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-renamed g-ren"></i><span class="rrow__name"><span>CONNECTING.md</span></span><span class="rrow__acts"><button><i class="codicon codicon-add"></i></button><button><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="add">+2</span><span class="del">−1</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-added g-unt"></i><span class="rrow__name"><span>notes.txt</span></span><span class="rrow__acts"><button><i class="codicon codicon-add"></i></button><button><i class="codicon codicon-discard"></i></button></span><span class="dcount"><span class="add">+3</span></span></div>
+                  </div>
+                  <div class="sel">
+                    <div class="sel__head">
+                      <span class="sel__path" title="src/gateway/use-gateway-boot.ts">src/gateway/use-gateway-boot.ts</span>
+                      <span class="dcount"><span class="add">+18</span><span class="del">−6</span></span>
+                      <button class="btn btn--ghost act5" aria-label="Stage"><i class="codicon codicon-add" style="font-size:.8rem"></i></button>
+                      <button class="btn btn--ghost act5" aria-label="Close"><i class="codicon codicon-close" style="font-size:.8rem"></i></button>
+                    </div>
+                    <div class="sel__body">
+                      <div class="fdp">
+                        <div class="fdp__gutter"><span></span><span>41</span><span>42</span><span>43</span><span></span><span>44</span><span>45</span><span>46</span><span>47</span></div>
+                        <div class="fdp__body">
+                          <span class="hunk">@@ -41,6 +41,9 @@ export function useGatewayBoot</span>
+                          <span>  socket.on('event', event =&gt; {</span>
+                          <span>    if (event.code === 'auth_required') {</span>
+                          <span class="del">-      scheduleReconnect(backoff.next())</span>
+                          <span class="add">+      $needsLogin.set(true)</span>
+                          <span class="add">+      return stopReconnect('revoked')</span>
+                          <span>    }</span>
+                          <span>  })</span>
+                          <span class="add">+  onCleanup(() =&gt; stopReconnect('unmount'))</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ship">
+                    <div class="ship__msg">
+                      <textarea class="control control--sm" rows="1" placeholder="Message (Ctrl+Enter to commit)">fix(gateway): stop reconnecting on revoked tokens</textarea>
+                      <button class="btn btn--ghost gen" aria-label="Generate commit message"><i class="codicon codicon-sparkle"></i></button>
+                    </div>
+                    <div class="splitbtn">
+                      <button class="btn btn--default btn--sm"><i class="codicon codicon-check"></i><span class="t-truncate">Commit</span></button>
+                      <button class="btn btn--default btn--sm" aria-label="More actions"><i class="codicon codicon-chevron-down" style="font-size:.8rem"></i></button>
+                    </div>
+                    <div class="agent-row">
+                      <button class="btn btn--ghost btn--sm"><span class="t-truncate">Ask Hermes to open PR</span></button>
+                      <span class="pr"><button class="btn btn--ghost" aria-label="Create PR"><i class="codicon codicon-git-pull-request" style="font-size:.85rem"></i></button></span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- View: list (flat list mode, no selection, empty message → Commit disabled) -->
+                <div data-view="list" hidden>
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5" aria-label="View as tree"><i class="codicon codicon-list-tree"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-add"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-discard"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="rtree">
+                    <div class="rrow p0"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>use-gateway-boot.ts</span><span class="rrow__dir">src/gateway</span></span><span class="dcount"><span class="add">+18</span><span class="del">−6</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>reconnect.ts</span><span class="rrow__dir">src/gateway</span></span><span class="dcount"><span class="add">+9</span><span class="del">−4</span></span><span class="staged"></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-removed g-del"></i><span class="rrow__name"><span>legacy-boot.ts</span><span class="rrow__dir">src/gateway</span></span><span class="dcount"><span class="del">−41</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-added g-add"></i><span class="rrow__name"><span>auth-revoked.spec.ts</span><span class="rrow__dir">e2e</span></span><span class="dcount"><span class="add">+64</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>PARITY.md</span><span class="rrow__dir">docs</span></span><span class="dcount"><span class="add">+14</span><span class="del">−2</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-added g-add"></i><span class="rrow__name"><span>DESKTOP-SCREENS.md</span><span class="rrow__dir">docs</span></span><span class="dcount"><span class="add">+8</span><span class="del">−1</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-renamed g-ren"></i><span class="rrow__name"><span>CONNECTING.md</span></span><span class="dcount"><span class="add">+2</span><span class="del">−1</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-added g-unt"></i><span class="rrow__name"><span>notes.txt</span></span><span class="dcount"><span class="add">+3</span></span></div>
+                  </div>
+                  <div class="ship">
+                    <div class="ship__msg"><textarea class="control control--sm" rows="1" placeholder="Message (Ctrl+Enter to commit)"></textarea><button class="btn btn--ghost gen" aria-label="Generate commit message"><i class="codicon codicon-sparkle"></i></button></div>
+                    <div class="splitbtn"><button class="btn btn--default btn--sm is-disabled"><i class="codicon codicon-check"></i><span>Commit</span></button><button class="btn btn--default btn--sm is-disabled"><i class="codicon codicon-chevron-down" style="font-size:.8rem"></i></button></div>
+                    <div class="agent-row"><button class="btn btn--ghost btn--sm"><span>Ask Hermes to open PR</span></button><span class="pr"><button class="btn btn--ghost" aria-label="Create PR"><i class="codicon codicon-git-pull-request" style="font-size:.85rem"></i></button></span></div>
+                  </div>
+                </div>
+
+                <!-- View: commit — split menu open (Commit | Commit & Push) + PR tooltip -->
+                <div data-view="commit" hidden>
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-list-flat"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-add"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-discard"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="rtree">
+                    <div class="rrow p0"><i class="codicon codicon-folder-opened t-tertiary"></i><span class="rrow__name"><span>src/gateway</span></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>use-gateway-boot.ts</span></span><span class="dcount"><span class="add">+18</span><span class="del">−6</span></span><span class="staged"></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>reconnect.ts</span></span><span class="dcount"><span class="add">+9</span><span class="del">−4</span></span><span class="staged"></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-folder-opened t-tertiary"></i><span class="rrow__name"><span>e2e</span></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-added g-add"></i><span class="rrow__name"><span>auth-revoked.spec.ts</span></span><span class="dcount"><span class="add">+64</span></span><span class="staged"></span></div>
+                  </div>
+                  <div class="ship">
+                    <div class="ship__msg"><textarea class="control control--sm" rows="3">fix(gateway): stop reconnecting on revoked tokens
+
+Raise the sign-in prompt on auth_required and add an e2e spec.</textarea><button class="btn btn--ghost gen" aria-label="Generate commit message"><i class="codicon codicon-sparkle"></i></button></div>
+                    <div class="splitbtn"><button class="btn btn--default btn--sm"><i class="codicon codicon-check"></i><span>Commit</span></button><button class="btn btn--default btn--sm" data-state="open" style="background:color-mix(in srgb,var(--dt-primary) 90%,transparent)"><i class="codicon codicon-chevron-down" style="font-size:.8rem"></i></button></div>
+                    <div class="agent-row"><button class="btn btn--ghost btn--sm"><span>Ask Hermes to open PR</span></button><span class="pr"><button class="btn btn--ghost" aria-label="Create PR" style="background:var(--chrome-action-hover);color:var(--dt-foreground)"><i class="codicon codicon-git-pull-request" style="font-size:.85rem"></i></button></span></div>
+                  </div>
+                </div>
+
+                <!-- View: revert — confirm dialog for one file -->
+                <div data-view="revert" hidden>
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-list-flat"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-add"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-discard"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="rtree">
+                    <div class="rrow p0"><i class="codicon codicon-folder-opened t-tertiary"></i><span class="rrow__name"><span>src/gateway</span></span></div>
+                    <div class="rrow p1 is-active"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>use-gateway-boot.ts</span></span><span class="dcount"><span class="add">+18</span><span class="del">−6</span></span></div>
+                    <div class="rrow p1"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>reconnect.ts</span></span><span class="dcount"><span class="add">+9</span><span class="del">−4</span></span></div>
+                  </div>
+                </div>
+
+                <!-- View: empty — clean tree / not a repo -->
+                <div data-view="empty" hidden>
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5 is-disabled"><i class="codicon codicon-list-flat"></i></button>
+                    <button class="btn btn--ghost act5 is-disabled"><i class="codicon codicon-add"></i></button>
+                    <button class="btn btn--ghost act5 is-disabled"><i class="codicon codicon-discard"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="empty2"><span class="panel-label panel-label--muted">No diffs</span></div>
+                </div>
+
+                <!-- View: scopes — NOT RENDERED IN SOURCE. API + i18n only; shown so the rebuilder knows the gap. -->
+                <div data-view="scopes" hidden>
+                  <div class="rs-head">
+                    <div class="flex grow"><span class="panel-label">Review</span></div>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-list-flat"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-refresh"></i></button>
+                    <button class="btn btn--ghost act5"><i class="codicon codicon-close"></i></button>
+                  </div>
+                  <div class="scope-note">
+                    <div class="seg" style="display:grid;width:100%"><button class="seg__opt is-active">Uncommitted</button><button class="seg__opt">Branch</button><button class="seg__opt">Last turn</button></div>
+                    <p>Not in the desktop UI at b973068: <code>HermesReviewScope</code> ('uncommitted' | 'branch' | 'lastTurn') is a parameter of <code>review.list / diff</code> in the git bridge, and the three labels exist in i18n, but no component renders a switcher. The pane always shows the working tree.</p>
+                  </div>
+                  <div class="rtree">
+                    <div class="rrow p0"><i class="codicon codicon-diff-modified g-mod"></i><span class="rrow__name"><span>use-gateway-boot.ts</span><span class="rrow__dir">src/gateway</span></span><span class="dcount"><span class="add">+18</span><span class="del">−6</span></span></div>
+                    <div class="rrow p0"><i class="codicon codicon-diff-added g-add"></i><span class="rrow__name"><span>auth-revoked.spec.ts</span><span class="rrow__dir">e2e</span></span><span class="dcount"><span class="add">+64</span></span></div>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="sash"></div>
+              <!-- Files, its default neighbour (outermost) -->
+              <aside class="pane pane--side files" aria-label="Right sidebar">
+                <div class="flex items-center" style="height:1.75rem;padding:0 .625rem"><span class="panel-label">hermes-android</span></div>
+                <div>
+                  <div class="frow d0"><i class="codicon codicon-folder"></i>docs</div>
+                  <div class="frow d0"><i class="codicon codicon-folder-opened"></i>e2e</div>
+                  <div class="frow d1"><i class="codicon codicon-file"></i><span style="color:var(--ui-green)">auth-revoked.spec.ts</span></div>
+                  <div class="frow d0"><i class="codicon codicon-folder-opened"></i>src</div>
+                  <div class="frow d1"><i class="codicon codicon-folder-opened"></i>gateway</div>
+                  <div class="frow d2"><i class="codicon codicon-file"></i><span style="color:var(--ui-yellow)">reconnect.ts</span></div>
+                  <div class="frow d2"><i class="codicon codicon-file"></i><span style="color:var(--ui-yellow)">use-gateway-boot.ts</span></div>
+                  <div class="frow d0"><i class="codicon codicon-file"></i>package.json</div>
+                  <div class="frow d0"><i class="codicon codicon-file"></i>README.md</div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- Overlays that belong to specific views -->
+          <section data-views="rvo" data-default="none">
+            <div data-view="none"></div>
+            <div data-view="commit" hidden>
+              <!-- SplitButton menu (align end, min-w-44) under the chevron half -->
+              <!-- Collides with the window bottom, so Radix flips it above the split (align end) -->
+              <div class="menu" style="left:798px;top:648px;min-width:11rem" role="menu">
+                <button class="menu__item is-checked">Commit</button>
+                <button class="menu__item is-focused">Commit &amp; Push</button>
+              </div>
+              <!-- Tooltip on the PR icon (label = Create PR, or Open PR once one exists, or the gh-missing hint) -->
+              <div class="tip" style="left:930px;top:718px">Create PR</div>
+            </div>
+            <div data-view="revert" hidden>
+              <div class="scrim"></div>
+              <div class="dialog" role="alertdialog" style="max-width:26rem">
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Revert</h2>
+                  <p class="dialog__desc">Discard changes to this file and restore it to the committed state? This cannot be undone.<span class="t-mono" style="display:block;margin-top:.5rem;font-size:.7rem;color:var(--ui-text-secondary)">src/gateway/use-gateway-boot.ts</span></p>
+                </div>
+                <div class="dialog__footer"><button class="btn btn--ghost">Cancel</button><button class="btn btn--destructive">Revert</button></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="rv:changes">Changes + diff</button>
+        <button class="btn btn--secondary btn--sm" data-show="rv:list">List mode</button>
+        <button class="btn btn--secondary btn--sm" data-show="rv:commit">Commit menu + PR</button>
+        <button class="btn btn--secondary btn--sm" data-show="rv:revert">Revert confirm</button>
+        <button class="btn btn--secondary btn--sm" data-show="rv:empty">No diffs</button>
+        <button class="btn btn--secondary btn--sm" data-show="rv:scopes">Scopes (not in source)</button>
+      </nav>
+    </div>
+    <script>
+      // The split menu / confirm dialog live outside the pane; keep them in step with the rv view.
+      function syncOverlay(id) { HDProto.showView('rvo', id === 'commit' || id === 'revert' ? id : 'none') }
+      document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-show^="rv:"]')
+        if (t) syncOverlay(t.dataset.show.slice(3))
+      })
+      document.addEventListener('DOMContentLoaded', function () {
+        var m = /rv=(\w+)/.exec(location.hash)
+        if (m) syncOverlay(m[1])
+      })
+    </script>
+  </body>
+</html>

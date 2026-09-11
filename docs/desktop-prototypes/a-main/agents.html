@@ -1,0 +1,325 @@
+<!doctype html>
+<!--
+  Screen:      Agents (A · overlay screen)   route `/agents` — live subagent spawn tree
+  Replicates:  apps/desktop/src/app/agents/index.tsx (AgentsView, SubagentTree, groupDelegations, DelegationGroup,
+               SubagentRow, StreamLine, statusGlyph, streamGlyph), store/subagents (tree across ALL sessions),
+               components/chat/activity-timer{.ts,-text.tsx} (formatElapsed), components/ui/glyph-spinner.tsx,
+               app/overlays/panel.tsx (Panel, PanelHeader, PanelEmpty)
+  Views:       #agents=running | #agents=finished | #agents=empty
+  Measurements:
+    - Panel content px-5 pb-4, pt titlebar/2-0.4375rem; header "Spawn tree" 14px semibold, subtitle 12px muted/80
+    - summary line .7rem muted/70, then the tree (gap-4 from the summary; groups gap-6; rows inside a group gap-4)
+    - delegation label .66rem medium uppercase tracking-wider muted/70; "·" muted/50; active count primary/85
+    - SubagentRow grid gap-2: header button items-start gap-2.5; status glyph box h-[1.1rem] mt-0.5, glyph size-3.5
+      (running = braille "breathe" GlyphSpinner .95rem muted/80, done = circle-check emerald-600/85 [dark emerald-400/85],
+      failed/interrupted = alert-circle destructive)
+    - goal .82rem medium leading-[1.1rem] fg/90 (running: shimmer, fg/65); subtitle .66rem leading-[1.05rem] muted/65,
+      single line faded at the edge (FadeText); live timer .56rem midground/55 mt-1 (formatElapsed: "42s", "1:08")
+    - stream lines pl-6 gap-1, each .72rem relaxed, glyph cell h-[0.95rem]: tool = size-1.5 dot fg/55 + mono .69rem fg/85,
+      thinking = "…" mono .7rem muted/70 (text muted/80), progress = size-1 dot muted/55 (text muted/75),
+      summary = circle-check size-3 emerald (text fg/85), error = alert-circle size-3 destructive (text destructive)
+    - files block pl-6 gap-0.5: label .58rem medium uppercase tracking-wider muted/60; lines mono .67rem relaxed muted/80,
+      "+ path" written, "· path" read, max 8 then "+N more files"
+    - nested children pl-6 gap-3; a child row adds pl-4
+  Behaviour:
+    - aggregates subagents from every session (matches the status-bar "Agents N running" count)
+    - workers carrying the same delegation_id group under "Delegation N · K workers · J active"; older backends
+      group by shape (same task_count, started ≤ 5s apart, unique task index); a lone task renders ungrouped
+    - rows start open when running or depth < 2 and re-open whenever they start running; clicking the header
+      toggles; open shows the last 10 stream lines, closed the last 2; files only when open
+    - running goals shimmer; the last stream line of a running row carries a breathing spinner; new rows and
+      lines fade/slide in (useEnterAnimation); ages tick every 500ms while any agent is active and the pane is visible
+    - "updated Ns ago" rounds to the second; hours never roll into days
+  Mobile:      Agents is thinner on mobile (docs/PARITY.md): subagent progress reaches the chat transcript as
+               tool cards; there is no standalone spawn-tree screen.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agents · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .panel { padding-bottom: 1rem; }
+      .pn-fill { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+      .pn-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .pn-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .pn-empty__icon { font-size: 1.25rem !important; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .pn-empty__title { margin: 0; font-size: 0.875rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .pn-empty__desc { max-width: 24rem; margin: 0; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+
+      .ag-tree { display: flex; flex: 1; flex-direction: column; gap: 1rem; min-width: 0; min-height: 0; overflow: hidden; }
+      .ag-summary { flex-shrink: 0; margin: 0; font-size: 0.7rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .ag-scroll { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding-right: 0.25rem; }
+      .ag-groups { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+      .ag-group { display: grid; gap: 0.75rem; min-width: 0; }
+      .ag-group__label { margin: 0; font-size: 0.66rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .ag-group__label .sep { color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .ag-group__label .act { color: color-mix(in srgb, var(--dt-primary) 85%, transparent); }
+      .ag-rows { display: grid; gap: 1rem; min-width: 0; }
+      .ag-row { display: grid; gap: 0.5rem; min-width: 0; max-width: 100%; }
+      .ag-row--child { padding-left: 1rem; }
+      .ag-head { display: flex; align-items: flex-start; gap: 0.625rem; width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; text-align: left; cursor: pointer; }
+      .ag-glyph { display: flex; flex-shrink: 0; align-items: center; height: 1.1rem; margin-top: 0.125rem; }
+      .ag-glyph .ti { font-size: 0.875rem; }
+      .ag-ok { color: color-mix(in srgb, var(--tw-emerald-600) 85%, transparent); }
+      :root.dark .ag-ok { color: color-mix(in srgb, color-mix(in srgb, var(--tw-emerald-500) 70%, var(--white)) 85%, transparent); }
+      .ag-bad { color: var(--dt-destructive); }
+      .ag-spin { display: inline-grid; place-items: center; width: 0.875rem; height: 0.875rem; font-size: 0.95rem; line-height: 1; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); animation: ag-breathe 1.6s ease-in-out infinite; }
+      .ag-spin--inline { display: inline-block; width: 0.625rem; height: 0.625rem; margin-left: 0.25rem; font-size: 0.625rem; vertical-align: middle; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      @keyframes ag-breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+      .ag-text { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
+      .ag-goal { overflow-wrap: anywhere; font-size: 0.82rem; font-weight: 500; line-height: 1.1rem; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); transition: color 150ms; }
+      .ag-head:hover .ag-goal { color: var(--dt-foreground); }
+      .ag-goal.is-running {
+        color: transparent;
+        background: linear-gradient(90deg, color-mix(in srgb, var(--dt-foreground) 65%, transparent) 0%, color-mix(in srgb, var(--dt-foreground) 65%, transparent) 35%, var(--dt-foreground) 50%, color-mix(in srgb, var(--dt-foreground) 65%, transparent) 65%, color-mix(in srgb, var(--dt-foreground) 65%, transparent) 100%);
+        background-size: 250% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: ag-shimmer 2.2s linear infinite;
+      }
+      @keyframes ag-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+      .ag-sub { overflow: hidden; white-space: nowrap; font-size: 0.66rem; line-height: 1.05rem; color: color-mix(in srgb, var(--dt-muted-foreground) 65%, transparent); -webkit-mask-image: linear-gradient(90deg, var(--black) 88%, transparent); mask-image: linear-gradient(90deg, var(--black) 88%, transparent); }
+      .ag-timer { flex-shrink: 0; margin-top: 0.25rem; font-size: 0.56rem; line-height: 1; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--dt-midground) 55%, transparent); }
+      .ag-stream { display: grid; gap: 0.25rem; min-width: 0; padding-left: 1.5rem; user-select: text; }
+      .ag-line { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; font-size: 0.72rem; line-height: 1.625; }
+      .ag-line__g { display: flex; flex-shrink: 0; align-items: center; height: 0.95rem; }
+      .ag-line__t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      .g-tool { width: 0.375rem; height: 0.375rem; margin-top: 0.125rem; border-radius: 50%; background: color-mix(in srgb, var(--dt-foreground) 55%, transparent); }
+      .g-prog { width: 0.25rem; height: 0.25rem; margin-top: 0.125rem; border-radius: 50%; background: color-mix(in srgb, var(--dt-muted-foreground) 55%, transparent); }
+      .g-think { font-family: var(--dt-font-mono); font-size: 0.7rem; line-height: 1; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .g-ok, .g-err { margin-top: 0.125rem; font-size: 0.75rem !important; }
+      .tone-tool { font-family: var(--dt-font-mono); font-size: 0.69rem; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .tone-think { color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .tone-prog { color: color-mix(in srgb, var(--dt-muted-foreground) 75%, transparent); }
+      .tone-sum { color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .tone-err { color: var(--dt-destructive); }
+      .ag-files { display: grid; gap: 0.125rem; min-width: 0; padding-left: 1.5rem; user-select: text; }
+      .ag-files__label { margin: 0; font-size: 0.58rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .ag-files p:not(.ag-files__label) { margin: 0; overflow-wrap: break-word; font-family: var(--dt-font-mono); font-size: 0.67rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 80%, transparent); }
+      .ag-children { display: grid; gap: 0.75rem; min-width: 0; padding-left: 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="theme" data-title="Port nous theme tokens to mobile">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">Split the mobile parity work across a few agents: theme tokens, the cron screen, and its e2e spec.</div><div class="scaffold"><div class="tool-row" style="opacity:1"><span class="loader" style="width:.7rem;height:.7rem"></span><span>Delegating</span><span class="tool-row__meta">3 tasks</span></div></div></div></div>
+          </div>
+
+          <!-- ═══ Agents overlay (Panel) ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card">
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close agents"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body">
+                <section data-views="agents" class="panel">
+
+                  <!-- ── Running: a 3-worker delegation (one with a nested child) + a lone finished task ── -->
+                  <div data-view="running" class="pn-fill">
+                    <header class="panel__header">
+                      <div class="grow"><h2 class="panel__title">Spawn tree</h2><p class="panel__subtitle" style="margin:0">Live subagent activity for the current turn.</p></div>
+                    </header>
+                    <div class="ag-tree">
+                      <p class="ag-summary">5 agents · 2 active · 38 tools · 7 files · 129K tok · $0.38</p>
+                      <div class="ag-scroll">
+                        <div class="ag-groups">
+                          <section class="ag-group">
+                            <p class="ag-group__label">Delegation 1 <span class="sep">·</span> 3 workers<span class="act"> · 2 active</span></p>
+                            <div class="ag-rows">
+                              <!-- worker 1: running -->
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><span class="ag-spin" aria-label="Running">⠶</span></span>
+                                  <span class="ag-text"><span class="ag-goal is-running">Audit the Android theme tokens against desktop styles.css</span><span class="ag-sub">deepseek-v4-flash · 42.0s · 9 tools · 31K tok · updated now</span></span>
+                                  <span class="ag-timer">42s</span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-think">…</span></span><span class="ag-line__t tone-think">Mapping each color-mix chain in tokens.css to a precomputed React Native value</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">read_file src/theme/tokens.ts</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">search_files "--ui-stroke" apps/desktop/src/styles.css</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-prog"></span></span><span class="ag-line__t tone-prog">14 tokens are missing on mobile; 3 differ in dark mode</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">read_file docs/PARITY.md<span class="ag-spin ag-spin--inline" aria-label="Streaming">⠶</span></span></div>
+                                </div>
+                                <div class="ag-files">
+                                  <p class="ag-files__label">Files</p>
+                                  <p>· src/theme/tokens.ts</p>
+                                  <p>· apps/desktop/src/styles.css</p>
+                                  <p>· docs/PARITY.md</p>
+                                </div>
+                              </div>
+
+                              <!-- worker 2: running, with a finished nested child -->
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><span class="ag-spin" aria-label="Running">⠶</span></span>
+                                  <span class="ag-text"><span class="ag-goal is-running">Port the cron job list to the mobile management screen</span><span class="ag-sub">claude-opus-5 · 1m 8s · 14 tools · 58K tok · updated 3s ago</span></span>
+                                  <span class="ag-timer">1:08</span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">read_file apps/desktop/src/app/cron/index.tsx</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">write_file src/screens/cron/CronList.tsx</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-prog"></span></span><span class="ag-line__t tone-prog">Wiring pause / resume to the cron.pause and cron.resume RPCs</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">write_file src/screens/cron/CronDetail.tsx</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">terminal npm test -- cron<span class="ag-spin ag-spin--inline" aria-label="Streaming">⠶</span></span></div>
+                                </div>
+                                <div class="ag-files">
+                                  <p class="ag-files__label">Files</p>
+                                  <p>+ src/screens/cron/CronList.tsx</p>
+                                  <p>+ src/screens/cron/CronDetail.tsx</p>
+                                  <p>· apps/desktop/src/app/cron/index.tsx</p>
+                                </div>
+                                <div class="ag-children">
+                                  <div class="ag-row ag-row--child">
+                                    <button class="ag-head" aria-expanded="true">
+                                      <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                                      <span class="ag-text"><span class="ag-goal">Check which cron RPCs the gateway exposes</span><span class="ag-sub">mimo-v2.5 · 12.4s · 3 tools · 6.2K tok · updated 20s ago</span></span>
+                                    </button>
+                                    <div class="ag-stream">
+                                      <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">search_files "cron." tui_gateway/</span></div>
+                                      <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">cron.list, cron.pause, cron.resume, cron.trigger and cron.runs are exposed; cron.create takes a profile.</span></div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <!-- worker 3: done -->
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                                  <span class="ag-text"><span class="ag-goal">Write an e2e spec for the cron screen</span><span class="ag-sub">deepseek-v4-flash · 38.0s · 8 tools · 22K tok · updated 1m ago</span></span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">write_file e2e/cron.spec.ts</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">terminal npx playwright test e2e/cron.spec.ts</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">Spec added: list, pause and trigger paths. 3 passed (11.2s).</span></div>
+                                </div>
+                                <div class="ag-files"><p class="ag-files__label">Files</p><p>+ e2e/cron.spec.ts</p></div>
+                              </div>
+                            </div>
+                          </section>
+
+                          <!-- lone task (task_count 1): rendered ungrouped -->
+                          <div class="ag-row">
+                            <button class="ag-head" aria-expanded="true">
+                              <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                              <span class="ag-text"><span class="ag-goal">Summarize open PRs touching the gateway</span><span class="ag-sub">claude-opus-5 · 21.6s · 4 tools · 12K tok · updated 4m ago</span></span>
+                            </button>
+                            <div class="ag-stream">
+                              <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">gh pr list --search "tui_gateway in:path"</span></div>
+                              <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">Two open PRs: #412 lazy session resume, #418 bot relay retries. Neither touches auth.</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- ── Finished: everything settled, one worker failed ── -->
+                  <div data-view="finished" class="pn-fill" hidden>
+                    <header class="panel__header">
+                      <div class="grow"><h2 class="panel__title">Spawn tree</h2><p class="panel__subtitle" style="margin:0">Live subagent activity for the current turn.</p></div>
+                    </header>
+                    <div class="ag-tree">
+                      <p class="ag-summary">5 agents · 1 failed · 46 tools · 9 files · 212K tok · $0.51</p>
+                      <div class="ag-scroll">
+                        <div class="ag-groups">
+                          <section class="ag-group">
+                            <p class="ag-group__label">Delegation 1 <span class="sep">·</span> 3 workers</p>
+                            <div class="ag-rows">
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                                  <span class="ag-text"><span class="ag-goal">Audit the Android theme tokens against desktop styles.css</span><span class="ag-sub">deepseek-v4-flash · 1m 34s · 17 tools · 64K tok · updated 2m ago</span></span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">read_file docs/PARITY.md</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">write_file src/theme/tokens.ts</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-prog"></span></span><span class="ag-line__t tone-prog">Added 14 missing tokens; aligned 3 dark-mode values</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">tokens.ts now covers every --ui-* surface, text and stroke slot the desktop uses.</span></div>
+                                </div>
+                                <div class="ag-files"><p class="ag-files__label">Files</p><p>+ src/theme/tokens.ts</p><p>· src/theme/tokens.ts</p><p>· apps/desktop/src/styles.css</p><p>· docs/PARITY.md</p></div>
+                              </div>
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><i class="ti ti-alert-circle ag-bad" aria-label="Failed"></i></span>
+                                  <span class="ag-text"><span class="ag-goal">Port the cron job list to the mobile management screen</span><span class="ag-sub">claude-opus-5 · 2m 51s · 21 tools · 96K tok · updated 1m ago</span></span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">write_file src/screens/cron/CronDetail.tsx</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">terminal npm test -- cron</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><i class="ti ti-alert-circle g-err ag-bad"></i></span><span class="ag-line__t tone-err">npm test exited 1: CronList renders the paused pill (expected "paused", received "scheduled")</span></div>
+                                </div>
+                                <div class="ag-files"><p class="ag-files__label">Files</p><p>+ src/screens/cron/CronList.tsx</p><p>+ src/screens/cron/CronDetail.tsx</p><p>· apps/desktop/src/app/cron/index.tsx</p></div>
+                                <div class="ag-children">
+                                  <div class="ag-row ag-row--child">
+                                    <button class="ag-head" aria-expanded="true">
+                                      <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                                      <span class="ag-text"><span class="ag-goal">Check which cron RPCs the gateway exposes</span><span class="ag-sub">mimo-v2.5 · 12.4s · 3 tools · 6.2K tok · updated 3m ago</span></span>
+                                    </button>
+                                    <div class="ag-stream">
+                                      <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">search_files "cron." tui_gateway/</span></div>
+                                      <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">cron.list, cron.pause, cron.resume, cron.trigger and cron.runs are exposed; cron.create takes a profile.</span></div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div class="ag-row">
+                                <button class="ag-head" aria-expanded="true">
+                                  <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                                  <span class="ag-text"><span class="ag-goal">Write an e2e spec for the cron screen</span><span class="ag-sub">deepseek-v4-flash · 38.0s · 8 tools · 22K tok · updated 4m ago</span></span>
+                                </button>
+                                <div class="ag-stream">
+                                  <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">terminal npx playwright test e2e/cron.spec.ts</span></div>
+                                  <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">Spec added: list, pause and trigger paths. 3 passed (11.2s).</span></div>
+                                </div>
+                                <div class="ag-files"><p class="ag-files__label">Files</p><p>+ e2e/cron.spec.ts</p></div>
+                              </div>
+                            </div>
+                          </section>
+                          <div class="ag-row">
+                            <button class="ag-head" aria-expanded="true">
+                              <span class="ag-glyph"><i class="ti ti-circle-check ag-ok" aria-label="Done"></i></span>
+                              <span class="ag-text"><span class="ag-goal">Summarize open PRs touching the gateway</span><span class="ag-sub">claude-opus-5 · 21.6s · 4 tools · 12K tok · updated 7m ago</span></span>
+                            </button>
+                            <div class="ag-stream">
+                              <div class="ag-line"><span class="ag-line__g"><span class="g-tool"></span></span><span class="ag-line__t tone-tool">gh pr list --search "tui_gateway in:path"</span></div>
+                              <div class="ag-line"><span class="ag-line__g"><i class="ti ti-circle-check g-ok ag-ok"></i></span><span class="ag-line__t tone-sum">Two open PRs: #412 lazy session resume, #418 bot relay retries. Neither touches auth.</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- ── Empty (no header in this branch) ── -->
+                  <div data-view="empty" class="pn-empty" hidden>
+                    <div class="pn-empty__inner">
+                      <i class="codicon codicon-hubot pn-empty__icon"></i>
+                      <p class="pn-empty__title">No live subagents</p>
+                      <p class="pn-empty__desc">When a turn delegates work, child agents stream their progress here.</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="agents:running">Running</button>
+        <button class="btn btn--secondary btn--sm" data-show="agents:finished">Finished</button>
+        <button class="btn btn--secondary btn--sm" data-show="agents:empty">Empty</button>
+      </nav>
+    </div>
+  </body>
+</html>

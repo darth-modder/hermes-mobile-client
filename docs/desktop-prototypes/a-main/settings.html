@@ -1,0 +1,1128 @@
+<!doctype html>
+<!--
+  Screen:      Settings (A · overlay screen)   route `/settings` (?tab=<section>)
+  Replicates:  apps/desktop/src/app/settings/index.tsx (nav model l.172-306),
+               settings/{constants.ts SECTIONS + PROVIDER_GROUPS, primitives.tsx, config-settings.tsx,
+               appearance-settings.tsx, notifications-settings.tsx, about-settings.tsx},
+               settings/billing/{index.tsx, current-plan-card.tsx, account-row-value.tsx, auto-reload-row.tsx,
+               tier-art.tsx, plans-view.tsx, inline-feedback.tsx, use-billing-state.ts, billing-amounts.ts, dev-fixtures.ts},
+               settings/{providers-settings.tsx, credential-key-ui.tsx, env-credentials.tsx, custom-endpoints-settings.tsx,
+               local-models-settings.tsx, gateway-settings.tsx, connections-registry.tsx, managed-updates-section.tsx,
+               ssh-host-selection.ts, keybind-settings.tsx, keys-settings.tsx, profile-scope.tsx, toolset-config-panel.tsx,
+               env-var-actions-menu.tsx, plugins-settings.tsx, sessions-settings.tsx},
+               components/onboarding/providers.tsx, components/ui/{button,kbd,search-field,progress,empty-state}.tsx,
+               lib/{icons.ts, selectable-card.ts, keybinds/actions.ts, keybinds/combo.ts}, contrib/plugins.ts,
+               plugins/{hermes-bots,kanban,accent}/plugin.tsx, i18n/en.ts (settings.*, keybinds.*, onboarding.*),
+               hermes_cli/config_defaults.py (tool / setting env-var catalog behind the credential rows),
+               app/overlays/{overlay-view,overlay-split-layout}.tsx
+  Views:       #settings=<id> for every nav entry, e.g. #settings=appearance, #settings=providers-accounts,
+               plus #settings=billing-plans (Billing's `bview=plans` sub-view, opened by "Change plan").
+               Nested groups: #gateway-mode=local|cloud|remote|ssh (mode cards), #gw-editor=closed|open
+               (registry editor), #refill=view|edit (auto-refill Manage)
+  Measurements:
+    - overlay: scrim black/22 + 2px blur, inset titlebar+0.875rem on every side
+    - card: radius-xl (3.2px), 1px --ui-stroke-secondary, --shadow-md, chat surface fill
+    - split: 13rem nav rail (sidebar surface) | main (max 75rem); rail stacks into a dropdown below 47.5rem
+    - nav item: h-7 (28px), radius-md, 13px; active = 1px stroke-tertiary + bg-tertiary
+    - nested nav: indented .875rem + .375rem, icon 14px, active = chrome-action-hover + medium
+    - ListRow: grid [1fr | minmax(15rem,22rem)], py-3; title 13px medium; description 12px/16px tertiary
+    - SectionHeading: 13px medium, 16px muted icon, mb .625rem, pt .5rem; sections mb 1.5rem
+    - Billing: summary = 3-col grid, label 12px tertiary, value 18px/28px semibold tabular (Auto-refill "Enabled" in --ui-green);
+      plan row = ListRow grid with a 40px tier-art well (radius-md); usage rows grid [≤180px | 1fr | 220px] gap 1rem,
+      bar 8px on the --dt-muted track (green = healthy subscription, destructive ≤10% left / cap ≥90%, else muted-fg/45);
+      plan tiles radius-lg p-4, gap .75rem, 3 cols at a ≥48rem container (2 at ≥32rem); current tile on green/10
+    - Provider rows: radius 6px, px-3 py-2.5, title 13px semibold, subtitle 12px/20px muted; featured row radius 8px on primary/6,
+      "RECOMMENDED" tag .64rem semibold uppercase tracking .16em; Connected tag primary/10, square corners
+    - Credential cards: radius 6px, p-3, grid [1fr | minmax(15rem,22rem)] gap .75rem; label row h-8 with an 8px status dot
+      (primary = set); expanded = bg-quaternary + 1px stroke-secondary ring; a resting key field drops its chrome but keeps h-8
+    - Gateway mode cards: 4 cols in the 1220px window (2 below 72rem, 1 below sm), radius-lg, p-3, 14px icon + 13px title,
+      active = primary border + primary/6 fill + 2px primary/20 ring
+    - Keybind rows: px-2.5 py-1, radius-lg, label .82rem; category header .64rem semibold uppercase tracking .12em, muted/70;
+      caps 22px (square for single glyphs), a 24px trailing slot holds the reset button so columns stay aligned
+    - Plugin lines: py-2, title 13px medium + pills, caption description, controls pinned top-right
+  Behaviour:
+    - config fields autosave on change (no Save button); failures toast "Autosave failed"
+    - typing anywhere outside a field opens the settings-scoped command palette
+    - "Applies to" profile chip row appears above config pages only when 2+ profiles exist
+    - Esc or the X closes back to the previous route; nav rail swaps for a dropdown when narrow
+    - Billing (sample = dev fixture `subscriber-personal`, with todayBillingState's enabled auto-refill so Manage shows):
+      polls every 30s while mounted; no card → a warn notice "No payment method on file" leads the page and buy/refill
+      controls disable; logged out → only the "Connect your Nous account" notice renders. "Manage" swaps the action column to
+      Save/Cancel in place; the edit form is always laid out (invisible) so the row never changes height. The Plans sub-view is
+      reachable only when the plan card offers an in-app action (personal org, can_change_plan, an upgrade or downgrade exists);
+      upgrades open the portal ("Choose ↗"), downgrades preview + confirm in the tile and schedule at period end, after which the
+      plan card shows "Changes to Free on Aug 15." with an Undo. DEV builds add a dashed "preview" fixture select to the header.
+    - Providers → Accounts: connected providers stay visible; the rest sit behind "Connect another provider" (collapsed by default,
+      expanded here). The featured Nous Portal row paints a rotating arc border. A row click hands off to the onboarding overlay's
+      sign-in flow. With no OAuth providers the Accounts view falls through to API keys.
+    - Credential cards (API keys, Tools & Keys): one open at a time; click or focus expands; a set key shows its redacted value and
+      edits in place on focus; Enter saves, Esc cancels without closing the overlay; the trash icon confirms removal.
+    - Local Models ships behind the --local launch flag: without it the nav entry, the Accounts "Run models locally" row and the
+      pane itself do not render. First run shows a centered quickstart hero ("Set up for me" / "Configure…") until a runtime and a
+      model exist. Status polls every 4s while visible.
+    - Gateways: mode cards only stage a choice; "Save and reconnect" applies it (soft reconnect), "Save for next restart" persists.
+      Remote mode probes the URL (500ms debounce) to decide between the OAuth button and the session-token box. An env override
+      disables every control behind a destructive banner. Registry search appears at 8+ connections.
+    - Keybinds: click the caps to capture ("Press a key…"); the reset icon shows on row hover only for non-default bindings;
+      typing in search flattens the list and ignores collapsed categories.
+    - Plugins: desktop toggles load/unload live; agent-plugin toggles apply to new sessions; rows from a pre-v6 backend are read-only.
+    - Archived Chats: Unarchive puts the chat back in the sidebar immediately; the trash icon confirms "Delete permanently".
+  Mobile:      Settings is at parity on mobile (docs/PARITY.md); Appearance/Pet/Quick Entry are desktop-only.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Settings · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .settings-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 5rem; }
+      .settings-page-title { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.25rem; font-size: 0.875rem; font-weight: 600; }
+      .settings-page-intro { margin: 0 0 1rem; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); }
+      .settings-search { display: inline-flex; align-items: center; gap: 0.375rem; width: 18rem; height: 1.625rem; padding: 0 0.625rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-full); background: var(--ui-bg-elevated); box-shadow: var(--shadow-sm); color: var(--ui-text-tertiary); font-size: 0.75rem; }
+      .applies-to { display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.75rem; color: var(--ui-text-tertiary); font-size: 0.6875rem; }
+      .chip { display: inline-flex; align-items: center; gap: 0.25rem; height: 1.375rem; padding: 0 0.5rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-full); background: transparent; color: var(--ui-text-secondary); font-size: 0.6875rem; cursor: pointer; }
+      .chip.is-active { border-color: var(--dt-primary); background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+
+      /* ── Page-local primitives for the source-filled sections (tokens only) ── */
+      .proto-note { display: flex; align-items: flex-start; gap: 0.375rem; margin-bottom: 1rem; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-lg); padding: 0.375rem 0.625rem; color: var(--ui-text-tertiary); font-size: 0.6875rem; line-height: 1rem; }
+      .control--h8 { height: 2rem; }
+      .control.is-bare { border-color: transparent; background: transparent; box-shadow: none; }
+      .control.is-masked { color: var(--dt-muted-foreground); cursor: pointer; }
+      .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+      .cat-heading { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; font-size: var(--conversation-text-font-size); font-weight: 500; }
+      .cat-heading > .ti { font-size: 1rem; color: var(--dt-muted-foreground); }
+      .docs-link { display: inline-flex; width: fit-content; align-items: center; gap: 0.25rem; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); text-decoration: none; text-underline-offset: 4px; }
+      .docs-link:hover { color: var(--dt-foreground); text-decoration-line: underline; }
+      .scope-chip { border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-full); padding: 0.25rem 0.75rem; background: var(--ui-bg-quinary); color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); cursor: pointer; }
+      .scope-chip:hover { background: var(--chrome-action-hover); }
+      .scope-chip.is-active { border-color: var(--ui-stroke-secondary); background: var(--ui-bg-tertiary); color: var(--ui-text-primary); }
+      .inline-panel { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; border-radius: var(--radius-md); padding: 0.75rem; background: var(--ui-bg-elevated); }
+      .rule-top { margin-top: 2rem; border-top: 1px solid color-mix(in srgb, var(--dt-border) 60%, transparent); padding-top: 1.5rem; }
+
+      /* Billing (billing/index.tsx, plans-view.tsx, tier-art.tsx) */
+      .bill-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+      .bill-summary__value { margin-top: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dt-foreground); font-size: 1.125rem; line-height: 1.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .bill-summary__value.is-ok { color: var(--ui-green); }
+      .tier-art { display: grid; place-items: center; flex-shrink: 0; width: 2.5rem; height: 2.5rem; overflow: hidden; border-radius: var(--radius-md); background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--white) 40%, transparent), transparent 62%), var(--ui-blue); color: var(--white); }
+      .tier-art .ti { font-size: 1.25rem; opacity: 0.9; }
+      .usage-row { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr) 220px; align-items: center; gap: 1rem; padding: 0.75rem 0; }
+      .usage-row__value { color: var(--dt-foreground); font-size: var(--conversation-text-font-size); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+      .meter { position: relative; height: 0.5rem; overflow: hidden; border-radius: var(--radius-full); background: var(--dt-muted); }
+      .meter > span { position: absolute; inset: 0 auto 0 0; min-width: 4px; border-radius: inherit; background: color-mix(in srgb, var(--dt-muted-foreground) 45%, transparent); }
+      .meter > span.is-ok { background: var(--ui-green); }
+      .meter > span.is-danger { background: var(--dt-destructive); }
+      .meter > span.is-primary { background: var(--dt-primary); }
+      .meter--sm { height: 0.375rem; background: var(--ui-bg-tertiary); }
+      .plan-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+      .plan-card { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; border-radius: var(--radius-lg); padding: 1rem; background: var(--ui-bg-quaternary); }
+      .plan-card.is-current { background: color-mix(in srgb, var(--ui-green) 10%, transparent); }
+
+      /* Provider rows (components/onboarding/providers.tsx, providers-settings.tsx) */
+      .prov-list { display: grid; gap: 0.5rem; margin-bottom: 1.25rem; }
+      .prov-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.75rem; border: 0; border-radius: 6px; padding: 0.625rem 0.75rem; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .prov-row:hover { background: var(--ui-control-hover-background); }
+      .prov-row > .ti:last-child { font-size: 1rem; color: var(--dt-muted-foreground); flex-shrink: 0; }
+      .prov-row:hover > .ti:last-child { color: var(--dt-foreground); }
+      .prov-row--featured { border-radius: 8px; background: color-mix(in srgb, var(--dt-primary) 6%, transparent); }
+      .prov-row--featured:hover { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); }
+      .prov-row--featured > .ti:last-child,
+      .prov-row--featured:hover > .ti:last-child { color: var(--dt-primary); }
+      .prov-row__title { font-size: var(--conversation-text-font-size); font-weight: 600; }
+      .prov-row__sub { margin: 0.25rem 0 0; color: var(--dt-muted-foreground); font-size: 0.75rem; line-height: 1.25rem; }
+      .prov-row__hint { margin: 0.125rem 0 0; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); font-size: 0.68rem; line-height: 1.25rem; }
+      .prov-conn { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.25rem; border-radius: 6px; transition: background-color 150ms; }
+      .prov-conn:hover { background: var(--ui-control-hover-background); }
+      .prov-conn > .prov-row:hover { background: transparent; }
+      .prov-conn__trail { display: flex; align-items: center; gap: 0.25rem; padding-right: 0.5rem; }
+      .prov-conn__trail > .ti { font-size: 1rem; color: var(--dt-muted-foreground); }
+      .brand-mini { display: grid; place-items: center; flex-shrink: 0; width: 1.25rem; height: 1.25rem; border-radius: var(--radius-sm); background: var(--brand-tile); color: var(--black); }
+      .rec-tag { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.125rem 0.5rem; background: var(--dt-primary); color: var(--dt-primary-foreground); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+      .rec-tag::before { content: ''; width: 0.5rem; height: 0.5rem; flex-shrink: 0; background: repeating-conic-gradient(currentColor 0 25%, transparent 0 50%) 0 0 / 2px 2px; } /* .dither */
+      .conn-tag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); font-size: 0.75rem; font-weight: 500; }
+      .group-label { margin: 0.75rem 0 0; padding: 0 0.125rem; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); font-weight: 500; }
+
+      /* Credential cards (credential-key-ui.tsx) */
+      .cred-list { display: grid; gap: 0.5rem; }
+      .cred-card { border-radius: 6px; padding: 0.75rem; cursor: pointer; transition: background-color 100ms ease-out; }
+      .cred-card:hover { background: var(--ui-row-hover-background); transition: none; }
+      .cred-card.is-open,
+      .cred-card.is-open:hover { background: var(--ui-bg-quaternary); box-shadow: 0 0 0 1px var(--ui-stroke-secondary); cursor: default; }
+      .cred-card__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem); align-items: start; gap: 0.75rem; }
+      .cred-card__label { display: flex; align-items: center; gap: 0.5rem; height: 2rem; min-width: 0; color: var(--dt-foreground); font-size: var(--conversation-text-font-size); font-weight: 500; }
+      .cred-card__label .ti-chevron-down { flex-shrink: 0; color: var(--dt-muted-foreground); opacity: 0; transition: transform 150ms, opacity 150ms; }
+      .cred-card:hover .cred-card__label .ti-chevron-down { opacity: 1; }
+      .cred-card.is-open .cred-card__label .ti-chevron-down { opacity: 1; transform: rotate(180deg); }
+      .cred-card__more { grid-column: 1 / -1; display: grid; gap: 0.75rem; }
+      .cred-card__more .list-row { padding: 0; }
+      .cred-dot { flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: var(--radius-full); background: var(--ui-stroke-secondary); }
+      .cred-dot.is-set { background: var(--dt-primary); }
+      .cred-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; }
+
+      /* Custom endpoints (custom-endpoints-settings.tsx) */
+      .ep-list { border: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent); border-radius: var(--radius-md); }
+      .ep-list > * + * { border-top: 1px solid color-mix(in srgb, var(--dt-border) 40%, transparent); }
+      .ep-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.75rem; }
+      .ep-form { display: grid; gap: 0.75rem; border: 1px solid color-mix(in srgb, var(--dt-border) 50%, transparent); border-radius: var(--radius-md); padding: 0.75rem; }
+      .form-label { display: grid; gap: 0.375rem; color: var(--dt-muted-foreground); font-size: 0.75rem; }
+
+      /* Local models (local-models-settings.tsx) */
+      .hw-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1.25rem; padding: 0.25rem 0; color: var(--dt-muted-foreground); font-size: var(--conversation-caption-font-size); }
+      .hw-line > span { display: inline-flex; align-items: center; gap: 0.375rem; }
+      .pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin-top: 0.375rem; }
+      .icon-input { position: relative; }
+      .icon-input > .ti { position: absolute; top: 50%; left: 0.625rem; transform: translateY(-50%); color: var(--dt-muted-foreground); pointer-events: none; }
+      .icon-input > input { width: 100%; border: 1px solid var(--dt-border); border-radius: var(--radius-md); padding: 0.375rem 0.75rem 0.375rem 2rem; background: transparent; color: var(--dt-foreground); font-size: 0.8rem; outline: none; }
+      .icon-input > input::placeholder { color: var(--dt-muted-foreground); }
+      .icon-input > input:focus { border-color: var(--dt-primary); }
+
+      /* Gateways (gateway-settings.tsx, connections-registry.tsx, lib/selectable-card.ts) */
+      .mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 0.5rem; }
+      .mode-card { display: flex; flex-direction: column; width: 100%; min-height: 0; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.75rem; background: var(--ui-bg-quinary); color: inherit; text-align: left; cursor: pointer; transition: background-color 150ms, border-color 150ms; }
+      .mode-card:hover { background: var(--chrome-action-hover); }
+      .mode-card.is-active { border-color: var(--dt-primary); background: color-mix(in srgb, var(--dt-primary) 6%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dt-primary) 20%, transparent); }
+      .mode-card__head { display: flex; align-items: center; gap: 0.375rem; }
+      .mode-card__head > .ti:first-child { color: var(--dt-muted-foreground); }
+      .mode-card__title { min-width: 0; font-size: var(--conversation-text-font-size); font-weight: 500; }
+      .mode-card__hint { color: var(--ui-text-tertiary); cursor: help; }
+      .mode-card__check { display: none; margin-left: auto; color: var(--dt-primary); }
+      .mode-card.is-active .mode-card__check { display: inline-block; }
+      .mode-card__desc { flex: 1; margin: 0.375rem 0 0; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); }
+      .action-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; }
+      .agent-wrap { border-radius: var(--radius-md); padding: 0 0.5rem; }
+      .agent-wrap.is-connected { background: color-mix(in srgb, var(--dt-primary) 5%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--dt-primary) 25%, transparent); }
+      .editor-box { display: grid; gap: 0.75rem; margin-top: 1rem; border: 1px solid color-mix(in srgb, var(--dt-border) 60%, transparent); border-radius: var(--radius-lg); padding: 1rem; }
+      .kind-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+
+      /* Keybinds (keybind-settings.tsx) */
+      .kb-list { padding: 0.375rem 0.5rem; }
+      .kb-cat { display: flex; width: fit-content; align-items: center; gap: 0.25rem; border: 0; padding: 0.75rem 0.625rem 0.25rem; background: transparent; line-height: 1; cursor: pointer; }
+      .kb-cat > span { color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+      .kb-cat > .codicon { font-size: 0.6875rem; color: var(--ui-text-tertiary); opacity: 0; transition: opacity 150ms; }
+      .kb-cat:hover > .codicon { opacity: 1; }
+      .kb-row { display: flex; align-items: center; gap: 0.625rem; border-radius: var(--radius-lg); padding: 0.25rem 0.625rem; transition: background-color 150ms; }
+      .kb-row:hover { background: var(--chrome-action-hover); }
+      .kb-row.is-readonly:hover { background: transparent; }
+      .kb-row__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); font-size: 0.82rem; }
+      .kb-row.is-readonly .kb-row__label { color: color-mix(in srgb, var(--dt-foreground) 75%, transparent); }
+      .kb-row__caps { display: flex; flex-shrink: 0; align-items: center; gap: 0.25rem; border: 0; border-radius: var(--radius-lg); padding: 0; background: transparent; cursor: pointer; }
+      .kb-row.is-readonly .kb-row__caps { cursor: default; }
+      .kb-row .kbd-group { gap: 0.25rem; }
+      .kb-row__slot { flex-shrink: 0; width: 1.5rem; height: 1.5rem; }
+
+      /* Plugins (plugins-settings.tsx PluginLine) */
+      .plugin-line { display: flex; align-items: flex-start; gap: 0.75rem; border-radius: var(--radius-lg); padding: 0.5rem 0; }
+      .plugin-line__main { flex: 1; min-width: 0; padding-right: 1rem; }
+      .plugin-line__title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--dt-foreground); font-size: var(--conversation-text-font-size); font-weight: 500; }
+      .plugin-line__desc { margin-top: 0.125rem; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); overflow-wrap: break-word; }
+      .plugin-line__ctl { display: flex; flex-shrink: 0; align-items: center; gap: 0.5rem; }
+      .plain-search { display: block; width: 100%; margin-bottom: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.375rem 0.75rem; background: var(--ui-bg-quinary); color: var(--dt-foreground); font-size: var(--conversation-caption-font-size); outline: none; }
+      .plain-search::placeholder { color: var(--ui-text-tertiary); }
+      .plain-search:focus { border-color: var(--ui-stroke-secondary); }
+
+      /* ToolsetConfigPanel reference (toolset-config-panel.tsx) */
+      .ts-provider { overflow: hidden; border-radius: var(--radius-xl); background: color-mix(in srgb, var(--dt-background) 60%, transparent); }
+      .ts-provider__head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.75rem; border: 0; padding: 0.625rem 0.75rem; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+      .ts-provider__head:hover { background: color-mix(in srgb, var(--dt-accent) 50%, transparent); }
+      .ts-provider__head.is-open { background: color-mix(in srgb, var(--dt-accent) 40%, transparent); }
+      .ts-provider__body { display: grid; gap: 0.5rem; padding: 0.75rem; background: color-mix(in srgb, var(--dt-muted) 20%, transparent); }
+      .ts-env { position: relative; display: grid; gap: 0.5rem; border-radius: var(--radius-lg); padding: 0.625rem; background: color-mix(in srgb, var(--dt-background) 55%, transparent); }
+      .ts-model { display: grid; gap: 0.125rem; width: 100%; border: 1px solid transparent; border-radius: var(--radius-lg); padding: 0.5rem 0.625rem; background: color-mix(in srgb, var(--dt-background) 55%, transparent); color: inherit; text-align: left; cursor: pointer; }
+      .ts-model:hover { background: color-mix(in srgb, var(--dt-accent) 40%, transparent); }
+      .ts-model.is-selected { border-color: var(--ui-stroke-secondary); background: var(--ui-bg-tertiary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner"><div class="msg-user">The gateway auth handshake retries forever when the token is revoked.</div><div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first auth_required event…</p></div></div></div>
+          </div>
+
+          <!-- ═══ Settings overlay ═══ -->
+          <div class="overlay" role="presentation">
+            <div class="overlay-card" style="overflow:visible">
+              <div class="overlay-card__edge"><span class="settings-search"><i class="codicon codicon-search i-xs"></i>Search settings...<span class="kbd kbd--sm ml-auto">/</span></span></div>
+              <div class="overlay-card__strip">
+                <div class="overlay-card__actions">
+                  <button class="btn btn--ghost btn--icon-titlebar overlay-close" aria-label="Close settings"><i class="codicon codicon-close"></i></button>
+                </div>
+              </div>
+              <div class="overlay-card__body" style="overflow:hidden;border-radius:inherit">
+                <div class="split">
+                  <!-- Nav rail (settings/index.tsx:172-306) -->
+                  <aside class="split__nav" aria-label="Settings sections">
+                    <button class="nav-item" data-show="settings:model"><i class="ti ti-box"></i><span>Model</span></button>
+                    <button class="nav-item" data-show="settings:chat"><i class="ti ti-message-circle"></i><span>Chat</span></button>
+                    <button class="nav-item" data-show="settings:appearance"><i class="ti ti-palette"></i><span>Appearance</span></button>
+                    <button class="nav-item" data-show="settings:workspace"><i class="ti ti-device-desktop"></i><span>Workspace</span></button>
+                    <button class="nav-item" data-show="settings:safety"><i class="ti ti-lock"></i><span>Safety</span></button>
+                    <button class="nav-item" data-show="settings:browser"><i class="ti ti-globe"></i><span>Browser</span></button>
+                    <button class="nav-item" data-show="settings:memory"><i class="ti ti-brain"></i><span>Memory &amp; Context</span></button>
+                    <button class="nav-item" data-show="settings:voice"><i class="ti ti-microphone"></i><span>Voice</span></button>
+                    <button class="nav-item" data-show="settings:advanced"><i class="ti ti-tool"></i><span>Advanced</span></button>
+                    <button class="nav-item" data-show="settings:notifications"><i class="ti ti-bell"></i><span>Notifications</span></button>
+                    <button class="nav-item" data-show="settings:billing"><i class="ti ti-chart-bar"></i><span>Billing</span></button>
+                    <div class="nav-gap"></div>
+                    <button class="nav-item" data-show="settings:providers-accounts"><i class="ti ti-bolt"></i><span>Providers</span></button>
+                    <div class="nav-children">
+                      <button class="nav-item nav-item--nested" data-show="settings:providers-accounts"><i class="codicon codicon-account"></i><span>Accounts</span></button>
+                      <button class="nav-item nav-item--nested" data-show="settings:providers-keys"><i class="ti ti-key"></i><span>API keys</span></button>
+                      <button class="nav-item nav-item--nested" data-show="settings:providers-custom"><i class="ti ti-globe"></i><span>Custom Endpoints</span></button>
+                      <button class="nav-item nav-item--nested" data-show="settings:providers-local"><i class="ti ti-cpu"></i><span>Local Models</span></button>
+                    </div>
+                    <button class="nav-item" data-show="settings:gateway"><i class="ti ti-globe"></i><span>Gateways</span></button>
+                    <button class="nav-item" data-show="settings:keybinds"><i class="ti ti-keyboard"></i><span>Keyboard Shortcuts</span></button>
+                    <button class="nav-item" data-show="settings:keys-tools"><i class="ti ti-key"></i><span>Tools &amp; Keys</span></button>
+                    <div class="nav-children">
+                      <button class="nav-item nav-item--nested" data-show="settings:keys-tools"><i class="ti ti-tool"></i><span>Tools</span></button>
+                      <button class="nav-item nav-item--nested" data-show="settings:keys-settings"><i class="ti ti-settings-2"></i><span>Settings</span></button>
+                    </div>
+                    <button class="nav-item" data-show="settings:plugins"><i class="ti ti-package"></i><span>Plugins</span></button>
+                    <button class="nav-item" data-show="settings:sessions"><i class="ti ti-archive"></i><span>Archived Chats</span></button>
+                    <div class="nav-gap"></div>
+                    <button class="nav-item" data-show="settings:about"><i class="ti ti-info-circle"></i><span>About</span></button>
+                    <div class="split__nav-footer">
+                      <button class="btn btn--ghost btn--icon-xs" aria-label="Export config"><i class="ti ti-download i-xs"></i></button>
+                      <button class="btn btn--ghost btn--icon-xs" aria-label="Import config"><i class="ti ti-upload i-xs"></i></button>
+                      <button class="btn btn--ghost btn--icon-xs" aria-label="Reset to defaults"><i class="ti ti-restore i-xs"></i></button>
+                    </div>
+                  </aside>
+
+                  <main class="split__main">
+                    <section data-views="settings" data-default="appearance" class="settings-scroll">
+
+                      <!-- ── Model ── -->
+                      <div data-view="model">
+                        <div class="applies-to">Applies to: <button class="chip is-active">default</button><button class="chip">work</button><button class="chip">researcher</button></div>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-box"></i><span>Model</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Default Model</div><div class="list-row__desc">Model used for new sessions.</div></div><div class="list-row__action"><button class="control select-trigger"><span class="flex items-center gap-1-5"><i class="ti ti-brand-openai i-xs t-tertiary"></i>claude-opus-5 <span class="t-tertiary">· Anthropic</span></span></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Context Length</div><div class="list-row__desc">Override the model's context window. Leave blank to use the provider default.</div><div class="list-row__hint">model_context_length</div></div><div class="list-row__action"><input class="control" placeholder="Auto" /></div></div>
+                          <div class="list-row list-row--wide"><div><div class="list-row__title">Fallback Providers</div><div class="list-row__desc">Tried in order when the default model errors or is rate limited.</div>
+                            <div class="col gap-1" style="margin-top:.625rem">
+                              <div class="flex items-center gap-2 card" style="padding:.375rem .5rem"><i class="codicon codicon-grabber t-quaternary"></i><span class="t-body">deepseek-v4-flash</span><span class="t-tertiary t-xs">DeepSeek</span><button class="btn btn--ghost btn--icon-xs ml-auto" aria-label="Remove"><i class="codicon codicon-close i-xs"></i></button></div>
+                              <div class="flex items-center gap-2 card" style="padding:.375rem .5rem"><i class="codicon codicon-grabber t-quaternary"></i><span class="t-body">mimo-v2.5</span><span class="t-tertiary t-xs">Xiaomi MiMo</span><button class="btn btn--ghost btn--icon-xs ml-auto" aria-label="Remove"><i class="codicon codicon-close i-xs"></i></button></div>
+                              <button class="btn btn--ghost btn--sm" style="justify-self:start;width:max-content"><i class="codicon codicon-add"></i>Add fallback</button>
+                            </div></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Chat ── -->
+                      <div data-view="chat" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-message-circle"></i><span>Chat</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Personality</div><div class="list-row__desc">Default assistant style for new sessions.</div></div><div class="list-row__action"><button class="control select-trigger">Helpful</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Timezone</div><div class="list-row__desc">Used for timestamps and scheduled jobs.</div></div><div class="list-row__action"><button class="control select-trigger">System default</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Show Reasoning</div><div class="list-row__desc">Stream the model's thinking into the transcript.</div></div><div class="list-row__action"><span class="switch is-on" role="switch" aria-checked="true"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Image Input Mode</div><div class="list-row__desc">Controls how image attachments are sent to the model.</div></div><div class="list-row__action"><button class="control select-trigger">Auto</button></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Appearance ── -->
+                      <div data-view="appearance" hidden>
+                        <h2 class="settings-page-title">Appearance</h2>
+                        <p class="settings-page-intro">Desktop-only. Mode is brightness; theme is palette and chat chrome.</p>
+                        <div class="list-row"><div><div class="list-row__title">Color Mode</div><div class="list-row__desc">Pick a fixed mode or let Hermes follow your system setting.</div></div><div class="list-row__action"><div class="seg"><button class="seg__opt"><i class="ti ti-sun"></i>Light</button><button class="seg__opt"><i class="ti ti-moon"></i>Dark</button><button class="seg__opt is-active"><i class="ti ti-device-desktop"></i>System</button></div></div></div>
+                        <div class="list-row list-row--wide"><div><div class="list-row__title">Theme</div><div class="list-row__desc">Desktop palettes only. The selected mode is applied on top. Saved for the default profile — each profile keeps its own theme.</div>
+                          <div class="theme-grid" style="margin-top:.75rem">
+                            <button class="theme-card is-active" style="--sw-side:var(--preset-nous-side);--sw-bg:var(--preset-nous-bg);--sw-fg:var(--preset-nous-fg);--sw-accent:var(--preset-nous-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Nous</span><span class="theme-card__desc">GitHub chrome, Nous blue accent</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-github-side);--sw-bg:var(--preset-github-bg);--sw-fg:var(--preset-github-fg);--sw-accent:var(--preset-github-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">GitHub</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-catppuccin-side);--sw-bg:var(--preset-catppuccin-bg);--sw-fg:var(--preset-catppuccin-fg);--sw-accent:var(--preset-catppuccin-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Catppuccin</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-everforest-side);--sw-bg:var(--preset-everforest-bg);--sw-fg:var(--preset-everforest-fg);--sw-accent:var(--preset-everforest-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Everforest</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-solarized-side);--sw-bg:var(--preset-solarized-bg);--sw-fg:var(--preset-solarized-fg);--sw-accent:var(--preset-solarized-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Solarized</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-nous-alt-side);--sw-bg:var(--preset-nous-alt-bg);--sw-fg:var(--preset-nous-alt-fg);--sw-accent:var(--preset-nous-alt-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Nous Alt</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-midnight-side);--sw-bg:var(--preset-midnight-bg);--sw-fg:var(--preset-midnight-fg);--sw-accent:var(--preset-midnight-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Midnight</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-ember-side);--sw-bg:var(--preset-ember-bg);--sw-fg:var(--preset-ember-fg);--sw-accent:var(--preset-ember-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Ember</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-mono-side);--sw-bg:var(--preset-mono-bg);--sw-fg:var(--preset-mono-fg);--sw-accent:var(--preset-mono-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Mono</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-slate-side);--sw-bg:var(--preset-slate-bg);--sw-fg:var(--preset-slate-fg);--sw-accent:var(--preset-slate-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Slate</span></button>
+                            <button class="theme-card" style="--sw-side:var(--preset-cyberpunk-side);--sw-bg:var(--preset-cyberpunk-bg);--sw-fg:var(--preset-cyberpunk-fg);--sw-accent:var(--preset-cyberpunk-accent)"><span class="theme-card__preview"><span></span><span></span></span><span class="theme-card__name">Cyberpunk</span></button>
+                          </div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Install from VS Code</div><div class="list-row__desc">Paste a Marketplace extension id (e.g. dracula-theme.theme-dracula) to convert its color theme into a desktop palette.</div></div><div class="list-row__action"><input class="control" placeholder="publisher.extension" /><button class="btn btn--secondary">Install</button></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Tool Call Display</div><div class="list-row__desc">Product hides raw tool payloads; Technical shows full input/output.</div></div><div class="list-row__action"><div class="seg"><button class="seg__opt is-active">Product</button><button class="seg__opt">Technical</button></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Collapse thinking by default</div><div class="list-row__desc">Keep streamed reasoning available without expanding it until you open it.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">UI Scale</div><div class="list-row__desc">Scales text and controls across the whole app. Cmd/Ctrl with +, - and 0 also works. Current: 100%.</div></div><div class="list-row__action"><div class="slider"><div class="slider__track"><div class="slider__fill" style="width:50%"></div><div class="slider__thumb" style="left:50%"></div></div><span class="slider__value">100%</span></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Session List Density</div><div class="list-row__desc">Choose how much context appears beneath session titles in the sidebar.</div></div><div class="list-row__action"><div class="seg"><button class="seg__opt is-active">Compact</button><button class="seg__opt">Comfortable</button><button class="seg__opt">Detailed</button></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Tab Strip</div><div class="list-row__desc">Show tabs above a zone. Auto hides them when a zone holds a single pane.</div></div><div class="list-row__action"><div class="seg"><button class="seg__opt is-active">Auto</button><button class="seg__opt">Always</button><button class="seg__opt">Never</button></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Terminal Font</div><div class="list-row__desc">Choose an installed font for Desktop terminals. Nerd Fonts render Powerlevel10k and shell icons; leave blank to use bundled JetBrains Mono.</div></div><div class="list-row__action"><input class="control" placeholder="MesloLGS NF or a CSS font stack" /></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Window Translucency</div><div class="list-row__desc">Matte glass: the desktop shows through as a smooth blur while text stays sharp. Tuned separately for light and dark.</div></div><div class="list-row__action" style="flex-direction:column;align-items:stretch;gap:.5rem"><div class="seg" style="justify-self:end"><button class="seg__opt">Clear</button><button class="seg__opt is-active">Glass</button></div><div class="slider"><span class="t-tertiary t-xs" style="width:2.5rem">Tint</span><div class="slider__track"><div class="slider__fill" style="width:20%"></div><div class="slider__thumb" style="left:20%"></div></div><span class="slider__value">20</span></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Message Bubble</div><div class="list-row__desc">How see-through your own messages are. Solid at 0; only the outline remains at 100.</div></div><div class="list-row__action"><div class="slider"><div class="slider__track"><div class="slider__fill" style="width:0%"></div><div class="slider__thumb" style="left:0%"></div></div><span class="slider__value">0</span></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Chat Backdrop</div><div class="list-row__desc">The faint statue image behind the conversation.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Intro Splash</div><div class="list-row__desc">The wordmark and prompt shown on an empty chat.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Message Reactions</div><div class="list-row__desc">iMessage-style emoji tapbacks — react to messages, and Hermes can react to yours.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Inline Embeds</div><div class="list-row__desc">Rich previews load from third-party sites (YouTube, X, …). Ask shows a placeholder until you allow each one; Always loads them automatically; Off keeps plain links.</div></div><div class="list-row__action"><div class="seg"><button class="seg__opt is-active">Ask</button><button class="seg__opt">Always</button><button class="seg__opt">Off</button></div></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Reopen Last Chat on Launch</div><div class="list-row__desc">When enabled, the app reopens your most recent chat on cold start. Turn off to always start with a fresh new chat.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <section class="settings-section" style="margin-top:1rem">
+                          <div class="section-heading"><i class="ti ti-paw"></i><span>Pet</span><div class="section-heading__aside"><div class="seg"><button class="seg__opt">On</button><button class="seg__opt is-active">Off</button></div></div></div>
+                          <p class="settings-page-intro">Adopt an animated petdex mascot that floats over the app and reacts to what Hermes is doing — running while tools execute, celebrating on success, sulking on errors.</p>
+                        </section>
+                      </div>
+
+                      <!-- ── Workspace ── -->
+                      <div data-view="workspace" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-device-desktop"></i><span>Workspace</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Working Directory</div><div class="list-row__desc">Default project folder for tool and terminal work.</div></div><div class="list-row__action"><div class="control control--affix"><input value="D:\Stuff\Code\git\hermes-android" /><i class="codicon codicon-folder-opened t-tertiary"></i></div></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Scan for Repositories</div><div class="list-row__desc">Find git repos on disk so they appear as projects.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Code Execution Mode</div><div class="list-row__desc">How strictly code execution is scoped to the current project.</div></div><div class="list-row__action"><button class="control select-trigger">Project</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Persistent Shell</div><div class="list-row__desc">Keep shell state between commands when the backend supports it.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Environment Passthrough</div><div class="list-row__desc">Environment variables to pass into tool execution.</div><div class="list-row__hint">comma-separated values</div></div><div class="list-row__action"><input class="control" value="PATH, HOME, GITHUB_TOKEN" /></div></div>
+                          <div class="list-row"><div><div class="list-row__title">File Read Limit</div><div class="list-row__desc">Maximum characters Hermes can read from one file request.</div></div><div class="list-row__action"><input class="control" value="100000" /></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Safety ── -->
+                      <div data-view="safety" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-lock"></i><span>Safety</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Approval Mode</div><div class="list-row__desc">How Hermes handles commands that need explicit approval.</div></div><div class="list-row__action"><button class="control select-trigger">Ask for risky commands</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Approval Timeout</div><div class="list-row__desc">How long approval prompts wait before timing out.</div></div><div class="list-row__action"><input class="control" value="300" /></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Confirm MCP Reloads</div><div class="list-row__desc">Ask before reloading MCP servers mid-session.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Command Allowlist</div><div class="list-row__desc">Commands that never need approval.</div></div><div class="list-row__action"><input class="control" value="git status, ls, npm test" /></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Redact Secrets</div><div class="list-row__desc">Hide detected secrets from model-visible content when possible.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Allow Private URLs</div><div class="list-row__desc">Let web tools reach localhost and private network addresses.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">File Checkpoints</div><div class="list-row__desc">Create rollback snapshots before file edits.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Browser ── -->
+                      <div data-view="browser" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-globe"></i><span>Browser</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Use Real Browser Profile</div><div class="list-row__desc">Local browsing uses your real logins. Hermes copies your default browser's profile into a managed snapshot and drives it with its packaged Chromium. Only Chromium browsers are supported. Off by default.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Allow Private URLs</div><div class="list-row__desc">Let the browser tool open localhost and LAN addresses.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Auto-local for Private URLs</div><div class="list-row__desc">Route private URLs to the local browser even when a cloud backend is configured.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Memory & Context ── -->
+                      <div data-view="memory" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-brain"></i><span>Memory &amp; Context</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Memory</div><div class="list-row__desc">Save durable memories that can help future sessions.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">User Profile</div><div class="list-row__desc">Maintain a compact profile of user preferences.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Memory Provider</div><div class="list-row__desc">Where memories are stored and recalled from.</div></div><div class="list-row__action"><button class="control select-trigger">Built-in only</button><button class="btn btn--secondary btn--sm">Configure</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Context Engine</div><div class="list-row__desc">Strategy for managing long conversations near the context limit.</div></div><div class="list-row__action"><button class="control select-trigger">Compressor</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Auto-Compression</div><div class="list-row__desc">Summarize older context when conversations get large.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Compression Threshold</div><div class="list-row__desc">Share of the context window that triggers compression.</div></div><div class="list-row__action"><input class="control" value="0.8" /></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Voice ── -->
+                      <div data-view="voice" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-microphone"></i><span>Voice</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Text-To-Speech Provider</div><div class="list-row__desc">Voice used when Hermes speaks replies.</div></div><div class="list-row__action"><button class="control select-trigger">Edge</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Edge Voice</div></div><div class="list-row__action"><button class="control select-trigger">en-US-AriaNeural</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Speech To Text</div><div class="list-row__desc">Enable local or provider-backed speech transcription.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Speech-To-Text Provider</div></div><div class="list-row__action"><button class="control select-trigger">Local (Whisper)</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Auto-Speak Replies</div><div class="list-row__desc">Automatically speak assistant responses.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Record Key</div><div class="list-row__desc">Hold to talk.</div></div><div class="list-row__action"><span class="kbd-group"><span class="kbd">Ctrl</span><span class="kbd">Space</span></span></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Advanced ── -->
+                      <div data-view="advanced" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-tool"></i><span>Advanced</span></div>
+                          <div class="list-row"><div><div class="list-row__title">Execution Backend</div><div class="list-row__desc">Where terminal and code tools run.</div></div><div class="list-row__action"><button class="control select-trigger">Local</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Command Timeout</div></div><div class="list-row__action"><input class="control" value="180" /></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Max Turns</div><div class="list-row__desc">Upper bound for tool-calling turns before Hermes stops a run.</div></div><div class="list-row__action"><input class="control" value="90" /></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Subagent Model</div></div><div class="list-row__action"><button class="control select-trigger">Same as main</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Quick Entry</div><div class="list-row__desc">Summon a small composer from anywhere with a global shortcut and fire a prompt without opening Hermes.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Quick Entry shortcut</div><div class="list-row__desc">Needs at least one modifier, e.g. CommandOrControl+Shift+Space.</div></div><div class="list-row__action"><span class="kbd-group"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">Space</span></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Keep computer awake</div><div class="list-row__desc">Stop this machine from sleeping so long or overnight runs keep going. The display can still dim.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Disable F12 DevTools</div><div class="list-row__desc">Block F12 from opening Developer Tools. Ctrl+Shift+I (or Cmd+Opt+I on Mac) still works.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Notifications ── -->
+                      <div data-view="notifications" hidden>
+                        <h2 class="settings-page-title">Notifications</h2>
+                        <p class="settings-page-intro">OS notifications (not in-app toasts). Per device.</p>
+                        <div class="list-row"><div><div class="list-row__title">Enable notifications</div><div class="list-row__desc">Off silences every notification below.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="hairline"></div>
+                        <div class="list-row"><div><div class="list-row__title">Approval needed</div><div class="list-row__desc">A command is waiting for you to approve or reject it.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Input needed</div><div class="list-row__desc">Hermes asked a question or needs a password or secret.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Response ready</div><div class="list-row__desc">A turn finished while Hermes was in the background.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Turn failed</div><div class="list-row__desc">Background turn errors.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Background task finished</div><div class="list-row__desc">A backgrounded terminal command completed.</div></div><div class="list-row__action"><span class="switch"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Credit alerts</div><div class="list-row__desc">Credit access is paused or restored.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <div class="list-row"><div><div class="list-row__title">Plugin notifications</div><div class="list-row__desc">A desktop plugin sent a notification while Hermes was in the background.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        <p class="t-tertiary t-caption">Completion alerts only fire while Hermes is in the background.</p>
+                        <button class="btn btn--secondary">Send test notification</button>
+                        <div class="list-row" style="margin-top:1rem"><div><div class="list-row__title">Completion Sound</div><div class="list-row__desc">Plays when an agent turn finishes. Pick a preset and preview it here.</div></div><div class="list-row__action"><button class="control select-trigger">Chime</button><button class="btn btn--ghost btn--sm"><i class="ti ti-player-play"></i>Preview</button></div></div>
+                      </div>
+
+                      <!-- ── About ── -->
+                      <div data-view="about" hidden>
+                        <div class="flex items-center gap-3" style="margin:.25rem 0 1.25rem">
+                          <span class="center" style="width:3.5rem;height:3.5rem;border-radius:var(--radius-md);background:var(--brand-tile);color:var(--black)"><i class="ti ti-feather i-xl"></i></span>
+                          <div><div class="t-semibold" style="font-size:.9375rem">Hermes Desktop</div><div class="t-tertiary t-caption">Version 0.9.2</div><div class="t-quaternary t-mono" style="font-size:.625rem">Branch main · Commit b973068</div></div>
+                        </div>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-refresh"></i><span>Updates</span><div class="section-heading__aside"><button class="btn btn--secondary btn--sm">Check now</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">You're on the latest version.</div><div class="list-row__desc">Last checked 12 min ago</div></div><div class="list-row__action"><button class="btn btn--link">Release notes</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Automatic updates</div><div class="list-row__desc">Hermes checks for updates automatically in the background and lets you know when one is ready.</div></div><div class="list-row__action"><span class="switch is-on"></span></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Billing (settings/billing/index.tsx) — fixture: subscriber-personal ── -->
+                      <div data-view="billing" hidden>
+                        <div class="section-heading"><i class="ti ti-chart-bar"></i><span>Billing</span></div>
+                        <div class="bill-summary">
+                          <div><div class="t-caption t-tertiary">Balance</div><div class="bill-summary__value">$142.50</div></div>
+                          <div><div class="t-caption t-tertiary">Plan</div><div class="bill-summary__value">Plus · $20/mo</div></div>
+                          <div><div class="t-caption t-tertiary">Auto-refill</div><div class="bill-summary__value is-ok">Enabled</div></div>
+                        </div>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-package"></i><span>Plan</span></div>
+                          <div class="list-row">
+                            <div class="flex items-center gap-3">
+                              <span class="tier-art" aria-hidden="true" title="Tier art (feature-memory.webp, screen blend)"><i class="ti ti-brain"></i></span>
+                              <div class="grow"><div class="flex gap-2" style="align-items:baseline"><span class="list-row__title t-truncate">Plus</span><span class="t-caption t-tertiary">$20/mo</span></div><div class="t-caption t-tertiary" style="margin-top:.25rem">Renews Aug 15, 2026</div></div>
+                            </div>
+                            <div class="list-row__action"><button class="btn btn--outline btn--sm" type="button" data-show="settings:billing-plans">Change plan</button></div>
+                          </div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-credit-card"></i><span>Payment &amp; credits</span><div class="section-heading__aside"><span class="flex items-center" style="gap:.625rem"><span class="t-caption t-tertiary t-truncate" style="font-weight:400">Visa •••• 4242 - subscription card</span><button class="btn btn--text-strong btn--sm" type="button">Update</button></span></div></div>
+                          <div class="list-row">
+                            <div><div class="list-row__title">Buy credits now</div><div class="list-row__desc">A single charge on your card, added to your balance today.</div></div>
+                            <div class="list-row__action" style="flex-wrap:wrap;justify-content:flex-end">
+                              <div class="seg"><button class="seg__opt is-active" type="button">$25</button><button class="seg__opt" type="button">$50</button><button class="seg__opt" type="button">$100</button></div>
+                              <label class="control control--xs control--affix" style="width:4rem"><span class="t-tertiary">$</span><input aria-label="Custom credit amount" inputmode="decimal" value="25" /></label>
+                              <button class="btn btn--secondary btn--xs" type="button">Buy</button>
+                            </div>
+                          </div>
+                          <div data-views="refill" data-default="view">
+                            <!-- Resting state: the edit form is laid out but invisible (zero-shift reservation). -->
+                            <div data-view="view">
+                              <div class="list-row" style="align-items:start">
+                                <div>
+                                  <div class="list-row__title">Refill when low</div>
+                                  <div class="list-row__desc">Charges $10 automatically when your balance falls below $5.</div>
+                                  <div aria-hidden="true" style="visibility:hidden;margin-top:.75rem;display:grid;gap:.5rem">
+                                    <div class="grid-2"><label class="t-caption t-tertiary">Threshold<input class="control control--sm" style="margin-top:.25rem" value="5" tabindex="-1" /></label><label class="t-caption t-tertiary">Reload to<input class="control control--sm" style="margin-top:.25rem" value="10" tabindex="-1" /></label></div>
+                                    <div style="min-height:1rem"></div>
+                                    <button class="btn btn--outline btn--sm" style="justify-self:start" tabindex="-1">Disable</button>
+                                  </div>
+                                </div>
+                                <div class="list-row__action"><span class="badge">Enabled</span><button class="btn btn--outline btn--sm" type="button" data-show="refill:edit">Manage</button></div>
+                              </div>
+                            </div>
+                            <div data-view="edit" hidden>
+                              <div class="list-row" style="align-items:start">
+                                <div>
+                                  <div class="list-row__title">Refill when low</div>
+                                  <div class="list-row__desc">Charges $10 automatically when your balance falls below $5.</div>
+                                  <div style="margin-top:.75rem;display:grid;gap:.5rem">
+                                    <div class="grid-2"><label class="t-caption t-tertiary">Threshold<input class="control control--sm is-focused" style="margin-top:.25rem" inputmode="decimal" aria-label="Auto-refill threshold" value="5" /></label><label class="t-caption t-tertiary">Reload to<input class="control control--sm" style="margin-top:.25rem" inputmode="decimal" aria-label="Auto-refill reload-to amount" value="10" /></label></div>
+                                    <div class="t-caption t-danger" style="min-height:1rem"></div>
+                                    <button class="btn btn--outline btn--sm" style="justify-self:start" type="button">Disable</button>
+                                  </div>
+                                </div>
+                                <div class="list-row__action"><span class="badge">Enabled</span><button class="btn btn--default btn--sm" type="button" data-show="refill:view">Save</button><button class="btn btn--outline btn--sm" type="button" data-show="refill:view">Cancel</button></div>
+                              </div>
+                            </div>
+                          </div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-chart-bar"></i><span>Usage</span></div>
+                          <div class="usage-row">
+                            <div><div class="list-row__title">Subscription credits</div><div class="t-caption t-tertiary" style="margin-top:.25rem">Resets Aug 15, 2026</div></div>
+                            <div class="meter" role="progressbar" aria-label="Subscription credits remaining" aria-valuenow="55"><span class="is-ok" style="width:55%"></span></div>
+                            <div class="usage-row__value">$12 of $22 left</div>
+                          </div>
+                          <div class="usage-row">
+                            <div><div class="list-row__title">Top-up credits</div><div class="t-caption t-tertiary" style="margin-top:.25rem">Does not expire</div></div>
+                            <div class="meter" role="progressbar" aria-label="Top-up credits usage" aria-valuenow="0"><span style="width:0;min-width:0"></span></div>
+                            <div class="usage-row__value">$75</div>
+                          </div>
+                          <div class="usage-row">
+                            <div><div class="list-row__title">Monthly spend cap</div><div class="t-caption t-tertiary" style="margin-top:.25rem">Monthly remote spending</div></div>
+                            <div class="meter" role="progressbar" aria-label="Monthly spend cap used" aria-valuenow="18"><span style="width:18%"></span></div>
+                            <div class="usage-row__value">$180 of $1,000 used</div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <!-- ── Billing › Plans (settings/billing/plans-view.tsx) ── -->
+                      <div data-view="billing-plans" hidden>
+                        <div class="section-heading"><i class="ti ti-chart-bar"></i><span>Billing</span></div>
+                        <div class="section-heading"><button class="btn btn--ghost t-tertiary" style="width:1.75rem;height:1.75rem;padding:0" type="button" aria-label="Back to billing" data-show="settings:billing"><i class="ti ti-chevron-left i-md"></i></button><span>Plans</span></div>
+                        <div class="plan-grid">
+                          <div class="plan-card">
+                            <div class="flex items-center gap-3"><span class="tier-art" aria-hidden="true" title="feature-connect.webp, screen blend"><i class="ti ti-plug-connected"></i></span><div class="grow"><div class="list-row__title t-truncate">Free</div><div class="t-caption t-tertiary">$0/mo</div></div></div>
+                            <div class="t-caption t-tertiary">$0.1 credits/mo</div>
+                            <div style="margin-top:auto;padding-top:.25rem">
+                              <!-- DowngradeConfirm, open (phase ready · effect scheduled) -->
+                              <div class="inline-panel" role="status" aria-live="polite">
+                                <div class="t-caption t-tertiary">Change to Free — takes effect Aug 15, 2026. No charge now; you keep your current plan until then. Monthly credits change: −$21.90/mo.</div>
+                                <div class="flex items-center gap-2" style="flex-wrap:wrap"><button class="btn btn--default btn--sm" type="button">Confirm downgrade</button><button class="btn btn--outline btn--sm" type="button">Cancel</button></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="plan-card is-current">
+                            <div class="flex items-center gap-3"><span class="tier-art" aria-hidden="true" title="feature-memory.webp, screen blend"><i class="ti ti-brain"></i></span><div class="grow"><div class="list-row__title t-truncate">Plus</div><div class="t-caption t-tertiary">$20/mo</div></div></div>
+                            <div class="t-caption t-tertiary">$22 credits/mo</div>
+                            <div style="margin-top:auto;padding-top:.25rem"><span class="badge">Current plan</span></div>
+                          </div>
+                          <div class="plan-card">
+                            <div class="flex items-center gap-3"><span class="tier-art" aria-hidden="true" title="feature-automation.webp, lighten blend"><i class="ti ti-bolt"></i></span><div class="grow"><div class="list-row__title t-truncate">Super</div><div class="t-caption t-tertiary">$100/mo</div></div></div>
+                            <div class="t-caption t-tertiary">$110 credits/mo</div>
+                            <div style="margin-top:auto;padding-top:.25rem"><button class="btn btn--outline btn--sm" type="button">Choose ↗<i class="ti ti-external-link"></i></button></div>
+                          </div>
+                          <div class="plan-card">
+                            <div class="flex items-center gap-3"><span class="tier-art" aria-hidden="true" title="feature-sandbox.webp, normal blend"><i class="ti ti-box"></i></span><div class="grow"><div class="list-row__title t-truncate">Ultra</div><div class="t-caption t-tertiary">$200/mo</div></div></div>
+                            <div class="t-caption t-tertiary">$220 credits/mo</div>
+                            <div style="margin-top:auto;padding-top:.25rem"><button class="btn btn--outline btn--sm" type="button">Choose ↗<i class="ti ti-external-link"></i></button></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- ── Providers › Accounts (providers-settings.tsx OAuthPicker, onboarding/providers.tsx rows) ── -->
+                      <div data-view="providers-accounts" hidden>
+                        <section class="prov-list">
+                          <div class="flex justify-between" style="flex-wrap:wrap;align-items:baseline;column-gap:.75rem">
+                            <div class="cat-heading"><i class="ti ti-key"></i><span>Connect an account</span></div>
+                            <button class="btn btn--text-strong" style="padding:0;font-size:var(--conversation-caption-font-size)" type="button" data-show="settings:providers-keys">Have an API key instead?</button>
+                          </div>
+                          <p class="t-caption t-tertiary" style="margin:-.5rem 0 .25rem">Sign in with a subscription — no API key to copy. Hermes runs the browser sign-in for you, right here in the app.</p>
+                          <button class="prov-row prov-row--featured" type="button">
+                            <div class="grow">
+                              <div class="flex items-center gap-2"><span class="brand-mini" aria-hidden="true"><i class="ti ti-feather i-xs"></i></span><span class="prov-row__title">Nous Portal</span><span class="rec-tag">Recommended</span></div>
+                              <p class="prov-row__sub">One subscription, 300+ frontier models — the recommended way to run Hermes</p>
+                            </div>
+                            <i class="ti ti-chevron-right"></i>
+                          </button>
+                          <p class="group-label">Connected</p>
+                          <div class="prov-conn">
+                            <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-row__title t-truncate">ChatGPT or Codex Subscription</span><span class="conn-tag"><i class="ti ti-check i-xs"></i>Connected</span></div><p class="prov-row__sub">Opens your browser to sign in, then continues here</p></div></button>
+                            <div class="prov-conn__trail"><i class="ti ti-chevron-right"></i><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Remove ChatGPT or Codex Subscription"><i class="ti ti-trash i-xs"></i></button></div>
+                          </div>
+                          <div class="prov-conn">
+                            <button class="prov-row" type="button"><div class="grow"><div class="flex items-center gap-2"><span class="prov-row__title t-truncate">Qwen Code</span><span class="conn-tag"><i class="ti ti-check i-xs"></i>Connected</span></div><p class="prov-row__sub">Sign in once in your terminal, then come back to chat</p><p class="prov-row__hint t-truncate">Qwen Code is managed by its own CLI — remove it there.</p></div></button>
+                            <div class="prov-conn__trail"><i class="ti ti-terminal-2"></i></div>
+                          </div>
+                          <p class="group-label">Other providers</p>
+                          <button class="prov-row" type="button"><div class="grow"><span class="prov-row__title">MiniMax</span><p class="prov-row__sub">Opens a verification page in your browser — Hermes connects automatically</p></div><i class="ti ti-chevron-right"></i></button>
+                          <button class="prov-row" type="button"><div class="grow"><span class="prov-row__title">xAI Grok</span><p class="prov-row__sub">Opens your browser to sign in, then continues here</p></div><i class="ti ti-chevron-right"></i></button>
+                          <button class="prov-row" type="button"><div class="grow"><span class="prov-row__title">Anthropic API Key</span><p class="prov-row__sub">Opens your browser to sign in, then continues here</p></div><i class="ti ti-chevron-right"></i></button>
+                          <button class="prov-row" type="button"><div class="grow"><span class="prov-row__title">Anthropic OAuth: Required Extra Usage Credits to Use Subscription</span><p class="prov-row__sub">Sign in once in your terminal, then come back to chat</p></div><i class="ti ti-terminal-2"></i></button>
+                          <button class="prov-row" type="button" data-show="settings:providers-keys"><div class="grow"><span class="prov-row__title">Fireworks AI</span><p class="prov-row__sub">Direct model API — Fireworks-hosted frontier models</p></div><i class="ti ti-chevron-right"></i></button>
+                          <button class="prov-row" type="button" data-show="settings:providers-keys"><div class="grow"><span class="prov-row__title">OpenRouter</span><p class="prov-row__sub">One key, hundreds of models — a solid default</p></div><i class="ti ti-chevron-right"></i></button>
+                          <button class="btn btn--text" style="justify-self:start;padding:.25rem 0;font-size:var(--conversation-caption-font-size)" type="button">Collapse<i class="ti ti-chevron-down" style="transform:rotate(180deg)"></i></button>
+                        </section>
+                      </div>
+
+                      <!-- ── Providers › API keys (providers-settings.tsx keys view + credential-key-ui.tsx ProviderKeyRows) ── -->
+                      <div data-view="providers-keys" hidden>
+                        <button class="prov-row" style="display:grid;grid-template-columns:minmax(0,1fr) auto" type="button" data-show="settings:providers-custom">
+                          <div class="col" style="gap:.125rem;min-width:0"><span class="prov-row__title t-truncate">Local / custom endpoint</span><span class="t-truncate" style="color:var(--dt-muted-foreground);font-size:var(--conversation-caption-font-size);line-height:1.25rem">Point Hermes at any OpenAI-compatible endpoint (Zyphra, vLLM, llama.cpp, Ollama, etc).</span></div>
+                          <i class="ti ti-chevron-right"></i>
+                        </button>
+                        <div class="col gap-3">
+                          <label class="search-field" style="width:100%"><i class="ti ti-search" style="color:var(--dt-muted-foreground)"></i><input aria-label="Search providers…" placeholder="Search providers…" /></label>
+                          <div class="cred-list">
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Nous Portal</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Nous Portal key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Fireworks AI</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Fireworks AI key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">OpenRouter</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="sk-or-v1…••••c2d7" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Anthropic</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Anthropic key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">xAI</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste xAI key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Gemini</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Gemini key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">DeepSeek</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="sk-…••••8e10" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">DashScope (Qwen)</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste DashScope (Qwen) key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Kimi / Moonshot</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Kimi / Moonshot key" /></div></div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">Hugging Face</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste Hugging Face key" /></div></div>
+                            <!-- Expanded group: description, advanced (non-key) fields as ListRows, docs link -->
+                            <div class="cred-card is-open">
+                              <div class="cred-card__grid">
+                                <div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">Xiaomi MiMo</span><i class="ti ti-chevron-down"></i></div>
+                                <input class="control control--h8 is-masked" readonly value="••••••••a91f" />
+                                <div class="cred-card__more">
+                                  <p class="t-caption t-tertiary" style="margin:0">MiMo-V2.5 and Xiaomi proprietary models</p>
+                                  <div class="list-row"><div><div class="list-row__title">Xiaomi MiMo base URL override (default: https://api.xiaomimimo.com/v1)</div></div><div class="list-row__action"><input class="control control--h8" placeholder="https://…" /></div></div>
+                                  <a class="docs-link" href="#">Get a key <i class="ti ti-external-link i-xs"></i></a>
+                                </div>
+                              </div>
+                            </div>
+                            <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">AWS Bedrock</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste AWS Bedrock key" /></div></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- ── Providers › Custom Endpoints (custom-endpoints-settings.tsx) ── -->
+                      <div data-view="providers-custom" hidden>
+                        <section style="margin-bottom:1.5rem">
+                          <div class="section-heading"><i class="ti ti-globe"></i><span>Custom Endpoints</span><span class="badge badge--muted">2</span></div>
+                          <div class="ep-list">
+                            <div class="ep-row">
+                              <button class="grow" style="border:0;background:transparent;padding:0;text-align:left;color:inherit;cursor:pointer" type="button">
+                                <div class="flex items-center gap-2"><span class="t-sm t-medium t-truncate">Axet Proxy</span><span class="badge"><i class="ti ti-check i-xs"></i>Active</span></div>
+                                <div class="t-mono t-truncate t-muted" style="margin-top:.25rem;font-size:.7rem">http://127.0.0.1:8081/v1</div>
+                                <div class="flex gap-2 t-muted" style="margin-top:.25rem;font-size:.75rem;flex-wrap:wrap"><span>gpt-5.4</span><span>sk-…3f2a</span></div>
+                              </button>
+                              <div class="flex items-center gap-2"><button class="btn btn--outline btn--sm" type="button" disabled><i class="ti ti-bolt"></i>Use</button><button class="btn btn--ghost btn--icon-sm" type="button" title="Delete endpoint"><i class="ti ti-trash"></i></button></div>
+                            </div>
+                            <div class="ep-row">
+                              <button class="grow" style="border:0;background:transparent;padding:0;text-align:left;color:inherit;cursor:pointer" type="button">
+                                <div class="flex items-center gap-2"><span class="t-sm t-medium t-truncate">LM Studio</span><span class="badge badge--muted">config.yaml</span></div>
+                                <div class="t-mono t-truncate t-muted" style="margin-top:.25rem;font-size:.7rem">http://localhost:1234/v1</div>
+                                <div class="flex gap-2 t-muted" style="margin-top:.25rem;font-size:.75rem"><span>qwen3-8b</span></div>
+                              </button>
+                              <div class="flex items-center gap-2"><button class="btn btn--outline btn--sm" type="button"><i class="ti ti-bolt"></i>Use</button></div>
+                            </div>
+                          </div>
+                        </section>
+                        <section>
+                          <div class="section-heading"><i class="ti ti-plus"></i><span>Edit Endpoint</span></div>
+                          <div class="ep-form">
+                            <div class="grid-2">
+                              <label class="form-label">Name<input class="control" placeholder="Axet Proxy" value="Axet Proxy" /></label>
+                              <label class="form-label">Provider ID<input class="control" placeholder="axet-proxy" value="axet-proxy" /></label>
+                            </div>
+                            <label class="form-label">Endpoint URL<input class="control" placeholder="http://127.0.0.1:8081/v1" value="http://127.0.0.1:8081/v1" /></label>
+                            <div style="display:grid;grid-template-columns:minmax(0,1fr) 12rem;gap:.75rem">
+                              <label class="form-label">Default Model<input class="control" placeholder="gpt-5.4" value="gpt-5.4" /></label>
+                              <label class="form-label">Context<input class="control" inputmode="numeric" placeholder="Auto" /></label>
+                            </div>
+                            <label class="form-label">API Key<input class="control" type="password" placeholder="Leave blank to keep current key" /></label>
+                            <div class="flex items-center gap-4 t-muted" style="flex-wrap:wrap;font-size:.75rem">
+                              <label class="flex items-center gap-2"><span class="checkbox is-on" role="checkbox" aria-checked="true"></span>Use for new chats</label>
+                              <label class="flex items-center gap-2"><span class="checkbox is-on" role="checkbox" aria-checked="true"></span>Discover models</label>
+                            </div>
+                            <div class="flex gap-2" style="flex-wrap:wrap">
+                              <button class="btn btn--outline" type="button"><i class="ti ti-bolt"></i>Test</button>
+                              <button class="btn btn--default" type="button"><i class="ti ti-device-floppy"></i>Save</button>
+                              <button class="btn btn--ghost" type="button">New endpoint</button>
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <!-- ── Providers › Local Models (local-models-settings.tsx) — --local flag only ── -->
+                      <div data-view="providers-local" hidden>
+                        <div class="proto-note"><i class="ti ti-flag i-xs" style="margin-top:.125rem"></i><span>Ships behind the <span class="code-inline">--local</span> launch flag. Without it this nav entry, the Accounts "Run models locally" row and the pane itself do not render. Shown: runtime installed and serving; first run shows the centered quickstart hero instead.</span></div>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-bolt"></i><span>Local runtime</span><span class="badge badge--muted">b6523</span><div class="section-heading__aside"><span class="badge">Running</span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">llama.cpp runtime installed</div><div class="list-row__desc">The local server is running. Turning it off frees all GPU memory and stops new chats from using local models until you turn it back on.</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button"><i class="ti ti-player-stop"></i>Turn off</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-circle-check i-md t-success"></i>Engine up to date</div><div class="list-row__desc">Running llama.cpp b6523 (cuda) — the latest build Hermes ships.</div></div></div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-device-desktop"></i><span>This machine</span></div>
+                          <div class="hw-line"><span><i class="ti ti-bolt"></i>NVIDIA GeForce RTX 4070</span><span><i class="ti ti-cpu"></i>12.0 GB GPU memory</span><span><i class="ti ti-package"></i>31.9 GB RAM</span></div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-download"></i><span>Models</span><span class="badge badge--muted">4</span></div>
+                          <div class="col gap-1">
+                            <div class="list-row">
+                              <div><div class="list-row__title flex items-center gap-2">Qwen3 8B<span class="badge">Recommended</span></div>
+                                <div class="list-row__desc">Fast general-purpose chat and tool use.<span class="pill-row"><span class="badge badge--success"><i class="ti ti-cpu i-xs"></i>Fits your GPU</span><span class="badge badge--success">Full 32K context</span></span></div></div>
+                              <div class="list-row__action"><span class="badge badge--success"><i class="ti ti-cpu i-xs"></i>32K · all on GPU</span><span class="badge"><i class="ti ti-check i-xs"></i>Default</span><button class="btn btn--ghost btn--icon" type="button" aria-label="Free GPU memory (loads again on the next message)"><i class="ti ti-player-eject"></i></button><button class="btn btn--ghost btn--icon" type="button" aria-label="Delete model"><i class="ti ti-trash"></i></button></div>
+                            </div>
+                            <div class="list-row">
+                              <div><div class="list-row__title">Gemma 3 12B</div>
+                                <div class="list-row__desc">Stronger reasoning and image understanding; slower on this GPU.<span class="pill-row"><span class="badge badge--warn"><i class="ti ti-cpu i-xs"></i>Uses system RAM</span><span class="badge badge--muted">Up to 128K context</span><span class="badge badge--muted">Sees images</span></span></div></div>
+                              <div class="list-row__action"><button class="btn btn--default btn--sm" type="button"><i class="ti ti-check"></i>Use</button><button class="btn btn--ghost btn--icon" type="button" aria-label="Delete model"><i class="ti ti-trash"></i></button></div>
+                            </div>
+                            <div class="list-row">
+                              <div><div class="list-row__title">Mistral Small 3.2 24B</div>
+                                <div class="list-row__desc">Long-context coding model.<span class="pill-row"><span class="badge badge--warn"><i class="ti ti-cpu i-xs"></i>Uses system RAM</span><span class="badge badge--muted">Up to 128K context</span></span></div>
+                                <div class="col gap-1" style="margin-top:.5rem"><div class="meter meter--sm"><span class="is-primary" style="width:22%"></span></div><p class="t-muted" style="margin:0;font-size:.68rem">Downloading 3.1 GB of 14.3 GB</p></div></div>
+                            </div>
+                            <div class="list-row">
+                              <div><div class="list-row__title">Llama 3.3 70B</div>
+                                <div class="list-row__desc">Frontier-class open model.<span class="pill-row"><span class="badge badge--destructive"><i class="ti ti-cpu i-xs"></i>Too big for this machine</span><span class="badge badge--muted">Up to 128K context</span></span></div></div>
+                              <div class="list-row__action"><button class="btn btn--outline btn--sm" type="button" disabled><i class="ti ti-download"></i>Download · 42.5 GB</button></div>
+                            </div>
+                          </div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-search"></i><span>Find more models</span><div class="section-heading__aside"><button class="btn btn--outline btn--sm" type="button"><i class="ti ti-folder-open"></i>Add model file</button></div></div>
+                          <p class="t-muted" style="margin:0 0 .5rem;font-size:.75rem">Search all of Hugging Face. Models you download here are sized to your machine automatically, but not tested by us.</p>
+                          <div class="icon-input"><i class="ti ti-search"></i><input placeholder="Search models by name or author…" /></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Gateways (gateway-settings.tsx + connections-registry.tsx + managed-updates-section.tsx) ── -->
+                      <div data-view="gateway" hidden>
+                        <div style="margin-bottom:1.25rem">
+                          <div class="flex items-center gap-2 t-body t-medium"><i class="ti ti-globe i-md t-muted"></i>Gateway Connection</div>
+                          <p class="t-caption t-tertiary" style="margin:.5rem 0 0;max-width:42rem">Local by default. Use remote when this app should drive a Hermes backend elsewhere. Gateway connections are machine-level; profiles are discovered from the gateways you connect.</p>
+                        </div>
+                        <div class="col gap-2" style="margin-bottom:1.25rem">
+                          <div class="t-caption t-medium t-secondary">Connection mode</div>
+                          <div class="mode-grid">
+                            <button class="mode-card" type="button" data-show="gateway-mode:local"><div class="mode-card__head"><i class="ti ti-device-desktop"></i><span class="mode-card__title">Local gateway</span><i class="ti ti-check mode-card__check"></i></div><p class="mode-card__desc">Start a private Hermes backend on localhost. This is the default and works offline.</p></button>
+                            <button class="mode-card" type="button" data-show="gateway-mode:cloud"><div class="mode-card__head"><i class="ti ti-cloud"></i><span class="mode-card__title">Hermes Cloud</span><i class="ti ti-check mode-card__check"></i></div><p class="mode-card__desc">Sign in once to Hermes Cloud and pick from the agents on your account — no URL to paste.</p></button>
+                            <button class="mode-card" type="button" data-show="gateway-mode:remote"><div class="mode-card__head"><i class="ti ti-globe"></i><span class="mode-card__title">Remote gateway</span><i class="ti ti-help-circle mode-card__hint" title="Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token."></i><i class="ti ti-check mode-card__check"></i></div><p class="mode-card__desc">Connect this desktop shell to a remote Hermes backend.</p></button>
+                            <button class="mode-card" type="button" data-show="gateway-mode:ssh"><div class="mode-card__head"><i class="ti ti-terminal-2"></i><span class="mode-card__title">Connect via SSH</span><i class="ti ti-help-circle mode-card__hint" title="The first presented host key is trusted and pinned; later changes fail closed."></i><i class="ti ti-check mode-card__check"></i></div><p class="mode-card__desc">Hermes is launched on the remote over SSH and tunneled to this app — nothing to start or expose yourself. Requires working key-based SSH access to the host.</p></button>
+                          </div>
+                        </div>
+                        <div data-views="gateway-mode" data-default="local">
+                          <div data-view="local">
+                            <div class="action-row"><button class="btn btn--text-strong btn--sm" type="button">Save for next restart</button><button class="btn btn--default btn--sm" type="button">Save and reconnect</button></div>
+                          </div>
+                          <div data-view="cloud" hidden>
+                            <div class="col gap-1" style="margin-top:1.25rem">
+                              <div class="list-row"><div><div class="list-row__title">Hermes Cloud</div><div class="list-row__desc">You are signed in. Pick an agent below; the session refreshes automatically.</div></div><div class="list-row__action"><span class="badge"><i class="ti ti-check i-xs"></i> Signed in to Hermes Cloud</span><button class="btn btn--outline" type="button">Sign out</button></div></div>
+                              <div style="margin-top:.75rem">
+                                <div class="flex items-center justify-between" style="margin-bottom:.5rem"><div class="t-caption t-medium t-secondary">Your agents</div><div class="flex items-center gap-2"><button class="btn btn--text btn--sm" type="button">Change org</button><button class="btn btn--text btn--sm" type="button"><i class="ti ti-refresh"></i>Refresh</button></div></div>
+                                <div class="col gap-1">
+                                  <div class="agent-wrap is-connected"><div class="list-row"><div><div class="list-row__title">Research agent</div><div class="list-row__desc">Status: running</div></div><div class="list-row__action"><span class="badge"><i class="ti ti-check i-xs"></i>Connected</span></div></div></div>
+                                  <div class="agent-wrap"><div class="list-row"><div><div class="list-row__title">Ops agent</div><div class="list-row__desc">Status: running</div></div><div class="list-row__action"><button class="btn btn--default btn--sm" type="button">Connect</button></div></div></div>
+                                  <div class="agent-wrap"><div class="list-row"><div><div class="list-row__title">Staging</div><div class="list-row__desc">Status: provisioning</div></div><div class="list-row__action"><button class="btn btn--default btn--sm" type="button" disabled>Provisioning…</button></div></div></div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div data-view="remote" hidden>
+                            <div class="col gap-1" style="margin-top:1.25rem">
+                              <div class="list-row"><div><div class="list-row__title">Remote URL</div><div class="list-row__desc">Base URL for the remote dashboard backend. Path prefixes are supported, for example /hermes.</div></div><div class="list-row__action"><input class="control control--h8" placeholder="https://gateway.example.com/hermes" value="https://hermes.homelab.lan" /></div></div>
+                              <div class="list-row"><div><div class="list-row__title">Authentication</div><div class="list-row__desc">This gateway uses OAuth. You are signed in; the session refreshes automatically.</div></div><div class="list-row__action"><span class="badge"><i class="ti ti-check i-xs"></i> Signed in</span><button class="btn btn--outline" type="button">Sign out</button></div></div>
+                            </div>
+                            <div class="action-row"><button class="btn btn--text btn--sm" style="margin-right:auto" type="button">Test remote</button><button class="btn btn--text-strong btn--sm" type="button">Save for next restart</button><button class="btn btn--default btn--sm" type="button">Save and reconnect</button></div>
+                          </div>
+                          <div data-view="ssh" hidden>
+                            <div class="col gap-1" style="margin-top:1.25rem">
+                              <div class="list-row"><div><div class="list-row__title">Host</div><div class="list-row__desc">A Host alias from ~/.ssh/config, or Custom to type one.</div></div><div class="list-row__action"><button class="control control--h8 select-trigger" type="button">buildbox</button></div></div>
+                              <div class="list-row"><div><div class="list-row__title">User</div><div class="list-row__desc">Blank = ~/.ssh/config or your current user.</div></div><div class="list-row__action"><input class="control control--h8" placeholder="from ~/.ssh/config" value="dev" /></div></div>
+                              <div class="list-row"><div><div class="list-row__title">Port</div><div class="list-row__desc">Blank = 22 or the ~/.ssh/config port.</div></div><div class="list-row__action"><input class="control control--h8" inputmode="numeric" placeholder="22" /></div></div>
+                              <div class="list-row"><div><div class="list-row__title">Identity file</div><div class="list-row__desc">Private key path. Blank = ssh-agent or ~/.ssh/config.</div></div><div class="list-row__action"><input class="control control--h8 t-mono" value="~/.ssh/id_ed25519" /></div></div>
+                              <div class="list-row"><div><div class="list-row__title">Hermes path (optional)</div><div class="list-row__desc">Full path to the remote hermes binary. Blank = auto-detect.</div></div><div class="list-row__action"><input class="control control--h8 t-mono" placeholder="auto-detect" /></div></div>
+                            </div>
+                            <div class="t-accent" style="margin-top:1rem;font-size:.75rem">Reachable: buildbox (linux) — Hermes found</div>
+                            <div class="action-row"><button class="btn btn--text btn--sm" style="margin-right:auto" type="button">Test SSH</button><button class="btn btn--text-strong btn--sm" type="button">Save for next restart</button><button class="btn btn--default btn--sm" type="button">Save and reconnect</button></div>
+                          </div>
+                        </div>
+                        <div class="col gap-1" style="margin-top:1.5rem">
+                          <div class="list-row"><div><div class="list-row__title">Encrypt saved secrets with the OS keychain</div><div class="list-row__desc">Off by default. When on, gateway tokens and sign-in credentials are encrypted with your system keychain (Keychain Access, GNOME Keyring, or Windows DPAPI) — your system may ask for permission or a password. When off, they are stored as plain files readable only by your user account.</div></div><div class="list-row__action"><span class="switch" role="switch" aria-checked="false"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Diagnostics</div><div class="list-row__desc">Reveal desktop.log in your file manager — useful when the gateway fails to start.</div></div><div class="list-row__action"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-file-text"></i>Open logs</button></div></div>
+                        </div>
+
+                        <!-- Registered gateways (connections-registry.tsx) -->
+                        <div class="rule-top">
+                          <div class="section-heading"><i class="ti ti-globe"></i><span>Registered gateways</span></div>
+                          <p class="t-caption t-tertiary" style="margin:0 0 .25rem">Manage this device and every Hermes gateway it can reach through remote, SSH, or Cloud connections.</p>
+                          <p class="t-caption t-tertiary" style="margin:0 0 1rem">Switch gateways from Sessions. Profiles, chats, messaging, and cron jobs stay with their gateway; work on other gateways keeps running.</p>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-device-desktop i-md t-muted"></i><span class="t-truncate">This computer</span><span class="badge">Current</span><span class="badge badge--muted">Primary</span><span class="badge badge--muted">App-managed</span></div><div class="list-row__desc">The Hermes runtime managed by this app.</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button">Test</button></div></div>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-globe i-md t-muted"></i><span class="t-truncate">Homelab</span></div><div class="list-row__desc">Remote gateway · https://hermes.homelab.lan</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button">Test</button><button class="btn btn--outline btn--sm" type="button">Make primary</button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Edit"><i class="ti ti-pencil"></i></button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Remove"><i class="ti ti-trash"></i></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-globe i-md t-muted"></i><span class="t-truncate">Homelab (Tailscale)</span></div><div class="list-row__desc">Remote gateway · http://100.84.12.7:9119 · Same backend as “Homelab”</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button">Test</button><button class="btn btn--outline btn--sm" type="button">Make primary</button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Edit"><i class="ti ti-pencil"></i></button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Remove"><i class="ti ti-trash"></i></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-terminal-2 i-md t-muted"></i><span class="t-truncate">Build box</span></div><div class="list-row__desc">SSH · dev@buildbox</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button">Test</button><button class="btn btn--outline btn--sm" type="button">Make primary</button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Edit"><i class="ti ti-pencil"></i></button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Remove"><i class="ti ti-trash"></i></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><i class="ti ti-cloud i-md t-muted"></i><span class="t-truncate">Research agent</span></div><div class="list-row__desc">Hermes Cloud · https://research.agents.nousresearch.com</div></div><div class="list-row__action"><button class="btn btn--outline btn--sm" type="button">Test</button><button class="btn btn--outline btn--sm" type="button">Make primary</button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Edit"><i class="ti ti-pencil"></i></button><button class="btn btn--ghost btn--icon-sm" type="button" aria-label="Remove"><i class="ti ti-trash"></i></button></div></div>
+                          <div data-views="gw-editor" data-default="closed">
+                            <div data-view="closed">
+                              <div class="flex items-center gap-2" style="margin-top:1rem"><button class="btn btn--outline btn--sm" type="button" data-show="gw-editor:open"><i class="ti ti-plus"></i> Add connection</button><button class="btn btn--outline btn--sm" type="button"><i class="ti ti-refresh"></i> Update all instances</button></div>
+                            </div>
+                            <div data-view="open" hidden>
+                              <div class="editor-box">
+                                <div class="kind-grid"><button class="btn btn--outline btn--sm" type="button" disabled>Local</button><button class="btn btn--outline btn--sm" type="button">Hermes Cloud</button><button class="btn btn--default btn--sm" type="button">Remote gateway</button><button class="btn btn--outline btn--sm" type="button">SSH</button></div>
+                                <p class="t-muted" style="margin:0;font-size:.75rem">A Hermes gateway reachable over HTTP(S) — LAN, Tailscale, or the internet.</p>
+                                <p class="t-muted" style="margin:0;font-size:.75rem">Local is unavailable: the managed local connection already exists (there is only ever one).</p>
+                                <div class="list-row"><div><div class="list-row__title">Name</div><div class="list-row__desc">Required. Shown everywhere this instance appears; must be unique (e.g. “Homelab”, “Work laptop”).</div></div><div class="list-row__action"><input class="control" placeholder="Homelab" value="Work laptop" /></div></div>
+                                <div class="list-row"><div><div class="list-row__title">Gateway URL</div></div><div class="list-row__action"><input class="control" placeholder="http://homelab.lan:9119" /></div></div>
+                                <div class="list-row"><div><div class="list-row__title">Authentication</div></div><div class="list-row__action"><button class="btn btn--default btn--sm" type="button">Session token</button><button class="btn btn--outline btn--sm" type="button">OAuth</button></div></div>
+                                <div class="list-row"><div><div class="list-row__title">Session token</div><div class="list-row__desc">The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token.</div></div><div class="list-row__action"><input class="control" type="password" placeholder="Paste session token" /></div></div>
+                                <div class="col gap-2">
+                                  <div><div class="t-sm t-medium">Extra gateway headers</div><p class="t-muted" style="margin:.25rem 0 0;font-size:.75rem">Sent with every HTTP and WebSocket request to this gateway — for access proxies such as Cloudflare Access (CF-Access-Client-Id / CF-Access-Client-Secret). Values are stored encrypted. Headers Hermes manages (Authorization, Cookie, Host…) are ignored.</p></div>
+                                  <div class="flex items-center gap-2"><input class="control grow" placeholder="CF-Access-Client-Id" value="CF-Access-Client-Id" /><input class="control grow" type="password" placeholder="Value" /><button class="btn btn--ghost btn--sm" type="button">Remove</button></div>
+                                  <div><button class="btn btn--outline btn--sm" type="button">Add header</button></div>
+                                </div>
+                                <div class="flex justify-end gap-2"><button class="btn btn--ghost btn--sm" type="button" data-show="gw-editor:closed">Cancel</button><button class="btn btn--default btn--sm" type="button" data-show="gw-editor:closed">Save connection</button></div>
+                              </div>
+                            </div>
+                          </div>
+                          <div style="margin-top:1.5rem;border-top:1px solid color-mix(in srgb, var(--dt-border) 60%, transparent);padding-top:1rem">
+                            <div class="list-row"><div><div class="list-row__title">At startup, return to Sessions on the last-used gateway</div><div class="list-row__desc">When off, Sessions opens on the Primary gateway.</div></div><div class="list-row__action"><span class="switch is-on" role="switch" aria-checked="true"></span></div></div>
+                          </div>
+                        </div>
+
+                        <!-- Managed updates (managed-updates-section.tsx) — only with registered SSH installs -->
+                        <section style="margin-top:2rem">
+                          <div class="section-heading"><i class="ti ti-download"></i><span>Managed updates</span></div>
+                          <p class="t-caption t-tertiary" style="margin:0 0 .25rem">Update Desktop-managed SSH installs transactionally: sessions drain, the remote checkout updates, and every profile is restored with a correlated receipt.</p>
+                          <div class="list-row"><div><div class="list-row__title flex items-center gap-2"><span>Build box</span><span class="badge">Updated</span></div><div class="list-row__desc">dev@buildbox</div><div class="col gap-1 t-caption t-tertiary" style="margin-top:.25rem"><p class="t-mono" style="margin:0;font-size:.68rem">Receipt 3f9a2c1e · success · 0.9.1 → 0.9.2</p><p style="margin:0">Restored profiles: default, work</p></div></div><div class="list-row__action"><button class="btn btn--default btn--sm" type="button"><i class="ti ti-download"></i> Update</button></div></div>
+                        </section>
+                      </div>
+
+                      <!-- ── Keyboard Shortcuts (keybind-settings.tsx; Windows labels via lib/keybinds/combo.ts) ── -->
+                      <div data-view="keybinds" hidden>
+                        <div class="flex items-center justify-between gap-3" style="padding-bottom:.75rem">
+                          <div class="grow"><h2 class="t-sm t-semibold" style="margin:0">Keyboard shortcuts</h2><p class="t-muted" style="margin:.125rem 0 0;font-size:.72rem">Click a shortcut to rebind it · Ctrl+/ reopens this panel.</p></div>
+                          <button class="btn btn--text" style="padding:0;font-size:.72rem;text-decoration:none" type="button"><i class="codicon codicon-discard" style="font-size:.8125rem"></i>Reset all</button>
+                        </div>
+                        <div style="padding-bottom:.75rem"><label class="search-field" style="width:100%"><i class="ti ti-search" style="color:var(--dt-muted-foreground)"></i><input aria-label="Search shortcuts…" placeholder="Search shortcuts…" /></label></div>
+                        <div class="kb-list">
+                          <section>
+                            <button class="kb-cat" type="button"><span>Composer</span><i class="codicon codicon-chevron-down"></i></button>
+                            <div class="kb-row"><span class="kb-row__label">Focus composer</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">/</kbd></span><span class="kbd-group"><kbd class="kbd">↵</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open model picker</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">M</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Start / stop voice conversation</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Send message</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">↵</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Insert newline</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Shift</kbd><kbd class="kbd">↵</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Steer the running turn</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">↵</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Queue message</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">↵</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Send next queued turn</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">K</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Reference files, folders, URLs</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">@</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Slash command palette</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">/</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Quick help</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">?</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Cycle popover / history</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">↑</kbd></span><span class="kbd-group"><kbd class="kbd">↓</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Close popover · cancel run</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Esc</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Focus composer</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">L</kbd></span></span><span class="kb-row__slot"></span></div>
+                          </section>
+                          <section>
+                            <button class="kb-cat" type="button"><span>Profiles</span><i class="codicon codicon-chevron-down"></i></button>
+                            <div class="kb-row"><span class="kb-row__label">Switch to default profile</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">D</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 1</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">1</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 2</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">2</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 3</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">3</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 4</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">4</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 5</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">5</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 6</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">6</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 7</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">7</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 8</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">8</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 9</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">9</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 10</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">1</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 11</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">2</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 12</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">3</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 13</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">4</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 14</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">5</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 15</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">6</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 16</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">7</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 17</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">8</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to profile 18</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">9</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Next profile</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">]</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Previous profile</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">[</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle all-profiles view</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">0</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Create profile</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                          </section>
+                          <section>
+                            <button class="kb-cat" type="button"><span>Session</span><i class="codicon codicon-chevron-down"></i></button>
+                            <div class="kb-row"><span class="kb-row__label">New session</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">N</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">New session tab</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">T</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">New window</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">N</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Next session</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">⇥</kbd></span><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">PgDn</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Previous session</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">⇥</kbd></span><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">PgUp</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 1</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">1</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 2</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">2</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 3</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">3</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 4</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">4</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 5</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">5</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 6</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">6</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 7</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">7</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 8</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">8</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Switch to recent session 9</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">9</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Search sessions</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">F</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Pin / unpin current session</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Archive current session</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">New worktree</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">B</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open folder as project</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">O</kbd></span></button><span class="kb-row__slot"></span></div>
+                          </section>
+                          <section>
+                            <button class="kb-cat" type="button"><span>Navigation</span><i class="codicon codicon-chevron-down"></i></button>
+                            <div class="kb-row"><span class="kb-row__label">Open command palette</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">K</kbd></span><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">P</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open command center</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">.</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open settings</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">,</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open profiles</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open skills</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open messaging</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open artifacts</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open scheduled jobs</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open agents</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                          </section>
+                          <section>
+                            <button class="kb-cat" type="button"><span>View</span><i class="codicon codicon-chevron-down"></i></button>
+                            <div class="kb-row"><span class="kb-row__label">Toggle sessions sidebar</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">B</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle file browser</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">J</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle status bar</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">S</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle tabs</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Alt</kbd><kbd class="kbd">T</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle review pane</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">G</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Show file browser</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Open browser</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">L</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle HUD mode</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">H</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle terminal</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">`</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">New terminal</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">`</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Next terminal</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">↓</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Previous terminal</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">↑</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Close terminal</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">W</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Swap sidebar sides</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">\</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Close tab</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">W</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Reopen closed tab</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">T</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Find in page</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">F</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Find next match</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Find previous match</span><button class="kb-row__caps" type="button" aria-label="Rebind"><kbd class="kbd kbd--ghost">set</kbd></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row"><span class="kb-row__label">Toggle light / dark</span><button class="kb-row__caps" type="button" aria-label="Rebind"><span class="kbd-group"><kbd class="kbd">Shift</kbd><kbd class="kbd">X</kbd></span></button><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Send selection to composer</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">L</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Copy terminal selection</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">C</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Paste into terminal</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">V</kbd></span></span><span class="kb-row__slot"></span></div>
+                            <div class="kb-row is-readonly"><span class="kb-row__label">Move HUD to pointer (global, while HUD is open)</span><span class="kb-row__caps"><span class="kbd-group"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">Shift</kbd><kbd class="kbd">G</kbd></span></span><span class="kb-row__slot"></span></div>
+                          </section>
+                        </div>
+                      </div>
+
+                      <!-- ── Tools & Keys › Tools (keys-settings.tsx view="tools": category `tool` env vars) ── -->
+                      <div data-view="keys-tools" hidden>
+                        <div class="col gap-2" style="margin-bottom:1.25rem">
+                          <div class="t-caption t-medium t-secondary">Applies to</div>
+                          <div class="flex gap-1-5" style="flex-wrap:wrap"><button class="scope-chip is-active" type="button">default</button><button class="scope-chip" type="button">work</button><button class="scope-chip" type="button">researcher</button></div>
+                        </div>
+                        <div class="cred-list">
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">AGENT BROWSER ENGINE</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">BRAVE SEARCH</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste BRAVE SEARCH key" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">BROWSER USE</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste BROWSER USE key" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">BROWSERBASE</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste BROWSERBASE key" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">BROWSERBASE PROJECT ID</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">CAMOFOX URL</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="https://…" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">ELEVENLABS</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="sk_…••••b71e" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">EXA</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste EXA key" /></div></div>
+                          <div class="cred-card is-open">
+                            <div class="cred-card__grid">
+                              <div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">FAL</span><i class="ti ti-chevron-down"></i></div>
+                              <input class="control control--h8 is-masked" readonly value="••••••••3c9d" />
+                              <div class="cred-card__more">
+                                <p class="t-caption t-tertiary" style="margin:0">FAL API key for image and video generation</p>
+                                <a class="docs-link" href="#">Get a key <i class="ti ti-external-link i-xs"></i></a>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">FIRECRAWL</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste FIRECRAWL key" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">FIRECRAWL API URL</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="https://…" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">GITHUB</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="ghp_…••••04aa" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">TAVILY</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste TAVILY key" /></div></div>
+                        </div>
+
+                        <!-- Reference only: ToolsetConfigPanel is NOT on this page in the app. -->
+                        <div class="rule-top">
+                          <div class="proto-note"><i class="ti ti-info-circle i-xs" style="margin-top:.125rem"></i><span>Reference, not part of this page: <span class="code-inline">ToolsetConfigPanel</span> (toolset-config-panel.tsx) renders in Capabilities → a toolset's inspector (app/skills/index.tsx) and in the Bots profile config. It edits the same env keys with an <span class="code-inline">EnvVarActionsMenu</span> kebab. Shown for the <span class="code-inline">image_gen</span> toolset.</span></div>
+                          <div class="col gap-2">
+                            <div class="ts-provider">
+                              <button class="ts-provider__head is-open" type="button" aria-expanded="true"><span class="flex items-center gap-2" style="min-width:0"><span class="t-sm t-medium t-truncate">FAL</span><span class="badge"><i class="ti ti-check i-xs"></i>Active</span></span></button>
+                              <div class="ts-provider__body">
+                                <p class="t-muted" style="margin:0;font-size:.72rem">FLUX, Imagen and 40+ image and video models via fal.ai</p>
+                                <div class="flex items-center gap-2"><span class="badge"><i class="ti ti-check i-xs"></i>This is your active backend</span></div>
+                                <div class="ts-env">
+                                  <div class="flex justify-between gap-2" style="align-items:flex-start;flex-wrap:wrap">
+                                    <div class="grow"><div class="flex items-center gap-2" style="flex-wrap:wrap"><span class="t-mono t-medium" style="font-size:.75rem">FAL_KEY</span><span class="badge"><i class="ti ti-check i-xs"></i>Set</span></div><p class="t-muted" style="margin:.125rem 0 0;font-size:.7rem">FAL API key</p></div>
+                                    <button class="btn btn--ghost btn--icon-sm t-muted" type="button" aria-label="Actions" aria-expanded="true"><i class="codicon codicon-ellipsis"></i></button>
+                                  </div>
+                                  <div class="menu" role="menu" style="top:2.75rem;right:.5rem;width:11rem">
+                                    <button class="menu__item" type="button"><i class="ti ti-external-link"></i>Docs</button>
+                                    <button class="menu__item" type="button"><i class="ti ti-eye"></i>Reveal value</button>
+                                    <button class="menu__item" type="button"><i class="codicon codicon-edit"></i>Replace</button>
+                                    <button class="menu__item" type="button"><i class="ti ti-key"></i>Manage in API Keys</button>
+                                    <div class="menu__sep"></div>
+                                    <button class="menu__item is-danger" type="button"><i class="ti ti-trash"></i>Clear</button>
+                                  </div>
+                                </div>
+                                <div class="col gap-1-5">
+                                  <div class="flex justify-between gap-2" style="align-items:baseline;padding:0 .125rem"><span class="t-medium" style="font-size:.72rem">Model</span><span class="t-muted" style="font-size:.68rem">3 models</span></div>
+                                  <div class="col gap-1">
+                                    <button class="ts-model is-selected" type="button" aria-pressed="true"><span class="flex items-center gap-2"><span class="t-mono t-medium" style="font-size:.75rem">flux-2-pro</span><span class="badge"><i class="ti ti-check i-xs"></i>In use</span></span><span class="flex gap-3 t-muted" style="font-size:.68rem"><span>~6s</span><span>Photoreal, typography</span><span class="t-mono">$0.05/img</span></span></button>
+                                    <button class="ts-model" type="button" aria-pressed="false"><span class="flex items-center gap-2"><span class="t-mono t-medium" style="font-size:.75rem">flux-schnell</span><span class="badge badge--muted">default</span></span><span class="flex gap-3 t-muted" style="font-size:.68rem"><span>~1s</span><span>Fast drafts</span><span class="t-mono">$0.003/img</span></span></button>
+                                    <button class="ts-model" type="button" aria-pressed="false"><span class="flex items-center gap-2"><span class="t-mono t-medium" style="font-size:.75rem">recraft-v3</span></span><span class="flex gap-3 t-muted" style="font-size:.68rem"><span>~8s</span><span>Vector and brand styles</span><span class="t-mono">$0.04/img</span></span></button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div class="ts-provider"><button class="ts-provider__head" type="button" aria-expanded="false"><span class="flex items-center gap-2"><span class="t-sm t-medium">Nous Subscription</span><span class="badge badge--muted">Included</span><span class="badge badge--warn">Needs sign-in</span></span></button></div>
+                            <div class="ts-provider"><button class="ts-provider__head" type="button" aria-expanded="false"><span class="flex items-center gap-2"><span class="t-sm t-medium">Krea</span></span></button></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- ── Tools & Keys › Settings (keys-settings.tsx view="settings": `setting` + gateway-wide `messaging`) ── -->
+                      <div data-view="keys-settings" hidden>
+                        <div class="col gap-2" style="margin-bottom:1.25rem">
+                          <div class="t-caption t-medium t-secondary">Applies to</div>
+                          <div class="flex gap-1-5" style="flex-wrap:wrap"><button class="scope-chip is-active" type="button">default</button><button class="scope-chip" type="button">work</button><button class="scope-chip" type="button">researcher</button></div>
+                        </div>
+                        <div class="cred-list">
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">API SERVER ENABLED</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="true" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">API SERVER HOST</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <!-- Editing a set key in place: trash (Remove) + Save appear inline; Esc cancels -->
+                          <div class="cred-card is-open">
+                            <div class="cred-card__grid">
+                              <div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">API SERVER</span><i class="ti ti-chevron-down"></i></div>
+                              <div class="cred-field"><input class="control control--h8 is-focused" type="password" value="new-bearer-token" placeholder="Paste API SERVER key" /><div class="flex items-center gap-1"><button class="btn btn--ghost btn--icon-xs t-muted" type="button" aria-label="Remove" title="Remove"><i class="ti ti-trash i-xs"></i></button><button class="btn btn--default btn--sm control--h8" type="button"><i class="ti ti-device-floppy"></i>Save</button></div></div>
+                              <div class="cred-card__more"><p class="t-caption t-tertiary" style="margin:0">Bearer token for API server authentication. Required whenever the API server is enabled; server refuses to start without it.</p></div>
+                            </div>
+                          </div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">API SERVER MODEL NAME</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">API SERVER PORT</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">GATEWAY ALLOW ALL USERS</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">GATEWAY PROXY</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste GATEWAY PROXY key" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">GATEWAY PROXY URL</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="https://…" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">HERMES EPHEMERAL SYSTEM PROMPT</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">HERMES PREFILL MESSAGES FILE</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot is-set"></span><span class="t-truncate">SUDO PASSWORD</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare is-masked" readonly value="••••••••" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">WEBHOOK ENABLED</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">WEBHOOK PORT</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Optional" /></div></div>
+                          <div class="cred-card" role="button" tabindex="0"><div class="cred-card__grid"><div class="cred-card__label"><span class="cred-dot"></span><span class="t-truncate">WEBHOOK SECRET</span><i class="ti ti-chevron-down"></i></div><input class="control control--h8 is-bare" placeholder="Paste WEBHOOK SECRET key" /></div></div>
+                        </div>
+                      </div>
+
+                      <!-- ── Plugins (plugins-settings.tsx) ── -->
+                      <div data-view="plugins" hidden>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-device-desktop"></i><span>Desktop plugins</span><span class="badge badge--muted">5 installed</span></div>
+                          <p class="t-caption t-tertiary" style="margin:0 0 .5rem">Bundled or dropped into the desktop-plugins folder. Disable to unload live.</p>
+                          <div class="flex items-center gap-3" style="margin-bottom:.5rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-folder-open"></i><span>Open plugins folder</span></button><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-refresh"></i><span>Rescan</span></button></div>
+                          <div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>Session Stats</span><span class="badge badge--muted">on disk</span></div><div class="plugin-line__desc">Token and tool-call totals for the active session, in the status bar.</div></div><div class="plugin-line__ctl"><button class="btn btn--ghost btn--icon" type="button" aria-label="Reveal in file manager"><i class="codicon codicon-folder-opened" style="font-size:.85rem"></i></button><span class="switch is-on" role="switch" aria-checked="true" aria-label="Disable Session Stats"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>Hello Runtime</span><span class="badge badge--muted">runtime</span></div><div class="plugin-line__desc">C:\Users\dev\.hermes\desktop-plugins\hello-runtime\plugin.js</div></div><div class="plugin-line__ctl"><button class="btn btn--ghost btn--icon" type="button" aria-label="Reveal in file manager"><i class="codicon codicon-folder-opened" style="font-size:.85rem"></i></button><span class="switch" role="switch" aria-checked="false" aria-label="Enable Hello Runtime"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>Accent Picker</span><span class="badge badge--muted">bundled</span></div><div class="plugin-line__desc">Pick the theme accent from an OKLCH color picker in the status bar; the palette re-derives live. Authoring tool — the color is not persisted.</div></div><div class="plugin-line__ctl"><span class="switch" role="switch" aria-checked="false" aria-label="Enable Accent Picker"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>Bots</span><span class="badge badge--muted">bundled</span></div><div class="plugin-line__desc">Bot Mode — a one-chat-per-agent roster with avatars, routines, group chats, and bot-to-bot messaging. Ships with the app; disable here if unwanted.</div></div><div class="plugin-line__ctl"><span class="switch is-on" role="switch" aria-checked="true" aria-label="Disable Bots"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>Kanban</span><span class="badge badge--muted">bundled</span></div><div class="plugin-line__desc">Multi-agent task board — board page, sidebar entry, and a live in-flight count in the status bar.</div></div><div class="plugin-line__ctl"><span class="switch" role="switch" aria-checked="false" aria-label="Enable Kanban"></span></div></div>
+                          </div>
+                        </section>
+                        <section class="settings-section">
+                          <div class="section-heading"><i class="ti ti-package"></i><span>Agent plugins</span><span class="badge badge--muted">4 installed</span></div>
+                          <p class="t-caption t-tertiary" style="margin:0 0 .5rem">Plugins you installed into the Hermes backend — tools, skills, MCP servers, hooks, and slash commands. Portable ones are Agent Plugins packages (skills + MCP bundles that work in other agents too). Toggles apply to new sessions.</p>
+                          <div class="flex items-center gap-2" style="margin-bottom:.5rem"><span class="t-caption t-medium t-tertiary">Applies to:</span><button class="control select-trigger" style="width:14rem;height:1.75rem" type="button">Hermes (default)</button></div>
+                          <div class="flex items-center gap-3" style="margin-bottom:.5rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-folder-open"></i><span>Open plugins folder</span></button></div>
+                          <input class="plain-search" placeholder="Search plugins…" spellcheck="false" />
+                          <div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>figma-bridge</span><span class="badge badge--muted">git</span><span class="badge">portable</span></div><div class="plugin-line__desc">Read Figma frames and export design tokens as a skill + MCP bundle.</div></div><div class="plugin-line__ctl"><span class="switch is-on" role="switch" aria-checked="true" aria-label="Disable figma-bridge"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>notion-sync</span><span class="badge badge--muted">user</span></div><div class="plugin-line__desc">Mirror session summaries into a Notion database.</div></div><div class="plugin-line__ctl"><span class="switch" role="switch" aria-checked="false" aria-label="Enable notion-sync"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>repo-lint</span><span class="badge badge--muted">project</span></div><div class="plugin-line__desc">v0.3.1</div></div><div class="plugin-line__ctl"><span class="switch is-on" role="switch" aria-checked="true" aria-label="Disable repo-lint"></span></div></div>
+                            <div class="plugin-line"><div class="plugin-line__main"><div class="plugin-line__title"><span>hermes-langfuse</span><span class="badge badge--muted">pip</span></div><div class="plugin-line__desc">Trace every turn and tool call to Langfuse.</div></div><div class="plugin-line__ctl"><span class="switch is-on" role="switch" aria-checked="true" aria-label="Disable hermes-langfuse"></span></div></div>
+                          </div>
+                        </section>
+                      </div>
+
+                      <!-- ── Archived Chats (sessions-settings.tsx) ── -->
+                      <div data-view="sessions" hidden>
+                        <div style="margin-bottom:1.5rem">
+                          <div class="section-heading"><i class="ti ti-folder-open"></i><span>Default project directory</span></div>
+                          <p class="t-caption t-tertiary" style="margin:0 0 .5rem">New sessions start in this folder unless you pick another. Leave it unset to use your home directory.</p>
+                          <div class="list-row"><div><div class="list-row__title">Not set</div><div class="list-row__desc">Defaults to C:\Users\dev.</div></div><div class="list-row__action" style="gap:.75rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-folder-open"></i><span>Choose</span></button></div></div>
+                        </div>
+                        <div style="margin-bottom:1.5rem">
+                          <div class="list-row"><div><div class="list-row__title">Auto-archive stale chats</div><div class="list-row__desc">Automatically archive chats you haven't touched in a while. Pinned chats are never archived, and nothing is deleted — archived chats just move here.</div></div><div class="list-row__action"><span class="switch is-on" role="switch" aria-checked="true"></span></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Archive after</div></div><div class="list-row__action"><input class="control" style="width:5rem" type="number" min="1" value="3" aria-label="Archive after" /><span class="t-caption t-tertiary">days of inactivity</span></div></div>
+                        </div>
+                        <div class="section-heading"><i class="ti ti-archive"></i><span>Archived sessions</span><span class="badge badge--muted">3</span></div>
+                        <p class="t-caption t-tertiary" style="margin:0 0 .5rem">Archived chats are hidden from the sidebar but keep all their messages. Ctrl/⌘-click a chat in the sidebar to archive it.</p>
+                        <div class="col gap-1">
+                          <div class="list-row"><div><div class="list-row__title">Voice mode latency notes</div><div class="list-row__desc">Measured push-to-talk round trip on Windows and macOS; the STT hop dominates…</div><div class="list-row__hint">hermes-android · 18 messages</div></div><div class="list-row__action" style="gap:.375rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-archive-off"></i><span>Unarchive</span></button><button class="btn btn--ghost btn--icon t-muted" type="button" aria-label="Delete permanently"><i class="ti ti-trash"></i></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Kanban board orchestration ideas</div><div class="list-row__desc">Sketch of how the board hands tasks to subagents and reports back.</div><div class="list-row__hint">hermes-agent · 42 messages</div></div><div class="list-row__action" style="gap:.375rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-archive-off"></i><span>Unarchive</span></button><button class="btn btn--ghost btn--icon t-muted" type="button" aria-label="Delete permanently"><i class="ti ti-trash"></i></button></div></div>
+                          <div class="list-row"><div><div class="list-row__title">Untitled session</div><div class="list-row__hint">1 message</div></div><div class="list-row__action" style="gap:.375rem"><button class="btn btn--text-strong btn--sm" type="button"><i class="ti ti-archive-off"></i><span>Unarchive</span></button><button class="btn btn--ghost btn--icon t-muted" type="button" aria-label="Delete permanently"><i class="ti ti-trash"></i></button></div></div>
+                        </div>
+                      </div>
+                    </section>
+                  </main>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<!--
+  Screen:      Profile remote override (F · dialogs): "Connect <profile> to a remote host"
+  Replicates:  apps/desktop/src/app/chat/sidebar/profile-remote-override-dialog.tsx,
+               components/ui/{dialog,input,checkbox,button}.tsx (copy: en.ts profiles.remoteOverride)
+  Views:       #dlg=connect | #dlg=invalid | #dlg=confirm | #dlg=edit | #dlg=keyring
+  Measurements:
+    - DialogContent "max-w-md" → 28rem; body p-4, grid gap-3; radius-xl; --shadow-nous; X close present
+    - form column: flex-col gap-3. Each field is a <label> flex-col gap-1, 12px; caption span --ui-text-secondary;
+      Input = control default (px-2.5 py-1.5, 12px/16px, radius 2.5px). Token input is type=password.
+    - inline messages: 12px. URL error + save error --dt-destructive; "token already saved" hint and collision
+      warning --ui-text-tertiary / --ui-text-secondary
+    - plain-text opt-in: label flex items-start gap-2, 12px secondary; Checkbox size-4, rounded-sm, mt-0.5
+    - footer: [Remove remote connection ghost mr-auto, only when an override exists] Cancel ghost + Connect default
+    - confirm step: title + description only, then Back ghost + Connect default (error line above the footer)
+  Behaviour:
+    - Opens from the profile rail menu "Connect to a remote host…". Loads the profile's saved scope and the
+      gateway registry (for the name-collision warning), then focuses the URL field.
+    - URL must match ^https?://\S+$ ("Enter a full address starting with http:// or https://" otherwise).
+    - Connect enabled when the URL is valid AND a token is typed (or a token is already saved for the same URL).
+    - No OS keychain + a new token typed → the opt-in checkbox appears and Connect stays disabled until checked.
+    - First-time connect goes through the confirm step; editing an existing override saves straight away.
+    - Enter in either field submits. Success toasts "Profile connected" / "<profile> now runs on <host>".
+      Saving shows "Connecting…" and blocks Esc / backdrop. Remove toasts "Remote connection removed".
+    - Save failures return to the form with the error line; Remove failures toast.
+  Mobile:      Profiles and connections are at parity on mobile (docs/PARITY.md, Settings row, M09); the
+               per-profile remote override itself is not listed there.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Profile remote override · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. */
+      .dialog--md { max-width: 28rem; }
+      .stack { display: flex; flex-direction: column; gap: 0.75rem; }
+      .lab { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; line-height: 1rem; }
+      .lab__cap { color: var(--ui-text-secondary); }
+      .msg { margin: 0; font-size: 0.75rem; line-height: 1rem; }
+      .msg--bad { color: var(--dt-destructive); }
+      .msg--hint { color: var(--ui-text-tertiary); }
+      .msg--note { color: var(--ui-text-secondary); }
+      .optin { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.75rem; line-height: 1rem; color: var(--ui-text-secondary); }
+      .optin .checkbox { margin-top: 0.125rem; }
+      .mr-auto { margin-right: auto; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="ssh">
+            <div class="thread">
+              <div class="thread__inner">
+                <div class="msg-user">Walk me through running Hermes on my home server so my laptop profile can use it.</div>
+                <div class="turn">
+                  <div class="msg-ai"><p>Start the gateway on the server with <span class="code-inline">hermes gateway --host 0.0.0.0</span>, put it behind HTTPS, and copy the session token it prints. Then point a profile at it from the profile menu.</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+          <section data-views="dlg">
+            <!-- ── Connect (first time, valid) ── -->
+            <div data-view="connect">
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Connect work to a remote host</h2>
+                  <p class="dialog__desc">Sessions in this profile will run on the remote Hermes you point it at, instead of this computer.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab"><span class="lab__cap">Remote address</span><input class="control" type="url" value="https://hermes.home.arpa" placeholder="https://hermes.example.com" /></label>
+                  <label class="lab"><span class="lab__cap">Access token</span><input class="control is-focused" type="password" value="hsk_4f9c2a7e1b" placeholder="Paste the remote session token" /></label>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Invalid URL ── -->
+            <div data-view="invalid" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Connect work to a remote host</h2>
+                  <p class="dialog__desc">Sessions in this profile will run on the remote Hermes you point it at, instead of this computer.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab"><span class="lab__cap">Remote address</span><input class="control is-focused" type="url" value="hermes.home.arpa" placeholder="https://hermes.example.com" /><span class="msg--bad">Enter a full address starting with http:// or https://</span></label>
+                  <label class="lab"><span class="lab__cap">Access token</span><input class="control" type="password" value="" placeholder="Paste the remote session token" /></label>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Confirm (first-time connect only) ── -->
+            <div data-view="confirm" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Connect this profile to a remote host?</h2>
+                  <p class="dialog__desc">New chats in work will run on hermes.home.arpa. That computer will run commands and read files there, not on this one. Only connect to a host you trust.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Back</button>
+                  <button type="button" class="btn btn--default">Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Edit an existing override (token saved, collision warning, Remove) ── -->
+            <div data-view="edit" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Connect work to a remote host</h2>
+                  <p class="dialog__desc">Sessions in this profile will run on the remote Hermes you point it at, instead of this computer.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab"><span class="lab__cap">Remote address</span><input class="control is-focused" type="url" value="https://hermes.home.arpa" placeholder="https://hermes.example.com" /></label>
+                  <label class="lab"><span class="lab__cap">Access token</span><input class="control" type="password" value="" placeholder="Paste the remote session token" /><span class="msg--hint">A token is already saved. Leave blank to keep it.</span></label>
+                  <p class="msg msg--note">A gateway named “work” already exists in Settings. This profile connection is separate and will not change it.</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost mr-auto">Remove remote connection</button>
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default">Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── No OS keychain: plain-text opt-in required ── -->
+            <div data-view="keyring" hidden>
+              <div class="dialog dialog--md" role="dialog">
+                <button class="btn btn--ghost btn--icon-xs dialog__close t-tertiary" aria-label="Close"><i class="ti ti-x i-md"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Connect work to a remote host</h2>
+                  <p class="dialog__desc">Sessions in this profile will run on the remote Hermes you point it at, instead of this computer.</p>
+                </div>
+                <div class="stack">
+                  <label class="lab"><span class="lab__cap">Remote address</span><input class="control" type="url" value="https://hermes.home.arpa" placeholder="https://hermes.example.com" /></label>
+                  <label class="lab"><span class="lab__cap">Access token</span><input class="control is-focused" type="password" value="hsk_4f9c2a7e1b" placeholder="Paste the remote session token" /></label>
+                  <label class="optin"><span class="checkbox" role="checkbox" aria-checked="false"></span><span>This computer has no secure key storage, so the token would be saved unencrypted on disk. Save it anyway.</span></label>
+                  <p class="msg msg--bad">connect ECONNREFUSED 192.168.1.20:443</p>
+                </div>
+                <div class="dialog__footer">
+                  <button type="button" class="btn btn--ghost">Cancel</button>
+                  <button type="button" class="btn btn--default" disabled>Connect</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dlg:connect">Connect</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:invalid">Invalid URL</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:confirm">Confirm (first time)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:edit">Edit existing</button>
+        <button class="btn btn--secondary btn--sm" data-show="dlg:keyring">No keychain + save error</button>
+      </nav>
+    </div>
+  </body>
+</html>

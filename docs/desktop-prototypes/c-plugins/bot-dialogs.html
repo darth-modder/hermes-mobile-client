@@ -1,0 +1,561 @@
+<!doctype html>
+<!--
+  Screen:      Bot Mode dialogs (C · Bot Mode plugin)   no route; modal dialogs opened from the Bots tab
+               ("+" → New bot / New section, right-click a bot → Edit… / Manage groups…).
+  Replicates:  apps/desktop/src/plugins/hermes-bots/create-dialog.tsx (CreateAgentDialog l.117-1016, GroupDialog l.1026-1114),
+               edit-profile-dialog.tsx, profile-config.tsx (AdvancedProfileConfig, CheckList), avatar-picker.tsx,
+               model-picker.tsx, skills-hub.tsx (HubSkillsSection), mcp-setup.tsx (McpSetupButton), user-sections-ui.tsx
+               (SectionNameDialog), group-membership.ts (membership patch), dialog-parts.tsx (labeled, ResizableFrame),
+               components/ui/color-swatches.tsx + lib/profile-color.ts (PROFILE_SWATCHES)
+  Views:       #dialog=new (default: New bot, quick path) | #dialog=edit (Edit profile, classic shapes + colours)
+               | #dialog=avatar (avatar picker, Generate tab) | #dialog=model (New bot → Advanced → General, provider Select open)
+               | #dialog=skills (Edit profile → Advanced, skills checklist + Skills Hub) | #dialog=mcp (New bot → Advanced → MCP)
+               | #dialog=groups (Manage groups) | #dialog=section (New section)
+  Measurements:
+    - Dialog (components/ui/dialog.tsx): radius-xl, 1px --stroke-nous, --shadow-nous, p-4, gap-3; title 15px semibold;
+      description 12px/16px tertiary. Widths: New bot max-w-md (28rem); Edit profile, Manage groups, New section max-w-sm (24rem);
+      with Advanced open New bot / Edit profile grow to max-w-3xl (48rem) and become CSS-resizable windows
+      (resize both, min 420×360, max 95vw × 90vh)
+    - body grid gap-3.5 (14px) in New bot, gap-4 (16px) in Edit profile; face preview 56px (New) / 64px (Edit), centred, py-1
+    - labeled(): grid gap-1.5, label 12px medium --ui-text-secondary; Selects h-8 rounded-md; Description Textarea min-h-16
+    - AvatarPicker: grid justify-items-center gap-3; SegmentedControl Bot / Generate / Upload / Pet; tile grid grid-cols-4 gap-1.5,
+      tiles 44×44 rounded-md, face 32px, hover --chrome-action-hover, selected ring-1 --ui-accent; blob mode = "Auto" + 10
+      silhouettes (round organic boxy capsule nub cloud droplet hexagon sun triangle), Randomize / Lock face ghost sm,
+      note 10.4px quaternary, "Classic shapes" ghost sm tertiary; classic mode = blob + 8 shapes and ColorSwatches
+      (grid-cols-6 gap-1.5, size-5 circles, selected ring 2px elevated + 3.5px swatch; "Match the name" clear row 12px)
+    - Advanced disclosure: text button 12px medium tertiary with DisclosureCaret (chevron-right 12px, rotates 90deg);
+      advanced box rounded-md 1px --ui-stroke-secondary p-3, grid gap-3
+    - ModelPicker grid [1fr 1.4fr] gap-2.5; CheckList 2 columns gap 2px 12px, rows 12px secondary with Checkbox, tool count 9.6px;
+      Skills Hub block border-t stroke-secondary pt-2 gap-1.5; search Input h-7 12px + "Search" secondary sm; result rows 12px
+    - MCP rows: Checkbox + name 12px secondary, tag 10.4px quaternary, description 10.4px quaternary truncate;
+      "Sign in…" / "Set up…" inline link 10.4px --ui-accent underline; key inputs h-6 11.2px password; "Save & test" secondary xs
+    - Manage groups rows: rounded-md px-2 py-1.5 14px, hover --chrome-action-hover; "Create & join" sm; "Remove from all groups" ghost sm
+  Behaviour (not visible statically):
+    - New bot: Name is slugified live ([a-z0-9][a-z0-9_-]{0,63}); a taken slug shows "An agent named "x" already exists." in
+      --ui-accent and disables Create; the blob face redraws as you type unless locked. Create Bot → "Creating…" → the bot's
+      canonical chat opens with the kickoff "Hey, tell me about yourself!"
+    - opening Advanced → Capabilities lazily creates a DRAFT profile so the live Capabilities surface (core SkillsView) has a
+      backend; Cancel / Esc deletes the draft ("Draft agent "x" discarded"). Older builds show staged Skills / Tools / MCP tabs
+    - "Create on" (connection Select) appears only with 2+ registered connections; remote targets clone from that machine's default
+    - Generate tab probes image.generate; unavailable shows the restart-gateway hint; blank prompt = generate from name/title/description
+    - MCP catalog entries needing keys / OAuth stay disabled until "Set up…" / "Sign in…" completes (OAuth polls every 2s;
+      success shows "set up ✓" in --ui-success)
+    - Manage groups: toggling a checkbox writes immediately and toasts "coder added to “Launch crew”"; there is no Save
+    - New section: Enter submits; max 40 chars; Create disabled while empty
+    - Edit profile Save writes appearance/title (ui_meta), description (profile describe) and dirty advanced sections only
+  Mobile:      Bot Mode (Bots tab, group chat, routines, these dialogs) is absent on mobile by design (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bot dialogs · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── Bot Mode page-local styles: tokens only (roster block shared with bots-tab.html) ── */
+      .bot-face { display: block; flex-shrink: 0; overflow: visible; --face-eye: color-mix(in srgb, var(--black) 85%, transparent); --face-hl: color-mix(in srgb, var(--white) 85%, transparent); }
+      [data-slot="bots-pane"] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+      .bots-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; margin-inline: -0.625rem; }
+      .bp-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.625rem 0.625rem 0.375rem; }
+      .bp-title { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .bp-actions { display: flex; align-items: center; gap: 0.125rem; }
+      .bp-ico { border-radius: var(--radius-md); color: var(--ui-text-tertiary); }
+      .bp-list { display: grid; flex: 1; align-content: start; gap: 0.125rem; min-height: 0; overflow-y: auto; padding: 0 0.375rem 0.5rem; }
+      .bot-row { display: flex; align-items: center; gap: 0.625rem; width: 100%; min-width: 0; overflow: hidden; border: 0; border-radius: var(--radius-md); padding: 0.5rem; background: transparent; color: var(--dt-foreground); text-align: left; }
+      .bot-row.is-active { background: var(--ui-row-active-background); }
+      .bot-row__body { flex: 1; min-width: 0; }
+      .bot-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .bot-row__id { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+      .bot-row__lead { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+      .bot-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 500; }
+      .bot-row__age { flex-shrink: 0; font-size: 0.6875rem; color: var(--ui-text-quaternary); }
+      .bot-row__sub { display: flex; min-width: 0; font-size: 0.75rem; color: var(--ui-text-tertiary); }
+      .bot-row__preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dot { display: block; width: 0.3125rem; height: 0.3125rem; border-radius: 50%; }
+      .ws-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+      .zone { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-chat-surface-background); }
+      .rail { width: 1.75rem; flex-shrink: 0; background: var(--ui-sidebar-surface-background); box-shadow: inset 1px 0 0 var(--ui-stroke-tertiary); }
+      .rail-tab { display: flex; justify-content: center; padding: 0.5rem 0; border-left: 1px solid var(--ui-stroke-tertiary); color: var(--ui-text-tertiary); font-size: 9px; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; writing-mode: vertical-rl; }
+
+      /* Dialog content */
+      .stack { display: grid; gap: 0.875rem; }
+      .stack-4 { display: grid; gap: 1rem; }
+      .stack-3 { display: grid; gap: 0.75rem; }
+      .stack-1 { display: grid; gap: 0.375rem; }
+      .face-hero { display: flex; justify-content: center; padding: 0.25rem 0; }
+      .h8 { height: 2rem; border-radius: var(--radius-md); }
+      .h7 { height: 1.75rem; font-size: 0.75rem; }
+      .ap { display: grid; justify-items: center; gap: 0.75rem; }
+      .ap-grid { display: grid; grid-template-columns: repeat(4, 44px); justify-items: center; gap: 0.375rem; }
+      .ap-tile { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--radius-md); background: transparent; cursor: pointer; transition: background-color 150ms; }
+      .ap-tile:hover { background: var(--chrome-action-hover); }
+      .ap-tile.is-on { box-shadow: 0 0 0 1px var(--ui-accent); }
+      .ap-auto { font-size: 0.6rem; color: var(--ui-text-tertiary); }
+      .ap-btns { display: flex; align-items: center; gap: 0.25rem; }
+      .frame .ap-btns .codicon { font-size: 0.8rem; }
+      .ap-note { font-size: 0.65rem; color: var(--ui-text-quaternary); text-align: center; }
+      .sw-grid { display: grid; grid-template-columns: repeat(6, 1.25rem); gap: 0.375rem; }
+      .sw { width: 1.25rem; height: 1.25rem; border: 0; border-radius: 50%; background: var(--sw); cursor: pointer; transition: transform 150ms; }
+      .sw:hover { transform: scale(1.1); }
+      .sw.is-on { box-shadow: 0 0 0 2px var(--ui-bg-elevated), 0 0 0 3.5px var(--sw); }
+      .sw-clear { display: flex; width: 100%; align-items: center; justify-content: center; gap: 0.375rem; margin-top: 0.5rem; border: 0; border-radius: var(--radius-md); padding: 0.25rem 0; background: transparent; color: var(--ui-text-tertiary); font-size: 0.75rem; cursor: pointer; }
+      .sw-clear:hover { background: var(--ui-control-hover-background); color: var(--dt-foreground); }
+      .frame .sw-clear .codicon { font-size: 0.75rem; }
+      .gen { display: grid; width: 100%; gap: 0.5rem; }
+      .disclosure { display: flex; align-items: center; gap: 0.25rem; justify-self: start; border: 0; padding: 0; background: transparent; color: var(--ui-text-tertiary); font-size: 0.75rem; font-weight: 500; cursor: pointer; }
+      .disclosure:hover { color: var(--ui-text-secondary); }
+      .frame .disclosure .caret { font-size: 0.75rem; transition: transform 150ms; }
+      .disclosure .caret.is-open { transform: rotate(90deg); }
+      .adv-box { display: grid; gap: 0.75rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.75rem; }
+      .adv-box > .seg { justify-self: start; }
+      .mp { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.625rem; }
+      .check-row { display: flex; align-items: center; gap: 0.5rem; color: var(--ui-text-secondary); font-size: 0.75rem; cursor: pointer; }
+      .dlg-note { padding: 0.125rem 0 0 1.5rem; color: var(--ui-text-tertiary); font-size: 0.7rem; line-height: 1.25rem; }
+      .dlg-fine { color: var(--ui-text-quaternary); font-size: 0.65rem; line-height: 1rem; }
+      .boxed { display: grid; gap: 0.375rem; border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.5rem; }
+      .checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; max-height: 180px; overflow-y: auto; }
+      .checklist label { display: flex; align-items: center; gap: 0.375rem; min-width: 0; padding: 0.125rem 0; color: var(--ui-text-secondary); font-size: 0.75rem; cursor: pointer; }
+      .checklist .n { flex-shrink: 0; font-size: 0.6rem; color: var(--ui-text-quaternary); }
+      .hub { display: grid; gap: 0.375rem; border-top: 1px solid var(--ui-stroke-secondary); padding-top: 0.5rem; }
+      .hub__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .hub__title { font-size: 0.7rem; font-weight: 500; color: var(--ui-text-secondary); }
+      .hub__browse { border: 0; padding: 0; background: transparent; color: var(--ui-text-quaternary); font-size: 0.65rem; cursor: pointer; }
+      .hub__browse:hover { color: var(--ui-text-secondary); text-decoration: underline; }
+      .hub__res { display: grid; gap: 0.25rem; max-height: 150px; overflow-y: auto; }
+      .hub__row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; }
+      .hub__desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .toolset { border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-md); padding: 0.5rem; }
+      .mcp-list { display: grid; gap: 0.25rem; max-height: 200px; overflow-y: auto; }
+      .mcp-row { display: flex; align-items: flex-start; gap: 0.5rem; color: var(--ui-text-secondary); font-size: 0.75rem; }
+      .mcp-tag { margin-left: 0.375rem; font-size: 0.65rem; color: var(--ui-text-quaternary); }
+      .mcp-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.65rem; line-height: 1rem; color: var(--ui-text-quaternary); }
+      .mcp-link { margin-left: 0.375rem; border: 0; padding: 0; background: transparent; color: var(--ui-accent); font-size: 0.65rem; text-decoration: underline; cursor: pointer; }
+      .mcp-ok { margin-left: 0.375rem; font-size: 0.65rem; color: var(--ui-success); }
+      .checkbox.is-disabled { opacity: 0.5; }
+      .grp-row { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.375rem 0.5rem; font-size: 0.875rem; cursor: pointer; }
+      .grp-row:hover { background: var(--chrome-action-hover); }
+      .sel-wrap { position: relative; }
+      .sel-pop { top: calc(100% + 4px); left: 0; z-index: var(--z-modal-popover); min-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <!-- Face shapes (avatar.tsx math faces + approximations of the blobatar silhouettes), viewBox 0 0 40 44 -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="face-circle" viewBox="0 0 40 44"><circle cx="20" cy="20" r="16" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-organic" viewBox="0 0 40 44"><path d="M21 4 C30 4 36 10 35.5 19 C35 28 30 36 20 36 C10 36 4.5 29 4.5 20 C4.5 11 11 4 21 4Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-squircle" viewBox="0 0 40 44"><rect x="4" y="4" width="32" height="32" rx="11" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="17.2" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="16.5" r=".65"/><circle cx="24" cy="16.5" r=".65"/></g></symbol>
+        <symbol id="face-pill" viewBox="0 0 40 44"><rect x="2.5" y="8" width="35" height="24" rx="12" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-nub" viewBox="0 0 40 44"><path d="M20 9 C29 9 36 15 36 23 C36 31 29 37 20 37 C11 37 4 31 4 23 C4 15 11 9 20 9Z M16.5 10 Q20 1.5 23.5 10Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-cloud" viewBox="0 0 40 44"><path d="M11 32 a7.5 7.5 0 0 1 -1 -14.9 A9.5 9.5 0 0 1 29 12.5 A7 7 0 0 1 30 32 Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="22" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="22" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="21.3" r=".65"/><circle cx="24" cy="21.3" r=".65"/></g></symbol>
+        <symbol id="face-drop" viewBox="0 0 40 44"><path d="M20 3 C27 12 34 18.5 34 25.5 A14 14 0 0 1 6 25.5 C6 18.5 13 12 20 3Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="25" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="25" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="24.3" r=".65"/><circle cx="24" cy="24.3" r=".65"/></g></symbol>
+        <symbol id="face-hexagon" viewBox="0 0 40 44"><path d="M20 3.5 L34.5 11.8 L34.5 28.2 L20 36.5 L5.5 28.2 L5.5 11.8Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="18.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="18.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="17.8" r=".65"/><circle cx="24" cy="17.8" r=".65"/></g></symbol>
+        <symbol id="face-sun" viewBox="0 0 40 44"><path d="M20 3 L23 8.5 L29 6 L29.5 12.5 L35.5 14 L32.5 19.5 L36 24.5 L30 26.5 L30 33 L24 31.5 L20 36.5 L16 31.5 L10 33 L10 26.5 L4 24.5 L7.5 19.5 L4.5 14 L10.5 12.5 L11 6 L17 8.5Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="19.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="19.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="18.8" r=".65"/><circle cx="24" cy="18.8" r=".65"/></g></symbol>
+        <symbol id="face-triangle" viewBox="0 0 40 44"><path d="M20 4.5 Q21.6 4.5 22.5 6 L36.4 31 Q37.4 33.5 34.6 34 L5.4 34 Q2.6 33.5 3.6 31 L17.5 6 Q18.4 4.5 20 4.5Z" style="fill:var(--face)"/><g style="fill:var(--face-eye)"><ellipse cx="15.4" cy="23.5" rx="2.2" ry="2.3"/><ellipse cx="24.6" cy="23.5" rx="2.2" ry="2.3"/></g><g style="fill:var(--face-hl)"><circle cx="14.8" cy="22.8" r=".65"/><circle cx="24" cy="22.8" r=".65"/></g></symbol>
+      </defs>
+    </svg>
+
+    <!-- Bots roster behind the dialogs (abridged) -->
+    <template id="bots-pane">
+      <div class="bots-pane">
+        <div class="bp-head">
+          <span class="bp-title">Bots</span>
+          <div class="bp-actions">
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="Activity toasts off — click to enable"><i class="codicon codicon-bell-slash"></i></button>
+            <button class="btn btn--ghost btn--icon-xs bp-ico" type="button" aria-label="New bot or group chat"><i class="codicon codicon-add"></i></button>
+          </div>
+        </div>
+        <div class="bp-list">
+          <button class="bot-row is-active" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot"></span></span><span class="bot-row__name">Research Lead</span></span><span class="bot-row__age">2m</span></span><span class="bot-row__sub"><span class="bot-row__preview">Sent @coder two figures with sources.</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-blue)"><use href="#face-squircle" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot"></span></span><span class="bot-row__name">coder</span></span><span class="bot-row__age">12m</span></span><span class="bot-row__sub"><span class="bot-row__preview">Can you review the reconnect patch before I push?</span></span></span>
+          </button>
+          <button class="bot-row" type="button">
+            <svg class="bot-face" width="34" height="34" style="--face:var(--ui-orange)"><use href="#face-cloud" width="100%" height="100%"/></svg>
+            <span class="bot-row__body"><span class="bot-row__top"><span class="bot-row__id"><span class="bot-row__lead"><span class="dot"></span></span><span class="bot-row__name">inbox-butler</span></span><span class="bot-row__age">1h</span></span><span class="bot-row__sub"><span class="bot-row__preview">Morning digest: 14 new, 3 need a reply</span></span></span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-sidebar="bots" data-title="Bot Chat">
+            <div class="ws-row">
+              <div class="zone">
+                <div class="thread">
+                  <div class="thread__inner">
+                    <div class="msg-user">Message from 🤖 coder (@coder): Can you find current speculative-decoding speedups for 7B models?</div>
+                    <div class="msg-ai"><p>Sent @coder two figures with sources: <strong>2.4×</strong> greedy and <strong>1.8×</strong> at T=0.8.</p></div>
+                  </div>
+                </div>
+              </div>
+              <div class="rail"><div class="rail-tab">Scheduled jobs</div></div>
+            </div>
+          </div>
+
+          <div class="scrim"></div>
+
+          <section data-views="dialog">
+            <!-- ══ New bot (quick path) ══ -->
+            <div data-view="new">
+              <div class="dialog" role="dialog" style="max-width:28rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New bot</h2>
+                  <p class="dialog__desc">A named teammate with its own memory, skills, and chat. It can message your other agents.</p>
+                </div>
+                <div class="stack">
+                  <div class="face-hero"><svg class="bot-face" width="56" height="56" style="--face:var(--ui-orange)"><use href="#face-organic" width="100%" height="100%"/></svg></div>
+                  <div class="ap">
+                    <div class="seg"><button class="seg__opt is-active" type="button">Bot</button><button class="seg__opt" type="button">Generate</button><button class="seg__opt" type="button">Upload</button><button class="seg__opt" type="button">Pet</button></div>
+                    <div class="ap-grid" style="--face:var(--ui-orange)">
+                      <button class="ap-tile is-on" type="button" title="Auto — the name decides"><span class="ap-auto">Auto</span></button>
+                      <button class="ap-tile" type="button" title="round"><svg class="bot-face" width="32" height="32"><use href="#face-circle" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="organic"><svg class="bot-face" width="32" height="32"><use href="#face-organic" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="boxy"><svg class="bot-face" width="32" height="32"><use href="#face-squircle" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="capsule"><svg class="bot-face" width="32" height="32"><use href="#face-pill" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="nub"><svg class="bot-face" width="32" height="32"><use href="#face-nub" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="cloud"><svg class="bot-face" width="32" height="32"><use href="#face-cloud" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="droplet"><svg class="bot-face" width="32" height="32"><use href="#face-drop" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="hexagon"><svg class="bot-face" width="32" height="32"><use href="#face-hexagon" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="sun"><svg class="bot-face" width="32" height="32"><use href="#face-sun" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button" title="triangle"><svg class="bot-face" width="32" height="32"><use href="#face-triangle" width="100%" height="100%"/></svg></button>
+                    </div>
+                    <div class="ap-btns">
+                      <button class="btn btn--ghost btn--sm" type="button"><i class="codicon codicon-refresh"></i>Randomize</button>
+                      <button class="btn btn--ghost btn--sm" type="button" title="Keep this exact face even if the name changes"><i class="codicon codicon-lock"></i>Lock face</button>
+                    </div>
+                    <div class="ap-note">Face follows the name.</div>
+                    <button class="btn btn--ghost btn--sm" type="button" style="color:var(--ui-text-tertiary)">Classic shapes</button>
+                  </div>
+                  <div class="field"><label class="field__label">Name</label><input class="control is-focused" value="inbox-triage" placeholder="inbox-triage" /></div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Inbox Triage" placeholder="Inbox Triage" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control" placeholder="What should this bot help with?">Sorts new mail into reply / read later / archive and drafts short replies for me to approve.</textarea></div>
+                  <button class="disclosure" type="button"><i class="codicon codicon-chevron-right caret"></i>Advanced</button>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Create Bot</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ Edit profile (classic shapes + colour swatches) ══ -->
+            <div data-view="edit" hidden>
+              <div class="dialog" role="dialog" style="max-width:24rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Edit profile</h2>
+                  <p class="dialog__desc">Appearance and role for Research Lead (researcher).</p>
+                </div>
+                <div class="stack-4">
+                  <div class="face-hero"><svg class="bot-face" width="64" height="64" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg></div>
+                  <div class="ap">
+                    <div class="seg"><button class="seg__opt is-active" type="button">Bot</button><button class="seg__opt" type="button">Generate</button><button class="seg__opt" type="button">Upload</button><button class="seg__opt" type="button">Pet</button></div>
+                    <div class="ap-grid" style="--face:var(--ui-cyan)">
+                      <button class="ap-tile" type="button" title="Blob face — drawn from the bot’s name"><svg class="bot-face" width="32" height="32"><use href="#face-organic" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-circle" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-nub" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-squircle" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-pill" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-triangle" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile is-on" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-hexagon" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-cloud" width="100%" height="100%"/></svg></button>
+                      <button class="ap-tile" type="button"><svg class="bot-face" width="32" height="32"><use href="#face-drop" width="100%" height="100%"/></svg></button>
+                    </div>
+                    <div>
+                      <div class="sw-grid">
+                        <button class="sw" type="button" style="--sw:var(--ui-red)" aria-label="red"></button>
+                        <button class="sw" type="button" style="--sw:var(--ui-orange)" aria-label="orange"></button>
+                        <button class="sw" type="button" style="--sw:var(--ui-yellow)" aria-label="yellow"></button>
+                        <button class="sw" type="button" style="--sw:color-mix(in oklch, var(--ui-yellow), var(--ui-green))" aria-label="lime"></button>
+                        <button class="sw" type="button" style="--sw:var(--ui-green)" aria-label="green"></button>
+                        <button class="sw" type="button" style="--sw:color-mix(in oklch, var(--ui-green), var(--ui-cyan))" aria-label="teal"></button>
+                        <button class="sw is-on" type="button" style="--sw:var(--ui-cyan)" aria-label="cyan"></button>
+                        <button class="sw" type="button" style="--sw:color-mix(in oklch, var(--ui-cyan), var(--ui-blue))" aria-label="azure"></button>
+                        <button class="sw" type="button" style="--sw:var(--ui-blue)" aria-label="blue"></button>
+                        <button class="sw" type="button" style="--sw:var(--ui-purple)" aria-label="violet"></button>
+                        <button class="sw" type="button" style="--sw:color-mix(in oklch, var(--ui-purple), var(--ui-red))" aria-label="magenta"></button>
+                        <button class="sw" type="button" style="--sw:color-mix(in oklch, var(--ui-red) 70%, var(--ui-purple))" aria-label="rose"></button>
+                      </div>
+                      <button class="sw-clear" type="button"><i class="codicon codicon-circle-slash"></i>Match the name</button>
+                    </div>
+                  </div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Research Lead" placeholder="researcher" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control" placeholder="What should this bot help with?">Finds, reads and summarizes papers, benchmarks and changelogs. Always cites sources.</textarea></div>
+                  <button class="disclosure" type="button"><i class="codicon codicon-chevron-right caret"></i>Advanced — model, skills, toolsets, SOUL.md</button>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ Avatar picker, Generate tab ══ -->
+            <div data-view="avatar" hidden>
+              <div class="dialog" role="dialog" style="max-width:24rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Edit profile</h2>
+                  <p class="dialog__desc">Appearance and role for Research Lead (researcher).</p>
+                </div>
+                <div class="stack-4">
+                  <div class="face-hero"><svg class="bot-face" width="64" height="64" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg></div>
+                  <div class="ap">
+                    <div class="seg"><button class="seg__opt" type="button">Bot</button><button class="seg__opt is-active" type="button">Generate</button><button class="seg__opt" type="button">Upload</button><button class="seg__opt" type="button">Pet</button></div>
+                    <div class="gen">
+                      <textarea class="control" style="min-height:4rem;font-size:.75rem" placeholder="Describe your avatar…"></textarea>
+                      <button class="btn btn--secondary" type="button" style="width:100%"><i class="codicon codicon-sparkle" style="font-size:.8rem"></i>Generate</button>
+                      <div class="ap-note">Leave blank to generate from the bot’s name and description.</div>
+                    </div>
+                  </div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Research Lead" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control">Finds, reads and summarizes papers, benchmarks and changelogs. Always cites sources.</textarea></div>
+                  <button class="disclosure" type="button"><i class="codicon codicon-chevron-right caret"></i>Advanced — model, skills, toolsets, SOUL.md</button>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ New bot → Advanced → General, provider Select open (ModelPicker) ══ -->
+            <div data-view="model" hidden>
+              <div class="dialog" role="dialog" style="max-width:48rem;resize:both">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New bot</h2>
+                  <p class="dialog__desc">A named teammate with its own memory, skills, and chat. It can message your other agents.</p>
+                </div>
+                <div class="stack">
+                  <div class="face-hero"><svg class="bot-face" width="56" height="56" style="--face:var(--ui-orange)"><use href="#face-organic" width="100%" height="100%"/></svg></div>
+                  <div class="ap">
+                    <div class="seg"><button class="seg__opt is-active" type="button">Bot</button><button class="seg__opt" type="button">Generate</button><button class="seg__opt" type="button">Upload</button><button class="seg__opt" type="button">Pet</button></div>
+                    <div class="ap-note">(avatar tiles as in the New bot view)</div>
+                  </div>
+                  <div class="field"><label class="field__label">Name</label><input class="control" value="inbox-triage" /></div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Inbox Triage" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control">Sorts new mail into reply / read later / archive and drafts short replies for me to approve.</textarea></div>
+                  <button class="disclosure" type="button" data-scroll-into><i class="codicon codicon-chevron-right caret is-open"></i>Advanced</button>
+                  <div class="adv-box">
+                    <div class="seg"><button class="seg__opt is-active" type="button">General</button><button class="seg__opt" type="button">Capabilities</button></div>
+                    <div class="stack">
+                      <div class="field"><label class="field__label">Clone from profile</label><button class="control select-trigger h8" type="button">default</button></div>
+                      <div class="mp">
+                        <div class="field"><label class="field__label">Provider</label>
+                          <div class="sel-wrap">
+                            <button class="control select-trigger h8" data-state="open" type="button">DeepSeek (deepseek)</button>
+                            <div class="menu sel-pop" role="listbox">
+                              <button class="menu__item" type="button">Inherit (launch profile)</button>
+                              <button class="menu__item" type="button">Anthropic (anthropic)</button>
+                              <button class="menu__item is-checked is-focused" type="button">DeepSeek (deepseek)</button>
+                              <button class="menu__item" type="button">Xiaomi MiMo (xiaomi)</button>
+                              <button class="menu__item" type="button">OpenRouter (openrouter)</button>
+                              <button class="menu__item" type="button">Nous Portal (nous)</button>
+                              <button class="menu__item" type="button">✏️ Enter manually…</button>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="field"><label class="field__label">Model</label><button class="control select-trigger h8" type="button">deepseek-v4-flash</button></div>
+                      </div>
+                      <div class="field"><label class="field__label">SOUL.md (optional — replaces the generated persona)</label><textarea class="control t-mono" style="min-height:6rem;font-size:.75rem;line-height:1.25rem" placeholder="Leave blank to auto-generate from name/title/description + agent-messaging roster."></textarea></div>
+                      <label class="check-row"><span class="checkbox is-on"></span>Share keys &amp; accounts with the main profile</label>
+                      <div class="dlg-note">Subscriptions, OAuth logins, and API keys stay shared (not copied), so token refreshes never invalidate each other. Uncheck for an isolated snapshot copy.</div>
+                      <label class="check-row"><span class="checkbox"></span>Create empty (skip bundled skills)</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Create Bot</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ Edit profile → Advanced, skills checklist + Skills Hub (builds without the embedded SkillsView) ══ -->
+            <div data-view="skills" hidden>
+              <div class="dialog" role="dialog" style="max-width:48rem;resize:both">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Edit profile</h2>
+                  <p class="dialog__desc">Appearance and role for Research Lead (researcher).</p>
+                </div>
+                <div class="stack-4">
+                  <div class="face-hero"><svg class="bot-face" width="64" height="64" style="--face:var(--ui-cyan)"><use href="#face-hexagon" width="100%" height="100%"/></svg></div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Research Lead" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control">Finds, reads and summarizes papers, benchmarks and changelogs. Always cites sources.</textarea></div>
+                  <button class="disclosure" type="button" data-scroll-into><i class="codicon codicon-chevron-right caret is-open"></i>Advanced — model, skills, toolsets, SOUL.md</button>
+                  <div class="adv-box">
+                    <div class="stack-4">
+                      <div class="mp">
+                        <div class="field"><label class="field__label">Provider</label><button class="control select-trigger h8" type="button">DeepSeek (deepseek)</button></div>
+                        <div class="field"><label class="field__label">Model</label><button class="control select-trigger h8" type="button">deepseek-v4-flash</button></div>
+                      </div>
+                      <div class="field">
+                        <label class="field__label">Skills (9/12 enabled)</label>
+                        <div class="boxed">
+                          <input class="control h7" placeholder="Filter skills…" />
+                          <div class="checklist">
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">arxiv-search</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">citation-check</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">csv-analysis</span></label>
+                            <label><span class="checkbox"></span><span class="t-truncate">github-pr-review</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">pdf-reader</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">summarize</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">web-research</span></label>
+                            <label><span class="checkbox"></span><span class="t-truncate">youtube-transcript</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">benchmark-tables</span></label>
+                            <label><span class="checkbox"></span><span class="t-truncate">image-gen</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">paper-digest</span></label>
+                            <label><span class="checkbox is-on"></span><span class="t-truncate">changelog-diff</span></label>
+                          </div>
+                          <div class="hub">
+                            <div class="hub__head"><div class="hub__title">Skills Hub</div><button class="hub__browse" type="button">browse the full hub ▾</button></div>
+                            <div class="flex gap-1-5">
+                              <input class="control h7 grow" value="speculative decoding" placeholder="Search the hub (community + well-known sources)…" />
+                              <button class="btn btn--secondary btn--sm" type="button">Search</button>
+                            </div>
+                            <div class="hub__res">
+                              <div class="hub__row"><div class="grow"><div class="t-truncate t-medium">paper-digest</div><div class="hub__desc">Weekly digests of new arXiv papers on a topic, with key numbers pulled out</div></div><span class="t-tertiary" style="font-size:.65rem">✓ added</span></div>
+                              <div class="hub__row"><div class="grow"><div class="t-truncate t-medium">spec-decode-bench</div><div class="hub__desc">Run speculative-decoding benchmarks against a local model pair</div></div><button class="btn btn--ghost btn--sm t-semibold" type="button" title="Install &quot;spec-decode-bench&quot; and add it to the list above">+</button></div>
+                              <div class="hub__row"><div class="grow"><div class="t-truncate t-medium">eval-compare</div><div class="hub__desc">Diff two eval runs and flag regressions</div></div><button class="btn btn--ghost btn--sm t-semibold" type="button">+</button></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <label class="field__label">Toolsets (3/4 enabled — unchecking all restores the default)</label>
+                        <div class="boxed">
+                          <div class="toolset"><label class="check-row t-medium"><span class="checkbox is-on"></span>web</label></div>
+                          <div class="toolset"><label class="check-row t-medium"><span class="checkbox is-on"></span>file</label></div>
+                          <div class="toolset"><label class="check-row t-medium"><span class="checkbox"></span>terminal</label></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ New bot → Advanced → MCP (staged checklist path; McpSetupButton states) ══ -->
+            <div data-view="mcp" hidden>
+              <div class="dialog" role="dialog" style="max-width:48rem;resize:both">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">New bot</h2>
+                  <p class="dialog__desc">A named teammate with its own memory, skills, and chat. It can message your other agents.</p>
+                </div>
+                <div class="stack">
+                  <div class="face-hero"><svg class="bot-face" width="56" height="56" style="--face:var(--ui-orange)"><use href="#face-organic" width="100%" height="100%"/></svg></div>
+                  <div class="field"><label class="field__label">Name</label><input class="control" value="inbox-triage" /></div>
+                  <div class="field"><label class="field__label">Title</label><input class="control" value="Inbox Triage" /></div>
+                  <div class="field"><label class="field__label">Description</label><textarea class="control">Sorts new mail into reply / read later / archive and drafts short replies for me to approve.</textarea></div>
+                  <button class="disclosure" type="button" data-scroll-into><i class="codicon codicon-chevron-right caret is-open"></i>Advanced</button>
+                  <div class="adv-box">
+                    <div class="seg"><button class="seg__opt" type="button">General</button><button class="seg__opt" type="button">Skills</button><button class="seg__opt" type="button">Tools</button><button class="seg__opt is-active" type="button">MCP</button></div>
+                    <div class="stack-1">
+                      <div class="mcp-list">
+                        <label class="mcp-row"><span class="checkbox is-on"></span><span class="grow"><span>gmail</span><div class="mcp-desc">Read, label and draft Gmail messages</div></span></label>
+                        <label class="mcp-row"><span class="checkbox is-on"></span><span class="grow"><span>github</span><span class="mcp-tag">catalog · installed</span><div class="mcp-desc">Issues, pull requests and code search through the GitHub API</div></span></label>
+                        <label class="mcp-row"><span class="checkbox is-disabled"></span><span class="grow"><span>linear</span><button class="mcp-link" type="button">Sign in…</button><div class="mcp-desc">Linear issues and projects (OAuth)</div></span></label>
+                        <label class="mcp-row"><span class="checkbox is-disabled"></span><span class="grow"><span>brave-search</span>
+                          <div class="stack-1" style="margin-top:.25rem">
+                            <input class="control" type="password" style="height:1.5rem;font-size:.7rem" placeholder="BRAVE_API_KEY" />
+                            <div class="flex gap-1"><button class="btn btn--secondary btn--xs" type="button">Save &amp; test</button><button class="btn btn--ghost btn--xs" type="button">Cancel</button></div>
+                          </div>
+                          <div class="mcp-desc">Web search through the Brave Search API</div></span></label>
+                        <label class="mcp-row"><span class="checkbox is-on"></span><span class="grow"><span>notion</span><span class="mcp-ok">set up ✓</span><div class="mcp-desc">Search and edit Notion pages</div></span></label>
+                        <label class="mcp-row"><span class="checkbox"></span><span class="grow"><span>filesystem</span><span class="mcp-tag">catalog</span><div class="mcp-desc">Read and write files under allowed roots</div></span></label>
+                      </div>
+                      <div class="dlg-fine">Configured servers copy from the main profile; catalog entries are the bundled MCP menu. Entries needing API keys route through setup first (credentials follow the shared keys setting).</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Create Bot</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ Manage groups (right-click coder → Manage groups…) ══ -->
+            <div data-view="groups" hidden>
+              <div class="dialog" role="dialog" style="max-width:24rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header">
+                  <h2 class="dialog__title">Manage groups</h2>
+                  <p class="dialog__desc">A bot can join multiple group chats. Memberships sync to every machine.</p>
+                </div>
+                <div class="stack-1">
+                  <label class="grp-row"><span class="checkbox is-on"></span><span>Launch crew</span></label>
+                  <label class="grp-row"><span class="checkbox"></span><span>Research council</span></label>
+                  <label class="grp-row"><span class="checkbox is-on"></span><span>Ops standup</span></label>
+                </div>
+                <form class="flex items-center gap-1-5" onsubmit="return false">
+                  <input class="control is-focused" placeholder="New group…" />
+                  <button class="btn btn--default btn--sm is-disabled" type="submit">Create &amp; join</button>
+                </form>
+                <button class="btn btn--ghost btn--sm" type="button" style="justify-self:start">Remove from all groups</button>
+              </div>
+            </div>
+
+            <!-- ══ New section (SectionNameDialog) ══ -->
+            <div data-view="section" hidden>
+              <div class="dialog" role="dialog" style="max-width:24rem">
+                <button class="btn btn--ghost btn--icon-xs dialog__close" type="button" aria-label="Close"><i class="codicon codicon-close"></i></button>
+                <div class="dialog__header"><h2 class="dialog__title">New section</h2></div>
+                <input class="control is-focused" maxlength="40" aria-label="Section name" placeholder="e.g. Clients" value="Vendors" />
+                <div class="dialog__footer">
+                  <button class="btn btn--ghost" type="button">Cancel</button>
+                  <button class="btn btn--default" type="button">Create</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="dialog:new">New bot</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:edit">Edit profile</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:avatar">Avatar (Generate)</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:model">Model picker</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:skills">Skills + Hub</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:mcp">MCP setup</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:groups">Manage groups</button>
+        <button class="btn btn--secondary btn--sm" data-show="dialog:section">New section</button>
+      </nav>
+    </div>
+    <script>
+      // Prototype-only: when a view opens, scroll its dialog so the block marked data-scroll-into is at the top.
+      ;(function () {
+        function run() {
+          var marks = document.querySelectorAll('[data-scroll-into]')
+          for (var i = 0; i < marks.length; i++) {
+            var el = marks[i]
+            if (!el.offsetParent) continue
+            var d = el.closest('.dialog')
+            if (d) d.scrollTop = el.offsetTop - 12
+          }
+        }
+        document.addEventListener('DOMContentLoaded', function () { requestAnimationFrame(run) })
+        document.addEventListener('click', function () { requestAnimationFrame(run) })
+      })()
+    </script>
+  </body>
+</html>

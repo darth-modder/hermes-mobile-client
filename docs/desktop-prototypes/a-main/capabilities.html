@@ -1,0 +1,876 @@
+<!doctype html>
+<!--
+  Screen:      Capabilities (A · full page)   route `/skills` (?tab=skills|toolsets|mcp; legacy ?tab=hub → skills)
+  Replicates:  apps/desktop/src/app/skills/index.tsx (SkillsView, SkillDetail, OfficialSkillDetail, ToolsetDetail,
+               scope selector), skills/embedded-hub-picker.tsx (EmbeddedHubPicker), skills/mcp-tab.tsx (McpTab,
+               McpRow, ServerConfig, McpCatalog, McpImportButton, McpLogs), app/page-search-shell.tsx,
+               app/master-detail.tsx (MasterDetail split="wide", ListColumn, DetailColumn, ListStrip, ListStripMenu,
+               CapRow, ToolChip, DetailPane, ICON_BUTTON), app/overlays/panel.tsx (PanelEmpty, PanelPill,
+               PanelAddButton), app/settings/toolset-config-panel.tsx (ToolsetConfigPanel, EnvVarField),
+               components/chat/json-document-editor.tsx, components/chat/log-tail.tsx, components/ui/avatar-chip.tsx
+  Views:       #cap=skills (installed list + "Available to install" catalog + embedded Skills Hub)
+                 nested #skill=bundled | learned (Edit/Archive) | official (catalog skill selected); #skmenu=open
+               #cap=toolsets   nested #tool=web (provider matrix) | vision (aux-model hint)
+               #cap=mcp        nested #mcpsel=list | github (cursor inside the github block → ServerConfig)
+               #cap=loading | #cap=error | #cap=empty (search with no matches; hub collapsed)
+  Measurements:
+    - page header (PageSearchShell): grid [1fr | auto | 1fr], gap .75rem, px .75rem, pb .5rem; real pt is
+      titlebar-height + .5rem (the titlebar floats over the page; the stamped titlebar supplies the 34px here).
+      SearchField left (hidden on the MCP tab), TextTab row centred (Skills 86 / Tools 14 / MCP), nothing trailing.
+      TextTab h-7, 12px medium, tertiary; active = foreground + underline; count meta .72em tertiary.
+    - scope selector ("Configuring:"), shown above EVERY tab when >1 profile/agent exists: border-b stroke-secondary,
+      px .75rem py .5rem, gap .5rem; label 11.2px (.7rem) medium tertiary; Select trigger h-7 (28px) w-56 (14rem) 12px.
+      On multi-gateway desktops options read "<profile> — <gateway label>" (+ " (current)").
+    - MasterDetail split="wide": grid [minmax(0,.75fr) | minmax(0,1fr)]; the seam is a 4px col-resize sash
+      (1px line on hover), rail width persisted, min 180px left / 320px right, double-click resets.
+    - ListColumn p-2; ListStrip h-6 (24px) mb .25rem pl .5rem pr .25rem: sort link 10.9px (.68rem) medium
+      muted/70 ("↓ Most used" / "↑ Least used") + kebab (ICON_BUTTON 20px, radius 4px, codicon 13px).
+    - CapRow: h-8 (32px) / h-11 (44px) with a subtitle; radius-md; button pl .5rem pr .375rem gap .5rem;
+      title 12.5px (.78rem) medium foreground/85 (off: regular muted/60); subtitle 10px (.62rem) muted/50;
+      usage meta chip 9.6px tabular, px .25rem, bg-quinary, tertiary; Switch xs (16×28) mr .375rem, 60% when off.
+    - catalog label "Available to install": h-7, items-end, px .5rem pb .25rem, 10px medium uppercase quaternary.
+    - DetailColumn: centred max-w 42rem, px 1.25rem py 1rem, children spaced 1.25rem; footer caption
+      "Changes apply to new sessions." 10.4px muted/50, right-aligned, px 1.25rem pt .375rem pb .75rem.
+    - DetailHeader: h3 15px semibold tracking-tight; PanelPill rounded-full px .375rem py .125rem 10px medium
+      capitalize (muted = foreground/10 + muted text; good = primary/10; warn = amber-500/10 + amber-600/300).
+    - frontmatter box + SKILL.md <pre>: radius-lg (2.4px), 1px stroke-tertiary, bg-quinary, p .75rem, 10.9px;
+      key column w-24 (6rem) medium tertiary. ToolChip: radius-md, px .375rem py .125rem, mono 10.4px, bg-quinary.
+    - Skills Hub (EmbeddedHubPicker): border-t stroke-secondary; header px .75rem py .375rem, title 11.2px medium
+      tertiary, "Update installed" + "Hide the hub browser" text xs buttons; viewport default 380px (min 120,
+      max 75vh and never closer than 176px to the top of the column), 1px stroke-secondary, radius 8px (literal),
+      iframe rendered at 133.34% and scaled .75; hint 10.4px/16px quaternary. The list region keeps min-h-40 (10rem).
+    - ToolsetConfigPanel provider row: radius-xl, background/60; header px .75rem py .625rem, 14px medium name +
+      Pills (Badge 10.4px); expanded body bg-muted/20 p .75rem gap .5rem; EnvVarField radius-lg bg background/55 p .625rem,
+      mono 12px key + Set/Not set pill, prompt 11.2px muted.
+    - MCP tab: same wide grid, no MasterDetail. Left aside border-r stroke-quaternary, p-2; section header h-6 pl .5rem,
+      "Servers" 11.5px medium tertiary + "Import" text xs (h-5, 10.9px, clippy 12px). McpRow h-11 (44px), pl .5rem
+      pr .375rem gap .5rem; AvatarChip 24px radius-md + 8px status dot bottom-right with a 2px chat-surface ring
+      (ok emerald-500, error red-500, needs-auth amber-500, off/unknown foreground/20, probing pulsing foreground/40);
+      name 12.5px; status 10px muted/50; refresh/trash ICON_BUTTONs fade in on hover; Switch xs.
+      PanelAddButton: full-width h-7 ghost "+" (label only in tooltip). Catalog rows: radius-md px .5rem py .5rem,
+      tags radius-sm bg-tertiary px .375rem py .125rem 9.6px secondary, description 10.9px muted/70 (2-line clamp).
+    - JSON editor header h-8 (32px) px .75rem: "mcp.json" 10.9px tertiary (+ 6px dot when dirty), Format JSON
+      ICON_BUTTON, Save (default xs, disabled until dirty). Logs DetailPane: border-t stroke-tertiary, header h-9
+      (36px) px .75rem, title 10.9px muted/60, "stdio | agent" TextTabs (h-5, 10.4px), collapse chevron; body 176px.
+  Behaviour:
+    - Tabs write ?tab=; the scope selector re-targets every tab (Skills/Tools/MCP) at one profile (and gateway).
+    - Toggles are optimistic and silent; errors revert + toast. The kebab's "All" switch and "Disable unused"
+      act on the WHOLE tab, never the search-filtered rows. Sort flips most/least used (ties A–Z).
+    - Search matches name, description, category (+ catalog tags); placeholder is a random data hint.
+    - Selecting a catalog row shows its SKILL.md preview; Install spins the row button ("Installing...") and the
+      finished install moves the skill into the installed list. Learned (agent) skills get Edit (opens a docked
+      SKILL.md editor pane under the grid) and Archive (confirm dialog; restorable via hermes curator restore).
+    - Hub: lazy-mounted the first time Skills shows, then kept mounted (hidden) across tabs so the iframe never
+      reloads; top-edge sash drags its height; collapse state persists. A "+ Add to this Agent" click in the hub
+      posts a message → install into the scoped profile (already-installed names toast instead).
+    - Toolsets usage badges come from a lazy 365-day analytics scan (skeleton chips until loaded; cached 10 min).
+    - MCP: the editor cursor IS the selection — the server block under the cursor is highlighted and the left
+      column swaps to its ServerConfig (back chevron returns). Enabled servers are probed on arrival (cached);
+      tool chips toggle include/exclude (struck through when excluded). Saves replace the whole map and hot-reload
+      live sessions (withheld when the scope points at another gateway). Logs tail every 2s.
+    - Ctrl/Cmd+R refreshes skills, tools and catalog.
+  Mobile:      at parity ("Settings: MCP servers, skills", docs/PARITY.md, M09); the embedded hub iframe and the
+               mcp.json editor are desktop presentations.
+  Notes:       The hub iframe (cross-origin docs site with ?embed=picker) is drawn as a token-coloured stand-in.
+               The code editor is a static stand-in for CodeMirror; token colours approximate the theme.
+               Brand tints use --ui-* tokens instead of simpleicons hex; Tabler 3.44 has no Linear mark (monogram "L").
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capabilities · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      /* ── PageSearchShell (app/page-search-shell.tsx) ── */
+      .pss { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--ui-chat-surface-background); }
+      .pss__head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; flex-shrink: 0; padding: 0.5rem 0.75rem; }
+      .pss__lead, .pss__trail { display: flex; min-width: 0; align-items: center; }
+      .pss__trail { justify-content: flex-end; }
+      .pss__tabs { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 0.5rem; }
+      .pss__body { flex: 1; min-height: 0; overflow: hidden; }
+      .pss .search-field { max-width: calc(var(--vw) * 45); padding: 0 0.125rem; }
+      .pss .search-field > .ti { font-size: 0.875rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .pss .search-field input { field-sizing: content; height: 1.75rem; }
+      .pss .search-field input::placeholder { color: var(--dt-muted-foreground); }
+      .pss .text-tab { font-weight: 500; text-underline-offset: 4px; text-decoration-color: color-mix(in srgb, currentColor 25%, transparent); }
+      .tab-meta { display: inline-block; font-size: 0.72em; font-weight: 400; color: var(--ui-text-tertiary); }
+
+      /* ── Capabilities column + scope selector ── */
+      .cap-col { display: flex; height: 100%; flex-direction: column; }
+      .cap-scope { display: flex; flex-shrink: 0; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--ui-stroke-secondary); padding: 0.5rem 0.75rem; }
+      .cap-scope__label { font-size: 0.7rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .cap-scope .control { width: 14rem; height: 1.75rem; }
+      .cap-main { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+      .cap-region { flex: 1; min-height: 10rem; overflow: hidden; }
+      .cap-region--fill { min-height: 0; }
+
+      /* ── MasterDetail split="wide" (app/master-detail.tsx) ── */
+      .md { display: grid; height: 100%; min-height: 0; grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr); }
+      .md__right { position: relative; display: grid; min-width: 0; min-height: 0; }
+      .md__seam { position: absolute; top: 0; bottom: 0; left: 0; z-index: 10; width: 0.25rem; transform: translateX(-50%); cursor: col-resize; }
+      .md__seam::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); transition: background-color 150ms; }
+      .md__seam:hover::after { background: var(--ui-stroke-secondary); }
+      .md-list { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 0.5rem; }
+      .md-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .md-detail { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+      .md-detail__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .md-detail__inner { display: flex; flex-direction: column; gap: 1.25rem; max-width: 42rem; margin: 0 auto; padding: 1rem 1.25rem; }
+      .md-detail__footer { flex-shrink: 0; width: 100%; max-width: 42rem; margin: 0 auto; padding: 0.375rem 1.25rem 0.75rem; text-align: right; font-size: 0.65rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+
+      /* ListStrip + ICON_BUTTON */
+      .list-strip { display: flex; height: 1.5rem; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.25rem; padding: 0 0.25rem 0 0.5rem; }
+      .strip-btn { border: 0; padding: 0; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); font-size: 0.68rem; font-weight: 500; cursor: pointer; transition: color 150ms; }
+      .strip-btn:hover { color: var(--dt-foreground); }
+      .icon-btn { display: inline-grid; width: 1.25rem; height: 1.25rem; flex-shrink: 0; place-items: center; border: 0; border-radius: 4px; padding: 0; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); cursor: pointer; }
+      .icon-btn:hover, .icon-btn.is-active { background: var(--ui-control-active-background); color: var(--dt-foreground); }
+      .icon-btn .codicon { font-size: 0.8125rem; }
+      .icon-btn--danger:hover { color: var(--dt-destructive); }
+
+      /* CapRow */
+      .cap-row { display: flex; width: 100%; height: 2rem; flex-shrink: 0; align-items: center; border-radius: var(--radius-md); color: var(--ui-text-secondary); transition: background-color 100ms ease-out; }
+      .cap-row--sub { height: 2.75rem; }
+      .cap-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .cap-row.is-active { background: var(--ui-row-active-background); color: var(--dt-foreground); }
+      .cap-row__btn { display: flex; height: 100%; min-width: 0; flex: 1; align-items: center; gap: 0.5rem; border: 0; border-radius: var(--radius-md); padding: 0 0.375rem 0 0.5rem; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+      .cap-row__text { flex: 1; min-width: 0; }
+      .cap-row__title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .cap-row.is-off .cap-row__title { font-weight: 400; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .cap-row__sub { display: flex; min-width: 0; align-items: center; gap: 0.25rem; font-size: 0.62rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .cap-row__sub > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .cap-row__sub .badge { flex-shrink: 0; }
+      .cap-row__meta { flex-shrink: 0; border-radius: var(--radius-sm); padding: 1px 0.25rem; background: var(--ui-bg-quinary); color: var(--ui-text-tertiary); font-size: 0.6rem; line-height: 0.875rem; font-variant-numeric: tabular-nums; }
+      .cap-row .switch, .cap-row__action { margin-right: 0.375rem; flex-shrink: 0; }
+      .cap-row__action { display: flex; align-items: center; }
+      .switch.is-dim { opacity: 0.6; }
+      .catalog-label { display: flex; height: 1.75rem; flex-shrink: 0; align-items: flex-end; padding: 0 0.5rem 0.25rem; font-size: 0.62rem; font-weight: 500; letter-spacing: 0.025em; text-transform: uppercase; color: var(--ui-text-quaternary); }
+      .spin-sm { width: 0.75rem; height: 0.75rem; border-width: 1.5px; }
+      .count-skel { display: inline-block; width: 0.875rem; height: 0.5rem; border-radius: var(--radius-sm); background: color-mix(in srgb, currentColor 25%, transparent); animation: cap-pulse 2s ease-in-out infinite; }
+      @keyframes cap-pulse { 50% { opacity: 0.5; } }
+
+      /* Detail pieces */
+      .d-head__row { display: flex; min-height: 1.5rem; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .d-head__title { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.025em; }
+      .d-head__desc { margin: 0.25rem 0 0; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .ppill { display: inline-flex; align-items: center; border-radius: var(--radius-full); padding: 0.125rem 0.375rem; background: color-mix(in srgb, var(--dt-foreground) 10%, transparent); color: var(--dt-muted-foreground); font-size: 0.62rem; font-weight: 500; text-transform: capitalize; }
+      .ppill--good { background: color-mix(in srgb, var(--dt-primary) 10%, transparent); color: var(--dt-primary); }
+      .ppill--warn { background: color-mix(in srgb, var(--tw-amber-500) 10%, transparent); color: var(--tw-amber-600); }
+      :root.dark .ppill--warn { color: var(--tw-amber-300); }
+      .fm-box { display: grid; gap: 0.25rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.75rem; background: var(--ui-bg-quinary); }
+      .fm-row { display: flex; gap: 0.5rem; font-size: 0.68rem; line-height: 1rem; }
+      .fm-row__k { width: 6rem; flex-shrink: 0; font-weight: 500; color: var(--ui-text-tertiary); }
+      .fm-row__v { min-width: 0; white-space: pre-wrap; overflow-wrap: break-word; color: var(--ui-text-secondary); }
+      .md-pre { margin: 0; overflow: auto; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.75rem; background: var(--ui-bg-quinary); font-family: var(--dt-font-mono); font-size: 0.68rem; line-height: 1.625; white-space: pre-wrap; overflow-wrap: break-word; user-select: text; }
+      .tool-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+      .tool-chip { border-radius: var(--radius-md); padding: 0.125rem 0.375rem; background: var(--ui-bg-quinary); color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.65rem; }
+      .tool-chip__n { margin-left: 0.25rem; color: var(--ui-text-quaternary); }
+
+      /* ToolsetConfigPanel */
+      .tcp { display: grid; gap: 0.5rem; }
+      .prov { overflow: hidden; border-radius: var(--radius-xl); background: color-mix(in srgb, var(--dt-background) 60%, transparent); }
+      .prov__head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.75rem; border: 0; padding: 0.625rem 0.75rem; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background-color 150ms; }
+      .prov__head:hover { background: color-mix(in srgb, var(--dt-accent) 50%, transparent); }
+      .prov.is-open .prov__head { background: color-mix(in srgb, var(--dt-accent) 40%, transparent); }
+      .prov__name { display: flex; min-width: 0; align-items: center; gap: 0.5rem; }
+      .prov__name > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 500; }
+      .prov__body { display: grid; gap: 0.5rem; padding: 0.75rem; background: color-mix(in srgb, var(--dt-muted) 20%, transparent); }
+      .prov__note { margin: 0; font-size: 0.72rem; color: var(--dt-muted-foreground); }
+      .envf { display: grid; gap: 0.5rem; border-radius: var(--radius-lg); padding: 0.625rem; background: color-mix(in srgb, var(--dt-background) 55%, transparent); }
+      .envf__key { font-family: var(--dt-font-mono); font-size: 0.75rem; font-weight: 500; }
+      .envf__prompt { margin: 0.125rem 0 0; font-size: 0.7rem; color: var(--dt-muted-foreground); }
+
+      /* List-strip menu (ListStripMenu) */
+      .strip-menu { top: 2.125rem; right: 0.75rem; width: 11rem; }
+      .strip-menu .menu__item { justify-content: space-between; }
+
+      /* PanelEmpty + PageLoader */
+      .panel-empty { display: grid; height: 100%; place-items: center; padding: 2.5rem 1.5rem; text-align: center; }
+      .panel-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+      .panel-empty .codicon { font-size: 1.25rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .panel-empty__title { margin: 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 90%, transparent); }
+      .panel-empty__desc { margin: 0; max-width: 24rem; font-size: 0.75rem; line-height: 1.625; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .page-loader { display: grid; height: 100%; place-items: center; }
+      .page-loader .loader { width: 2.5rem; height: 2.5rem; border-width: 2px; }
+
+      /* ── EmbeddedHubPicker ── */
+      .hub { position: relative; display: flex; min-height: 2.25rem; flex-direction: column; overflow: hidden; border-top: 1px solid var(--ui-stroke-secondary); }
+      .hub__sash { position: absolute; top: 0; left: 0; right: 0; z-index: 10; height: 0.25rem; transform: translateY(-50%); cursor: row-resize; }
+      .hub__sash::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; transform: translateY(-50%); transition: background-color 150ms; }
+      .hub__sash:hover::after { background: var(--ui-stroke-secondary); }
+      .hub__head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 0.375rem 0.75rem; }
+      .hub__title { font-size: 0.7rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .hub__body { display: flex; min-height: 0; flex-direction: column; gap: 0.25rem; padding: 0 0.75rem 0.5rem; }
+      .hub__viewport { position: relative; flex: 0 1 380px; width: 100%; min-width: 320px; min-height: 0; overflow: hidden; border: 1px solid var(--ui-stroke-secondary); border-radius: 8px; }
+      .hub__hint { flex-shrink: 0; margin: 0; padding: 0 0.25rem; font-size: 0.65rem; line-height: 1rem; color: var(--ui-text-quaternary); }
+      /* Stand-in for the cross-origin docs page (…/docs/skills?embed=picker): docs chrome hidden, cards only. */
+      .hub-site { position: absolute; top: 0; left: 0; width: 133.34%; height: 133.34%; overflow: hidden; transform: scale(0.75); transform-origin: top left; padding: 1.5rem 2rem; background: var(--dt-background); color: var(--dt-foreground); font-size: 0.875rem; }
+      .hub-site h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+      .hub-site__lede { margin: 0.375rem 0 1rem; color: var(--dt-muted-foreground); }
+      .hub-site__bar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+      .hub-site__search { display: flex; flex: 0 0 26rem; height: 2.25rem; align-items: center; gap: 0.5rem; border: 1px solid var(--dt-border); border-radius: 6px; padding: 0 0.75rem; color: var(--dt-muted-foreground); }
+      .hub-site__chip { border: 1px solid var(--dt-border); border-radius: var(--radius-full); padding: 0.25rem 0.75rem; font-size: 0.8rem; color: var(--dt-muted-foreground); }
+      .hub-site__chip.is-on { border-color: var(--dt-primary); color: var(--dt-primary); }
+      .hub-site__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+      .hub-card { display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid var(--dt-border); border-radius: 8px; padding: 1rem; background: var(--ui-bg-editor); }
+      .hub-card__name { font-family: var(--dt-font-mono); font-size: 0.95rem; font-weight: 600; }
+      .hub-card__desc { margin: 0; color: var(--dt-muted-foreground); font-size: 0.8rem; line-height: 1.45; }
+      .hub-card__foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 0.25rem; }
+      .hub-card__src { font-size: 0.72rem; color: var(--dt-muted-foreground); }
+      .hub-card__add { border: 0; border-radius: 6px; padding: 0.375rem 0.625rem; background: var(--dt-primary); color: var(--dt-primary-foreground); font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+
+      /* ── MCP tab ── */
+      .mcp-host { height: 100%; }
+      .mcp-grid { display: grid; height: 100%; min-height: 0; grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr); }
+      .mcp-aside { display: flex; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--ui-stroke-quaternary); }
+      .mcp-aside__pad { display: flex; flex: 1; min-height: 0; flex-direction: column; padding: 0.5rem; }
+      .mcp-aside__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+      .mcp-head { display: flex; height: 1.5rem; flex-shrink: 0; align-items: center; margin-bottom: 0.25rem; padding: 0 0.25rem 0 0.5rem; }
+      .mcp-head--catalog { height: auto; margin-top: 0.75rem; border-top: 1px solid var(--ui-stroke-quaternary); padding-top: 0.5rem; }
+      .mcp-head__label { flex: 1; font-size: 0.72rem; font-weight: 500; color: var(--ui-text-tertiary); }
+      .mcp-import { height: 1.25rem; padding: 0 0.25rem; font-size: 0.68rem; }
+      .mcp-row { display: flex; width: 100%; height: 2.75rem; flex-shrink: 0; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); padding: 0 0.375rem 0 0.5rem; color: var(--ui-text-secondary); transition: background-color 100ms ease-out; }
+      .mcp-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); transition: none; }
+      .mcp-row__btn { display: flex; min-width: 0; flex: 1; align-items: center; gap: 0.5rem; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+      .mcp-row__text { flex: 1; min-width: 0; }
+      .mcp-row__line { display: flex; min-width: 0; align-items: center; gap: 0.375rem; }
+      .mcp-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .mcp-row.is-off .mcp-row__name { font-weight: 400; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .mcp-row__status { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.62rem; color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+      .unused-pill { flex-shrink: 0; border-radius: var(--radius-sm); padding: 1px 0.25rem; background: var(--ui-bg-tertiary); color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); font-size: 0.58rem; font-weight: 400; }
+      .row-actions { display: flex; align-items: center; gap: 0.125rem; opacity: 0; transition: opacity 150ms; }
+      .mcp-row:hover .row-actions, .row-actions.is-visible { opacity: 1; }
+      .add-row { display: flex; width: 100%; height: 1.75rem; align-items: center; justify-content: center; border: 0; border-radius: 2.5px; background: transparent; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); cursor: pointer; }
+      .add-row:hover { background: var(--ui-row-hover-background); color: var(--dt-foreground); }
+      .add-row .codicon { font-size: 0.875rem; }
+      .cat-row { display: flex; align-items: flex-start; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.5rem; }
+      .cat-row__main { flex: 1; min-width: 0; }
+      .cat-row__line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+      .cat-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; font-weight: 500; color: color-mix(in srgb, var(--dt-foreground) 85%, transparent); }
+      .cat-tag { border-radius: var(--radius-sm); padding: 0.125rem 0.375rem; background: var(--ui-bg-tertiary); color: var(--ui-text-secondary); font-size: 0.6rem; }
+      .cat-row__desc { display: -webkit-box; margin: 0.125rem 0 0; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 0.68rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+
+      /* AvatarChip + MCP status dot */
+      .achip { position: relative; display: inline-grid; width: 1.5rem; height: 1.5rem; flex-shrink: 0; place-items: center; border-radius: var(--radius-md); background: var(--ui-bg-tertiary); color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); font-weight: 500; line-height: 1; }
+      .achip .ti { font-size: 0.875rem; }
+      .achip--brand { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }
+      .achip--mono { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--dt-foreground); }
+      .achip__dot { position: absolute; right: -0.125rem; bottom: -0.125rem; width: 0.5rem; height: 0.5rem; border-radius: var(--radius-full); box-shadow: 0 0 0 2px var(--ui-chat-surface-background); }
+      .achip__dot--ok { background: var(--tw-emerald-500); }
+      .achip__dot--auth { background: var(--tw-amber-500); }
+      .achip__dot--error { background: var(--ui-red); }
+      .achip__dot--off { background: color-mix(in srgb, var(--dt-foreground) 20%, transparent); }
+
+      /* ServerConfig */
+      .srv { flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem; scrollbar-gutter: stable; }
+      .srv__head { display: flex; align-items: flex-start; gap: 0.5rem; padding-right: 0.375rem; }
+      .srv__text { flex: 1; min-width: 0; padding-top: 0.25rem; }
+      .srv__text h3 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.025em; }
+      .srv__text p { margin: 0.125rem 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; color: var(--ui-text-tertiary); }
+      .srv__desc { margin: 0.5rem 0 0; font-size: var(--conversation-caption-font-size); line-height: var(--conversation-caption-line-height); color: var(--ui-text-tertiary); }
+      .srv__tools { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.75rem; }
+      .tool-toggle { border: 0; border-radius: var(--radius-md); padding: 0.125rem 0.375rem; background: var(--ui-bg-quinary); color: var(--ui-text-tertiary); font-family: var(--dt-font-mono); font-size: 0.65rem; cursor: pointer; }
+      .tool-toggle:hover { color: var(--dt-foreground); }
+      .tool-toggle.is-excluded { background: transparent; text-decoration: line-through; opacity: 0.7; }
+
+      /* JsonDocumentEditor + CodeMirror stand-in */
+      .mcp-main { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
+      .json-ed { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+      .json-ed__head { display: flex; height: 2rem; flex-shrink: 0; align-items: center; gap: 0.5rem; padding: 0 0.75rem; }
+      .json-ed__title { display: flex; min-width: 0; align-items: center; gap: 0.375rem; font-size: 0.68rem; color: var(--ui-text-tertiary); }
+      .code { flex: 1; min-height: 0; overflow: auto; padding: 0.25rem 0; font-family: var(--dt-font-mono); font-size: 0.75rem; line-height: 1.125rem; user-select: text; }
+      .cl { display: flex; white-space: pre; color: var(--ui-text-secondary); }
+      .cl.is-hl { background: color-mix(in srgb, var(--dt-primary) 7%, transparent); }
+      .cl__n { width: 2.75rem; flex-shrink: 0; padding-right: 1rem; text-align: right; color: var(--ui-text-quaternary); user-select: none; }
+      .tk-k { color: var(--dt-primary); }
+      .tk-s { color: var(--ui-green); }
+      .tk-b { color: var(--ui-orange); }
+
+      /* DetailPane (logs) + LogTail */
+      .dpane { position: relative; display: flex; flex-shrink: 0; flex-direction: column; border-top: 1px solid var(--ui-stroke-tertiary); background: var(--ui-chat-surface-background); }
+      .dpane__head { display: flex; height: 2.25rem; flex-shrink: 0; align-items: center; gap: 0.5rem; padding: 0 0.75rem; }
+      .dpane__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 400; color: color-mix(in srgb, var(--dt-muted-foreground) 60%, transparent); }
+      .dpane__actions { display: flex; flex-shrink: 0; align-items: center; gap: 0.375rem; margin-left: auto; }
+      .dpane .text-tab { height: 1.25rem; padding: 0 0.125rem; font-size: 0.65rem; }
+      .dpane__body { height: 176px; overflow: hidden; }
+      .logtail { height: 100%; margin: 0; overflow-y: auto; padding: 0.375rem 0.5rem; font-family: var(--dt-font-mono); font-size: 0.7rem; line-height: 1.625; color: var(--ui-text-secondary); white-space: pre-wrap; overflow-wrap: break-word; user-select: text; }
+      .logtail .mark { display: block; margin-top: 0.25rem; color: var(--ui-text-tertiary); }
+      .logtail.is-empty { color: color-mix(in srgb, var(--dt-muted-foreground) 50%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-nav="skills" data-title="">
+            <section data-views="cap" class="workspace">
+
+              <!-- ═══════════════════════════ View: Skills ═══════════════════════════ -->
+              <div data-view="skills" class="pss">
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “software-development”" aria-label="Search skills..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="cap:skills" type="button">Skills <span class="tab-meta">86</span></button>
+                    <button class="text-tab" data-show="cap:toolsets" type="button">Tools <span class="tab-meta">14</span></button>
+                    <button class="text-tab" data-show="cap:mcp" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region">
+                        <div class="md">
+                          <aside class="md-list">
+                            <div class="list-strip">
+                              <div class="flex items-center gap-1-5"><button class="strip-btn" type="button">↓ Most used</button></div>
+                              <div class="flex items-center gap-1-5"><button class="icon-btn" type="button" aria-label="Skills" data-show="skmenu:open"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                            </div>
+                            <div class="md-list__scroll">
+                              <div class="cap-row cap-row--sub" data-show="skill:bundled"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">systematic-debugging</span><span class="cap-row__sub"><span>Software Development</span></span></span><span class="cap-row__meta">×142</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="systematic-debugging"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">github-pr-workflow</span><span class="cap-row__sub"><span>Github</span></span></span><span class="cap-row__meta">×97</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">test-driven-development</span><span class="cap-row__sub"><span>Software Development</span></span></span><span class="cap-row__meta">×61</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">arxiv</span><span class="cap-row__sub"><span>Research</span></span></span><span class="cap-row__meta">×34</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub" data-show="skill:learned"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">release-notes-writer</span><span class="cap-row__sub"><span>Productivity</span><span class="badge">learned</span></span></span><span class="cap-row__meta">×12</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">excalidraw</span><span class="cap-row__sub"><span>Creative</span><span class="badge badge--muted">hub</span></span></span><span class="cap-row__meta">×5</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">obsidian</span><span class="cap-row__sub"><span>Note Taking</span></span></span></button><span class="switch switch--xs is-dim" role="switch" aria-checked="false"></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">youtube-content</span><span class="cap-row__sub"><span>Media</span></span></span></button><span class="switch switch--xs is-dim" role="switch" aria-checked="false"></span></div>
+                              <div class="catalog-label">Available to install</div>
+                              <div class="cap-row cap-row--sub is-off" data-show="skill:official"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">blender-mcp</span><span class="cap-row__sub"><span>Creative</span></span></span></button><span class="cap-row__action"><button class="btn btn--text btn--xs" type="button">Install</button></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">polymarket</span><span class="cap-row__sub"><span>Research</span></span></span></button><span class="cap-row__action"><button class="btn btn--text btn--xs" type="button">Install</button></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">1password</span><span class="cap-row__sub"><span>Security</span></span></span></button><span class="cap-row__action"><button class="btn btn--text btn--xs is-disabled" type="button"><span class="loader spin-sm"></span>Installing...</button></span></div>
+                            </div>
+                            <!-- ListStripMenu dropdown (w-44, align end, 6px offset) -->
+                            <section data-views="skmenu">
+                              <div data-view="closed"></div>
+                              <div data-view="open" hidden>
+                                <div class="menu strip-menu" role="menu">
+                                  <button class="menu__item" type="button" role="menuitem"><span>All</span><span class="switch switch--xs is-dim"></span></button>
+                                  <button class="menu__item" type="button" role="menuitem" data-show="skmenu:closed">Disable unused</button>
+                                </div>
+                              </div>
+                            </section>
+                          </aside>
+
+                          <div class="md__right">
+                            <div class="md__seam" aria-hidden="true"></div>
+                            <main class="md-detail">
+                              <section data-views="skill" class="md-detail__scroll">
+
+                                <!-- Bundled skill -->
+                                <div data-view="bundled" class="md-detail__inner">
+                                  <header><div class="d-head__row"><h3 class="d-head__title">systematic-debugging</h3><span class="ppill">Software Development</span></div><p class="d-head__desc">Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes.</p></header>
+                                  <div class="fm-box">
+                                    <div class="fm-row"><span class="fm-row__k">name</span><span class="fm-row__v">systematic-debugging</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">description</span><span class="fm-row__v">Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes.</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">version</span><span class="fm-row__v">1.2.0</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">author</span><span class="fm-row__v">Hermes Agent</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">license</span><span class="fm-row__v">MIT</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">metadata</span><span class="fm-row__v">hermes:
+  tags: [debugging, testing, root-cause]
+  related_skills: [test-driven-development]</span></div>
+                                  </div>
+<pre class="md-pre"># Systematic Debugging
+
+## Overview
+
+Guessing at fixes wastes time and hides the real fault. Find the root cause
+before changing any code.
+
+## The four phases
+
+1. Root cause: read the whole error, reproduce it, check what changed.
+2. Pattern: find a similar path that works and list the differences.
+3. Hypothesis: change one thing at a time and predict the result.
+4. Fix: write a failing test first, then make the smallest change.
+
+## Red flags
+
+- "Let me just try…" before you can explain the failure
+- Three failed fixes in a row: stop and question the design</pre>
+                                </div>
+
+                                <!-- Learned (agent) skill: Edit / Archive -->
+                                <div data-view="learned" class="md-detail__inner" hidden>
+                                  <header><div class="d-head__row"><h3 class="d-head__title">release-notes-writer</h3><span class="ppill">Productivity</span><span class="ppill ppill--good">Learned</span></div><p class="d-head__desc">Turn a merged-PR list into grouped, user-facing release notes in the house style.</p></header>
+                                  <div class="flex items-center gap-2"><button class="btn btn--text btn--xs" type="button">Edit</button><button class="btn btn--text btn--xs t-danger" type="button">Archive</button></div>
+                                  <div class="fm-box">
+                                    <div class="fm-row"><span class="fm-row__k">name</span><span class="fm-row__v">release-notes-writer</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">description</span><span class="fm-row__v">Turn a merged-PR list into grouped, user-facing release notes in the house style.</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">created</span><span class="fm-row__v">2026-09-02</span></div>
+                                  </div>
+<pre class="md-pre"># Release notes
+
+1. Collect merged PRs since the last tag (gh pr list --state merged).
+2. Group under Added / Changed / Fixed; drop chores and CI-only PRs.
+3. One line per change, written for users, linking the PR number.
+4. Lead with the single most visible change.</pre>
+                                </div>
+
+                                <!-- Catalog (official) skill -->
+                                <div data-view="official" class="md-detail__inner" hidden>
+                                  <header><div class="d-head__row"><h3 class="d-head__title">blender-mcp</h3><span class="ppill">Creative</span><span class="ppill">Official</span></div><p class="d-head__desc">Drive Blender through its MCP bridge: build scenes, apply materials, and render stills from a prompt.</p></header>
+                                  <div class="flex items-center gap-2"><button class="btn btn--text-strong btn--xs" type="button">Install</button></div>
+                                  <div class="fm-box">
+                                    <div class="fm-row"><span class="fm-row__k">name</span><span class="fm-row__v">blender-mcp</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">description</span><span class="fm-row__v">Drive Blender through its MCP bridge: build scenes, apply materials, and render stills from a prompt.</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">version</span><span class="fm-row__v">0.3.1</span></div>
+                                    <div class="fm-row"><span class="fm-row__k">tags</span><span class="fm-row__v">[3d, blender, rendering]</span></div>
+                                  </div>
+<pre class="md-pre"># Blender MCP
+
+Requires Blender 4.x with the MCP add-on enabled (Edit → Preferences →
+Add-ons → "Blender MCP").
+
+## Workflow
+
+1. Inspect the current scene before adding objects.
+2. Build geometry in small steps and check each with a viewport capture.
+3. Render at 50% resolution first; raise it only when the framing is right.</pre>
+                                </div>
+                              </section>
+                              <div class="md-detail__footer">Changes apply to new sessions.</div>
+                            </main>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- EmbeddedHubPicker (expanded, default 380px) -->
+                      <section class="hub">
+                        <div class="hub__sash" aria-hidden="true"></div>
+                        <div class="hub__head">
+                          <span class="hub__title">Skills Hub</span>
+                          <div class="flex items-center gap-1"><button class="btn btn--text btn--xs" type="button">Update installed</button><button class="btn btn--text btn--xs" type="button">Hide the hub browser</button></div>
+                        </div>
+                        <div class="hub__body">
+                          <div class="hub__viewport">
+                            <div class="hub-site" aria-label="Skills Hub (embedded docs page)">
+                              <h1>Skills Hub</h1>
+                              <p class="hub-site__lede">Installable skills from the official index, GitHub and community sources.</p>
+                              <div class="hub-site__bar">
+                                <div class="hub-site__search"><i class="ti ti-search"></i>Search 640 skills</div>
+                                <span class="hub-site__chip is-on">All</span><span class="hub-site__chip">Official</span><span class="hub-site__chip">Trusted</span><span class="hub-site__chip">Community</span>
+                              </div>
+                              <div class="hub-site__grid">
+                                <div class="hub-card"><div class="hub-card__name">pptx</div><p class="hub-card__desc">Create, edit and restyle PowerPoint decks from an outline.</p><div class="hub-card__foot"><span class="hub-card__src">official · productivity</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">axolotl</div><p class="hub-card__desc">Fine-tune open models with Axolotl configs and dataset prep.</p><div class="hub-card__foot"><span class="hub-card__src">official · mlops</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">kubernetes-debug</div><p class="hub-card__desc">Triage crashing pods: events, logs, probes and resource limits.</p><div class="hub-card__foot"><span class="hub-card__src">trusted · devops</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">linear-triage</div><p class="hub-card__desc">Label, prioritise and assign incoming Linear issues.</p><div class="hub-card__foot"><span class="hub-card__src">community · productivity</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">notion-sync</div><p class="hub-card__desc">Mirror meeting notes and tasks into a Notion database.</p><div class="hub-card__foot"><span class="hub-card__src">community · note-taking</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">sql-explain</div><p class="hub-card__desc">Read EXPLAIN plans and suggest indexes for slow queries.</p><div class="hub-card__foot"><span class="hub-card__src">trusted · data</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">podcast-notes</div><p class="hub-card__desc">Transcribe an episode and write show notes with timestamps.</p><div class="hub-card__foot"><span class="hub-card__src">community · media</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                                <div class="hub-card"><div class="hub-card__name">terraform-plan</div><p class="hub-card__desc">Summarise a terraform plan and flag destructive changes.</p><div class="hub-card__foot"><span class="hub-card__src">trusted · devops</span><button class="hub-card__add" type="button">+ Add to this Agent</button></div></div>
+                              </div>
+                            </div>
+                          </div>
+                          <p class="hub__hint">Hit "+ Add to this Agent" on any skill — it installs and appears in the list above.</p>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════ View: Tools (toolsets) ═══════════════════════════ -->
+              <div data-view="toolsets" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Try “web_search”" aria-label="Search tools..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="cap:skills" type="button">Skills <span class="tab-meta">86</span></button>
+                    <button class="text-tab" data-show="cap:toolsets" type="button">Tools <span class="tab-meta">14</span></button>
+                    <button class="text-tab" data-show="cap:mcp" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region cap-region--fill">
+                        <div class="md">
+                          <aside class="md-list">
+                            <div class="list-strip">
+                              <div class="flex items-center gap-1-5"><button class="strip-btn" type="button">↓ Most used</button></div>
+                              <div class="flex items-center gap-1-5"><button class="icon-btn" type="button" aria-label="Tools"><i class="codicon codicon-kebab-vertical"></i></button></div>
+                            </div>
+                            <div class="md-list__scroll">
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Terminal</span><span class="cap-row__sub"><span>Run shell commands and manage background processes</span></span></span><span class="cap-row__meta">×1.4K</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="Turn Terminal toolset off"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">File Operations</span><span class="cap-row__sub"><span>Read, write, search and patch files</span></span></span><span class="cap-row__meta">×982</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub" data-show="tool:web"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Web</span><span class="cap-row__sub"><span>Search the web and extract page content</span></span></span><span class="cap-row__meta">×311</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Memory</span><span class="cap-row__sub"><span>Save and recall durable memories</span></span></span><span class="cap-row__meta">×120</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Browser Automation</span><span class="cap-row__sub"><span>Drive a real browser: navigate, click, type, screenshot</span></span></span><span class="cap-row__meta">×57</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Session Search</span><span class="cap-row__sub"><span>Search past conversations</span></span></span><span class="cap-row__meta">×41</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Code Execution</span><span class="cap-row__sub"><span>Run Python that calls tools programmatically</span></span></span><span class="cap-row__meta">×23</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Delegation</span><span class="cap-row__sub"><span>Spawn subagents for parallel work</span></span></span><span class="cap-row__meta">×18</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub" data-show="tool:vision"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Vision</span><span class="cap-row__sub"><span>Analyze images with a vision-capable model</span></span></span><span class="cap-row__meta">×9</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Text-to-Speech</span><span class="cap-row__sub"><span>Speak replies aloud</span></span></span><span class="cap-row__meta">×3</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Cron Jobs</span><span class="cap-row__sub"><span>Schedule prompts to run later or on repeat</span></span></span><span class="cap-row__meta">3 tools</span></button><span class="switch switch--xs is-on" role="switch" aria-checked="true"></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Image Generation</span><span class="cap-row__sub"><span>Generate images from text prompts</span></span></span><span class="cap-row__meta">2 tools</span></button><span class="switch switch--xs is-dim" role="switch" aria-checked="false"></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Home Assistant</span><span class="cap-row__sub"><span>Control smart-home devices</span></span></span><span class="cap-row__meta">4 tools</span></button><span class="switch switch--xs is-dim" role="switch" aria-checked="false"></span></div>
+                              <div class="cap-row cap-row--sub is-off"><button class="cap-row__btn" type="button"><span class="cap-row__text"><span class="cap-row__title">Mixture of Agents</span><span class="cap-row__sub"><span>Query several models and merge their answers</span></span></span><span class="cap-row__meta">2 tools</span></button><span class="switch switch--xs is-dim" role="switch" aria-checked="false"></span></div>
+                            </div>
+                          </aside>
+                          <div class="md__right">
+                            <div class="md__seam" aria-hidden="true"></div>
+                            <main class="md-detail">
+                              <section data-views="tool" class="md-detail__scroll">
+                                <!-- Web: tool chips + provider matrix -->
+                                <div data-view="web" class="md-detail__inner">
+                                  <header><div class="d-head__row"><h3 class="d-head__title">Web</h3></div><p class="d-head__desc">Search the web and extract page content.</p></header>
+                                  <div class="tool-chips"><span class="tool-chip">web_search<span class="tool-chip__n">×204</span></span><span class="tool-chip">web_extract<span class="tool-chip__n">×107</span></span></div>
+                                  <div class="tcp">
+                                    <div class="flex items-center gap-2" style="flex-wrap:wrap;padding:0 .25rem"><span class="badge badge--muted">Search: firecrawl</span><span class="badge badge--muted">Extract: firecrawl</span></div>
+                                    <div class="prov is-open">
+                                      <button class="prov__head" type="button" aria-expanded="true"><span class="prov__name"><b>Firecrawl</b><span class="badge"><i class="ti ti-check i-xs"></i>Active</span><span class="badge">Search backend</span><span class="badge">Extract backend</span></span></button>
+                                      <div class="prov__body">
+                                        <p class="prov__note">Search, extract and crawl. Paid, with a free tier.</p>
+                                        <div class="flex items-center gap-1-5" style="flex-wrap:wrap"><button class="btn btn--text btn--xs is-disabled" type="button">Use for Search</button><button class="btn btn--text btn--xs is-disabled" type="button">Use for Extract</button></div>
+                                        <div class="envf">
+                                          <div class="flex items-center justify-between gap-2" style="align-items:flex-start;flex-wrap:wrap">
+                                            <div style="min-width:0"><div class="flex items-center gap-2" style="flex-wrap:wrap"><span class="envf__key">FIRECRAWL_API_KEY</span><span class="badge"><i class="ti ti-check i-xs"></i>Set</span></div><p class="envf__prompt">Firecrawl API key</p></div>
+                                            <button class="icon-btn" type="button" aria-label="FIRECRAWL_API_KEY actions"><i class="ti ti-dots-vertical"></i></button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div class="prov"><button class="prov__head" type="button" aria-expanded="false"><span class="prov__name"><b>Tavily</b><span class="badge badge--warn">Setup required</span></span></button></div>
+                                    <div class="prov"><button class="prov__head" type="button" aria-expanded="false"><span class="prov__name"><b>Exa</b><span class="badge badge--warn">Setup required</span></span></button></div>
+                                    <div class="prov"><button class="prov__head" type="button" aria-expanded="false"><span class="prov__name"><b>DuckDuckGo</b><span class="badge badge--muted">Free</span><span class="badge"><i class="ti ti-check i-xs"></i>Ready</span></span></button></div>
+                                    <div class="prov"><button class="prov__head" type="button" aria-expanded="false"><span class="prov__name"><b>Nous Portal</b><span class="badge badge--muted">Subscription</span><span class="badge badge--warn">Needs sign-in</span></span></button></div>
+                                  </div>
+                                </div>
+                                <!-- Vision: aux-model hint -->
+                                <div data-view="vision" class="md-detail__inner" hidden>
+                                  <header><div class="d-head__row"><h3 class="d-head__title">Vision</h3></div><p class="d-head__desc">Analyze images with a vision-capable model.</p></header>
+                                  <div class="tool-chips"><span class="tool-chip">vision_analyze<span class="tool-chip__n">×9</span></span></div>
+                                  <div class="col gap-1-5">
+                                    <p class="d-head__desc" style="margin:0">Vision uses your auxiliary model configuration — the image-capable model is picked there, not per-provider here.</p>
+                                    <div><button class="btn btn--text-strong btn--xs" type="button">Choose vision model in Settings → Models</button></div>
+                                  </div>
+                                </div>
+                              </section>
+                              <div class="md-detail__footer">Changes apply to new sessions.</div>
+                            </main>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════ View: MCP ═══════════════════════════ -->
+              <div data-view="mcp" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab" data-show="cap:skills" type="button">Skills <span class="tab-meta">86</span></button>
+                    <button class="text-tab" data-show="cap:toolsets" type="button">Tools <span class="tab-meta">14</span></button>
+                    <button class="text-tab" data-show="cap:mcp" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region cap-region--fill">
+                        <section data-views="mcpsel" class="mcp-host">
+
+                          <!-- ── Cursor outside every block: fleet + catalog list ── -->
+                          <div data-view="list" class="mcp-grid">
+                            <aside class="mcp-aside">
+                              <div class="mcp-aside__pad">
+                                <div class="mcp-aside__scroll">
+                                  <div class="mcp-head"><span class="mcp-head__label">Servers</span><button class="btn btn--text btn--xs mcp-import" type="button"><i class="codicon codicon-clippy i-xs"></i>Import</button></div>
+
+                                  <div class="mcp-row" id="mcp-server-github">
+                                    <button class="mcp-row__btn" type="button" data-show="mcpsel:github"><span class="achip achip--mono" style="--brand:var(--ui-base)"><i class="ti ti-brand-github"></i><span class="achip__dot achip__dot--ok"></span></span><span class="mcp-row__text"><span class="mcp-row__line"><span class="mcp-row__name">Github</span></span><span class="mcp-row__status">25 tools enabled, ~9.8K tok/call, 142 uses/30d</span></span></button>
+                                    <span class="row-actions"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                    <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="github"></span>
+                                  </div>
+                                  <div class="mcp-row">
+                                    <button class="mcp-row__btn" type="button"><span class="achip">L<span class="achip__dot achip__dot--auth"></span></span><span class="mcp-row__text"><span class="mcp-row__line"><span class="mcp-row__name">Linear</span></span><span class="mcp-row__status">Needs authentication</span></span></button>
+                                    <span class="row-actions"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                    <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="linear"></span>
+                                  </div>
+                                  <div class="mcp-row">
+                                    <button class="mcp-row__btn" type="button"><span class="achip">F<span class="achip__dot achip__dot--ok"></span></span><span class="mcp-row__text"><span class="mcp-row__line"><span class="mcp-row__name">Filesystem</span><span class="unused-pill">unused</span></span><span class="mcp-row__status">11 tools enabled, ~3.1K tok/call, 0 uses/30d</span></span></button>
+                                    <span class="row-actions"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                    <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="filesystem"></span>
+                                  </div>
+                                  <div class="mcp-row">
+                                    <button class="mcp-row__btn" type="button"><span class="achip">C<span class="achip__dot achip__dot--error"></span></span><span class="mcp-row__text"><span class="mcp-row__line"><span class="mcp-row__name">Context7</span></span><span class="mcp-row__status">Error</span></span></button>
+                                    <span class="row-actions"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                    <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="context7"></span>
+                                  </div>
+                                  <div class="mcp-row is-off">
+                                    <button class="mcp-row__btn" type="button"><span class="achip achip--mono" style="--brand:var(--ui-base)"><i class="ti ti-brand-notion"></i><span class="achip__dot achip__dot--off"></span></span><span class="mcp-row__text"><span class="mcp-row__line"><span class="mcp-row__name">Notion</span></span><span class="mcp-row__status">Off</span></span></button>
+                                    <span class="row-actions"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                    <span class="switch switch--xs is-dim" role="switch" aria-checked="false" aria-label="notion"></span>
+                                  </div>
+                                  <button class="add-row" type="button" aria-label="New server" title="New server"><i class="codicon codicon-add"></i></button>
+
+                                  <div class="mcp-head mcp-head--catalog"><span class="mcp-head__label">Catalog</span></div>
+                                  <div class="cat-row"><span class="achip achip--brand" style="--brand:var(--ui-orange);margin-top:.125rem"><i class="ti ti-brand-figma"></i><span class="achip__dot achip__dot--off"></span></span><div class="cat-row__main"><div class="cat-row__line"><span class="cat-row__name">Figma</span><span class="cat-tag">http</span><span class="cat-tag">OAuth</span></div><p class="cat-row__desc">Read frames, components and variables from your Figma files.</p></div><button class="btn btn--text btn--xs" type="button" style="margin-top:.125rem">Install</button></div>
+                                  <div class="cat-row"><span class="achip achip--brand" style="--brand:var(--ui-purple);margin-top:.125rem"><i class="ti ti-brand-stripe"></i><span class="achip__dot achip__dot--off"></span></span><div class="cat-row__main"><div class="cat-row__line"><span class="cat-row__name">Stripe</span><span class="cat-tag">http</span><span class="cat-tag">API key</span></div><p class="cat-row__desc">Query customers, payments and subscriptions in your Stripe account.</p></div><button class="btn btn--text btn--xs" type="button" style="margin-top:.125rem">Install</button></div>
+                                  <div class="cat-row"><span class="achip achip--brand" style="--brand:var(--ui-green);margin-top:.125rem"><i class="ti ti-brand-supabase"></i><span class="achip__dot achip__dot--off"></span></span><div class="cat-row__main"><div class="cat-row__line"><span class="cat-row__name">Supabase</span><span class="cat-tag">stdio</span><span class="cat-tag">API key</span><span class="cat-tag">Needs build</span></div><p class="cat-row__desc">Manage Supabase projects: tables, SQL, edge functions and logs.</p></div><button class="btn btn--text btn--xs" type="button" style="margin-top:.125rem">Install</button></div>
+                                  <div class="cat-row"><span class="achip" style="margin-top:.125rem">P<span class="achip__dot achip__dot--off"></span></span><div class="cat-row__main"><div class="cat-row__line"><span class="cat-row__name">Playwright</span><span class="cat-tag">stdio</span></div><p class="cat-row__desc">Browser automation through Playwright accessibility snapshots.</p></div><button class="btn btn--text btn--xs" type="button" style="margin-top:.125rem">Install</button></div>
+                                </div>
+                              </div>
+                            </aside>
+
+                            <main class="mcp-main">
+                              <div class="json-ed">
+                                <div class="json-ed__head"><span class="json-ed__title">mcp.json</span><div class="ml-auto flex items-center gap-1"><button class="icon-btn" type="button" aria-label="Format JSON"><i class="codicon codicon-json"></i></button><button class="btn btn--default btn--xs is-disabled" type="button">Save</button></div></div>
+                                <div class="code">
+                                  <div class="cl"><span class="cl__n">1</span>{</div>
+                                  <div class="cl"><span class="cl__n">2</span>  <span class="tk-k">"mcpServers"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">3</span>    <span class="tk-k">"github"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">4</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://api.githubcopilot.com/mcp/"</span>,</div>
+                                  <div class="cl"><span class="cl__n">5</span>      <span class="tk-k">"headers"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">6</span>        <span class="tk-k">"Authorization"</span>: <span class="tk-s">"Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"</span></div>
+                                  <div class="cl"><span class="cl__n">7</span>      }</div>
+                                  <div class="cl"><span class="cl__n">8</span>    },</div>
+                                  <div class="cl"><span class="cl__n">9</span>    <span class="tk-k">"linear"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">10</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://mcp.linear.app/mcp"</span>,</div>
+                                  <div class="cl"><span class="cl__n">11</span>      <span class="tk-k">"auth"</span>: <span class="tk-s">"oauth"</span></div>
+                                  <div class="cl"><span class="cl__n">12</span>    },</div>
+                                  <div class="cl"><span class="cl__n">13</span>    <span class="tk-k">"filesystem"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">14</span>      <span class="tk-k">"command"</span>: <span class="tk-s">"npx"</span>,</div>
+                                  <div class="cl"><span class="cl__n">15</span>      <span class="tk-k">"args"</span>: [</div>
+                                  <div class="cl"><span class="cl__n">16</span>        <span class="tk-s">"-y"</span>,</div>
+                                  <div class="cl"><span class="cl__n">17</span>        <span class="tk-s">"@modelcontextprotocol/server-filesystem"</span>,</div>
+                                  <div class="cl"><span class="cl__n">18</span>        <span class="tk-s">"D:/Stuff/Code"</span></div>
+                                  <div class="cl"><span class="cl__n">19</span>      ]</div>
+                                  <div class="cl"><span class="cl__n">20</span>    },</div>
+                                  <div class="cl"><span class="cl__n">21</span>    <span class="tk-k">"context7"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">22</span>      <span class="tk-k">"command"</span>: <span class="tk-s">"npx"</span>,</div>
+                                  <div class="cl"><span class="cl__n">23</span>      <span class="tk-k">"args"</span>: [</div>
+                                  <div class="cl"><span class="cl__n">24</span>        <span class="tk-s">"-y"</span>,</div>
+                                  <div class="cl"><span class="cl__n">25</span>        <span class="tk-s">"@upstash/context7-mcp"</span></div>
+                                  <div class="cl"><span class="cl__n">26</span>      ]</div>
+                                  <div class="cl"><span class="cl__n">27</span>    },</div>
+                                  <div class="cl"><span class="cl__n">28</span>    <span class="tk-k">"notion"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">29</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://mcp.notion.com/mcp"</span>,</div>
+                                  <div class="cl"><span class="cl__n">30</span>      <span class="tk-k">"auth"</span>: <span class="tk-s">"oauth"</span>,</div>
+                                  <div class="cl"><span class="cl__n">31</span>      <span class="tk-k">"enabled"</span>: <span class="tk-b">false</span></div>
+                                  <div class="cl"><span class="cl__n">32</span>    }</div>
+                                  <div class="cl"><span class="cl__n">33</span>  }</div>
+                                  <div class="cl"><span class="cl__n">34</span>}</div>
+                                </div>
+                              </div>
+                              <section class="dpane">
+                                <header class="dpane__head">
+                                  <span class="dpane__title">All servers</span>
+                                  <div class="dpane__actions"><span class="flex items-center gap-1-5"><button class="text-tab is-active" type="button">stdio</button><button class="text-tab" type="button">agent</button></span><button class="icon-btn" type="button" aria-label="Collapse" aria-expanded="true"><i class="codicon codicon-chevron-down"></i></button></div>
+                                </header>
+                                <div class="dpane__body">
+<pre class="logtail"><span class="mark">===== [2026-09-11 10:41:02] starting MCP server 'filesystem' =====</span>Secure MCP Filesystem Server running on stdio
+Allowed directories: [ 'D:\\Stuff\\Code' ]
+<span class="mark">===== [2026-09-11 10:41:02] starting MCP server 'context7' =====</span>npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/@upstash%2fcontext7-mcp
+npm error 404 The requested resource could not be found.
+<span class="mark">===== [2026-09-11 10:52:37] starting MCP server 'filesystem' =====</span>Secure MCP Filesystem Server running on stdio
+Allowed directories: [ 'D:\\Stuff\\Code' ]</pre>
+                                </div>
+                              </section>
+                            </main>
+                          </div>
+
+                          <!-- ── Cursor inside the "github" block: ServerConfig + highlighted block ── -->
+                          <div data-view="github" class="mcp-grid" hidden>
+                            <aside class="mcp-aside">
+                              <div class="srv">
+                                <div class="srv__head">
+                                  <button class="icon-btn" type="button" aria-label="All servers" title="All servers" style="margin-top:.75rem" data-show="mcpsel:list"><i class="codicon codicon-chevron-left"></i></button>
+                                  <span class="achip achip--mono" style="--brand:var(--ui-base);margin-top:.625rem"><i class="ti ti-brand-github"></i><span class="achip__dot achip__dot--ok"></span></span>
+                                  <div class="srv__text">
+                                    <h3>Github</h3>
+                                    <p>https://api.githubcopilot.com/mcp/</p>
+                                    <p>25 tools enabled, ~9.8K tok/call, 142 uses/30d</p>
+                                  </div>
+                                  <span class="row-actions is-visible" style="margin-top:.75rem"><button class="icon-btn" type="button" aria-label="Reload MCP"><i class="codicon codicon-refresh"></i></button><button class="icon-btn icon-btn--danger" type="button" aria-label="Remove"><i class="codicon codicon-trash"></i></button></span>
+                                  <span class="switch switch--xs is-on" role="switch" aria-checked="true" aria-label="github" style="margin-top:.875rem"></span>
+                                </div>
+                                <p class="srv__desc">GitHub's official MCP server: repositories, issues, pull requests, code search and Actions.</p>
+                                <div class="srv__tools">
+                                  <button class="tool-toggle" type="button" title="Disable create_issue">create_issue</button>
+                                  <button class="tool-toggle" type="button">get_issue</button>
+                                  <button class="tool-toggle" type="button">list_issues</button>
+                                  <button class="tool-toggle" type="button">update_issue</button>
+                                  <button class="tool-toggle" type="button">add_issue_comment</button>
+                                  <button class="tool-toggle" type="button">search_issues</button>
+                                  <button class="tool-toggle" type="button">create_pull_request</button>
+                                  <button class="tool-toggle" type="button">get_pull_request</button>
+                                  <button class="tool-toggle" type="button">list_pull_requests</button>
+                                  <button class="tool-toggle" type="button">get_pull_request_diff</button>
+                                  <button class="tool-toggle" type="button">create_pull_request_review</button>
+                                  <button class="tool-toggle is-excluded" type="button" aria-pressed="false" title="Enable merge_pull_request">merge_pull_request</button>
+                                  <button class="tool-toggle" type="button">get_file_contents</button>
+                                  <button class="tool-toggle" type="button">create_or_update_file</button>
+                                  <button class="tool-toggle" type="button">push_files</button>
+                                  <button class="tool-toggle" type="button">search_code</button>
+                                  <button class="tool-toggle" type="button">search_repositories</button>
+                                  <button class="tool-toggle" type="button">list_commits</button>
+                                  <button class="tool-toggle" type="button">get_commit</button>
+                                  <button class="tool-toggle" type="button">create_branch</button>
+                                  <button class="tool-toggle" type="button">list_branches</button>
+                                  <button class="tool-toggle" type="button">list_workflow_runs</button>
+                                  <button class="tool-toggle" type="button">get_workflow_run</button>
+                                  <button class="tool-toggle" type="button">get_job_logs</button>
+                                  <button class="tool-toggle" type="button">list_notifications</button>
+                                  <button class="tool-toggle" type="button">get_me</button>
+                                </div>
+                              </div>
+                            </aside>
+
+                            <main class="mcp-main">
+                              <div class="json-ed">
+                                <div class="json-ed__head"><span class="json-ed__title">mcp.json</span><div class="ml-auto flex items-center gap-1"><button class="icon-btn" type="button" aria-label="Format JSON"><i class="codicon codicon-json"></i></button><button class="btn btn--default btn--xs is-disabled" type="button">Save</button></div></div>
+                                <div class="code">
+                                  <div class="cl"><span class="cl__n">1</span>{</div>
+                                  <div class="cl"><span class="cl__n">2</span>  <span class="tk-k">"mcpServers"</span>: {</div>
+                                  <div class="cl is-hl"><span class="cl__n">3</span>    <span class="tk-k">"github"</span>: {</div>
+                                  <div class="cl is-hl"><span class="cl__n">4</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://api.githubcopilot.com/mcp/"</span>,</div>
+                                  <div class="cl is-hl"><span class="cl__n">5</span>      <span class="tk-k">"headers"</span>: {</div>
+                                  <div class="cl is-hl"><span class="cl__n">6</span>        <span class="tk-k">"Authorization"</span>: <span class="tk-s">"Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"</span></div>
+                                  <div class="cl is-hl"><span class="cl__n">7</span>      }</div>
+                                  <div class="cl is-hl"><span class="cl__n">8</span>    },</div>
+                                  <div class="cl"><span class="cl__n">9</span>    <span class="tk-k">"linear"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">10</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://mcp.linear.app/mcp"</span>,</div>
+                                  <div class="cl"><span class="cl__n">11</span>      <span class="tk-k">"auth"</span>: <span class="tk-s">"oauth"</span></div>
+                                  <div class="cl"><span class="cl__n">12</span>    },</div>
+                                  <div class="cl"><span class="cl__n">13</span>    <span class="tk-k">"filesystem"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">14</span>      <span class="tk-k">"command"</span>: <span class="tk-s">"npx"</span>,</div>
+                                  <div class="cl"><span class="cl__n">15</span>      <span class="tk-k">"args"</span>: [</div>
+                                  <div class="cl"><span class="cl__n">16</span>        <span class="tk-s">"-y"</span>,</div>
+                                  <div class="cl"><span class="cl__n">17</span>        <span class="tk-s">"@modelcontextprotocol/server-filesystem"</span>,</div>
+                                  <div class="cl"><span class="cl__n">18</span>        <span class="tk-s">"D:/Stuff/Code"</span></div>
+                                  <div class="cl"><span class="cl__n">19</span>      ]</div>
+                                  <div class="cl"><span class="cl__n">20</span>    },</div>
+                                  <div class="cl"><span class="cl__n">21</span>    <span class="tk-k">"context7"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">22</span>      <span class="tk-k">"command"</span>: <span class="tk-s">"npx"</span>,</div>
+                                  <div class="cl"><span class="cl__n">23</span>      <span class="tk-k">"args"</span>: [</div>
+                                  <div class="cl"><span class="cl__n">24</span>        <span class="tk-s">"-y"</span>,</div>
+                                  <div class="cl"><span class="cl__n">25</span>        <span class="tk-s">"@upstash/context7-mcp"</span></div>
+                                  <div class="cl"><span class="cl__n">26</span>      ]</div>
+                                  <div class="cl"><span class="cl__n">27</span>    },</div>
+                                  <div class="cl"><span class="cl__n">28</span>    <span class="tk-k">"notion"</span>: {</div>
+                                  <div class="cl"><span class="cl__n">29</span>      <span class="tk-k">"url"</span>: <span class="tk-s">"https://mcp.notion.com/mcp"</span>,</div>
+                                  <div class="cl"><span class="cl__n">30</span>      <span class="tk-k">"auth"</span>: <span class="tk-s">"oauth"</span>,</div>
+                                  <div class="cl"><span class="cl__n">31</span>      <span class="tk-k">"enabled"</span>: <span class="tk-b">false</span></div>
+                                  <div class="cl"><span class="cl__n">32</span>    }</div>
+                                  <div class="cl"><span class="cl__n">33</span>  }</div>
+                                  <div class="cl"><span class="cl__n">34</span>}</div>
+                                </div>
+                              </div>
+                              <section class="dpane">
+                                <header class="dpane__head">
+                                  <span class="dpane__title">github</span>
+                                  <div class="dpane__actions"><span class="flex items-center gap-1-5"><button class="text-tab is-active" type="button">stdio</button><button class="text-tab" type="button">agent</button></span><button class="icon-btn" type="button" aria-label="Collapse" aria-expanded="true"><i class="codicon codicon-chevron-down"></i></button></div>
+                                </header>
+                                <div class="dpane__body"><p class="logtail is-empty">No output yet.</p></div>
+                              </section>
+                            </main>
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════ View: loading (first load; hub mounted, collapsed) ═══════════════════════════ -->
+              <div data-view="loading" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Search skills..." aria-label="Search skills..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">Skills <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">Tools <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region"><div class="page-loader" role="status" aria-label="Loading capabilities..."><span class="loader"></span></div></div>
+                      <section class="hub"><div class="hub__sash" aria-hidden="true"></div><div class="hub__head"><span class="hub__title">Skills Hub</span><div class="flex items-center gap-1"><button class="btn btn--text btn--xs" type="button">Update installed</button><button class="btn btn--text btn--xs" type="button">Browse the full hub</button></div></div></section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════ View: load failed ═══════════════════════════ -->
+              <div data-view="error" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field"><i class="ti ti-search"></i><input type="text" placeholder="Search skills..." aria-label="Search skills..." /></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">Skills <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">Tools <span class="tab-meta"><span class="count-skel"></span></span></button>
+                    <button class="text-tab" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region">
+                        <div class="panel-empty"><div class="panel-empty__inner"><i class="codicon codicon-error"></i><p class="panel-empty__title">Skills failed to load</p><p class="panel-empty__desc">GET /api/skills failed: 502 Bad Gateway</p><div style="margin-top:.5rem"><button class="btn btn--default btn--sm" type="button">Refresh skills</button></div></div></div>
+                      </div>
+                      <section class="hub"><div class="hub__sash" aria-hidden="true"></div><div class="hub__head"><span class="hub__title">Skills Hub</span><div class="flex items-center gap-1"><button class="btn btn--text btn--xs" type="button">Update installed</button><button class="btn btn--text btn--xs" type="button">Browse the full hub</button></div></div></section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ═══════════════════════════ View: no matches ═══════════════════════════ -->
+              <div data-view="empty" class="pss" hidden>
+                <div class="pss__head">
+                  <div class="pss__lead"><label class="search-field is-filled"><i class="ti ti-search"></i><input type="text" value="kubernetes" aria-label="Search skills..." /><button class="btn btn--ghost btn--icon-xs" type="button" aria-label="Clear search"><i class="codicon codicon-close"></i></button></label></div>
+                  <div class="pss__tabs">
+                    <button class="text-tab is-active" type="button">Skills <span class="tab-meta">86</span></button>
+                    <button class="text-tab" type="button">Tools <span class="tab-meta">14</span></button>
+                    <button class="text-tab" type="button">MCP</button>
+                  </div>
+                  <div class="pss__trail"></div>
+                </div>
+                <div class="pss__body">
+                  <div class="cap-col">
+                    <div class="cap-scope"><span class="cap-scope__label">Configuring:</span><button class="control select-trigger" type="button">Hermes (default)</button></div>
+                    <div class="cap-main">
+                      <div class="cap-region">
+                        <div class="panel-empty"><div class="panel-empty__inner"><i class="codicon codicon-search"></i><p class="panel-empty__title">No skills found</p><p class="panel-empty__desc">Nothing matches “kubernetes”.</p></div></div>
+                      </div>
+                      <section class="hub"><div class="hub__sash" aria-hidden="true"></div><div class="hub__head"><span class="hub__title">Skills Hub</span><div class="flex items-center gap-1"><button class="btn btn--text btn--xs" type="button">Update installed</button><button class="btn btn--text btn--xs" type="button">Browse the full hub</button></div></div></section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="cap:skills">Skills</button>
+        <button class="btn btn--secondary btn--sm" type="button" onclick="HDProto.showView('cap','skills');HDProto.showView('skill','learned')">Skills · learned skill</button>
+        <button class="btn btn--secondary btn--sm" type="button" onclick="HDProto.showView('cap','skills');HDProto.showView('skill','official')">Skills · catalog skill</button>
+        <button class="btn btn--secondary btn--sm" type="button" onclick="HDProto.showView('cap','skills');HDProto.showView('skmenu','open')">Skills · list menu</button>
+        <button class="btn btn--secondary btn--sm" data-show="cap:toolsets">Tools · Web</button>
+        <button class="btn btn--secondary btn--sm" type="button" onclick="HDProto.showView('cap','toolsets');HDProto.showView('tool','vision')">Tools · Vision</button>
+        <button class="btn btn--secondary btn--sm" data-show="cap:mcp">MCP</button>
+        <button class="btn btn--secondary btn--sm" type="button" onclick="HDProto.showView('cap','mcp');HDProto.showView('mcpsel','github')">MCP · server selected</button>
+        <button class="btn btn--secondary btn--sm" data-show="cap:loading">Loading</button>
+        <button class="btn btn--secondary btn--sm" data-show="cap:error">Load failed</button>
+        <button class="btn btn--secondary btn--sm" data-show="cap:empty">No matches</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<!--
+  Gallery of every hermes-desktop screen prototype, grouped like docs/DESKTOP-SCREENS.md (A–G).
+  Open over a local server (see README.md):  python -m http.server 8765  →  http://127.0.0.1:8765/
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>hermes-desktop screens · prototype gallery</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      body { background: var(--ui-chat-surface-background); color: var(--dt-foreground); font-size: 0.8125rem; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+      .g-wrap { max-width: 72rem; margin: 0 auto; padding: 2.5rem 2rem 6rem; }
+      .g-head { display: flex; align-items: flex-end; gap: 1rem; margin-bottom: 0.5rem; }
+      .g-head h1 { margin: 0; font-family: var(--font-wordmark); font-size: 2.25rem; font-weight: 700; line-height: 0.9; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dt-midground); }
+      .g-lede { margin: 0 0 2rem; max-width: 46rem; color: var(--ui-text-tertiary); font-size: var(--conversation-caption-font-size); }
+      .g-group { margin-bottom: 2rem; }
+      .g-group h2 { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.625rem; font-size: 0.875rem; font-weight: 600; }
+      .g-group h2 .t-tertiary { font-weight: 400; font-size: 0.75rem; }
+      .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 0.5rem; }
+      .g-card { display: flex; flex-direction: column; gap: 0.25rem; min-height: 5.25rem; padding: 0.625rem 0.75rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); background: var(--ui-bg-editor); color: inherit; text-decoration: none; transition: background-color 100ms ease-out; }
+      .g-card:hover { background: var(--ui-row-hover-background); transition: none; }
+      .g-card__title { display: flex; align-items: center; gap: 0.375rem; font-weight: 500; color: var(--ui-text-primary); }
+      .g-card__title :is(.ti, .codicon) { color: var(--ui-text-tertiary); font-size: 1rem; }
+      .g-card__meta { color: var(--ui-text-tertiary); font-size: 0.6875rem; }
+      .g-card__src { margin-top: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text-quaternary); font-family: var(--dt-font-mono); font-size: 0.625rem; }
+      .g-card__tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+      .g-card.is-alias { border-style: dashed; }
+    </style>
+  </head>
+  <body>
+    <div class="g-wrap">
+      <div class="g-head"><h1>Hermes</h1><span class="t-tertiary">desktop screen prototypes</span></div>
+      <p class="g-lede">
+        Static HTML mockups of every hermes-desktop screen, built from the real <code class="code-inline">nous</code> tokens
+        (<code class="code-inline">assets/tokens.css</code>). Each file's header comment names its source files, measurements and
+        behaviours. Switch dark/light with the bar at the bottom right. Full design system: <code class="code-inline">docs/DESKTOP-DESIGN.md</code>.
+      </p>
+      <div id="groups"></div>
+    </div>
+    <script>
+      // [file, title, icon, route/notes, source, tags]
+      // tags: 'mobile-absent' = absent on mobile by design (docs/PARITY.md); 'views' = has switchable sub-views
+      const GROUPS = [
+        ['A. Main screens', 'routes in src/app/routes.ts', [
+          ['a-main/chat.html', 'Chat', 'ti ti-message', '/ · /:sessionId — conversation, streaming, new chat', 'src/app/chat/', ['views']],
+          ['a-main/capabilities.html', 'Capabilities', 'ti ti-puzzle', '/skills — Skills (+ Hub), Toolsets, MCP', 'src/app/skills/', ['views']],
+          ['a-main/messaging.html', 'Messaging', 'ti ti-message-circle', '/messaging', 'src/app/messaging/', []],
+          ['a-main/artifacts.html', 'Artifacts', 'ti ti-photo', '/artifacts', 'src/app/artifacts/', ['views']],
+          ['a-main/settings.html', 'Settings', 'ti ti-settings', '/settings — every section', 'src/app/settings/', ['views']],
+          ['a-main/command-center.html', 'Command Center', 'ti ti-command', '/command-center — Sessions, Usage, System, Maintenance', 'src/app/command-center/', ['views']],
+          ['a-main/cron.html', 'Cron', 'ti ti-clock', '/cron — scheduled jobs', 'src/app/cron/', ['views']],
+          ['a-main/profiles.html', 'Profiles', 'ti ti-users', '/profiles', 'src/app/profiles/', []],
+          ['a-main/agents.html', 'Agents', 'ti ti-sitemap', '/agents — live subagent tree', 'src/app/agents/', []],
+          ['a-main/starmap.html', 'Starmap', 'ti ti-stars', '/starmap — Memory Graph', 'src/app/starmap/', []],
+          ['a-main/webhooks.html', 'Webhooks', 'ti ti-world', '/webhooks', 'src/app/webhooks/', []]
+        ]],
+        ['B. Panels inside Chat', 'panes registered in src/app/contrib/controller.tsx', [
+          ['b-panels/sessions-sidebar.html', 'Sessions sidebar', 'ti ti-layout-sidebar', 'recents, projects, cron jobs, switchers', 'src/app/chat/sidebar/', ['views']],
+          ['b-panels/workspace-tabs.html', 'Workspace', 'ti ti-layout-columns', 'tab strip, stacked and split zones', 'src/components/pane-shell/', ['views']],
+          ['b-panels/files.html', 'Files', 'codicon codicon-files', 'right sidebar file tree', 'src/app/right-sidebar/files/', ['mobile-absent']],
+          ['b-panels/review.html', 'Review', 'codicon codicon-git-compare', 'git diff, commit, PR', 'src/app/right-sidebar/review/', ['mobile-absent']],
+          ['b-panels/terminal.html', 'Terminal', 'codicon codicon-terminal', 'tab rail of shells', 'src/app/right-sidebar/terminal/', ['mobile-absent']],
+          ['b-panels/logs.html', 'Logs', 'codicon codicon-output', 'palette-only log pane', 'src/app/contrib/controller.tsx', ['mobile-absent']],
+          ['b-panels/preview.html', 'Preview', 'codicon codicon-preview', 'browser, file, artifact, console', 'src/app/chat/right-rail/', ['views', 'mobile-absent']],
+          ['b-panels/layout-edit.html', 'Layout edit mode', 'ti ti-layout-dashboard', 'Layouts card + preset picker', 'src/components/pane-shell/tree/renderer/', ['mobile-absent']],
+          ['b-panels/zone-editor.html', 'Zone editor', 'ti ti-layout-grid', 'FancyZones-style grid editor', 'src/components/pane-shell/tree/zone-editor.tsx', ['mobile-absent']]
+        ]],
+        ['C. Plugin screens', 'bundled plugins in src/plugins/', [
+          ['c-plugins/bots-tab.html', 'Bots tab', 'ti ti-robot', 'roster, sections, group chats', 'src/plugins/hermes-bots/roster-pane.tsx', ['mobile-absent']],
+          ['c-plugins/bot-chat.html', 'Bot Chat', 'ti ti-message-chatbot', 'canonical per-bot chat', 'src/plugins/hermes-bots/canonical-chat.ts', ['mobile-absent']],
+          ['c-plugins/group-chat.html', 'Group chat', 'ti ti-messages', 'several bots in one room', 'src/plugins/hermes-bots/group-chat-view.tsx', ['mobile-absent']],
+          ['c-plugins/routines.html', 'Routines', 'ti ti-calendar-repeat', 'right-edge pane while Bots is active', 'src/plugins/hermes-bots/cron.tsx', ['mobile-absent']],
+          ['c-plugins/bot-dialogs.html', 'Bot dialogs', 'ti ti-app-window', 'New, Edit, Avatar, Model, Skills Hub, MCP, Groups', 'src/plugins/hermes-bots/', ['views', 'mobile-absent']],
+          ['c-plugins/kanban.html', 'Kanban', 'codicon codicon-project', '/kanban — off by default', 'src/plugins/kanban/', ['views', 'mobile-absent']]
+        ]],
+        ['D. Windows', 'electron/main.ts + ?win= roots in src/main.tsx', [
+          ['a-main/chat.html', 'Main window', 'ti ti-app-window', 'createWindow — same as Chat', 'electron/main.ts', ['alias']],
+          ['a-main/chat.html', 'Extra instance window', 'ti ti-copy', 'createInstanceWindow — full app peer, same as Chat', 'electron/main.ts', ['alias']],
+          ['d-windows/session-popout.html', 'Session pop-out', 'ti ti-external-link', 'one chat, no sidebar', 'electron/main.ts createSessionWindow', []],
+          ['d-windows/browser-popout.html', 'Browser pop-out', 'ti ti-browser', 'popped-out preview browser', 'src/app/chat/browser-popout-shell.tsx', ['mobile-absent']],
+          ['d-windows/hud.html', 'HUD', 'ti ti-layers-intersect', '?win=hud — always-on-top bar', 'src/app/hud/', ['views', 'mobile-absent']],
+          ['d-windows/quick-entry.html', 'Quick Entry', 'ti ti-bolt', '?win=quick — global-hotkey composer', 'src/app/quick-entry/', ['mobile-absent']],
+          ['d-windows/pet-overlay.html', 'Pet overlay', 'ti ti-paw', '?win=overlay', 'src/app/pet-overlay/', ['mobile-absent']],
+          ['d-windows/wake-indicator.html', 'Wake indicator', 'ti ti-microphone', '?win=wake', 'src/app/wake-indicator/', ['mobile-absent']],
+          ['d-windows/login-window.html', 'OAuth / Portal login', 'ti ti-login', 'external sign-in page in a window', 'electron/main.ts openOauthLoginWindow', ['views']],
+          ['d-windows/load-error.html', 'Load-error page', 'ti ti-alert-triangle', 'renderer failed to load', 'electron/renderer-load-error-page.ts', []]
+        ]],
+        ['E. App-wide overlays', 'mounted in src/app/contrib/wiring.tsx', [
+          ['e-overlays/onboarding.html', 'Onboarding', 'ti ti-sparkles', 'preparing → provider → key / device code → model, remote form', 'src/components/onboarding/', ['views']],
+          ['e-overlays/gateway-connecting.html', 'Gateway connecting', 'ti ti-plug-connected', '', 'src/components/gateway-connecting-overlay.tsx', []],
+          ['e-overlays/boot-failure.html', 'Boot failure', 'ti ti-alert-octagon', 'with re-auth card', 'src/components/boot-failure-overlay.tsx', ['views']],
+          ['e-overlays/desktop-install.html', 'Desktop install', 'ti ti-download', '', 'src/components/desktop-install-overlay.tsx', []],
+          ['e-overlays/updates.html', 'Updates', 'ti ti-refresh', '', 'src/app/updates-overlay.tsx', ['views']],
+          ['e-overlays/command-palette.html', 'Command palette', 'ti ti-search', 'plus Marketplace themes, Pet', 'src/app/command-palette/', ['views']],
+          ['e-overlays/model-picker.html', 'Model picker', 'ti ti-box', '', 'src/app/model-picker-overlay.tsx', []],
+          ['e-overlays/model-visibility.html', 'Model visibility', 'ti ti-eye', '', 'src/app/model-visibility-overlay.tsx', []],
+          ['e-overlays/session-picker.html', 'Session picker', 'ti ti-list-search', '', 'src/app/session-picker-overlay.tsx', []],
+          ['e-overlays/session-switcher.html', 'Session switcher', 'ti ti-switch-horizontal', 'Ctrl+Tab', 'src/app/session-switcher.tsx', []],
+          ['e-overlays/pet-generate.html', 'Pet generate', 'ti ti-egg', 'hatching view', 'src/app/pet-generate/', ['views', 'mobile-absent']],
+          ['e-overlays/chat-swap-drop.html', 'Chat swap / file drop', 'ti ti-drag-drop', '', 'src/app/chat/chat-{swap,drop}-overlay.tsx', ['views']],
+          ['e-overlays/mid-turn-prompts.html', 'Mid-turn prompts', 'ti ti-hand-stop', 'approvals, questions, secrets', 'src/components/prompt-overlays.tsx', ['views']],
+          ['e-overlays/find-bar.html', 'Find bar', 'ti ti-text-scan-2', 'Ctrl/Cmd+F', 'src/components/find-bar.tsx', []]
+        ]],
+        ['F. Dialogs', 'Dialog primitive: src/components/ui/dialog.tsx', [
+          ['f-dialogs/profile-dialogs.html', 'Profile create / rename / delete', 'ti ti-user-plus', '', 'src/app/profiles/*-profile-dialog.tsx', ['views']],
+          ['f-dialogs/project.html', 'Project', 'ti ti-folder-plus', '', 'src/app/chat/sidebar/project-dialog.tsx', []],
+          ['f-dialogs/worktree.html', 'Worktree', 'ti ti-git-branch', 'with base-branch picker', 'src/app/chat/sidebar/projects/worktree-dialog.tsx', ['views']],
+          ['f-dialogs/add-url.html', 'Add URL', 'ti ti-link', '', 'src/app/chat/composer/url-dialog.tsx', []],
+          ['f-dialogs/mcp-install-link.html', 'MCP install link', 'ti ti-plug', '', 'src/app/contrib/mcp-install-deeplink-dialog.tsx', []],
+          ['f-dialogs/real-browser-consent.html', 'Real browser profile consent', 'ti ti-browser-check', '', 'src/app/chat/right-rail/real-profile-consent-dialog.tsx', ['mobile-absent']],
+          ['f-dialogs/profile-remote-override.html', 'Profile remote override', 'ti ti-server', '', 'src/app/chat/sidebar/profile-remote-override-dialog.tsx', []],
+          ['f-dialogs/archive-skill.html', 'Archive skill', 'ti ti-archive', '', 'src/app/learning/archive-skill-confirm-dialog.tsx', []],
+          ['f-dialogs/plugin-install.html', 'Plugin install', 'ti ti-package', '', 'src/app/settings/plugin-install-modal.tsx', []],
+          ['f-dialogs/memory-provider.html', 'Memory provider setup', 'ti ti-brain', '', 'src/app/settings/memory/provider-config-modal.tsx', []],
+          ['f-dialogs/send-diagnostics.html', 'Send diagnostics', 'ti ti-bug', '', 'src/components/send-diagnostics-dialog.tsx', []],
+          ['f-dialogs/remote-folder-picker.html', 'Remote folder picker', 'ti ti-folder-search', '', 'src/app/right-sidebar/files/remote-picker.tsx', []],
+          ['f-dialogs/confirm.html', 'Confirm', 'ti ti-help-circle', 'general-purpose + destructive', 'src/components/ui/confirm-dialog.tsx', ['views']]
+        ]],
+        ['G. Small in-app elements', '', [
+          ['g-elements/banners.html', 'Banners', 'ti ti-flag', 'remote display, billing', 'src/components/{remote-display,billing}-banner.tsx', ['views']],
+          ['g-elements/statusbar-popups.html', 'Status-bar pop-ups', 'ti ti-layout-bottombar', 'model menu, gateway menu, context usage', 'src/app/shell/', ['views']],
+          ['g-elements/primitives.html', 'Primitives sheet', 'ti ti-components', 'every shared component, all variants', 'src/components/ui/', []]
+        ]]
+      ]
+
+      const TAG = { 'mobile-absent': ['badge badge--muted', 'absent on mobile'], views: ['badge', 'views'], alias: ['badge badge--outline', 'same as Chat'] }
+      document.getElementById('groups').innerHTML = GROUPS.map(([title, note, items]) => `
+        <section class="g-group">
+          <h2>${title} <span class="t-tertiary">${note}</span></h2>
+          <div class="g-grid">
+            ${items.map(([file, name, icon, meta, src, tags]) => `
+              <a class="g-card${tags.includes('alias') ? ' is-alias' : ''}" href="${file}">
+                <span class="g-card__title"><i class="${icon}"></i>${name}</span>
+                ${meta ? `<span class="g-card__meta">${meta}</span>` : ''}
+                ${tags.length ? `<span class="g-card__tags">${tags.map(t => `<span class="${TAG[t][0]}">${TAG[t][1]}</span>`).join('')}</span>` : ''}
+                <span class="g-card__src">${src}</span>
+              </a>`).join('')}
+          </div>
+        </section>`).join('')
+    </script>
+  </body>
+</html>

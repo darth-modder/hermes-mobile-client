@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+  Screen:      Find bar (E · app-wide overlay)   Ctrl/⌘+F over the transcript, FindBar
+  Replicates:  apps/desktop/src/components/find-bar.tsx, lib/find-in-page.ts, store/find-in-page.ts, electron/find-in-page.ts,
+               i18n/en.ts (findInPage.*, keybinds.actions['view.findInPage'])
+  Views:       #find=matches | no-match | empty
+  Measurements:
+    - bar: fixed right-4 (1rem), top = titlebar (34px) + 0.5rem; rounded-lg (2.4px), 1px --ui-stroke-tertiary, bg --ui-surface-background,
+      px-2 py-1.5, gap-2, shadow-md
+    - input: bare type=search, h-6 (24px), w-40 (10rem), 12px --ui-text-primary, placeholder tertiary "Find in page"
+    - counter: min-w 3rem, centred, 11px tertiary "2/4" (hidden while the query is empty; "0/0" when nothing matches)
+    - buttons: 28×28, rounded (sm), --ui-text-secondary, hover --ui-control-hover-background; 14px stroked chevron up/down, 12px ✕ (1.5px strokes)
+    - tooltips on previous/next ("Previous match" / "Next match"), marker style
+    - highlights come from Chromium's native findInPage; in the prototype every match uses --ui-selection-background and the active one is
+      a stronger --ui-orange mix (approximation of Chromium's orange active match)
+  Behaviour:
+    - z: z-50 (not a ladder rung); hidden entirely while a route overlay (Settings, Command Center, …) is open
+    - opens focused and empty; typing searches 200ms after the last keystroke; clearing the field clears highlights immediately
+    - Enter / Shift+Enter step next / previous from the input; Ctrl/⌘+G and Ctrl/⌘+Shift+G step from anywhere while the bar is open
+      (capture phase, so ⌘G doesn't also toggle the review pane); Esc closes and clears the native selection
+    - navigating to another route/session closes the bar and clears highlights
+    - when the right sidebar (files pane) is open, the bar parks just left of it (right = pane width + 0.75rem) and follows drag-resizes
+    - the input is made inert while a native search starts so Chromium doesn't match the query text inside the bar itself
+  Mobile:      Not covered by docs/PARITY.md; the mobile transcript has no find-in-page, so treat it as thinner than desktop.
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Find bar · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .findbar { position: absolute; right: 1rem; top: calc(var(--titlebar-height) + 0.5rem); z-index: 50; display: flex; align-items: center; gap: 0.5rem;
+        border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-lg); padding: 0.375rem 0.5rem; background: var(--ui-surface-background); box-shadow: var(--shadow-md); }
+      .findbar input { width: 10rem; height: 1.5rem; border: 0; background: transparent; outline: none; font-size: 0.75rem; color: var(--ui-text-primary); }
+      .findbar input::placeholder { color: var(--ui-text-tertiary); }
+      .findbar input::-webkit-search-cancel-button { display: none; }
+      .findbar__count { min-width: 3rem; text-align: center; font-size: 0.6875rem; color: var(--ui-text-tertiary); }
+      .findbar__btn { position: relative; display: flex; width: 1.75rem; height: 1.75rem; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-sm); padding: 0; background: transparent; color: var(--ui-text-secondary); cursor: pointer; }
+      .findbar__btn:hover { background: var(--ui-control-hover-background); }
+      .findbar__btn svg { fill: none; stroke: currentColor; stroke-width: 1.5; }
+      .findbar .tip { top: calc(100% + 0.375rem); left: 50%; transform: translateX(-50%); }
+      /* Match highlights only paint while the "matches" view is showing */
+      .frame:has([data-view="matches"]:not([hidden])) .fm { background: var(--ui-selection-background); border-radius: 1px; }
+      .frame:has([data-view="matches"]:not([hidden])) .fm.is-active { background: color-mix(in srgb, var(--ui-orange) 55%, transparent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is <span class="fm">revoke</span>d. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="turn">
+                <div class="scaffold">
+                  <div class="tool-row"><i class="codicon codicon-lightbulb"></i><span>Thought for 6s</span></div>
+                  <div class="tool-row"><i class="codicon codicon-search"></i><span>Searched</span><span class="tool-row__meta">“reconnect” in tui_gateway/ · 14 results</span></div>
+                  <div class="tool-row tool-row--diff"><i class="codicon codicon-edit"></i><span>Edited</span><span class="tool-row__meta">apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts</span><span class="add">+18</span><span class="del">−6</span></div>
+                </div>
+                <div class="msg-ai">
+                  <p><span class="fm is-active">Revoke</span>d tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p>
+                  <ul>
+                    <li><strong>Fail fast:</strong> <span class="code-inline">stopReconnect()</span> clears the timer and marks the connection degraded.</li>
+                    <li><strong>Prompt:</strong> <span class="code-inline">$needsLogin</span> drives the boot-failure overlay's re-auth card.</li>
+                  </ul>
+                  <p>Want me to add an e2e spec that <span class="fm">revoke</span>s the token mid-session?</p>
+                </div>
+              </div>
+              <div class="msg-user">Yes, add the spec. Use the mock backend fixture.</div>
+              <div class="turn">
+                <div class="scaffold">
+                  <div class="tool-row"><i class="codicon codicon-new-file"></i><span>Created</span><span class="tool-row__meta">e2e/token-<span class="fm">revoke</span>d.spec.ts</span><span style="color:var(--ui-diff-add-foreground)">+64</span></div>
+                  <div class="tool-row"><i class="codicon codicon-terminal"></i><span>Ran</span><span class="tool-row__meta">npx playwright test e2e</span><span class="t-success">passed</span></div>
+                </div>
+                <div class="msg-ai"><p>Added the spec. It boots against the mock backend, drops the session token, and asserts the sign-in card appears within one reconnect attempt. 1 passed (8.2s).</p></div>
+              </div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input is-placeholder">Ask Hermes anything, @ to add context, / for commands</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send is-idle" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <section data-views="find">
+            <!-- ── Matches: "revoke", 2 of 4 (hovering Next shows its tip) ── -->
+            <div data-view="matches" class="findbar" role="search">
+              <input type="search" value="revoke" aria-label="Find in page" placeholder="Find in page" />
+              <span class="findbar__count" aria-live="polite">2/4</span>
+              <button class="findbar__btn" type="button" aria-label="Previous match"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 10l4-4 4 4" /></svg></button>
+              <button class="findbar__btn" type="button" aria-label="Next match" style="background:var(--ui-control-hover-background)"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 6l4 4 4-4" /></svg><span class="tip">Next match</span></button>
+              <button class="findbar__btn" type="button" aria-label="Close"><svg height="12" viewBox="0 0 12 12" width="12"><path d="M1 1l10 10M11 1L1 11" /></svg></button>
+            </div>
+            <!-- ── No match ── -->
+            <div data-view="no-match" class="findbar" role="search" hidden>
+              <input type="search" value="keystore" aria-label="Find in page" placeholder="Find in page" />
+              <span class="findbar__count" aria-live="polite">0/0</span>
+              <button class="findbar__btn" type="button" aria-label="Previous match"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 10l4-4 4 4" /></svg></button>
+              <button class="findbar__btn" type="button" aria-label="Next match"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 6l4 4 4-4" /></svg></button>
+              <button class="findbar__btn" type="button" aria-label="Close"><svg height="12" viewBox="0 0 12 12" width="12"><path d="M1 1l10 10M11 1L1 11" /></svg></button>
+            </div>
+            <!-- ── Just opened (empty, focused; no counter) ── -->
+            <div data-view="empty" class="findbar" role="search" hidden>
+              <input type="search" aria-label="Find in page" placeholder="Find in page" />
+              <button class="findbar__btn" type="button" aria-label="Previous match"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 10l4-4 4 4" /></svg></button>
+              <button class="findbar__btn" type="button" aria-label="Next match"><svg height="14" viewBox="0 0 16 16" width="14"><path d="M4 6l4 4 4-4" /></svg></button>
+              <button class="findbar__btn" type="button" aria-label="Close"><svg height="12" viewBox="0 0 12 12" width="12"><path d="M1 1l10 10M11 1L1 11" /></svg></button>
+            </div>
+          </section>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="find:matches">Matches (2/4)</button>
+        <button class="btn btn--secondary btn--sm" data-show="find:no-match">No match</button>
+        <button class="btn btn--secondary btn--sm" data-show="find:empty">Just opened</button>
+      </nav>
+    </div>
+  </body>
+</html>

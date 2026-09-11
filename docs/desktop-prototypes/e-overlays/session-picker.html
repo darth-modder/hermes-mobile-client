@@ -1,0 +1,109 @@
+<!doctype html>
+<!--
+  Screen:      Session picker (E · app-wide overlay)   /resume, /sessions, /switch → SessionPickerDialog
+  Replicates:  apps/desktop/src/app/session-picker-overlay.tsx, components/session-picker.tsx, components/ui/command.tsx,
+               i18n/en.ts (commandCenter.sections.sessions / searchPlaceholder / noResults)
+  Views:       #sessions=list | filtered | empty
+  Measurements:
+    - overlay: black/15 + 1px backdrop blur (lighter than the dialog scrim)
+    - panel: top-[14vh], centred, w-[min(40rem,100vw-2rem)], rounded-xl (3.2px), 1px --ui-stroke-secondary, bg --ui-chat-bubble-background,
+      shadow-lg, overflow hidden
+    - search row: h-11 (44px), px-3 gap-2, 16px muted icon, 14px input, placeholder muted, 1px bottom --dt-border
+    - list: max-h min(24rem, 60vh); group p-1; heading px-2 py-1.5, 11px/500 uppercase tracking-wider, muted/70 (sticky, bg popover)
+    - row: gap-2.5 px-2 py-1.5, rounded-sm, 14px; 16px muted message-circle; title + preview (12px muted/70) stacked, snug leading;
+      trailing 16px check marks the open session (invisible otherwise); highlighted = bg --dt-accent
+    - empty: py-6 centred, 14px muted "No matching results found."
+  Behaviour:
+    - z rungs: overlay var(--z-over-modal) 200, content var(--z-over-modal-content) 210
+    - open: fade + zoom 95→100% + slide-in-from-top-2, 150ms; lists up to 200 recent sessions across profiles (archived excluded)
+    - cmdk fuzzy filter over title + preview + id; arrow keys wrap (loop); Enter resumes the session (same path as the sidebar) and closes
+    - search resets when the picker closes; only mounted while the gateway is open
+  Mobile:      At parity: the session list with search (Sessions, M07 in docs/PARITY.md); /resume itself has no mobile surface yet
+               (slash commands are thinner).
+-->
+<html lang="en" data-proto-root="../">
+  <head>
+    <meta charset="utf-8" />
+    <title>Session picker · hermes-desktop prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.45/dist/codicon.css" />
+    <link rel="stylesheet" href="../assets/tokens.css" />
+    <link rel="stylesheet" href="../assets/components.css" />
+    <link rel="stylesheet" href="../assets/shell.css" />
+    <script src="../assets/proto.js"></script>
+    <style>
+      .sp-overlay { position: absolute; inset: 0; z-index: var(--z-over-modal); background: color-mix(in srgb, var(--black) 15%, transparent); backdrop-filter: blur(1px); }
+      .sp { position: absolute; left: 50%; top: 14%; z-index: var(--z-over-modal-content); width: min(40rem, calc(100% - 2rem)); overflow: hidden; transform: translateX(-50%);
+        border: 1px solid var(--ui-stroke-secondary); border-radius: var(--radius-xl); background: var(--ui-chat-bubble-background); box-shadow: var(--shadow-lg); color: var(--dt-foreground); }
+      .cmd-input { display: flex; align-items: center; gap: 0.5rem; height: 2.75rem; padding: 0 0.75rem; border-bottom: 1px solid var(--dt-border); }
+      .cmd-input > .ti { font-size: 1rem; color: var(--dt-muted-foreground); }
+      .cmd-input input { flex: 1; min-width: 0; height: 2.5rem; border: 0; background: transparent; outline: none; font-size: 0.875rem; }
+      .cmd-input input::placeholder { color: var(--dt-muted-foreground); }
+      .sp-list { max-height: 24rem; overflow-y: auto; overflow-x: hidden; }
+      .sp-group { padding: 0.25rem; }
+      .sp-heading { position: sticky; top: 0; z-index: 10; padding: 0.375rem 0.5rem; background: var(--dt-popover); font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .sp-item { display: flex; align-items: center; gap: 0.625rem; padding: 0.375rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.875rem; cursor: default; }
+      .sp-item:hover, .sp-item.is-selected { background: var(--dt-accent); color: var(--dt-accent-foreground); }
+      .sp-item > .ti:first-child { flex-shrink: 0; font-size: 1rem; color: var(--dt-muted-foreground); }
+      .sp-item__text { display: flex; min-width: 0; flex-direction: column; line-height: 1.375; }
+      .sp-item__preview { font-size: 0.75rem; color: color-mix(in srgb, var(--dt-muted-foreground) 70%, transparent); }
+      .sp-item .ti-check { margin-left: auto; flex-shrink: 0; font-size: 1rem; color: var(--dt-foreground); }
+      .sp-item .ti-check.is-invisible { visibility: hidden; }
+      .sp-empty { padding: 1.5rem 0; text-align: center; font-size: 0.875rem; color: var(--dt-muted-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="frame">
+          <div data-shell="app" data-session="auth">
+            <div class="thread"><div class="thread__inner">
+              <div class="msg-time">Today 10:42</div>
+              <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+              <div class="msg-ai"><p>Revoked tokens now stop the reconnect loop on the first <span class="code-inline">auth_required</span> event and raise the sign-in prompt.</p></div>
+            </div></div>
+            <div class="composer-dock"><div class="composer"><div class="composer__row"><button class="composer__ctl" aria-label="Add context"><i class="codicon codicon-add"></i></button><div class="composer__input">/resume</div><button class="model-pill" type="button">Opus 5<i class="codicon codicon-chevron-down i-xs"></i></button><button class="composer__send" aria-label="Send"><i class="ti ti-arrow-up"></i></button></div></div></div>
+          </div>
+
+          <div class="sp-overlay"></div>
+          <div class="sp" role="dialog" aria-label="Sessions">
+            <section data-views="sessions">
+              <div data-view="list">
+                <div class="cmd-input"><i class="ti ti-search"></i><input placeholder="Search sessions, views, and actions" aria-label="Search sessions" /></div>
+                <div class="sp-list"><div class="sp-group"><div class="sp-heading">Sessions</div>
+                  <div class="sp-item is-selected"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Refactor gateway auth handshake</span><span class="t-truncate sp-item__preview">The gateway auth handshake retries forever when the token is revoked…</span></span><i class="ti ti-check"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Why is the e2e suite flaky on Windows?</span><span class="t-truncate sp-item__preview">playwright times out on the second window about 1 in 5 runs</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Draft README for the Android client</span><span class="t-truncate sp-item__preview">Keep it short: install, pair with a gateway, known gaps</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Summarize inbox every morning</span><span class="t-truncate sp-item__preview">Cron at 07:30, post the digest to Telegram</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Port nous theme tokens to mobile</span><span class="t-truncate sp-item__preview">Map --ui-* to the RN theme object, keep radius scalar 0.2</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Benchmark streaming throttle</span><span class="t-truncate sp-item__preview">Compare 16ms vs 33ms flush on a 4k-token reply</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">SQLite FTS for session search</span><span class="t-truncate sp-item__preview">fts5 with trigram tokenizer, rebuild on migrate</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Kanban board orchestration ideas</span><span class="t-truncate sp-item__preview">One agent per column, hand-off on drag</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Voice mode latency notes</span><span class="t-truncate sp-item__preview">First audio byte is 1.4s on Wi-Fi, 2.1s on LTE</span></span><i class="ti ti-check is-invisible"></i></div>
+                </div></div>
+              </div>
+
+              <div data-view="filtered" hidden>
+                <div class="cmd-input"><i class="ti ti-search"></i><input value="sqlite" aria-label="Search sessions" /></div>
+                <div class="sp-list"><div class="sp-group"><div class="sp-heading">Sessions</div>
+                  <div class="sp-item is-selected"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">SQLite FTS for session search</span><span class="t-truncate sp-item__preview">fts5 with trigram tokenizer, rebuild on migrate</span></span><i class="ti ti-check is-invisible"></i></div>
+                  <div class="sp-item"><i class="ti ti-message-circle"></i><span class="sp-item__text"><span class="t-truncate">Migrate session store off JSON files</span><span class="t-truncate sp-item__preview">sqlite WAL mode, one db per profile</span></span><i class="ti ti-check is-invisible"></i></div>
+                </div></div>
+              </div>
+
+              <div data-view="empty" hidden>
+                <div class="cmd-input"><i class="ti ti-search"></i><input value="keystore rotation" aria-label="Search sessions" /></div>
+                <div class="sp-list"><div class="sp-empty">No matching results found.</div></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn btn--secondary btn--sm" data-show="sessions:list">Recent sessions</button>
+        <button class="btn btn--secondary btn--sm" data-show="sessions:filtered">Filtered “sqlite”</button>
+        <button class="btn btn--secondary btn--sm" data-show="sessions:empty">No results</button>
+      </nav>
+    </div>
+  </body>
+</html>
