@@ -5,6 +5,7 @@
 // names that need one, falling back to the outline Codicon font for
 // everything else; this ports the same paths through react-native-svg.
 
+import type { StyleProp, ViewStyle } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 
 import { Codicon, type CodiconProps } from './Codicon'
@@ -34,8 +35,10 @@ const TOOL_ICON_PATHS: Record<string, string> = {
     'M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm56,112H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48a8,8,0,0,1,0,16Z'
 }
 
-export interface ToolIconProps extends Omit<CodiconProps, 'name'> {
+export interface ToolIconProps extends Omit<CodiconProps, 'name' | 'style'> {
   name: string
+  /** `<Svg>`'s style prop, not `<Text>`'s — dropped on the Codicon fallback below. */
+  style?: StyleProp<ViewStyle>
 }
 
 /** Filled tool glyph. Falls back to the outline Codicon font for any name
@@ -44,7 +47,7 @@ export function ToolIcon({ accessibilityLabel, color, name, size = 14, style }: 
   const path = TOOL_ICON_PATHS[name]
 
   if (!path) {
-    return <Codicon accessibilityLabel={accessibilityLabel} color={color} name={name} size={size} style={style} />
+    return <Codicon accessibilityLabel={accessibilityLabel} color={color} name={name} size={size} />
   }
 
   return (
