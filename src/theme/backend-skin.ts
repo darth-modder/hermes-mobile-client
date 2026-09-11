@@ -139,6 +139,16 @@ $backendSkins.listen(skins => writeJson(BACKEND_SKINS_KEY, skins))
 /** One-shot skin name the provider should switch to (it clears this after applying). */
 export const $pendingSkinApply = atom<string | null>(null)
 
+/**
+ * The backend's own synced skin name — set on every `ingestBackendSkin` call
+ * (seed or apply alike) regardless of what the device is actually rendering.
+ * `$skinName` (skin-selection.ts) is the device's current pick and diverges
+ * from this the moment a user overrides it locally; the Appearance screen's
+ * hint (D15.2) reads this one so "the backend's active skin" stays true even
+ * after that override.
+ */
+export const $backendSkinName = atom<string | null>(null)
+
 let lastSynced: { applied: boolean; name: string } | null = null
 
 /** Test-only: reset the module's apply guard + registry between cases. */
@@ -146,6 +156,7 @@ export function __resetBackendSkinSync(): void {
   lastSynced = null
   $backendSkins.set({})
   $pendingSkinApply.set(null)
+  $backendSkinName.set(null)
 }
 
 /**
@@ -180,6 +191,8 @@ export function ingestBackendSkin(skin: HermesSkin | null | undefined, { apply }
   // `default` is "no opinion" on the palette: the mobile client keeps its
   // own default (nous), same as the desktop.
   const name = rawName === 'default' ? DEFAULT_SKIN_NAME : rawName
+
+  $backendSkinName.set(name)
 
   if (!apply) {
     if (lastSynced?.name !== name || !lastSynced.applied) {

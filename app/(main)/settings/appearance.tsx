@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
-import { $backendSkins } from '../../../src/theme/backend-skin'
+import { $backendSkinName, $backendSkins } from '../../../src/theme/backend-skin'
 import { useTheme } from '../../../src/theme/provider'
 import {
   $modeOverride,
@@ -16,6 +16,7 @@ import {
   setSkinName
 } from '../../../src/theme/skin-selection'
 import { radius, type } from '../../../src/theme/type'
+import { DEFAULT_SKIN_NAME } from '../../../src/upstream/themes/presets'
 import type { DesktopTheme } from '../../../src/upstream/themes/types'
 
 const MODE_OPTIONS: { label: string; value: ModeOverride }[] = [
@@ -60,9 +61,13 @@ export default function AppearanceSettings() {
   const skinName = useStore($skinName)
   const modeOverride = useStore($modeOverride)
   const backendSkins = useStore($backendSkins)
+  const backendSkinName = useStore($backendSkinName)
 
   const skins = listAllSkins(backendSkins)
-  const activeTheme = resolveSkinTheme(skinName, backendSkins)
+  // D15.2: name the backend's synced skin here, not `skinName` (the device's
+  // current pick) — those diverge as soon as the row below is tapped, and
+  // "applies automatically" would then describe the wrong skin.
+  const syncedTheme = resolveSkinTheme(backendSkinName ?? DEFAULT_SKIN_NAME, backendSkins)
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
@@ -94,7 +99,7 @@ export default function AppearanceSettings() {
 
         <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>Skin</Text>
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Matches the desktop app's skins. The backend's active skin ({activeTheme.label}) applies automatically the
+          Matches the desktop app's skins. The backend's active skin ({syncedTheme.label}) applies automatically the
           first time it changes; pick a different one here to override it on this device.
         </Text>
         {skins.map(theme => (

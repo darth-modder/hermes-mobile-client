@@ -413,6 +413,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginHorizontal: 16,
     marginTop: 10,
+    minHeight: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   },

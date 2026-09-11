@@ -14,8 +14,17 @@ vi.mock('react-native-mmkv', () => ({
   })
 }))
 
-const { $backendSkins, $pendingSkinApply, __resetBackendSkinSync, ingestBackendSkin, skinToDesktopTheme } =
-  await import('./backend-skin')
+const {
+  $backendSkinName,
+  $backendSkins,
+  $pendingSkinApply,
+  __resetBackendSkinSync,
+  ingestBackendSkin,
+  skinToDesktopTheme
+} = await import('./backend-skin')
+
+const { resolveSkinTheme, setSkinName } = await import('./skin-selection')
+const { DEFAULT_SKIN_NAME } = await import('../upstream/themes/presets')
 
 const CUSTOM_SKIN = {
   name: 'my-custom-skin',
@@ -105,5 +114,55 @@ describe('ingestBackendSkin', () => {
 
     expect($pendingSkinApply.get()).toBeNull()
     expect($backendSkins.get()).toEqual({})
+  })
+
+  // D15.2: the Appearance screen's hint names the backend's synced skin, not
+  // whatever the device is currently rendering — those diverge the moment a
+  // user overrides the pick locally (setSkinName), which never touches this.
+  it('records the synced name even on a seed-only baseline (apply: false)', () => {
+    ingestBackendSkin(CUSTOM_SKIN, { apply: false })
+
+    expect($backendSkinName.get()).toBe('my-custom-skin')
+  })
+
+  it('keeps tracking the synced name after a local override diverges from it', () => {
+    ingestBackendSkin(CUSTOM_SKIN, { apply: true })
+    expect($backendSkinName.get()).toBe('my-custom-skin')
+
+    // A local pick (setSkinName in skin-selection.ts) never calls
+    // ingestBackendSkin, so the synced name must not move on its own.
+    ingestBackendSkin(CUSTOM_SKIN, { apply: true })
+    expect($backendSkinName.get()).toBe('my-custom-skin')
+  })
+
+  it('"default" is recorded under the mobile client\'s own default name', () => {
+    ingestBackendSkin({ name: 'default' }, { apply: true })
+
+    expect($backendSkinName.get()).toBe('nous')
+  })
+
+  it('an unnamed skin does not change the synced name', () => {
+    ingestBackendSkin(CUSTOM_SKIN, { apply: true })
+    ingestBackendSkin({}, { apply: true })
+    ingestBackendSkin(null, { apply: true })
+
+    expect($backendSkinName.get()).toBe('my-custom-skin')
+  })
+
+  // The exact scenario D15.2 names: a backend-pushed skin ("charizard") synced
+  // while the device has a different LOCAL pick ("catppuccin", from the row
+  // tap in app/(main)/settings/appearance.tsx's SkinRow). The hint must read
+  // from $backendSkinName (what the backend is on), not $skinName (what the
+  // device is currently rendering) — computed here exactly as the screen does.
+  it('the appearance hint resolves to the backend skin even under a diverging local pick', () => {
+    const charizardSkin = { name: 'charizard', colors: { background: '#1a0f0f', ui_text: '#ffd8c2' } }
+
+    ingestBackendSkin(charizardSkin, { apply: true })
+    setSkinName('catppuccin')
+
+    const hintTheme = resolveSkinTheme($backendSkinName.get() ?? DEFAULT_SKIN_NAME, $backendSkins.get())
+
+    expect(hintTheme.label).toBe('Charizard')
+    expect(hintTheme.label).not.toBe('Catppuccin')
   })
 })
