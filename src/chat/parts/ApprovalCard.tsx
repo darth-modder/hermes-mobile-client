@@ -5,7 +5,7 @@ import { respondApproval } from '../../gateway/session-connection'
 import type { ApprovalRequest } from '../../gateway/session-stream-reducer'
 import { hapticApprove, hapticReject } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
-import { type } from '../../theme/type'
+import { radius, type } from '../../theme/type'
 
 const CHOICE_LABELS: Record<string, string> = {
   once: 'Run',
@@ -92,7 +92,7 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     minHeight: 48,
     minWidth: 48,
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     marginBottom: 4
   },
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 6,
     padding: 12

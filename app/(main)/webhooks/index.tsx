@@ -23,7 +23,7 @@ import {
 } from '../../../src/api/messaging'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { WebhookRoute } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY = ['webhooks']
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.control,
     marginTop: 4,
     paddingVertical: 12
   },
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   },
   banner: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   card: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   },
   input: {
     ...type.mono,
-    borderRadius: 8,
+    borderRadius: radius.control,
     borderWidth: 1,
     marginBottom: 8,
     paddingHorizontal: 12,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     alignSelf: 'flex-start',
-    borderRadius: 6,
+    borderRadius: radius.control,
     marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 8
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   secretCard: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 12,
     padding: 12

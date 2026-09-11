@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { useTheme } from '../theme/provider'
-import { type } from '../theme/type'
+import { radius, type } from '../theme/type'
 
 export interface CompletionRow {
   display: string
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 6,
     maxHeight: 220,

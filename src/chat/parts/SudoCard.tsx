@@ -6,7 +6,7 @@ import { respondSudo } from '../../gateway/session-connection'
 import type { SudoRequest } from '../../gateway/session-stream-reducer'
 import { hapticSubmit } from '../../lib/haptics'
 import { useTheme } from '../../theme/provider'
-import { type } from '../../theme/type'
+import { radius, type } from '../../theme/type'
 
 export interface SudoCardProps {
   storedSessionId: string
@@ -72,7 +72,7 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     minHeight: 48,
     minWidth: 48,
@@ -84,13 +84,13 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 6,
     padding: 12
   },
   input: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     borderWidth: 1,
     flex: 1,
     paddingHorizontal: 10,

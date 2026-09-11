@@ -28,7 +28,7 @@ import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 function relativeTime(epochMs: number): string {
   const minutes = Math.floor((Date.now() - epochMs) / 60_000)
@@ -298,7 +298,7 @@ export default function ConnectionsSettings() {
 
 const styles = StyleSheet.create({
   actionButton: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     marginRight: 8,
     marginTop: 8,
     paddingHorizontal: 10,
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.control,
     marginTop: 4,
     paddingVertical: 12
   },
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   card: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 12,
     padding: 12
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   retryButton: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     paddingHorizontal: 16,
     paddingVertical: 10
   },

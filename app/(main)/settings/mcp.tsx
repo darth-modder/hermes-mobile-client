@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { addMcpServer, listMcpServers, removeMcpServer, setMcpServerEnabled, testMcpServer } from '../../../src/api/mcp'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { McpServerSummary } from '../../../src/upstream/types/hermes'
 
 /**
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.control,
     marginTop: 4,
     paddingVertical: 12
   },
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   card: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   },
   input: {
     ...type.mono,
-    borderRadius: 8,
+    borderRadius: radius.control,
     borderWidth: 1,
     marginBottom: 8,
     paddingHorizontal: 12,

@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { ChevronDown, ChevronRight } from '../../lib/icons'
 import { useTheme } from '../../theme/provider'
-import { type } from '../../theme/type'
+import { radius, type } from '../../theme/type'
 
 import { CodeBlock } from './CodeBlock'
 
@@ -96,14 +96,14 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 4,
     padding: 10
   },
   errorBadge: {
     ...type.caption,
-    borderRadius: 4,
+    borderRadius: radius.icon,
     fontWeight: '700',
     paddingHorizontal: 6,
     paddingVertical: 1

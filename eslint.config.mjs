@@ -6,10 +6,20 @@ import unusedImports from 'eslint-plugin-unused-imports'
 import globals from 'globals'
 
 import { noHardcodedHexColor } from './scripts/eslint-rules/no-hardcoded-hex-color.mjs'
+import { noNumericBorderRadius } from './scripts/eslint-rules/no-numeric-border-radius.mjs'
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/package-lock.json', 'android/**', 'ios/**', '.expo/**']
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/package-lock.json',
+      'android/**',
+      'ios/**',
+      '.expo/**',
+      // Static HTML/CSS/JS prototype mockups (D15.3), not app source.
+      'docs/desktop-prototypes/**'
+    ]
   },
   js.configs.recommended,
   {
@@ -114,13 +124,19 @@ export default [
     // src/theme/** and src/upstream/** are.
     files: ['**/*.{ts,tsx}'],
     ignores: ['src/theme/**', 'src/upstream/**', 'app.config.ts'],
-    plugins: { local: { rules: { 'no-hardcoded-hex-color': noHardcodedHexColor } } },
+    plugins: {
+      local: {
+        rules: { 'no-hardcoded-hex-color': noHardcodedHexColor, 'no-numeric-border-radius': noNumericBorderRadius }
+      }
+    },
     rules: {
       // M13 (D14) Step 5's sweep is done — every hard-coded hex literal
       // outside src/theme/** and src/upstream/** is gone (the one
       // legitimate exception, a project's own user-picked rail colour in
       // src/api/projects.test.ts, is inline-disabled with a reason).
-      'local/no-hardcoded-hex-color': 'error'
+      'local/no-hardcoded-hex-color': 'error',
+      // D15.1b: every borderRadius outside src/theme/** is a radius.* token.
+      'local/no-numeric-border-radius': 'error'
     }
   }
 ]

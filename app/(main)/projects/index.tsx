@@ -18,7 +18,7 @@ import { archiveProject, createProject, deleteProject, listProjects, setActivePr
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { ProjectInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.control,
     marginTop: 4,
     paddingVertical: 12
   },
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   card: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   },
   input: {
     ...type.mono,
-    borderRadius: 8,
+    borderRadius: radius.control,
     borderWidth: 1,
     marginBottom: 8,
     paddingHorizontal: 12,
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     alignSelf: 'flex-start',
-    borderRadius: 6,
+    borderRadius: radius.control,
     marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 8

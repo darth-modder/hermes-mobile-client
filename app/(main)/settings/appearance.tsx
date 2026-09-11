@@ -15,7 +15,7 @@ import {
   setModeOverride,
   setSkinName
 } from '../../../src/theme/skin-selection'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { DesktopTheme } from '../../../src/upstream/themes/types'
 
 const MODE_OPTIONS: { label: string; value: ModeOverride }[] = [
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   },
   modeOption: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.control,
     flex: 1,
     minHeight: 48,
     justifyContent: 'center',
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   modeRow: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 4,
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   },
   skinRow: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 12,
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     padding: 12
   },
   swatch: {
-    borderRadius: 4,
+    borderRadius: radius.icon,
     height: 16,
     width: 16
   },

@@ -9,7 +9,7 @@ import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gate
 import { mintWsTicket, passwordLogin, PasswordLoginError } from '../../../src/net/auth/password-login'
 import { probeStatus } from '../../../src/net/auth/probe'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 /**
  * Password sign-in for a gated backend (M04). `id`/`baseUrl`/`label`/
@@ -183,7 +183,7 @@ export default function PasswordLoginScreen() {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     marginBottom: 12,
     marginRight: 8,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   input: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     borderWidth: 1,
     ...type.mono,
     marginBottom: 12,

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 
 import { type MobileTokens, useTheme } from '../../theme/provider'
-import { MONO_BOLD_FONT_FAMILY, type as typeRoles } from '../../theme/type'
+import { MONO_BOLD_FONT_FAMILY, radius, type as typeRoles } from '../../theme/type'
 
 import { highlightCode } from './highlight'
 
@@ -100,7 +100,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 6,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 4,
     padding: 10

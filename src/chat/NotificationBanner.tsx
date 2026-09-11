@@ -4,7 +4,7 @@ import { StyleSheet, Text, TouchableOpacity } from 'react-native'
 
 import { $notifications, dismissNotification, type NotifyEffect } from '../store/notifications'
 import { type MobileTokens, useTheme } from '../theme/provider'
-import { type } from '../theme/type'
+import { radius, type } from '../theme/type'
 
 function borderForKind(tokens: MobileTokens, kind: NotifyEffect['kind']): string {
   switch (kind) {
@@ -69,7 +69,7 @@ export function NotificationBanner() {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 4,
     marginHorizontal: 10,

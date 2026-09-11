@@ -21,7 +21,7 @@ import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import { useTheme } from '../../src/theme/provider'
-import { type } from '../../src/theme/type'
+import { radius, type } from '../../src/theme/type'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
 /** `session.started_at`/`last_active` are epoch seconds (REST, unlike the
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
   },
   newButton: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     flexDirection: 'row',
     gap: 4,
     paddingHorizontal: 12,
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     minHeight: 48,
     minWidth: 48,
@@ -409,7 +409,7 @@ const styles = StyleSheet.create({
   },
   search: {
     ...type.bodySmall,
-    borderRadius: 8,
+    borderRadius: radius.control,
     borderWidth: 1,
     marginHorizontal: 16,
     marginTop: 10,
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   unreadDot: {
-    borderRadius: 4,
+    borderRadius: radius.full,
     height: 8,
     width: 8
   }

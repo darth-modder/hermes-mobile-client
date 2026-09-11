@@ -20,7 +20,7 @@ import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { HttpError } from '../../../src/net/http'
 import { $activeProfile, setActiveProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { ProfileInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     padding: 16
   },
   createButton: {
-    borderRadius: 8,
+    borderRadius: radius.control,
     justifyContent: 'center',
     paddingHorizontal: 14
   },
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   input: {
     ...type.bodySmall,
-    borderRadius: 8,
+    borderRadius: radius.control,
     borderWidth: 1,
     flex: 1,
     paddingHorizontal: 12,
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   },
   row: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',

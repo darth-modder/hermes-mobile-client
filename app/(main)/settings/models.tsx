@@ -9,7 +9,7 @@ import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
 
 /**
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   providerBlock: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     paddingHorizontal: 12,

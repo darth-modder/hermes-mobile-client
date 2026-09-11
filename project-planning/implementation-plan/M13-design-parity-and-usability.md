@@ -296,13 +296,22 @@ them or delete them, do not exempt them).
 Shared: `AppDrawer` 4, `ScreenHeader` 2, `lib/settings-header.ts` 2. `src/upstream/lib/gateway-events.ts`
 has 1 and is exempt (vendored).
 
-## Appendix C — type roles
+## Appendix C — type roles and radius (D15.1b correction)
 
-Desktop: base 16px, line-height 1.5, radius 12px (`--radius: 0.75rem`), radius-sm 8px, radius-md
-10px. Mobile today uses `fontSize` 11 (14 sites), 12 (70), 13 (62), 14 (34), 15 (12), 16 (4),
-18 (2), 20 (10). Replace them with roles in `src/theme/type.ts`: `body` 16/24, `bodySmall` 14/20,
-`label` 13/18, `caption` 12/16, `title` 20/28, `mono` 13/20 in JetBrains Mono, and nothing else.
-`Text` applies the system font scale on its own; test at 1.3×.
+Desktop: base 16px, line-height 1.5. Mobile today uses `fontSize` 11 (14 sites), 12 (70), 13 (62),
+14 (34), 15 (12), 16 (4), 18 (2), 20 (10). Replace them with roles in `src/theme/type.ts`: `body`
+16/24, `bodySmall` 14/20, `label` 13/18, `caption` 12/16, `title` 20/28, `mono` 13/20 in JetBrains
+Mono, and nothing else. `Text` applies the system font scale on its own; test at 1.3×.
+
+**Radius, corrected.** `--radius: 0.75rem` (12px) is never used directly: every Tailwind radius
+utility is `calc(var(--radius-scalar) * N)` with `--radius-scalar: 0.2` (`styles.css:123-130,
+464`), so the desktop is near-square, not the 8-16px "radius-sm/-md" this appendix originally
+said. Effective desktop values: buttons and controls 2.5px, icon buttons 4px, badges 3px, the
+segmented track 5px and its options 3px, cards and menus 2-5px, dialogs 6.4px. Mobile adopts the
+same family in `src/theme/type.ts`, nothing else: `radius.control 3`, `radius.icon 4`,
+`radius.card 5`, `radius.sheet 8`, `radius.full 999`. An ESLint rule
+(`scripts/eslint-rules/no-numeric-border-radius.mjs`) fails a numeric `borderRadius` literal
+outside `src/theme/**`, the same shape as the hex-colour rule.
 
 ## Deviations from the literal spec (and why)
 

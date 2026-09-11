@@ -10,7 +10,7 @@ import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
 import { HttpError } from '../../src/net/http'
 import { useTheme } from '../../src/theme/provider'
-import { type } from '../../src/theme/type'
+import { radius, type } from '../../src/theme/type'
 
 type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth'; provider?: string }
 
@@ -284,7 +284,7 @@ export default function ConnectScreen() {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     marginBottom: 12,
     marginRight: 8,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   input: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     borderWidth: 1,
     ...type.mono,
     marginBottom: 12,

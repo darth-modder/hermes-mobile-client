@@ -26,7 +26,7 @@ import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposer
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
 import { useTheme } from '../theme/provider'
-import { type } from '../theme/type'
+import { radius, type } from '../theme/type'
 import { cancelRecording, isRecording, startRecording, stopRecordingAndTranscribe } from '../voice/recorder'
 import { speakUnspokenReply } from '../voice/speech-progress'
 import { speak } from '../voice/tts'
@@ -499,7 +499,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
 const styles = StyleSheet.create({
   attachmentChip: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: radius.control,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     alignItems: 'center',
-    borderRadius: 18,
+    borderRadius: radius.full,
     justifyContent: 'center',
     marginLeft: 4,
     minHeight: 48,

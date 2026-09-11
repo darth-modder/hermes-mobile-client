@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { listInstalledPlugins } from '../../../src/api/plugins'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   row: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12

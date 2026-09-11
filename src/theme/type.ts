@@ -21,6 +21,18 @@ export const type = {
 
 export type TypeRoleName = keyof typeof type
 
+// D15.1b: every desktop radius utility is multiplied by `--radius-scalar: 0.2`
+// (styles.css:123-130, 464), so the desktop is near-square (controls 2.5px,
+// icon buttons 4px, badges 3px, cards and menus 2-5px, dialogs 6.4px).
+// Mobile adopts the same family — nothing outside this table.
+export const radius = {
+  control: 3,
+  icon: 4,
+  card: 5,
+  sheet: 8,
+  full: 999
+} as const
+
 // Not a seventh role (Appendix C names exactly six): 'JetBrainsMono-Bold' is
 // a distinct bundled font FILE (src/lib/fonts.ts), used only by CodeBlock's
 // syntax highlighter for bold tokens (keywords, headings) layered on the

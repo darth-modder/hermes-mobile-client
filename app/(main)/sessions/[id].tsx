@@ -11,7 +11,7 @@ import { Transcript } from '../../../src/chat/Transcript'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { $sessionStates } from '../../../src/store/session-states'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 /**
  * The chat screen. No session-list screen exists yet (M07), so `id: "new"`
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     alignItems: 'center',
-    borderRadius: 6,
+    borderRadius: radius.control,
     justifyContent: 'center',
     minHeight: 48,
     paddingHorizontal: 16,

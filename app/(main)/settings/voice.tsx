@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 type PermissionState = 'checking' | 'denied' | 'granted' | 'undetermined'
 
@@ -77,7 +77,7 @@ export default function VoiceSettings() {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: radius.control,
     justifyContent: 'center',
     marginBottom: 8,
     marginTop: 4,

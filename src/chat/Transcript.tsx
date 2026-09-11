@@ -8,7 +8,7 @@ import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prom
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
 import { type MobileTokens, useTheme } from '../theme/provider'
-import { type } from '../theme/type'
+import { radius, type } from '../theme/type'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
 import { ApprovalCard } from './parts/ApprovalCard'
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   bubble: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     maxWidth: '92%',
     padding: 10
   },

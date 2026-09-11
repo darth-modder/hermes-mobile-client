@@ -17,7 +17,7 @@ import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { ARTIFACT_FILTERS, type ArtifactFilter, type ArtifactRecord } from '../../../src/lib/artifacts'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
-import { type } from '../../../src/theme/type'
+import { radius, type } from '../../../src/theme/type'
 
 const FILTER_LABEL: Record<ArtifactFilter, string> = { all: 'All', file: 'Files', image: 'Images', link: 'Links' }
 
@@ -178,7 +178,7 @@ export default function ArtifactsScreen() {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   filterChip: {
-    borderRadius: 14,
+    borderRadius: radius.control,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     padding: 16
   },
   retryButton: {
-    borderRadius: 6,
+    borderRadius: radius.control,
     paddingHorizontal: 16,
     paddingVertical: 10
   },

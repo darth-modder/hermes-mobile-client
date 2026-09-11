@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native'
 import Markdown, { type ASTNode, type RenderRules } from 'react-native-markdown-display'
 
 import { type MobileTokens, useTheme } from '../../theme/provider'
-import { type } from '../../theme/type'
+import { radius, type } from '../../theme/type'
 
 import { CodeBlock } from './CodeBlock'
 import { splitMarkdownBlocks } from './markdown-blocks'
@@ -36,7 +36,7 @@ const markdownStyles = StyleSheet.create({
     ...type.body
   },
   code_inline: {
-    borderRadius: 4,
+    borderRadius: radius.icon,
     ...type.mono
   }
 })

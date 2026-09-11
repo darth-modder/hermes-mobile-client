@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 
 import { useTheme } from '../../theme/provider'
-import { type } from '../../theme/type'
+import { radius, type } from '../../theme/type'
 import type { TodoItem } from '../../upstream/lib/todos'
 
 const STATUS_GLYPH: Record<TodoItem['status'], string> = {
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through'
   },
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 6,
     padding: 10
