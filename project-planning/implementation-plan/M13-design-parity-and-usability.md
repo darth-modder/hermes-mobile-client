@@ -134,9 +134,16 @@ Read these before designing anything; they are the source of truth, not a screen
 - [x] Icons: `grep -rn "accessibilityLabel" src app | wc -l` is at least the number of
       icon-only `Pressable`s, and a uiautomator dump of chat, session list and settings shows no
       clickable node without `content-desc` or text.
-- [ ] Type: code blocks render in JetBrains Mono (`Font.isLoaded('JetBrainsMono')` true and a
-      glyph check on a screenshot); at font scale 1.3× (`adb shell settings put system
+- [ ] **Type: `src/lib/fonts.ts` logs `Font.isLoaded('JetBrainsMono')` once at boot in `__DEV__`,
+      and it reads true in logcat**; at font scale 1.3× (`adb shell settings put system
       font_scale 1.3`) no text is clipped on the three main screens.
+      *Decision D15.2:* the original wording was "code blocks render in JetBrains Mono
+      (`Font.isLoaded('JetBrainsMono')` true and a glyph check on a screenshot)". Neither Sonnet
+      nor Opus's Step 9/re-verification passes ever called `Font.isLoaded` — `src/lib/fonts.ts`
+      loads the family but nothing asserted it — and a screenshot glyph check can't reliably tell
+      JetBrains Mono apart from the system mono fallback at code-block sizes. A boot-time
+      `__DEV__` log of the same boolean is a direct, reliable read of the fact the criterion
+      actually cares about.
 - [ ] Touch targets: a uiautomator dump of the three main screens shows no clickable node
       smaller than 48×48 dp at the emulator's density.
 - [x] Slash palette: `/model` opens Settings > Models, `/sessions` opens the session list,

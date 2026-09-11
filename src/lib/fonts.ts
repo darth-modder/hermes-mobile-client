@@ -9,7 +9,8 @@
 // it does for system fonts, so src/theme/type.ts's `mono` role picks between
 // them directly rather than setting fontWeight on a single family.
 
-import { useFonts } from 'expo-font'
+import { isLoaded, useFonts } from 'expo-font'
+import { useEffect } from 'react'
 
 export function useAppFonts(): boolean {
   const [loaded] = useFonts({
@@ -17,6 +18,14 @@ export function useAppFonts(): boolean {
     'JetBrainsMono-Bold': require('../../assets/fonts/JetBrainsMono-Bold.ttf'),
     JetBrainsMono: require('../../assets/fonts/JetBrainsMono-Regular.ttf')
   })
+
+  // M13 exit criterion (D15.2, reworded): a direct, logcat-visible read of
+  // the same fact a screenshot glyph check was standing in for.
+  useEffect(() => {
+    if (loaded && __DEV__) {
+      console.log(`fonts: Font.isLoaded('JetBrainsMono') = ${isLoaded('JetBrainsMono')}`)
+    }
+  }, [loaded])
 
   return loaded
 }
