@@ -40,10 +40,10 @@ describe('settings index rows', () => {
     }
   })
 
-  it('has no row for the six M14 sections that still need their own commit', () => {
+  it('has a Chat row and no row yet for the five remaining M14 sections', () => {
     const titles = SETTINGS_GROUPS.flatMap(group => group.rows.map(row => row.title))
 
-    expect(titles).not.toContain(t.settings.sections.chat)
+    expect(titles).toContain(t.settings.sections.chat)
     expect(titles).not.toContain(t.settings.sections.safety)
     expect(titles).not.toContain(t.settings.sections.memory)
     expect(titles).not.toContain(t.settings.nav.billing)

@@ -16,6 +16,23 @@
 // the two-line "Connected to <x>" summary card (a mobile-only settings-index
 // affordance).
 
+// settings/about.tsx — this section header has no desktop counterpart: the
+// desktop's about-settings.tsx never shows a per-connection host card (it
+// isn't dialing anywhere), so there's no vendored word to reuse for the
+// mobile-only "which host am I talking to" block. Copied from the mobile
+// prototype's own `data-view="about"` `.section-label`.
+export const ABOUT_HOST_SECTION_TITLE = 'Host'
+
+// t.about.version(value) already covers "Version X" (the desktop's own
+// format, checked against en.ts's `about` block); the parenthetical build
+// number is an Android versionCode, a concept the desktop's about screen has
+// no equivalent for (it pairs a git branch and commit via `branchCommit`
+// instead — values this app has no build-time injection for, so they're not
+// shown here rather than shown wrong).
+export function aboutBuildSuffix(build: string): string {
+  return ` (build ${build})`
+}
+
 // settings/appearance.tsx — "Skin" is this app's own established term for a
 // desktop *palette*; the desktop itself has no separate "skin" word for a
 // settings section (D15.2 uses "skin" throughout the app's own code and
@@ -26,6 +43,35 @@ export const APPEARANCE_SKIN_SECTION_TITLE = 'Skin'
 export function appearanceSkinSyncHint(themeLabel: string): string {
   return `Matches the desktop app's skins. The backend's active skin (${themeLabel}) applies automatically the first time it changes; pick a different one here to override it on this device.`
 }
+
+// settings/archived-chats.tsx has no entry here: every string it needs
+// (loading/empty/error states, Unarchive, Delete permanently, the message
+// count) already exists under t.settings.sessions (D15.4).
+
+// settings/billing.tsx — this app has no billing/credits API at all: past
+// the mid-turn "out of credits" wall carried on the message stream
+// (BillingBlock, src/upstream/lib/chat-messages/types.ts — only present
+// while a turn is actively blocked, never queryable on its own), there is no
+// endpoint to read a plan, payment method, or usage from. Desktop's own
+// billing/index.tsx polls a dedicated REST route every 30s that has no
+// mobile port (src/api/config.ts's header already draws this line for the
+// sibling raw-config surface). Until a billing-status endpoint exists on
+// mobile, this screen can only say so.
+export const BILLING_NOT_AVAILABLE =
+  "Billing isn't available from this app yet. Manage your plan, payment method, and usage from the Hermes desktop app or your account portal."
+
+// settings/chat.tsx — every row on the desktop's Chat panel (Personality,
+// Timezone, Show Reasoning, Image Input Mode) is a config.yaml-schema field,
+// autosaved through the desktop's generic config editor that src/api/
+// config.ts's header already decided not to port ("out — the named
+// 'providers' screen is env-vars and custom endpoints, not a schema-driven
+// config editor"). Two more settings that conceptually belong on this
+// screen per the M14 mapping — Collapse-thinking-by-default and Message
+// Reactions (t.settings.appearance.reasoningCollapsedTitle/reactionsTitle,
+// flagged in appearance.tsx's own Replicates comment) — have no local
+// preference store either. Nothing here is backed by real state yet.
+export const CHAT_NOT_AVAILABLE =
+  "Chat preferences aren't editable from this app yet — they live in the host's config file, which this app doesn't read or write. Change them from the Hermes desktop app or hermes-cli."
 
 // settings/connections.tsx — this compact per-row auth-mode badge has no
 // desktop equivalent: the desktop describes auth mode with full sentences
@@ -62,6 +108,17 @@ export const PROFILE_LABEL_PREFIX = 'Profile:'
 export const MCP_REMOVE_SERVER_CONFIRM_TITLE = 'Remove MCP server?'
 export const MCP_TARGET_PLACEHOLDER = 'command, or https:// url'
 export const MCP_ADDING = 'Adding…'
+
+// settings/memory.tsx — every row on the desktop's Memory & Context panel
+// (Memory, User Profile, Memory Provider, Context Engine, Auto-Compression,
+// Compression Threshold) is either a config.yaml-schema field (see
+// CHAT_NOT_AVAILABLE above) or one of the memory/curator endpoints
+// src/api/system.ts's header explicitly left unported ("getMemoryStatus/
+// resetMemory/getCuratorStatus/.../getMemoryProviderConfig/
+// saveMemoryProviderConfig ... have no named M09 sub-screen"). Adding that
+// API surface is data-fetching work, out of scope for a layout pass.
+export const MEMORY_NOT_AVAILABLE =
+  "Memory and context settings aren't available from this app yet — no mobile API exists to read or change them. Change them from the Hermes desktop app or hermes-cli."
 
 // settings/models.tsx — section titles/hints for the model list and the
 // per-provider "(not configured)" suffix have no vendored match in
@@ -113,6 +170,18 @@ export const PROVIDERS_ACTIVE_ENDPOINT_SUFFIX = '(active)'
 export function providersDeleteEndpointConfirmTitle(name: string): string {
   return `Delete "${name}"?`
 }
+
+// settings/safety.tsx — every row on the desktop's Safety panel (Approval
+// Mode, Approval Timeout, Confirm MCP Reloads, Command Allowlist, Redact
+// Secrets, Allow Private URLs, File Checkpoints) is a config.yaml-schema
+// field (see CHAT_NOT_AVAILABLE above). Approval mode also has no live
+// mirror on mobile to fall back to as a read-only display: session-info.ts's
+// header lists "approval_mode reconciliation (profile-scoped desktop
+// settings sync)" among what was deliberately dropped porting the desktop's
+// session-info handler, so there is nothing to read even without a write
+// path.
+export const SAFETY_NOT_AVAILABLE =
+  "Safety settings aren't editable from this app yet — approval mode, command allowlists, and the rest live in the host's config file. Change them from the Hermes desktop app or hermes-cli."
 
 // settings/skills.tsx — no vendored remove-confirm for skills (t.skills.hub
 // has bare "Uninstall", not a "Uninstall X?" confirm); the two empty states
