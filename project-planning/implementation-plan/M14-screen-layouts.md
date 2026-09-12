@@ -403,6 +403,23 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
       as originally written; no correction.
     - **Not re-litigated:** the model-picker correction (Deviation 11) already covers `slash.model`
       and isn't repeated here.
+14. **Chat pairing table correction: approval/clarify cards are expected-absent (a known defect), not
+    expected-present.** An earlier version of this milestone's pairing table (this document's own
+    2026-09-13 review round) read `chat.html`'s `Field (ours): approval and clarify cards in the
+    thread` line as this app already having them working, on the assumption "theirs" meant the
+    desktop. It doesn't: that line compares against the *competitor* mobile app fielded in
+    `docs/FIELD-NOTES-hermes-mobile-app-2026-09-12.md` (§3, row 20 — "Approval,
+    `approvals.mode: manual`"), not `apps/desktop`. Verified by reading that row directly: the
+    competitor app executed the risky command with no prompt at all; this app's own build showed
+    **no card either — the turn hung for over 50 seconds** — and the row's own verdict is
+    "**NEW task**: neither is right; ours must show a card." The desktop (`mid-turn-prompts.html`,
+    this pairing's actual M14 source) does have a working approval card; this app's `ApprovalCard.tsx`
+    (`src/chat/parts/ApprovalCard.tsx`) exists and is fed by `approval.request`
+    (`src/gateway/session-stream/input-requests.ts`, both confirmed present) but did not render on
+    device during that field test. Cause undetermined — whether `approval.request` fails to reach the
+    session socket or arrives and isn't rendered is exactly what the pairing session (mid-turn prompt
+    row) is for. No speculative fix attempted here or anywhere in this milestone pending that
+    diagnosis, per direction.
 
 ## Verification log
 
