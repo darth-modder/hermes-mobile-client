@@ -58,6 +58,18 @@ function activeAtWord(text: string): null | string {
   return match ? match[2] : null
 }
 
+// M14 task 5: docs/desktop-prototypes/f-dialogs/add-url.html ("Attach a
+// URL" — fetches a page and adds it as context for the turn, opened from
+// the composer's "Add context" menu) is confirmed absent, not built.
+// Checked src/gateway/session-connection.ts directly: `attachImageBytes`/
+// `attachFile`/`attachPdf` all take bytes already on the device (via
+// pickAndAttachImage/pickAndAttachDocument below) — there is no
+// fetch-a-URL-and-attach-as-context call, gateway RPC or otherwise, for
+// this app to send. That prototype's own header already hedges this ("URL
+// attach is not listed [in PARITY.md], so treat it as unverified"); having
+// now checked, it isn't there. This composer also has no "Add context"
+// menu at all yet (only the two attach buttons below) — a URL-attach sheet
+// would need both that menu and a backend call neither exists.
 export function Composer({ storedSessionId }: ComposerProps) {
   const tokens = useTheme()
   const insets = useSafeAreaInsets()

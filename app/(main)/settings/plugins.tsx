@@ -21,6 +21,17 @@ import { radius, type } from '../../../src/theme/type'
 // mobile-specific caveat (no per-plugin dashboards here) rather than
 // swapping in the vendored blurb, which describes what agent plugins are
 // but doesn't cover that gap.
+// M14 task 5: docs/desktop-prototypes/f-dialogs/plugin-install.html (the
+// review/install dialog for a plugin from a git repository — probe, pick
+// agent-plugin vs. desktop-UI components, install) is confirmed absent, not
+// built. Checked src/api/plugins.ts directly: it exposes `listInstalledPlugins`
+// (read-only discovery of what's already on the backend) and `pluginRest`
+// (a scoped REST door into an ALREADY-installed plugin's own namespace) —
+// nothing that clones a repository or installs a new one. That prototype's
+// own header notes the agent side is otherwise "at parity" and only "the
+// Desktop UI half is absent by design"; the install-from-a-git-URL
+// capability itself, for either half, has no mobile API surface to build
+// a real sheet on top of.
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
  * header — a plugin's own dashboard page (desktop: an embedded web view) has

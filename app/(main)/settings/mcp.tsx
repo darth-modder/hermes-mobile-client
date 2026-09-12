@@ -38,6 +38,18 @@ import type { McpServerSummary } from '../../../src/upstream/types/hermes'
 // copy (testOk's counted-tools phrasing; testFailed prefixes the specific
 // server error this screen already surfaced, since the vendored string
 // alone has no room for it).
+// M14 task 5: docs/desktop-prototypes/f-dialogs/mcp-install-link.html
+// (the confirm-and-add dialog a `hermes://mcp/install` deep link opens,
+// pre-filled with the link's own server JSON) is confirmed absent, not
+// built. Checked src/api/mcp.ts directly: `addMcpServer` (manual add)
+// exists and is already this screen's own form below, but nothing parses a
+// `hermes://mcp/install` link into that call — this app registers no such
+// deep link at all (only `hermes-android://connect` and `.../session/<id>`,
+// app/connect and app/session). That prototype's own header hedges the same
+// way ("MCP servers are at parity ... the hermes:// deep-link install is
+// not listed [in PARITY.md]"). Building the dialog without the link that
+// triggers it would be UI with nothing to open it from; the manual add form
+// already covers the same underlying capability (adding a server) by hand.
 /**
  * MCP settings screen (M09). Exit criterion: "MCP server add and test
  * succeed" — manual add (name + command-or-url) covers it without the
