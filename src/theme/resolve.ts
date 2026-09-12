@@ -337,9 +337,9 @@ function resolveSurfaces(colors: DesktopThemeColors, mode: ThemeMode) {
 
   const chatBubble = mix(hexToRgba(seeds.bubbleSeed), hexToRgba(m.neutralCard), m.mixBubble)
 
-  const codeBlack = hexToRgba('#141414')
-  const inlineCodeBg = mix(codeBlack, TRANSPARENT, 0.05)
-  const inlineCodeFg = mix(codeBlack, TRANSPARENT, 0.88)
+  const inlineCodeSeed = hexToRgba(mode === 'dark' ? '#ffffff' : '#141414')
+  const inlineCodeBg = mix(inlineCodeSeed, TRANSPARENT, mode === 'dark' ? 0.07 : 0.05)
+  const inlineCodeFg = mix(inlineCodeSeed, TRANSPARENT, 0.88)
 
   const uiGreen = hexToRgba(m.uiGreen)
   const uiRed = hexToRgba(m.uiRed)
