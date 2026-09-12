@@ -76,6 +76,16 @@ export interface MobileTokens {
   rowActive: string
   controlHover: string
   controlActive: string
+  /** M14: the accent-over-base fill family (`--ui-bg-primary`…`-quinary`,
+   *  A.4) and `--ui-bg-card`, exposed for the new `src/components/ui/*`
+   *  primitives (secondary button fill, badges, search field, avatar,
+   *  skeleton, card) — computed since M13 but not previously returned. */
+  bgPrimary: string
+  bgSecondary: string
+  bgTertiary: string
+  bgQuaternary: string
+  bgQuinary: string
+  bgCard: string
   semantic: {
     red: string
     orange: string
@@ -304,6 +314,9 @@ function resolveSurfaces(colors: DesktopThemeColors, mode: ThemeMode) {
   const bgTertiary = mix(accent, mix(base, TRANSPARENT, 0.05), 0.08)
   const bgQuaternary = mix(accent, mix(base, TRANSPARENT, 0.04), 0.05)
   const bgQuinary = mix(accent, mix(base, TRANSPARENT, 0.03), 0.03)
+  // `--ui-bg-card` (styles.css:280): its own one-off pair, not part of the
+  // primary…quinary family above.
+  const bgCard = mix(accent, mix(base, TRANSPARENT, 0.04), 0.04)
 
   const rowHover = mix(accent, mix(base, TRANSPARENT, 0.03), 0.04)
   const rowActive = mix(accent, mix(base, TRANSPARENT, 0.05), 0.08)
@@ -351,6 +364,7 @@ function resolveSurfaces(colors: DesktopThemeColors, mode: ThemeMode) {
     bgTertiary,
     bgQuaternary,
     bgQuinary,
+    bgCard,
     rowHover,
     rowActive,
     controlHover,
@@ -439,6 +453,12 @@ export function resolveMobileTheme(theme: DesktopTheme, mode: ThemeMode): Mobile
     rowActive: fmt(s.rowActive),
     controlHover: fmt(s.controlHover),
     controlActive: fmt(s.controlActive),
+    bgPrimary: fmt(s.bgPrimary),
+    bgSecondary: fmt(s.bgSecondary),
+    bgTertiary: fmt(s.bgTertiary),
+    bgQuaternary: fmt(s.bgQuaternary),
+    bgQuinary: fmt(s.bgQuinary),
+    bgCard: fmt(s.bgCard),
     semantic: {
       red: m.uiRed,
       orange: UI_ORANGE,
