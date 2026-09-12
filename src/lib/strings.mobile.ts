@@ -392,6 +392,17 @@ export const PROFILES_EXPLAINER =
   'A profile is a separate config, sessions, and skill set on the same backend. Switching scopes every settings screen and new sessions to it.'
 export const PROFILES_DEFAULT_SUBTITLE = "The connection's default profile"
 export const PROFILES_NAME_PLACEHOLDER = 'profile name'
+
+// settings/profiles.tsx — the Rename sheet's description
+// (t.profiles.renameDescPrefix/Suffix, M14 task 5) wraps a literal path the
+// desktop's own dialog also hardcodes outside its i18n system
+// (docs/desktop-prototypes/f-dialogs/profile-dialogs.html's `rename` view:
+// "...wrapper scripts in <span class="t-mono">~/.local/bin</span>." — the
+// path itself is markup, not a translated string; checked en.ts, no key
+// holds it either). Named here rather than left as a bare literal in the
+// component so the labels test can tell it apart from an actually-retyped
+// label.
+export const PROFILES_RENAME_WRAPPER_PATH = '~/.local/bin'
 export const PROFILES_DELETE_HINT = 'Long-press a profile to delete it. The default profile cannot be deleted.'
 
 // settings/providers.tsx — provider-OAuth connect (a device-code flow) isn't
