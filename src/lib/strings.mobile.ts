@@ -292,6 +292,16 @@ export function connectSucceededStatus(installId: string | undefined): string {
   return `Connected — install_id=${installId ?? '(none)'}`
 }
 
+// connect/[id]/login.tsx's "Test WS ticket dial" control (post-login): an
+// M04/M08 connectivity self-check left in deliberately for on-device
+// verification of the WS ticket handshake — a real diagnostic tool, not a
+// dead control (it does something when pressed), and has no desktop
+// counterpart at all (that screen's own header comment explains why it
+// stays rather than being pulled — not a call this labels sweep makes).
+export const CONNECT_MINTING_TICKET = 'Minting ticket…'
+export const CONNECT_WS_ERROR = 'WS error'
+export const CONNECT_TEST_WS_TICKET_DIAL = 'Test WS ticket dial'
+
 // settings/connections.tsx — this compact per-row auth-mode badge has no
 // desktop equivalent: the desktop describes auth mode with full sentences
 // ("This gateway uses a username and password...", en.ts's authSignedIn*/

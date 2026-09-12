@@ -49,7 +49,7 @@ const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 // is deliberately left here even though it's mid-sweep elsewhere (a
 // separate, concurrently-running task): pulling it out from under that work
 // would race a file another pass owns right now.
-const PENDING = new Set(['connect/[id]/login.tsx', 'connect/index.tsx', 'connect/scan.tsx'])
+const PENDING = new Set<string>([])
 
 // A literal that "looks like" a bare identifier/path/style value rather
 // than user-facing prose: module specifiers ('react-native',

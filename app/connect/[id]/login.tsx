@@ -6,7 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { setActiveConnection } from '../../../src/connections/registry'
 import type { MobileConnection } from '../../../src/connections/types'
 import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gateway/dial'
-import { CONNECT_PASSWORD_LABEL, CONNECT_SIGNING_IN, CONNECT_USERNAME_LABEL } from '../../../src/lib/strings.mobile'
+import {
+  CONNECT_MINTING_TICKET,
+  CONNECT_PASSWORD_LABEL,
+  CONNECT_SIGNING_IN,
+  CONNECT_TEST_WS_TICKET_DIAL,
+  CONNECT_USERNAME_LABEL,
+  CONNECT_WS_ERROR
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { mintWsTicket, passwordLogin, PasswordLoginError } from '../../../src/net/auth/password-login'
 import { probeStatus } from '../../../src/net/auth/probe'
@@ -62,7 +69,7 @@ export default function PasswordLoginScreen() {
       return
     }
 
-    setWsResult('Minting ticket…')
+    setWsResult(CONNECT_MINTING_TICKET)
 
     try {
       const { ticket } = await mintWsTicket(baseUrl)
@@ -82,7 +89,7 @@ export default function PasswordLoginScreen() {
 
       await new Promise<void>((resolve, reject) => {
         socket.addEventListener('open', () => resolve(), { once: true })
-        socket.addEventListener('error', () => reject(new Error('WS error')), { once: true })
+        socket.addEventListener('error', () => reject(new Error(CONNECT_WS_ERROR)), { once: true })
       })
 
       setWsResult(`WS open — echoed subprotocol: ${socket.protocol || '(none)'}`)
@@ -141,7 +148,7 @@ export default function PasswordLoginScreen() {
         <Text style={[styles.title, { color: tokens.foreground }]}>{t.settings.gateway.cloudConnectedTitle}</Text>
         <Text style={[styles.status, { color: tokens.semantic.green }]}>{label || baseUrl}</Text>
         <TouchableOpacity onPress={testWsTicketDial} style={[styles.button, { backgroundColor: tokens.primary }]}>
-          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Test WS ticket dial</Text>
+          <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{CONNECT_TEST_WS_TICKET_DIAL}</Text>
         </TouchableOpacity>
         {wsResult ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{wsResult}</Text> : null}
         <TouchableOpacity
