@@ -852,3 +852,37 @@ following it).
 **Net:** six criteria closed with first-hand evidence, two left open and named precisely (the
 `Font.isLoaded` clause; the search field's 38.5 dp target). `done` is blocked on the typecheck error,
 which is a one-file fix plus a re-run of `npm run check`.
+
+---
+
+#### Sonnet, M13 tail closure (2026-09-12)
+
+All three remaining blockers fixed on `m13-design`, `npm run check` green throughout (see commits
+`282af7b`, `ef6bfb3`, `2cecd9d`, `c73e947`, `7122c66`).
+
+1. **`ToolIcon` typecheck.** Split `ToolIconProps.style` to `StyleProp<ViewStyle>` (it renders
+   `<Svg>`) from `CodiconProps.style: TextStyle` (it renders `<Text>`); the Codicon fallback drops
+   `style` rather than casting. `tsc -p . --noEmit` clean.
+2. **Criterion 5, `Font.isLoaded`.** `src/lib/fonts.ts`'s `useAppFonts` now logs the boolean once
+   under `__DEV__` when `useFonts` resolves. Re-verified live on `emulator-5554` against the dev
+   client built from this branch: `adb logcat -d -s ReactNativeJS:*` shows
+   `fonts: Font.isLoaded('JetBrainsMono') = true`.
+3. **Criterion 6, touch targets.** The one real gap Opus found (session-list search field, 38.5 dp,
+   no `hitSlop`) is fixed with `minHeight: 48`. Re-ran the uiautomator dump on the same three
+   screens with the merged fix in place:
+   - **Session list:** every real control passes once `hitSlop` is counted — Open menu 28.2→52.2,
+     Settings 27.8×28.2→51.8×52.2, New session 72×32→72×48.0, Pin (not in Opus's table) 29.7×28.2→53.7×52.2.
+     The search field itself is now the full 48.0 dp row height (`ok 379.4x48.0 dp`).
+   - **Chat:** Back 34.3×25.9→58.3×49.9, title 285.3×24.0→~301×48.0, Compress 72×28.2→~92×48.2,
+     the Reasoning disclosure 340.2×20.2 (`hitSlop {bottom:14,top:14}`)→340.2×48.2, composer's four
+     icon buttons and the input row are native 48×48 / 141×64. All pass.
+   - **Settings:** every row is a native 411×70 (or the 56×56 back / 48×48 hamburger); nothing
+     under 48 dp with no `hitSlop` needed at all.
+
+   (The dump's only other "FAIL" rows are Metro's own dev-mode error toast, not app UI — excluded.)
+
+Read-only device pass: opened an **existing real session** on the connection this dev client
+already had saved (a personal/daily-use backend, not a throwaway one — same one Opus's own pass
+above ran against, PID verified alive both times). Nothing was typed, sent, deleted, or changed;
+the only actions were navigation taps and `uiautomator dump`/`screencap`. Metro and the emulator
+were left as found (see the M14 report for the M14-round teardown).
