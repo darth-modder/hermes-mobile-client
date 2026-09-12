@@ -482,13 +482,24 @@ The same session surfaced defects, since fixed one-per-commit on this branch:
 - The connect screen's URL field was pre-filled with real text (`http://127.0.0.1:9119`), so typing
   appended to it instead of replacing it, producing "Invalid base URL".
 
-Two open items from that session, neither chased down further here:
+One open item from that session, not chased down further here:
 
 - After one Reject in a session, a second request in the same session logged a tool turn but showed
   no approval card; the model's own reply said the action was "blocked." Unexplained — possibly a
   server-side auto-deny following a prior reject, but not confirmed. Flagging it rather than
   guessing at a cause.
-- The reviewer did not measure the Reasoning toggle or the tool-call row header against 48dp,
-  including hitSlop. Item 3's fix report reasoned through those two from their line-height and
-  existing hitSlop values and concluded they already clear 48dp, but that arithmetic was never
-  checked against an actual on-device measurement.
+
+The other open item from that session — the Reasoning toggle and the tool-call row header never
+measured on device — is now resolved:
+
+Measured on device (2026-09-13, throwaway gateway, `uiautomator` bounds ÷ 2.625 at 420dpi): both
+native boxes measured ~20.2dp, and each one's coded `hitSlop` (`bottom: 14, top: 14` —
+`ReasoningDisclosure.tsx:26`, `ToolCallCard.tsx:59`) did not reliably add up to 48dp effective in a
+real transcript. With a Reasoning block directly above a tool-call row (the ordinary shape of a
+tool-using turn), taps in the two controls' overlapping hitSlop region resolved to whichever
+control's zone the tap landed in rather than reliably the intended one; tapped directly, the
+tool-call row's own bottom-edge hitSlop measured only ~3dp effective, not 14dp. Both were fixed
+with `minHeight: 48` on the header (matching the other M14 touch-target fixes) so the native box
+alone clears 48dp regardless of hitSlop reach or neighboring controls; re-measured after the fix,
+both are 126px = 48.0dp native, and tapping within that native area reliably toggles the intended
+control. Fixed in commit `582c02d`.
