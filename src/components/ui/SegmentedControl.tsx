@@ -34,7 +34,10 @@ export function SegmentedControl<T extends string>({ onChange, options, value }:
             hitSlop={{ bottom: 4, top: 4 }}
             key={option.value}
             onPress={() => onChange(option.value)}
-            style={[styles.option, active ? { backgroundColor: tokens.background } : null]}
+            style={[
+              styles.option,
+              active ? { backgroundColor: tokens.background, elevation: 1, shadowOpacity: 0.15 } : null
+            ]}
           >
             <Text style={[styles.label, { color: active ? tokens.foreground : tokens.textSecondary }]}>
               {option.label}

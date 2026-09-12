@@ -36,7 +36,10 @@ export function Tabs<T extends string>({ onChange, tabs, value }: TabsProps<T>) 
             hitSlop={{ bottom: 4, top: 4 }}
             key={tab.value}
             onPress={() => onChange(tab.value)}
-            style={[styles.trigger, active ? { backgroundColor: tokens.background } : null]}
+            style={[
+              styles.trigger,
+              active ? { backgroundColor: tokens.background, elevation: 1, shadowOpacity: 0.15 } : null
+            ]}
           >
             <Text style={[styles.label, { color: active ? tokens.foreground : tokens.textSecondary }]}>
               {tab.label}

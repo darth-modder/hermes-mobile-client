@@ -3,7 +3,7 @@
 // success (emerald), warn (amber), destructive"). `outline`/`solid` (desktop)
 // and the `overlay` dot/count size have no mobile screen using them yet, so
 // they're not built ahead of a caller.
-import { StyleSheet, Text, type ViewStyle } from 'react-native'
+import { StyleSheet, Text, type TextStyle } from 'react-native'
 
 import { useTheme } from '../../theme/provider'
 import { radius, type } from '../../theme/type'
@@ -12,7 +12,7 @@ export type BadgeVariant = 'danger' | 'default' | 'good' | 'muted' | 'warn'
 
 export interface BadgeProps {
   children: string
-  style?: ViewStyle
+  style?: TextStyle
   variant?: BadgeVariant
 }
 
