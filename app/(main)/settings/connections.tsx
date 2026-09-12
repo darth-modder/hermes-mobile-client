@@ -332,10 +332,11 @@ export default function ConnectionsSettings() {
 const styles = StyleSheet.create({
   actionButton: {
     borderRadius: radius.control,
+    justifyContent: 'center',
     marginRight: 8,
     marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6
+    minHeight: 48,
+    paddingHorizontal: 10
   },
   actionText: {
     ...type.caption,
@@ -412,7 +413,8 @@ const styles = StyleSheet.create({
   labelRow: {
     alignItems: 'center',
     flex: 1,
-    flexDirection: 'row'
+    flexDirection: 'row',
+    minHeight: 48
   },
   meta: {
     ...type.caption,
