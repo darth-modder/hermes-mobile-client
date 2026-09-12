@@ -281,6 +281,30 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
     `profile-remote-override.html`: same grep, plus `t.profiles.remoteOverride` (en.ts) — vendored
     and fully shaped (connect/disconnect/status copy) but unused anywhere under `app/`. Confirmed
     absent, machine-bound per `AGENTS.md`'s "machine features don't exist here."
+11. **Model picker (commit `6dcf460`): the outcome stands, its premise was wrong — corrected here,
+    not by rewriting that commit.** "No session-scoped switch API exists" checked one layer
+    (`ModelAssignmentRequest.scope: 'main' | 'auxiliary'`, no session field, in this app's own REST
+    types) and drew a conclusion about a different layer (the gateway). It does not: `hermes-agent`
+    (read-only, checked directly) has `tui_gateway/model_switch.py`, "Model switching for a live
+    session: persist, snapshot/restore runtime, /model apply with guards," exposed as the RPC
+    `slash.model` — confirmed in `tui_gateway/host_supervisor.py`'s gating table as `"idle-gated"`
+    (between turns only, not mid-stream). `_persist_model_switch` additionally calls
+    `save_config_value` on `model.default`, `model.provider`, and `model.base_url` — confirmed by
+    reading the function directly — so a per-session switch through this RPC moves the *host's*
+    default model too, not just that one session's. This app's mobile-slash-commands.ts routes
+    `/model` to Settings › Models and never calls `slash.model` (checked: no reference anywhere
+    under `src/`) — the REST-only reading in `6dcf460` was accurate for *this app's current wiring*,
+    just not for "no session-scoped switch API exists" as a general claim, which is what a future
+    milestone would inherit from that commit message alone.
+
+    The M14 decision itself doesn't change: no sheet was built, and none should have been — a sheet
+    that looked like a per-session picker while actually calling nothing (since nothing here calls
+    `slash.model`) would still misrepresent what the tap does. **Flagging for a D-entry, not
+    deciding it:** M15 B's composer model chip is feasible via `slash.model`, but wiring it means
+    someone must first choose whether a per-chat pick moving the host's default (a side effect this
+    app's UI would need to disclose, or the gateway would need to stop doing) is acceptable — a
+    product/gateway decision, not a layout one. `slash.model` is not wired anywhere in this app as
+    of this entry.
 
 ## Verification log
 
