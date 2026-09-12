@@ -1,0 +1,67 @@
+<!doctype html>
+<!--
+  Gallery of the hermes-android mobile screen prototypes.
+  Serve the folder, don't open the files directly:  python -m http.server 8766 --directory docs/mobile-prototypes
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>hermes-android screens · mobile prototypes</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      body { background: var(--ui-bg-chrome); color: var(--dt-foreground); }
+      .g-wrap { max-width: 60rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+      .g-wrap h1 { margin: 0 0 0.25rem; font-size: 1.75rem; }
+      .g-lede { margin: 0 0 1.75rem; max-width: 44rem; color: var(--ui-text-tertiary); font-size: var(--type-body-small); line-height: var(--type-body-small-lh); }
+      .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.625rem; }
+      .g-card { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.875rem; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-card); background: var(--ui-bg-editor); color: inherit; text-decoration: none; }
+      .g-card:hover { background: var(--ui-row-hover-background); }
+      .g-card__t { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
+      .g-card__t .ti { color: var(--ui-text-tertiary); }
+      .g-card__m { color: var(--ui-text-tertiary); font-size: var(--type-caption); }
+      .g-card__v { margin-top: 0.375rem; color: var(--ui-text-quaternary); font-family: var(--font-mono); font-size: 0.6875rem; line-height: 1.35; }
+      .g-note { margin-top: 2rem; padding: 0.875rem; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-card); color: var(--ui-text-tertiary); font-size: var(--type-caption); line-height: var(--type-caption-lh); }
+    </style>
+  </head>
+  <body>
+    <div class="g-wrap">
+      <h1>hermes-android · mobile prototypes</h1>
+      <p class="g-lede">
+        The phone screens, drawn at 412×915 dp from the desktop prototypes plus the 2026-09-12 field
+        test. Same <code>nous</code> token chain as <code>docs/desktop-prototypes/</code> (D14 vendors the
+        desktop's skins), with the mobile type roles, radius family and 48 dp touch rules layered on.
+        Each page's comment block names what it <em>Adapts</em>, which M14 <em>Rules</em> were applied,
+        and every <em>Field:</em> interaction taken from the field notes. Theme switch is bottom-right.
+      </p>
+      <div class="g-grid" id="grid"></div>
+      <div class="g-note">
+        <strong>Reading order for an implementer:</strong> <code>primitives.html</code> for the shared
+        components, then <code>chat.html</code> (the densest screen, and where every adopted field item
+        lands), then the list screens, then <code>connect.html</code> for first run. Sources of truth
+        stay <code>docs/DESKTOP-DESIGN.md</code> (values), the desktop prototypes (layout), and
+        <code>docs/FIELD-NOTES-hermes-mobile-app-2026-09-12.md</code> (why the mobile-only additions
+        exist).
+      </div>
+    </div>
+    <script>
+      const PAGES = [
+        ['chat.html', 'Chat', 'ti ti-message', 'app/(main)/sessions/[id].tsx · also the bot chat', 'conversation · streaming · scrolled · approval · clarify · attach · palette · dictation · model · effort · empty'],
+        ['bots.html', 'Bots', 'ti ti-robot', 'app/(main)/bots/index.tsx · M15 A', 'roster · empty · loading · new bot · bot settings · row menu'],
+        ['tasks.html', 'Tasks', 'ti ti-calendar-repeat', 'app/(main)/tasks/index.tsx · M15 C', 'list · detail · new from template · empty'],
+        ['sessions.html', 'Sessions + drawer', 'ti ti-list', 'app/(main)/sessions/index.tsx', 'list · search · empty · loading · drawer · row menu'],
+        ['settings.html', 'Settings', 'ti ti-settings', 'app/(main)/settings/*', 'index · appearance · connections · models · about'],
+        ['connect.html', 'Connect + pairing', 'ti ti-plug-connected', 'app/connect/* · M15 D', 'start · steps · url · tested · rejected · signing · failed · token · banners'],
+        ['primitives.html', 'Primitives', 'ti ti-components', 'src/components/ui/* · M14', 'one sheet: every shared component at mobile size']
+      ]
+      document.getElementById('grid').innerHTML = PAGES.map(([f, n, i, m, v]) => `
+        <a class="g-card" href="${f}">
+          <span class="g-card__t"><i class="${i}"></i>${n}</span>
+          <span class="g-card__m">${m}</span>
+          <span class="g-card__v">${v}</span>
+        </a>`).join('')
+    </script>
+  </body>
+</html>

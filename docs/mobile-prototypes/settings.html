@@ -1,0 +1,470 @@
+<!doctype html>
+<!--
+  Screen:       Settings — app/(main)/settings/index.tsx, plus the section routes
+                (settings/appearance.tsx, settings/connections.tsx, settings/models.tsx, settings/about.tsx)
+  Adapts:       docs/desktop-prototypes/a-main/settings.html (nav rail = the section list; Appearance,
+                Gateways + Registered gateways, Model, About panes),
+                docs/desktop-prototypes/e-overlays/model-visibility.html (the visibility section of Models),
+                docs/desktop-prototypes/b-panels/sessions-sidebar.html (the drawer that reaches Settings)
+  Rules:        M14 "Adaptation rules" — overlay screen with a 13 rem nav rail + content → two-level
+                navigation: a list screen (the rail, as 56 dp ListRows carrying each section's current
+                value) then a detail screen, never a side-by-side split; 34 px titlebar → 56 dp
+                ScreenHeader (back, title, ≤2 actions); the desktop's `list-row` grid
+                [1fr | minmax(15rem,22rem)] collapses to title + right-hand value + chevron;
+                mode cards / registry rows → full-width cards with their actions below; dialogs
+                (Add connection) → bottom sheet with the desktop's fields in the desktop's order;
+                Delete → Alert with the destructive button last and red; hover-revealed row actions
+                (Edit / Remove) become always visible; sections **added** per the M14 mapping (Chat,
+                Safety, Memory & Context, Billing, Archived chats, About) and **skipped** where
+                machine-bound or keyboard-only (Workspace, Browser, Advanced, Keyboard Shortcuts,
+                Local models); radius family D15.1b; type roles Appendix C; touch ≥ 48 dp.
+  Field:        host-authority framing as literal copy under the section list ("The host owns models,
+                credentials, tools, memory, skills, and approvals. This client is the control surface.")
+  Field:        the wrong-address guard as literal copy on Connections, not a bare placeholder
+                ("Never enter 127.0.0.1 or localhost on your phone…")
+  Field:        each settings row shows its current value on the right (theirs shows "OLED dark",
+                "Connected", "0.1.1"); ours does it for every section that has one
+  Field (ours): their Appearance offers four invented mobile palettes; ours lists the desktop's 11
+                vendored skins and says so (§5 "Not worth adopting" — D14 forbids the divergence)
+  Field (ours): a connection registry with Test / Sign out / Delete per host and several hosts —
+                §6 "Auth recovery"; theirs retypes a password on every refresh failure
+  Field (ours): Notifications is a live section (M11 push), not theirs' dead row
+  Open question: the index order below is host-first (Connections, Profiles, Providers, Models,
+                MCP, Skills, Toolsets, then Appearance, Chat, Safety, Memory & Context, Voice,
+                Notifications, Billing, Archived chats, About). That is OUR app's existing order
+                plus M14's added sections, not the desktop rail's literal order
+                (Model, Chat, Appearance, Workspace, Safety, Browser, Memory & Context, Voice,
+                Advanced, Notifications, Billing, | Providers…, Gateways, Keybinds, Tools & Keys,
+                Plugins, Archived Chats, | About). M14 says "sections in the desktop's order";
+                which order wins on a phone needs a D-entry. Nothing else here depends on it.
+  Views:        #settings=index | appearance | connections | models | about
+  Measurements: phone 412×915 dp · header 56 · search field 48 in an 8/16 dp well · ListRow 56
+                (title body 16/24, value bodySmall 14, chevron 18) · group label 20/16/8 uppercase
+                · segmented control 40 dp options in a 3 dp track, full width · skin row 56 with a
+                40×28 swatch (12 dp sidebar band, 8 dp accent dot) · connection card radius 5, pad 12,
+                actions 48 · switch 44×26 · sheet radius 8, handle 32×4 · alert inset 24, radius 5
+  Behaviour:    Config rows autosave on change — no Save button; a failure toasts "Autosave failed"
+                (desktop parity). Tapping a row pushes the section; back returns to the index with
+                the scroll position kept. Colour mode is brightness, skin is palette: both are
+                per-profile and the skins are the host's, so the list is read-only apart from the
+                choice. Test on a connection card reports version, whether auth is required and
+                which method — the same probe the connect flow runs; Sign out drops the tokens and
+                keeps the entry; Delete raises the Alert. "+ Add connection" opens the sheet with
+                the desktop's fields in the desktop's order (Name, Gateway URL, Authentication,
+                credential, extra headers). Models: the checked row is the default for new sessions;
+                the visibility switches decide what the composer's model chip lists. Reduced motion
+                honoured (AccessibilityInfo.isReduceMotionEnabled).
+  Mobile:       Settings is at parity (providers and models, MCP servers, skills, plugins, profiles,
+                connections with a test that names unauthorized vs forbidden vs unreachable — M09,
+                docs/PARITY.md). Absent by design: Workspace, Browser, Advanced, Keyboard Shortcuts,
+                Local models, Pet and Quick Entry (machine-bound or keyboard-only).
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Settings · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. The shared CSS has no skin swatch; this is the desktop's
+         `.theme-card__preview` (settings.html theme grid) shrunk to a 40×28 ListRow lead cell,
+         fed by the same --preset-* variables from tokens.css §16. No colour literals. */
+      .skin-sw { display: flex; width: 40px; height: 28px; flex-shrink: 0; overflow: hidden; border: 1px solid var(--ui-stroke-tertiary); border-radius: var(--radius-icon); }
+      .skin-sw__side { width: 12px; background: var(--sw-side); }
+      .skin-sw__main { display: grid; flex: 1; place-items: center; background: var(--sw-bg); }
+      .skin-sw__dot { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--sw-accent); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <section data-views="settings" data-default="index" class="grow col" style="min-height:0">
+
+            <!-- ══ index: the desktop nav rail as grouped ListRows with their current values ══ -->
+            <div data-view="index" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles"><div class="header__title t-truncate">Settings</div></div>
+                <button class="header__btn" aria-label="Reset to defaults"><i class="ti ti-restore"></i></button>
+              </header>
+
+              <div style="padding:8px var(--gutter)">
+                <div class="search"><i class="ti ti-search"></i>Search settings…</div>
+              </div>
+
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:4px">Host</div>
+                <button class="list-row" data-show="settings:connections">
+                  <i class="ti ti-plug" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Connections</span></span>
+                  <span class="list-row__value t-truncate">gateway.example.org</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-users" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Profiles</span></span>
+                  <span class="list-row__value">default</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+
+                <div class="section-label t-upper">Models and tools</div>
+                <button class="list-row">
+                  <i class="ti ti-bolt" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Providers</span></span>
+                  <span class="list-row__value">3 connected</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row" data-show="settings:models">
+                  <i class="ti ti-box" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Models</span></span>
+                  <span class="list-row__value">mimo-v2.5</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-server-2" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">MCP</span></span>
+                  <span class="list-row__value">2 servers</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-puzzle" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Skills</span></span>
+                  <span class="list-row__value">14 installed</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-tool" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Toolsets</span></span>
+                  <span class="list-row__value">5 enabled</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+
+                <div class="section-label t-upper">App</div>
+                <button class="list-row" data-show="settings:appearance">
+                  <i class="ti ti-palette" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Appearance</span></span>
+                  <span class="list-row__value">Nous · System</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-message-circle" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Chat</span></span>
+                  <span class="list-row__value">Helpful</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-lock" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Safety</span></span>
+                  <span class="list-row__value t-truncate">Ask for risky commands</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-brain" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title t-truncate">Memory &amp; Context</span></span>
+                  <span class="list-row__value">On</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-microphone" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Voice</span></span>
+                  <span class="list-row__value">Edge · Whisper</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-bell" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Notifications</span></span>
+                  <span class="list-row__value">On</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+
+                <div class="section-label t-upper">Account</div>
+                <button class="list-row">
+                  <i class="ti ti-chart-bar" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Billing</span></span>
+                  <span class="list-row__value">Personal</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-archive" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title t-truncate">Archived chats</span></span>
+                  <span class="list-row__value">3</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row" data-show="settings:about">
+                  <i class="ti ti-info-circle" style="font-size:20px;color:var(--ui-text-tertiary)"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">About</span></span>
+                  <span class="list-row__value">0.1.1</span>
+                  <span class="list-row__chev">›</span>
+                </button>
+
+                <!-- Field: host-authority framing, verbatim -->
+                <p class="t-caption t-tertiary" style="margin:8px 0 0;padding:12px var(--gutter) 28px">
+                  The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.
+                </p>
+              </div>
+            </div>
+
+            <!-- ══ appearance: colour mode + the 11 vendored skins ══ -->
+            <div data-view="appearance" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Back to settings" data-show="settings:index"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles"><div class="header__title t-truncate">Appearance</div></div>
+              </header>
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:12px">Colour mode</div>
+                <div style="padding:0 var(--gutter)">
+                  <div class="seg" style="display:grid;width:100%">
+                    <button class="seg__opt"><i class="ti ti-sun"></i> Light</button>
+                    <button class="seg__opt"><i class="ti ti-moon"></i> Dark</button>
+                    <button class="seg__opt is-active"><i class="ti ti-device-mobile"></i> System</button>
+                  </div>
+                  <p class="field__hint" style="margin:8px 0 0">Mode is brightness; the skin below is the palette. The mode is applied on top of it.</p>
+                </div>
+
+                <div class="section-label t-upper">Skin</div>
+                <!-- Field (ours): the desktop's own skins, vendored — not invented mobile palettes -->
+                <p class="field__hint" style="margin:0;padding:0 var(--gutter) 8px">
+                  Skins come from the host: the desktop's 11 palettes, vendored so the two surfaces cannot drift (D14).
+                  Saved for the default profile — each profile keeps its own.
+                </p>
+                <button class="list-row" style="--sw-side:var(--preset-nous-side);--sw-bg:var(--preset-nous-bg);--sw-accent:var(--preset-nous-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Nous</span><span class="list-row__sub t-truncate">GitHub chrome, Nous blue accent</span></span>
+                  <i class="ti ti-check ml-auto t-accent" style="font-size:18px" aria-label="Active skin"></i>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-github-side);--sw-bg:var(--preset-github-bg);--sw-accent:var(--preset-github-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">GitHub</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-catppuccin-side);--sw-bg:var(--preset-catppuccin-bg);--sw-accent:var(--preset-catppuccin-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Catppuccin</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-everforest-side);--sw-bg:var(--preset-everforest-bg);--sw-accent:var(--preset-everforest-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Everforest</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-solarized-side);--sw-bg:var(--preset-solarized-bg);--sw-accent:var(--preset-solarized-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Solarized</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-nous-alt-side);--sw-bg:var(--preset-nous-alt-bg);--sw-accent:var(--preset-nous-alt-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Nous Alt</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-midnight-side);--sw-bg:var(--preset-midnight-bg);--sw-accent:var(--preset-midnight-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Midnight</span><span class="list-row__sub">Dark only</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-ember-side);--sw-bg:var(--preset-ember-bg);--sw-accent:var(--preset-ember-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Ember</span><span class="list-row__sub">Dark only</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-mono-side);--sw-bg:var(--preset-mono-bg);--sw-accent:var(--preset-mono-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Mono</span><span class="list-row__sub">Dark only</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-slate-side);--sw-bg:var(--preset-slate-bg);--sw-accent:var(--preset-slate-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Slate</span><span class="list-row__sub">Dark only</span></span>
+                </button>
+                <button class="list-row" style="--sw-side:var(--preset-cyberpunk-side);--sw-bg:var(--preset-cyberpunk-bg);--sw-accent:var(--preset-cyberpunk-accent)">
+                  <span class="skin-sw"><span class="skin-sw__side"></span><span class="skin-sw__main"><span class="skin-sw__dot"></span></span></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">Cyberpunk</span><span class="list-row__sub">Dark only</span></span>
+                </button>
+
+                <div class="section-label t-upper">Chat</div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Collapse thinking by default</span><span class="list-row__sub">Reasoning stays available without expanding it.</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Message reactions</span><span class="list-row__sub">Emoji tapbacks on messages.</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div style="height:24px"></div>
+              </div>
+            </div>
+
+            <!-- ══ connections: the desktop's Registered gateways, as cards ══ -->
+            <div data-view="connections" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Back to settings" data-show="settings:index"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles"><div class="header__title t-truncate">Connections</div></div>
+                <button class="header__btn" aria-label="Add connection"><i class="ti ti-plus"></i></button>
+              </header>
+              <div class="scroll">
+                <p class="field__hint" style="margin:0;padding:12px var(--gutter) 4px">
+                  Every Hermes gateway this phone can reach. Profiles, chats, messaging and cron jobs stay with their
+                  gateway; work on the others keeps running.
+                </p>
+
+                <div class="col gap-3" style="padding:8px var(--gutter) 0">
+                  <div class="card">
+                    <div class="row gap-2" style="flex-wrap:wrap">
+                      <i class="ti ti-globe" style="font-size:18px;color:var(--ui-text-tertiary)"></i>
+                      <span class="t-body t-semibold t-truncate">Symbyotic host</span>
+                      <span class="badge"><i class="ti ti-star" style="font-size:11px"></i>primary</span>
+                      <span class="badge badge--good">active</span>
+                    </div>
+                    <div class="t-caption t-mono t-tertiary" style="margin-top:6px;overflow-wrap:anywhere">https://gateway.example.org</div>
+                    <div class="t-caption t-tertiary" style="margin-top:2px">Password · last used 2m ago · gateway 0.9.2</div>
+                    <div class="row gap-2" style="margin-top:8px">
+                      <button class="btn btn--outline grow">Test</button>
+                      <button class="btn btn--outline grow">Sign out</button>
+                      <button class="btn btn--ghost t-danger grow">Delete</button>
+                    </div>
+                  </div>
+
+                  <div class="card">
+                    <div class="row gap-2" style="flex-wrap:wrap">
+                      <i class="ti ti-network" style="font-size:18px;color:var(--ui-text-tertiary)"></i>
+                      <span class="t-body t-semibold t-truncate">Homelab</span>
+                      <span class="badge badge--muted">Tailscale</span>
+                    </div>
+                    <div class="t-caption t-mono t-tertiary" style="margin-top:6px;overflow-wrap:anywhere">http://100.84.12.7:9119</div>
+                    <div class="t-caption t-tertiary" style="margin-top:2px">Session token · last used 3d ago</div>
+                    <div class="row gap-2" style="margin-top:8px">
+                      <button class="btn btn--outline grow">Test</button>
+                      <button class="btn btn--outline grow">Sign out</button>
+                      <button class="btn btn--ghost t-danger grow">Delete</button>
+                    </div>
+                  </div>
+
+                  <div class="card">
+                    <div class="row gap-2" style="flex-wrap:wrap">
+                      <i class="ti ti-cloud" style="font-size:18px;color:var(--ui-text-tertiary)"></i>
+                      <span class="t-body t-semibold t-truncate">Research agent</span>
+                      <span class="badge badge--warn">unreachable</span>
+                    </div>
+                    <div class="t-caption t-mono t-tertiary" style="margin-top:6px;overflow-wrap:anywhere">https://research.agents.nousresearch.com</div>
+                    <div class="t-caption t-tertiary" style="margin-top:2px">OAuth · last used 12d ago</div>
+                    <div class="row gap-2" style="margin-top:8px">
+                      <button class="btn btn--outline grow">Test</button>
+                      <button class="btn btn--outline grow">Sign out</button>
+                      <button class="btn btn--ghost t-danger grow">Delete</button>
+                    </div>
+                  </div>
+
+                  <button class="btn btn--outline btn--block"><i class="ti ti-plus"></i>Add connection</button>
+                  <!-- Field: the wrong-address guard as literal copy, not a placeholder -->
+                  <p class="field__hint" style="margin:0">
+                    Never enter <span class="t-mono">127.0.0.1</span> or <span class="t-mono">localhost</span> on your
+                    phone — those point back to the phone itself.
+                  </p>
+                </div>
+
+                <div class="section-label t-upper">Startup</div>
+                <div class="list-row">
+                  <span class="col" style="min-width:0"><span class="list-row__title t-truncate">Return to the last-used gateway</span><span class="list-row__sub">When off, Sessions opens on the primary gateway.</span></span>
+                  <span class="switch is-on ml-auto" role="switch" aria-checked="true"></span>
+                </div>
+                <div style="height:24px"></div>
+              </div>
+            </div>
+
+            <!-- ══ models: default model + visibility ══ -->
+            <div data-view="models" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Back to settings" data-show="settings:index"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles"><div class="header__title t-truncate">Models</div></div>
+              </header>
+              <div style="padding:8px var(--gutter)">
+                <div class="search"><i class="ti ti-search"></i>Search models…</div>
+              </div>
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:4px">Default model</div>
+                <p class="field__hint" style="margin:0;padding:0 var(--gutter) 4px">Used for new sessions. A session can still switch model from the composer chip.</p>
+                <button class="list-row">
+                  <i class="ti ti-check t-accent" style="font-size:18px" aria-label="Current default"></i>
+                  <span class="col" style="min-width:0"><span class="list-row__title">mimo-v2.5</span><span class="list-row__sub">Nous Portal · xiaomi</span></span>
+                </button>
+                <button class="list-row">
+                  <span style="width:18px"></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">deepseek-v4-flash</span><span class="list-row__sub">Nous Portal · deepseek</span></span>
+                </button>
+                <button class="list-row">
+                  <span style="width:18px"></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">kimi-k3</span><span class="list-row__sub">Nous Portal · moonshotai</span></span>
+                </button>
+                <button class="list-row">
+                  <span style="width:18px"></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">claude-opus-5</span><span class="list-row__sub">Anthropic</span></span>
+                </button>
+                <button class="list-row">
+                  <span style="width:18px"></span>
+                  <span class="col" style="min-width:0"><span class="list-row__title">hermes-4-405b</span><span class="list-row__sub">Nous Portal</span></span>
+                </button>
+
+                <div class="section-label t-upper">Fallback providers</div>
+                <p class="field__hint" style="margin:0;padding:0 var(--gutter) 4px">Tried in order when the default model errors or is rate limited.</p>
+                <div class="list-row"><i class="ti ti-grip-vertical" style="font-size:18px;color:var(--ui-text-quaternary)"></i><span class="col" style="min-width:0"><span class="list-row__title">deepseek-v4-flash</span></span><button class="header__btn ml-auto" aria-label="Remove deepseek-v4-flash"><i class="ti ti-x"></i></button></div>
+                <div class="list-row"><i class="ti ti-grip-vertical" style="font-size:18px;color:var(--ui-text-quaternary)"></i><span class="col" style="min-width:0"><span class="list-row__title">kimi-k3</span></span><button class="header__btn ml-auto" aria-label="Remove kimi-k3"><i class="ti ti-x"></i></button></div>
+                <div style="padding:4px var(--gutter) 0"><button class="btn btn--outline"><i class="ti ti-plus"></i>Add fallback</button></div>
+
+                <!-- e-overlays/model-visibility.html, as a section of Settings › Models (M14 mapping) -->
+                <div class="section-label t-upper">Visible in the model picker</div>
+                <p class="field__hint" style="margin:0;padding:0 var(--gutter) 4px">Decides what the composer's model chip lists. Grouped by provider, as on the desktop.</p>
+                <div class="section-label t-upper" style="padding:12px var(--gutter) 4px">Nous Portal</div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">MiMo v2.5</span><span class="list-row__sub">xiaomi</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">DeepSeek V4 Flash</span><span class="list-row__sub">deepseek</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Kimi K3</span><span class="list-row__sub">moonshotai</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Hermes 4 405B</span></span><span class="switch ml-auto" role="switch" aria-checked="false"></span></div>
+                <div class="section-label t-upper" style="padding:12px var(--gutter) 4px">Anthropic</div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Claude Opus 5</span></span><span class="switch is-on ml-auto" role="switch" aria-checked="true"></span></div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Claude Sonnet 5</span></span><span class="switch ml-auto" role="switch" aria-checked="false"></span></div>
+                <div style="padding:8px var(--gutter) 28px"><button class="btn btn--ghost" style="padding-left:0">Add provider…</button></div>
+              </div>
+            </div>
+
+            <!-- ══ about ══ -->
+            <div data-view="about" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Back to settings" data-show="settings:index"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles"><div class="header__title t-truncate">About</div></div>
+              </header>
+              <div class="scroll">
+                <div class="row gap-3" style="padding:20px var(--gutter) 12px">
+                  <span class="avatar avatar--lg" style="background:var(--ui-bg-secondary)"><i class="ti ti-feather" style="font-size:28px"></i></span>
+                  <div class="col" style="min-width:0">
+                    <div class="t-body t-semibold">Hermes Mobile</div>
+                    <div class="t-caption t-tertiary">Version 0.1.1 (build 118)</div>
+                    <div class="t-mono t-quaternary" style="font-size:11px">main · 2eb1a74 · SDK 54</div>
+                  </div>
+                </div>
+
+                <p class="t-body-sm t-secondary" style="margin:0;padding:0 var(--gutter) 8px">
+                  Hermes Mobile is a control surface for a Hermes host you already run. It dials; it never hosts.
+                  The host owns models, credentials, tools, memory, skills, and approvals.
+                </p>
+
+                <div class="section-label t-upper">Host</div>
+                <div class="list-row"><span class="col" style="min-width:0"><span class="list-row__title t-truncate">gateway.example.org</span><span class="list-row__sub">Gateway 0.9.2 · connected 2m ago</span></span><span class="dot dot--ok ml-auto"></span></div>
+
+                <div class="section-label t-upper">Updates</div>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Check for updates</span><span class="list-row__sub">Last checked 12 min ago — you're on the latest version.</span></span><span class="list-row__chev ml-auto">›</span></button>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Release notes</span></span><span class="list-row__chev ml-auto">›</span></button>
+
+                <div class="section-label t-upper">Support</div>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Gateway connection guide</span></span><i class="ti ti-external-link ml-auto" style="font-size:18px;color:var(--ui-text-quaternary)"></i></button>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Copy setup checklist</span><span class="list-row__sub">Paste it into a terminal on the host.</span></span><i class="ti ti-copy ml-auto" style="font-size:18px;color:var(--ui-text-quaternary)"></i></button>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Send diagnostics</span></span><span class="list-row__chev ml-auto">›</span></button>
+                <button class="list-row"><span class="col" style="min-width:0"><span class="list-row__title">Licences</span></span><span class="list-row__chev ml-auto">›</span></button>
+                <div style="height:24px"></div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="settings:index">Index</button>
+        <button class="btn" data-show="settings:appearance">Appearance</button>
+        <button class="btn" data-show="settings:connections">Connections</button>
+        <button class="btn" data-show="settings:models">Models</button>
+        <button class="btn" data-show="settings:about">About</button>
+      </nav>
+    </div>
+  </body>
+</html>

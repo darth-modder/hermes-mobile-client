@@ -1,0 +1,362 @@
+<!doctype html>
+<!--
+  Screen:       Tasks — app/(main)/tasks/index.tsx (M15 C), the third of the three root tabs
+  Adapts:       docs/desktop-prototypes/c-plugins/routines.html (Routines / "Scheduled jobs" pane:
+                job cards, the pause switch, the structured SchedulePicker, the job inspector),
+                docs/desktop-prototypes/a-main/cron.html (the /cron overlay: list · empty · loading,
+                the labelled meta grid, Pause + Trigger now, Prompt block, Run history, the create
+                dialog with "Start from" blueprints and the schedule summary)
+  Rules:        M14 "Adaptation rules" — the right-edge 250 px Routines pane and the 1220×800 /cron
+                overlay both become one full-width stack: list screen then detail screen, never a
+                side-by-side split; the 34 px titlebar becomes a 56 dp ScreenHeader (back or drawer,
+                title, up to two actions, same action order as the desktop cluster); the 13 rem
+                PanelList becomes the list screen and the PanelDetail becomes the detail route;
+                the create dialog and the frequency Select become bottom sheets with the desktop's
+                fields in the desktop's order; the row kebab menu becomes long-press; the delete
+                confirm becomes an Alert with the destructive button last; hover-revealed controls
+                (the card's trash, the row kebab) become always-visible or long-press; the create
+                dialog's "Start from" Select and the panel's Blueprints list collapse into one
+                horizontally scrolling chip row, so the schedule picker below it stays on screen;
+                radius family D15.1b (control 3 / icon 4 / card 5 / sheet 8); type roles Appendix C;
+                touch 48 dp (the sheet's schedule rows sit exactly at --touch-min).
+  Field:        the labelled schedule grid on the task itself — SCHEDULE / NEXT / LAST / DELIVER /
+                MODEL — instead of burying the schedule in an edit dialog
+  Field:        Pause and Trigger now live on the task, not behind an overflow; on the phone they
+                are the two full-width actions directly under the title
+  Field:        "Running now" and "Scheduled" counters above the list, so the tab answers "is
+                anything happening right now?" before you read a single row
+  Field:        RUN HISTORY carries its count and says "No completed runs yet" rather than showing
+                an empty area
+  Field (ours): the structured schedule picker — frequency first, then only the detail that
+                frequency needs, with a plain-language echo and the raw schedule string behind
+                Advanced (the desktop's SchedulePicker; theirs only ever shows `0 9 * * *`)
+  Views:        #tasks=list | detail | new | empty
+  Measurements: phone 412×915 dp · header 56 · tab row 48, indicator 2 · counter cards 12 pad, 8 gap
+                · task row 72 min-height, pad 12×16, lead tile 40 + 12 gap · state chip 20 (2×8 pad,
+                16 line) · detail gutters 16 · task grid 6×14 gaps, labels 11 upper · action pair
+                48 tall, full content width · prompt card 12 pad, mono 13/20 · run rows 56
+                · sheet radius 8, handle 32×4 · template chips 32 visual / 48 hit (chip--hit)
+                · sheet schedule + deliver rows 48 (= --touch-min) · raw-schedule input 48 min
+  Behaviour:    The list polls `cron.manage {action:list}`; a failed refresh keeps the last list and
+                says so instead of emptying. Pause/Resume and Trigger now disable while a mutation
+                for that task is in flight; a trigger flips the state chip to "running now" and then
+                updates LAST. Run history polls while the detail is open and each row opens that
+                run's session. In the New task sheet, picking a template fills name, prompt and
+                schedule; the frequency row reveals only the control that frequency needs (time for
+                daily/weekdays/weekly/monthly, weekday for weekly, day for monthly, N + unit for
+                interval, the raw string for Advanced), and the summary line reads the plan back in
+                words next to the schedule string it will send. Create stays disabled until name,
+                prompt and schedule are set. Delete is long-press → Alert, destructive last.
+                Swiping between the three tabs works (M15 E). Reduced motion honoured.
+  Mobile:       docs/PARITY.md puts cron at parity (Management · M10); this screen re-frames it as
+                the Tasks tab and folds in the Bot Mode Routines pane, which D16 (2026-09-12) brings
+                into scope with the rest of Bot Mode. Group chat rooms and Kanban stay absent.
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tasks · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* ── Page-local, tokens only (nothing here belongs in assets/) ─────────── */
+      /* Lead tile for a task row — the list's stand-in for the roster avatar. */
+      .task-lead { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-card); background: var(--ui-bg-tertiary); color: var(--ui-text-tertiary); font-size: 20px; }
+      /* Counter tile ("Running now 1"), the desktop's header counters as two cards. */
+      .count-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px var(--gutter) 4px; }
+      .count-tile__n { font-size: var(--type-title); line-height: var(--type-title-lh); font-weight: 600; color: var(--ui-text-primary); }
+      /* Prompt block: mono role, wrapping (the chat's .prompt-card__cmd never wraps). */
+      .prompt-block { white-space: pre-wrap; word-break: break-word; color: var(--ui-text-secondary); }
+      /* "Start from" templates as a horizontally scrolling chip row — the desktop's Select plus
+         its Blueprints list, at phone width, so the schedule picker below stays on screen. */
+      .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: none; }
+      .chip-row::-webkit-scrollbar { width: 0; height: 0; }
+      .chip-row .chip { flex-shrink: 0; }
+      /* Plain-language echo of the schedule, next to the string it will send. */
+      .sched-echo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--ui-bg-quinary); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <section data-views="tasks" data-default="list" class="grow col" style="min-height:0">
+
+            <!-- ══ list: counters, then the scheduled jobs ══ -->
+            <div data-view="list" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Tasks</div>
+                  <div class="header__sub row gap-1"><span class="dot dot--ok"></span><span class="t-truncate">Hermes Desktop</span></div>
+                </div>
+                <button class="header__btn" aria-label="Search tasks"><i class="ti ti-search"></i></button>
+                <button class="header__btn" aria-label="New task" data-show="tasks:new"><i class="ti ti-plus"></i></button>
+              </header>
+
+              <nav class="tabs" role="tablist" aria-label="Bots, Sessions, Tasks">
+                <button class="tab" role="tab" aria-selected="false">Bots<span class="tab__count">4</span></button>
+                <button class="tab" role="tab" aria-selected="false">Sessions<span class="tab__count">7</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Tasks<span class="tab__count">4</span></button>
+              </nav>
+
+              <div class="scroll">
+                <!-- Field: the two counters answer "is anything running?" before any row is read -->
+                <div class="count-row">
+                  <div class="card">
+                    <div class="t-upper">Running now</div>
+                    <div class="row gap-2"><span class="dot dot--busy"></span><span class="count-tile__n">1</span></div>
+                  </div>
+                  <div class="card">
+                    <div class="t-upper">Scheduled</div>
+                    <div class="row gap-2"><span class="dot dot--ok"></span><span class="count-tile__n">3</span></div>
+                  </div>
+                </div>
+
+                <div class="section-label t-upper row"><span>Scheduled jobs</span><span class="ml-auto">4</span></div>
+
+                <button class="s-row" data-show="tasks:detail">
+                  <span class="task-lead" aria-hidden="true"><i class="ti ti-mail"></i></span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Morning inbox digest</span>
+                      <span class="badge badge--good ml-auto">scheduled</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Every day at 9:00 AM · 0 9 * * *</span>
+                    <span class="s-row__meta t-truncate">Next Sep 13, 2026, 9:00 AM · last today 9:00 AM</span>
+                  </span>
+                </button>
+
+                <button class="s-row">
+                  <span class="task-lead" aria-hidden="true"><i class="ti ti-search"></i></span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Scan arXiv for spec decoding</span>
+                      <span class="badge ml-auto"><span class="spinner" style="width:10px;height:10px;border-width:2px"></span>running now</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Every 6 hours · every 360m</span>
+                    <span class="s-row__meta t-truncate">Started 40s ago · last 6h ago</span>
+                  </span>
+                </button>
+
+                <button class="s-row">
+                  <span class="task-lead" aria-hidden="true"><i class="ti ti-chart-bar"></i></span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Weekly eval report</span>
+                      <span class="badge badge--muted ml-auto">paused</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Every Monday at 9:00 AM · 0 9 * * 1</span>
+                    <span class="s-row__meta t-truncate">Next — · last Sep 7, 2026, 9:00 AM</span>
+                  </span>
+                </button>
+
+                <button class="s-row">
+                  <span class="task-lead" aria-hidden="true"><i class="ti ti-shield-check"></i></span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Dependency audit</span>
+                      <span class="badge badge--danger ml-auto">error</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Every Monday at 6:00 AM · 0 6 * * 1</span>
+                    <span class="s-row__meta t-truncate">Next Sep 14, 2026, 6:00 AM · rate limited</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ══ detail: the job inspector as its own stack screen ══ -->
+            <div data-view="detail" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="tasks:list"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Morning inbox digest</div>
+                  <div class="header__sub t-truncate">@researcher · scheduled</div>
+                </div>
+                <button class="header__btn" aria-label="Edit task"><i class="ti ti-pencil"></i></button>
+                <button class="header__btn" aria-label="More"><i class="ti ti-dots-vertical"></i></button>
+              </header>
+
+              <div class="scroll" style="padding-bottom:24px">
+                <div class="pad" style="padding-bottom:0">
+                  <!-- Field: Pause and Trigger now sit on the task itself, full width -->
+                  <div class="task-actions" style="margin-top:0">
+                    <button class="btn btn--secondary"><i class="ti ti-player-pause"></i>Pause</button>
+                    <button class="btn btn--primary"><i class="ti ti-bolt"></i>Trigger now</button>
+                  </div>
+
+                  <!-- Field: the labelled schedule grid, on the task -->
+                  <dl class="task-grid">
+                    <dt>Schedule</dt><dd>Every day at 9:00 AM · <span class="t-mono">0 9 * * *</span></dd>
+                    <dt>Next</dt><dd>Sep 13, 2026, 9:00 AM</dd>
+                    <dt>Last</dt><dd>Sep 12, 2026, 9:00:02 AM</dd>
+                    <dt>Deliver</dt><dd>local</dd>
+                    <dt>Model</dt><dd>mimo-v2.5</dd>
+                  </dl>
+                </div>
+
+                <div class="section-label t-upper">Prompt</div>
+                <div style="padding:0 var(--gutter)">
+                  <div class="card t-mono prompt-block">Summarize my unread email from the last 24 hours; flag what needs a reply today.</div>
+                </div>
+
+                <div class="section-label t-upper row"><span>Run history</span><span class="ml-auto">3</span></div>
+                <button class="list-row">
+                  <i class="ti ti-check" style="color:var(--ui-success)"></i>
+                  <span class="col grow"><span class="list-row__title t-body-sm t-truncate">12 unread, 2 need a reply today</span><span class="list-row__sub">Sep 12, 2026, 9:00:41 AM · 34s</span></span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-check" style="color:var(--ui-success)"></i>
+                  <span class="col grow"><span class="list-row__title t-body-sm t-truncate">7 unread, nothing urgent</span><span class="list-row__sub">Sep 11, 2026, 9:00:37 AM · 29s</span></span>
+                  <span class="list-row__chev">›</span>
+                </button>
+                <button class="list-row">
+                  <i class="ti ti-alert-triangle t-danger"></i>
+                  <span class="col grow"><span class="list-row__title t-body-sm t-truncate">Failed — provider rate limit (429)</span><span class="list-row__sub">Sep 10, 2026, 9:00:09 AM · 4s</span></span>
+                  <span class="list-row__chev">›</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ══ new: the New task sheet — templates, then the structured picker ══ -->
+            <div data-view="new" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Tasks</div>
+                  <div class="header__sub row gap-1"><span class="dot dot--ok"></span><span class="t-truncate">Hermes Desktop</span></div>
+                </div>
+                <button class="header__btn" aria-label="Search tasks"><i class="ti ti-search"></i></button>
+                <button class="header__btn" aria-label="New task"><i class="ti ti-plus"></i></button>
+              </header>
+              <nav class="tabs" role="tablist" aria-label="Bots, Sessions, Tasks">
+                <button class="tab" role="tab" aria-selected="false">Bots<span class="tab__count">4</span></button>
+                <button class="tab" role="tab" aria-selected="false">Sessions<span class="tab__count">7</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Tasks<span class="tab__count">4</span></button>
+              </nav>
+              <div class="scroll">
+                <div class="section-label t-upper row"><span>Scheduled jobs</span><span class="ml-auto">4</span></div>
+                <button class="s-row">
+                  <span class="task-lead" aria-hidden="true"><i class="ti ti-mail"></i></span>
+                  <span class="grow col">
+                    <span class="row gap-2"><span class="s-row__title t-truncate">Morning inbox digest</span><span class="badge badge--good ml-auto">scheduled</span></span>
+                    <span class="s-row__preview t-truncate">Every day at 9:00 AM · 0 9 * * *</span>
+                  </span>
+                </button>
+              </div>
+
+              <div class="scrim" data-show="tasks:list"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Cancel" data-show="tasks:list"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title">New task</span>
+                  <span style="width:48px"></span>
+                </div>
+                <div class="sheet__body">
+                  <!-- Step 1: the template list ("Start from" blueprints) -->
+                  <div class="t-upper" style="padding:0 0 6px">Start from</div>
+                  <div class="chip-row">
+                    <button class="chip chip--hit is-on"><i class="ti ti-check"></i>Morning briefing</button>
+                    <button class="chip chip--hit">Daily standup summary</button>
+                    <button class="chip chip--hit">Weekly repo digest</button>
+                    <button class="chip chip--hit">Price watch</button>
+                    <button class="chip chip--hit">Custom</button>
+                  </div>
+
+                  <div class="field" style="margin-bottom:8px">
+                    <label class="field__label">Name</label>
+                    <input class="input is-focused" value="Morning inbox digest" />
+                  </div>
+                  <div class="field" style="margin-bottom:8px">
+                    <label class="field__label">Prompt</label>
+                    <textarea class="input" rows="2">Summarize my unread email from the last 24 hours; flag what needs a reply today.</textarea>
+                  </div>
+
+                  <!-- Step 2: frequency first, then only the detail that frequency needs -->
+                  <div class="t-upper" style="padding:0">When to run</div>
+                  <button class="list-row" style="padding-inline:0;min-height:48px">
+                    <span class="list-row__title t-body-sm">Frequency</span>
+                    <span class="list-row__value">Every day</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <button class="list-row" style="padding-inline:0;min-height:48px">
+                    <span class="list-row__title t-body-sm">Time</span>
+                    <span class="list-row__value">9:00 AM</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <div class="sched-echo" style="margin:4px 0 6px">
+                    <span class="t-body-sm t-medium">Runs every day at 9:00 AM</span>
+                    <span class="t-mono t-tertiary">0 9 * * *</span>
+                  </div>
+
+                  <div class="field" style="margin-bottom:8px">
+                    <label class="field__label">Advanced — schedule string</label>
+                    <input class="input t-mono" value="0 9 * * *" />
+                    <div class="field__hint">Cron syntax, or a phrase like “every 15 minutes”.</div>
+                  </div>
+
+                  <hr class="hair" />
+                  <button class="list-row" style="padding-inline:0;min-height:48px">
+                    <span class="list-row__title t-body-sm">Deliver to</span>
+                    <span class="list-row__value">local</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <button class="list-row" style="padding-inline:0;min-height:48px">
+                    <span class="list-row__title t-body-sm">Model <span class="t-caption t-quaternary">Optional</span></span>
+                    <span class="list-row__value">mimo-v2.5</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                </div>
+                <div class="sheet__actions">
+                  <button class="btn btn--secondary" data-show="tasks:list">Cancel</button>
+                  <button class="btn btn--primary">Create task</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ empty: no scheduled tasks yet ══ -->
+            <div data-view="empty" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Tasks</div>
+                  <div class="header__sub row gap-1"><span class="dot dot--ok"></span><span class="t-truncate">Hermes Desktop</span></div>
+                </div>
+                <button class="header__btn" aria-label="Search tasks"><i class="ti ti-search"></i></button>
+                <button class="header__btn" aria-label="New task" data-show="tasks:new"><i class="ti ti-plus"></i></button>
+              </header>
+              <nav class="tabs" role="tablist" aria-label="Bots, Sessions, Tasks">
+                <button class="tab" role="tab" aria-selected="false">Bots<span class="tab__count">4</span></button>
+                <button class="tab" role="tab" aria-selected="false">Sessions<span class="tab__count">7</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Tasks<span class="tab__count">0</span></button>
+              </nav>
+              <div class="grow col" style="min-height:0">
+                <div class="empty" style="height:100%;align-content:center">
+                  <i class="ti ti-clock t-quaternary" style="font-size:28px"></i>
+                  <div class="t-body t-medium">No scheduled tasks yet</div>
+                  <div class="t-body-sm t-tertiary" style="max-width:300px">Schedule a prompt to run on its own. Hermes runs it on the host and delivers the result where you pick.</div>
+                  <button class="btn btn--primary" style="margin-top:8px" data-show="tasks:new"><i class="ti ti-plus"></i>New task</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="tasks:list">List</button>
+        <button class="btn" data-show="tasks:detail">Detail</button>
+        <button class="btn" data-show="tasks:new">New task sheet</button>
+        <button class="btn" data-show="tasks:empty">Empty</button>
+      </nav>
+    </div>
+  </body>
+</html>

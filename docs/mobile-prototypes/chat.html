@@ -1,0 +1,450 @@
+<!doctype html>
+<!--
+  Screen:       Chat — app/(main)/sessions/[id].tsx (also the bot's canonical chat, M15 A)
+  Adapts:       docs/desktop-prototypes/a-main/chat.html (conversation · streaming · new),
+                docs/desktop-prototypes/c-plugins/bot-chat.html (bot identity in the header),
+                docs/desktop-prototypes/e-overlays/mid-turn-prompts.html (approval · clarify · secret),
+                docs/desktop-prototypes/e-overlays/command-palette.html (slash palette, reduced)
+  Rules:        M14 "Adaptation rules" — 34 px titlebar → 56 dp ScreenHeader (back, title, ≤2 actions);
+                desktop status bar → header chips + connection banner; 48 rem thread column → full
+                width with 16 dp gutters, same turn (.375rem→6 dp) and block (.75rem→12 dp) gaps;
+                composer docked above the keyboard, same fill and ring rules, controls 48 dp with
+                hitSlop; dialogs/menus/popovers → bottom sheets with the desktop's fields in the
+                desktop's order; radius family D15.1b (control 3 / icon 4 / card 5 / sheet 8);
+                type roles Appendix C; hover-only affordances become always-visible.
+  Field:        unbubbled assistant turn with an avatar gutter (theirs reads better for long replies)
+  Field:        timestamp separator between turn groups
+  Field:        reasoning card shows a one-line preview of the thinking text
+  Field:        tool call as a one-line card — icon · mono name · state · duration, collapsed
+  Field:        per-message stats line under a settled assistant turn (model · Σ tok · tok/s)
+  Field:        Copy on every message, Edit on user messages, always visible (48 dp hit box)
+  Field:        composer model + effort chips whose label IS the current value, never truncated
+  Field:        composer placeholder advertises the palette ("Ask anything…  /commands")
+  Field:        jump-to-latest pill carries a count ("Latest · 3")
+  Field:        header subtitle shows a working state during a turn
+  Field:        hold-to-dictate 2.5 s, with a ✕ ● 0:00 Listening… strip in place of the composer
+  Field (ours): approval and clarify cards in the thread — the gap this test found in BOTH apps
+                (theirs ran a risk-flagged rm -rf unprompted; ours refuses but hangs with no card)
+  User (2026-09-12): the attach control opens an "Add context" sheet — ✕, title, drag handle, three
+                square tiles (Camera · Photos · Files), then a "Permission · Auto" row. Not a raw
+                system file picker.
+  Views:        #chat=conversation | streaming | scrolled | approval | clarify | attach | palette
+                | dictation | model | effort | empty
+  Measurements: phone 412×915 dp · header 56 · composer input 44 (min) · composer controls 48
+                · send 48 circle · user bubble max 86%, pad 10×14, radius card(5)
+                · assistant gutter 28 + 10 gap · turn gap 6 · block gap 12 · thread gutters 16
+                · tool card 48 min-height · Latest pill 36 · sheet radius 8, handle 32×4
+  Behaviour:    auto-follow stops when the reader scrolls away from the tail; the pill counts the
+                turns that landed while away and returns to the tail on tap. Send is disabled while
+                empty, becomes Stop while a turn streams (ours also keeps Steer — desktop parity).
+                Enter inserts a newline; the send button sends. A tap on the reasoning card expands
+                it in place. Tool cards stay collapsed; tapping opens the output sheet. Approval and
+                clarify cards are part of the transcript, not overlays, so scrolling away keeps them.
+                Reduced motion honoured (AccessibilityInfo.isReduceMotionEnabled).
+  Mobile:       Chat is at parity with the desktop (docs/PARITY.md).
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <!-- ScreenHeader: back · bot avatar · title/subtitle · 2 actions -->
+          <header class="header">
+            <button class="header__btn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+            <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+            <div class="header__titles">
+              <div class="header__title t-truncate">Researcher</div>
+              <!-- Field: header subtitle shows the working state during a turn -->
+              <div class="header__sub t-truncate" data-header-sub>@researcher · mimo-v2.5</div>
+            </div>
+            <button class="header__btn" aria-label="Refresh conversation"><i class="ti ti-refresh"></i></button>
+            <button class="header__btn" aria-label="More"><i class="ti ti-dots-vertical"></i></button>
+          </header>
+
+          <section data-views="chat" data-default="conversation" class="grow col" style="min-height:0">
+
+            <!-- ══ conversation: settled turn ══ -->
+            <div data-view="conversation" class="grow col" style="min-height:0">
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="time-sep">Today 10:42</div>
+
+                  <div class="msg-user">The gateway auth handshake retries forever when the token is revoked. Can you make it fail fast and surface a sign-in prompt instead?</div>
+                  <!-- Field: Copy/Edit always visible under a user turn -->
+                  <div class="msg-actions msg-actions--user">
+                    <button class="msg-action"><i class="ti ti-copy"></i>Copy</button>
+                    <button class="msg-action"><i class="ti ti-pencil"></i>Edit</button>
+                  </div>
+
+                  <!-- Field: unbubbled assistant turn, avatar gutter -->
+                  <div class="msg-ai">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <div class="msg-ai__body col gap-2">
+                      <!-- Field: reasoning card with a one-line preview -->
+                      <button class="think" aria-expanded="false">
+                        <i class="ti ti-bulb"></i>
+                        <span class="think__label">Thinking</span>
+                        <span class="think__preview">The revoked-token path retries because the reconnect…</span>
+                        <i class="ti ti-chevron-down think__chev"></i>
+                      </button>
+
+                      <!-- Field: tool call cards — icon · mono name · state · duration -->
+                      <div class="tool"><span class="tool__icon is-done"><i class="ti ti-check"></i></span><span class="tool__name">search</span><span class="tool__state">done</span><span class="tool__dur">0.4s</span></div>
+                      <div class="tool"><span class="tool__icon is-done"><i class="ti ti-check"></i></span><span class="tool__name">edit</span><span class="tool__state">done · use-gateway-boot.ts</span><span class="tool__dur">1.0s</span></div>
+
+                      <p>Revoked tokens now stop the reconnect loop on the first <code>auth_required</code> event and raise the sign-in prompt. Transient network errors keep the existing backoff.</p>
+                      <pre>+ $needsLogin.set(true)
++ return stopReconnect('revoked')</pre>
+                      <p>Want me to add an e2e spec that revokes the token mid-session?</p>
+                    </div>
+                  </div>
+                  <!-- Field: per-message stats line -->
+                  <div class="msg-stats">mimo-v2.5 · Σ 14K tok · 3.9 tok/s</div>
+                  <div class="msg-actions msg-actions--ai">
+                    <button class="msg-action"><i class="ti ti-copy"></i>Copy</button>
+                    <button class="msg-action"><i class="ti ti-refresh"></i>Retry</button>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context" data-show="chat:attach"><i class="ti ti-plus"></i></button>
+                  <!-- Field: chips whose label is the current value; effort never truncated -->
+                  <button class="chip chip--hit" data-show="chat:model">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit" data-show="chat:effort">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice. Hold 2.5 s to auto-send" data-show="chat:dictation"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ streaming: a turn in flight ══ -->
+            <div data-view="streaming" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="msg-user">Summarize what changed in the gateway since last week.</div>
+                  <div class="msg-actions msg-actions--user"><button class="msg-action"><i class="ti ti-copy"></i>Copy</button><button class="msg-action"><i class="ti ti-pencil"></i>Edit</button></div>
+                  <div class="msg-ai">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <div class="msg-ai__body col gap-2">
+                      <button class="think"><i class="ti ti-bulb"></i><span class="think__label">Thinking</span><span class="think__preview">Read the log, then group by area…</span><i class="ti ti-chevron-down think__chev"></i></button>
+                      <div class="tool"><span class="tool__icon is-done"><i class="ti ti-check"></i></span><span class="tool__name">git_log</span><span class="tool__state">done · 42 commits</span><span class="tool__dur">0.6s</span></div>
+                      <!-- running tool: spinner + "running…", no duration yet -->
+                      <div class="tool"><span class="tool__icon"><span class="spinner"></span></span><span class="tool__name">read</span><span class="tool__state">running…</span></div>
+                      <p>Three themes stand out: session resume got lazier, the bot relay learned retries, and<span aria-hidden="true">▍</span></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <!-- ours keeps Steer alongside Stop (desktop parity; theirs has Stop only) -->
+                  <button class="btn btn--secondary" style="min-height:40px;padding:0 14px">Steer</button>
+                  <button class="composer__send is-stop" aria-label="Stop"><i class="ti ti-square-filled"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ scrolled: auto-follow off, Latest · N ══ -->
+            <div data-view="scrolled" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="msg-user">Count slowly from 1 to 40 with a short comment after each.</div>
+                  <div class="msg-actions msg-actions--user"><button class="msg-action"><i class="ti ti-copy"></i>Copy</button><button class="msg-action"><i class="ti ti-pencil"></i>Edit</button></div>
+                  <div class="msg-ai">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <div class="msg-ai__body">
+                      <p>1 — Starting<br />2 — Two<br />3 — Three<br />4 — Four<br />5 — Five<br />6 — Six<br />7 — Seven<br />8 — Eight<br />9 — Nine<br />10 — Ten, double digits now<br />11 — Eleven<br />12 — Twelve</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Field: the pill carries a count of what landed while away -->
+              <button class="latest" style="--composer-h:104px"><i class="ti ti-arrow-down"></i>Latest · 3</button>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-stop" aria-label="Stop"><i class="ti ti-square-filled"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ approval: risk-flagged command (NEW — the field test's headline gap) ══ -->
+            <div data-view="approval" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="msg-user">Clean up the scratch directory.</div>
+                  <div class="msg-actions msg-actions--user"><button class="msg-action"><i class="ti ti-copy"></i>Copy</button><button class="msg-action"><i class="ti ti-pencil"></i>Edit</button></div>
+                  <div class="msg-ai">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <div class="msg-ai__body col gap-2">
+                      <div class="tool"><span class="tool__icon"><i class="ti ti-clock"></i></span><span class="tool__name">terminal</span><span class="tool__state">waiting for you</span></div>
+                      <div class="prompt-card prompt-card--risk">
+                        <div class="prompt-card__head">
+                          <i class="ti ti-alert-triangle t-danger"></i>
+                          <span class="prompt-card__title">Approve this command?</span>
+                          <span class="badge badge--danger ml-auto">recursive delete</span>
+                        </div>
+                        <div class="prompt-card__body">
+                          <div class="prompt-card__cmd">rm -rf /tmp/hermes-field-target</div>
+                          <div class="prompt-card__why">Matched the host's dangerous-command rule “delete in root path”. The host runs it only after you approve.</div>
+                        </div>
+                        <div class="prompt-card__actions">
+                          <button class="btn btn--secondary">Deny</button>
+                          <button class="btn btn--danger">Approve</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-stop" aria-label="Stop"><i class="ti ti-square-filled"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ clarify: the agent asks, you answer in the thread (NEW) ══ -->
+            <div data-view="clarify" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="msg-user">Summarize the release notes for me.</div>
+                  <div class="msg-actions msg-actions--user"><button class="msg-action"><i class="ti ti-copy"></i>Copy</button><button class="msg-action"><i class="ti ti-pencil"></i>Edit</button></div>
+                  <div class="msg-ai">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <div class="msg-ai__body col gap-2">
+                      <div class="prompt-card">
+                        <div class="prompt-card__head"><i class="ti ti-help-circle t-accent"></i><span class="prompt-card__title">Hermes needs an answer</span></div>
+                        <div class="prompt-card__body col gap-2">
+                          <div class="t-body">Bullets or prose?</div>
+                          <button class="choice"><i class="ti ti-list"></i>Bullets</button>
+                          <button class="choice"><i class="ti ti-align-left"></i>Prose</button>
+                          <div class="field" style="margin-top:4px">
+                            <input class="input" placeholder="Or type an answer…" />
+                          </div>
+                        </div>
+                        <div class="prompt-card__actions"><button class="btn btn--ghost">Stop turn</button><button class="btn btn--primary">Send answer</button></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-stop" aria-label="Stop"><i class="ti ti-square-filled"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ attach: "Add context" sheet (user direction 2026-09-12) ══ -->
+            <div data-view="attach" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="thread__inner">
+                  <div class="msg-user">Here's the failing screen.</div>
+                  <div class="msg-actions msg-actions--user"><button class="msg-action"><i class="ti ti-copy"></i>Copy</button><button class="msg-action"><i class="ti ti-pencil"></i>Edit</button></div>
+                </div>
+              </div>
+              <div class="composer">
+                <!-- attachment chip: name, size, remove; Send stays DISABLED until the upload lands
+                     (their app left Send enabled and dropped the file silently) -->
+                <div class="composer__attach">
+                  <span class="attach-chip"><i class="ti ti-photo"></i>screenshot.png · 1.1 kB<button class="attach-chip__x" aria-label="Remove screenshot.png"><i class="ti ti-x"></i></button></span>
+                </div>
+                <div class="composer__input">What is in this image?</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+              <div class="scrim" data-show="chat:conversation"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Close" data-show="chat:conversation"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title">Add context</span>
+                  <span style="width:48px"></span>
+                </div>
+                <div class="tile-row">
+                  <button class="tile"><i class="ti ti-camera"></i>Camera</button>
+                  <button class="tile"><i class="ti ti-photo"></i>Photos</button>
+                  <button class="tile"><i class="ti ti-file-upload"></i>Files</button>
+                </div>
+                <div class="sheet__body" style="padding-top:0">
+                  <button class="list-row card" style="border-radius:var(--radius-card)">
+                    <span class="center" style="width:36px;height:36px;border-radius:999px;background:var(--ui-bg-tertiary)"><i class="ti ti-bolt"></i></span>
+                    <span class="col"><span class="list-row__title t-body-sm">Permission</span><span class="list-row__sub">Auto</span></span>
+                    <span class="list-row__chev ml-auto">›</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ palette: typing "/" ══ -->
+            <div data-view="palette" class="grow col" style="min-height:0" hidden>
+              <div class="thread"><div class="thread__inner"><div class="msg-user">Earlier turn…</div></div></div>
+              <!-- only commands with a mobile surface are listed; the rest are classified
+                   unavailable (PARITY) instead of shown, unlike theirs (/redraw, /prompt) -->
+              <div class="palette" style="--composer-h:104px">
+                <div class="palette__head t-upper">Commands</div>
+                <button class="palette-item is-active"><span class="palette-item__slash">/</span><span><span class="palette-item__name">/new</span><span class="palette-item__desc">Start a new session</span></span></button>
+                <button class="palette-item"><span class="palette-item__slash">/</span><span><span class="palette-item__name">/title</span><span class="palette-item__desc">Set a title for this session</span></span></button>
+                <button class="palette-item"><span class="palette-item__slash">/</span><span><span class="palette-item__name">/compress</span><span class="palette-item__desc">Compress the conversation</span></span></button>
+                <button class="palette-item"><span class="palette-item__slash">/</span><span><span class="palette-item__name">/stop</span><span class="palette-item__desc">Stop the current turn</span></span></button>
+                <button class="palette-item"><span class="palette-item__slash">/</span><span><span class="palette-item__name">/btw</span><span class="palette-item__desc">Send a side note without interrupting</span></span></button>
+              </div>
+              <div class="composer">
+                <div class="composer__input">/</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send" aria-label="Send"><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ dictation: hold 2.5 s to auto-send ══ -->
+            <div data-view="dictation" class="grow col" style="min-height:0" hidden>
+              <div class="thread"><div class="thread__inner"><div class="msg-user">Earlier turn…</div></div></div>
+              <div class="composer">
+                <!-- Field: the recording strip replaces the input; the label states the gesture -->
+                <div class="dictation">
+                  <button class="composer__btn" aria-label="Cancel voice input"><i class="ti ti-x"></i></button>
+                  <span class="dictation__rec"></span>
+                  <span class="dictation__time">0:04</span>
+                  <span class="dictation__wave" aria-hidden="true"></span>
+                  <button class="composer__send" aria-label="Finish voice input"><i class="ti ti-arrow-up"></i></button>
+                </div>
+                <div class="t-caption t-tertiary" style="padding:6px 2px 0">Listening… release to insert · hold 2.5 s to send</div>
+              </div>
+            </div>
+
+            <!-- ══ model picker sheet ══ -->
+            <div data-view="model" class="grow col" style="min-height:0" hidden>
+              <div class="thread"><div class="thread__inner"><div class="msg-user">Earlier turn…</div></div></div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit is-on">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+              <div class="scrim" data-show="chat:conversation"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head"><button class="header__btn" aria-label="Close" data-show="chat:conversation"><i class="ti ti-x"></i></button><span class="sheet__title">Model</span><span style="width:48px"></span></div>
+                <div class="sheet__body">
+                  <div class="search" style="margin-bottom:8px"><i class="ti ti-search"></i>Search models…</div>
+                  <div class="t-upper" style="padding:8px 0 4px">This chat</div>
+                  <button class="sheet-item is-active"><i class="ti ti-check"></i><span class="col"><span>mimo-v2.5</span><span class="t-caption t-tertiary">opencode-go</span></span></button>
+                  <button class="sheet-item"><span style="width:16px"></span><span class="col"><span>deepseek-v4-flash</span><span class="t-caption t-tertiary">opencode-go</span></span></button>
+                  <button class="sheet-item"><span style="width:16px"></span><span class="col"><span>kimi-k3</span><span class="t-caption t-tertiary">opencode-go</span></span></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ effort sheet (label never truncates in the chip) ══ -->
+            <div data-view="effort" class="grow col" style="min-height:0" hidden>
+              <div class="thread"><div class="thread__inner"><div class="msg-user">Earlier turn…</div></div></div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit is-on">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+              <div class="scrim" data-show="chat:conversation"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head"><button class="header__btn" aria-label="Close" data-show="chat:conversation"><i class="ti ti-x"></i></button><span class="sheet__title">Reasoning effort</span><span style="width:48px"></span></div>
+                <div class="sheet__body">
+                  <button class="sheet-item"><span style="width:16px"></span><span class="col"><span>Low</span><span class="t-caption t-tertiary">Fastest, least thinking</span></span></button>
+                  <button class="sheet-item is-active"><i class="ti ti-check"></i><span class="col"><span>Medium</span><span class="t-caption t-tertiary">The host's default</span></span></button>
+                  <button class="sheet-item"><span style="width:16px"></span><span class="col"><span>High</span><span class="t-caption t-tertiary">Slower, more thorough</span></span></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ empty: a new chat ══ -->
+            <div data-view="empty" class="grow col" style="min-height:0" hidden>
+              <div class="thread">
+                <div class="empty" style="height:100%;align-content:center">
+                  <span class="avatar avatar--lg" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                  <div class="t-title" style="margin-top:4px">Researcher</div>
+                  <div class="t-body-sm t-tertiary">Deep research bot · mimo-v2.5</div>
+                  <div class="t-body-sm t-quaternary" style="margin-top:6px">Say something to get started.</div>
+                </div>
+              </div>
+              <div class="composer">
+                <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                <div class="composer__controls">
+                  <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                  <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                  <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  <button class="composer__btn" aria-label="Record voice"><i class="ti ti-microphone"></i></button>
+                  <button class="composer__send is-idle" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="chat:conversation">Conversation</button>
+        <button class="btn" data-show="chat:streaming">Streaming</button>
+        <button class="btn" data-show="chat:scrolled">Scrolled · Latest</button>
+        <button class="btn" data-show="chat:approval">Approval</button>
+        <button class="btn" data-show="chat:clarify">Clarify</button>
+        <button class="btn" data-show="chat:attach">Add context</button>
+        <button class="btn" data-show="chat:palette">Slash palette</button>
+        <button class="btn" data-show="chat:dictation">Dictation</button>
+        <button class="btn" data-show="chat:model">Model sheet</button>
+        <button class="btn" data-show="chat:effort">Effort sheet</button>
+        <button class="btn" data-show="chat:empty">Empty</button>
+      </nav>
+    </div>
+  </body>
+</html>

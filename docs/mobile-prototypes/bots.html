@@ -1,0 +1,389 @@
+<!doctype html>
+<!--
+  Screen:       Bots — app/(main)/bots/index.tsx (M15 A), the first of the three root tabs
+  Adapts:       docs/desktop-prototypes/c-plugins/bots-tab.html (roster, user sections, row anatomy,
+                right-click menu, "+" menu, empty roster),
+                docs/desktop-prototypes/c-plugins/bot-dialogs.html (New bot dialog, Edit profile:
+                description · SOUL.md · provider/model · skills and toolsets),
+                docs/desktop-prototypes/c-plugins/bot-chat.html (the bot identity the settings sheet edits)
+  Rules:        M14 "Adaptation rules" — the SESSIONS / BOTS strip becomes the Bots · Sessions · Tasks
+                tab row and the pane's 237 px sidebar becomes a full-width list; the 10 px pane header
+                becomes a 56 dp ScreenHeader (leading drawer button, title, two actions, same action
+                order as the desktop cluster: search then add); roster rows keep the desktop anatomy
+                (avatar, name, handle, preview, time) at 72 dp with 16 dp gutters; user sections become
+                list headers at the caption role; the New bot / Edit profile dialogs become bottom
+                sheets with the desktop's fields in the desktop's order; the right-click context menu
+                becomes a long-press bottom-sheet action list with the same items in the same order;
+                Delete stays last and destructive; hover-only affordances (the section ⋯, the row
+                marks) become always-visible; radius family D15.1b (control 3 / icon 4 / card 5 /
+                sheet 8); type roles Appendix C; touch 48 dp with hitSlop.
+  Field:        archetype tiles that PREFILL the handle and the job description, so the empty create
+                form is answerable in one tap (Researcher · Coder · Writer · Analyst · Custom)
+  Field:        the name hint states the rule, not just the label ("Lowercase profile handle, for
+                example research-rabbit.")
+  Field:        step dots on the create flow, so its length is visible before you start
+  Field:        a roster row's second line is the last message when there is one, the description
+                otherwise; a relative age sits at the end of the title line
+  Field:        host-authority framing in the settings copy ("The host owns models, credentials,
+                tools, memory, skills and approvals. This client is the control surface.")
+  Field (ours): tapping a bot row opens its canonical chat (theirs is a dead tap in v0.1.1, and has
+                no create-session action anywhere), and the tab row really switches tabs instead of
+                pushing a "Back to Bots" screen
+  Views:        #bots=roster | empty | loading | new | settings | menu
+  Measurements: phone 412×915 dp · header 56 · tab row 48, indicator 2 · roster row 72 min-height,
+                pad 12×16, avatar 40 + 12 gap · section header 20/16/8, caption role · status dot 8
+                · skeleton rows 72 (40 avatar, 14 + 12 bars) · sheet radius 8, handle 32×4
+                · archetype tiles 2 columns, 8 gap, 80 tall · name/description inputs 48 min
+                · SOUL editor 132 · settings rows 56 · action-sheet items 48 · sheet actions 48
+  Behaviour:    Rows sort pinned first, then newest activity, inside each user section; a tap opens
+                the bot's canonical chat (resolved by the desktop's exact-title rule), a long press
+                opens the action sheet. Pull-to-refresh re-lists profiles. The archetype tiles write
+                into Name and "What should it do?" only while those fields are untouched; the handle
+                is slugified live ([a-z0-9][a-z0-9_-]{0,63}) and a taken handle disables Continue.
+                The soul editor saves on blur, with a confirm if the soul changed on the host since
+                it was loaded. Group chats and sections are not offered here: group rooms wait on a
+                gateway transport (PARITY), so the desktop "+" menu loses two of its three items and
+                becomes a direct New bot sheet. Swiping between the three tabs works (M15 E).
+                Reduced motion honoured (AccessibilityInfo.isReduceMotionEnabled).
+  Mobile:       docs/PARITY.md listed Bot Mode as "absent by design"; D16 (2026-09-12) reverses that
+                line — profiles, canonical chats, souls, avatars and capabilities are ordinary gateway
+                data, so the Bots tab is in scope. Group chat rooms and Kanban stay absent.
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bots · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* ── Page-local, tokens only (nothing here belongs in assets/) ─────────── */
+      /* The desktop avatar picker's 4-column tile grid at phone width: 2 columns. */
+      .tile-row--2 { grid-template-columns: repeat(2, 1fr); }
+      /* Two-up tiles carry a third line (the handle they prefill), so they sit tighter than the
+         three-up Add-context tiles: 80 dp, still far above the 48 dp minimum. */
+      .tile-row--2 { gap: 8px; }
+      .tile-row--2 .tile { min-height: 72px; padding: 6px 8px; gap: 2px; }
+      /* Selected archetype tile — the desktop's ring-1 --ui-accent as a border + fill. */
+      .tile.is-on { border-color: var(--dt-primary); background: color-mix(in srgb, var(--dt-primary) 10%, transparent); }
+      .tile__sub { font-family: var(--font-mono); font-size: var(--type-caption); line-height: var(--type-caption-lh); color: var(--ui-text-tertiary); }
+      /* SOUL.md editor: the mono role inside a multi-line .input (which pins the body role). */
+      .soul { min-height: 132px; font-family: var(--font-mono); font-size: var(--type-mono); line-height: var(--type-mono-lh); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <!-- ScreenHeader: drawer · title/host state · search · new bot (desktop cluster order) -->
+          <header class="header">
+            <button class="header__btn" aria-label="Open navigation"><i class="ti ti-menu-2"></i></button>
+            <div class="header__titles">
+              <div class="header__title t-truncate">Bots</div>
+              <div class="header__sub row gap-1"><span class="dot dot--ok"></span><span class="t-truncate">Hermes Desktop</span></div>
+            </div>
+            <button class="header__btn" aria-label="Search bots"><i class="ti ti-search"></i></button>
+            <button class="header__btn" aria-label="New bot" data-show="bots:new"><i class="ti ti-plus"></i></button>
+          </header>
+
+          <!-- The desktop's SESSIONS / BOTS strip, as the real tab row (D16) -->
+          <nav class="tabs" role="tablist" aria-label="Bots, Sessions, Tasks">
+            <button class="tab is-active" role="tab" aria-selected="true">Bots<span class="tab__count">4</span></button>
+            <button class="tab" role="tab" aria-selected="false">Sessions<span class="tab__count">7</span></button>
+            <button class="tab" role="tab" aria-selected="false">Tasks<span class="tab__count">3</span></button>
+          </nav>
+
+          <section data-views="bots" data-default="roster" class="grow col" style="min-height:0">
+
+            <!-- ══ roster: user sections as list headers, desktop row anatomy ══ -->
+            <div data-view="roster" class="grow col" style="min-height:0">
+              <div class="scroll">
+                <div class="section-label t-upper row"><span>Team</span><span class="ml-auto">3</span></div>
+
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="dot dot--busy" aria-label="Session running"></span>
+                      <span class="s-row__title t-truncate">Research Lead</span>
+                      <span class="s-row__age">now</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Pulling the 2026 speculative-decoding numbers…</span>
+                    <span class="s-row__meta t-truncate">@researcher · mimo-v2.5</span>
+                  </span>
+                </button>
+
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-blue) 30%, transparent)" aria-hidden="true">C</span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Code Reviewer</span>
+                      <span class="s-row__age">12m</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Can you review the reconnect patch before I push?</span>
+                    <span class="s-row__meta t-truncate">@coder · deepseek-v4-flash</span>
+                  </span>
+                </button>
+
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-orange) 30%, transparent)" aria-hidden="true">I</span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">inbox-butler</span>
+                      <i class="ti ti-alert-triangle t-danger" style="font-size:14px" aria-label="Needs attention"></i>
+                      <span class="s-row__age">1h</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Morning digest: 14 new, 3 need a reply</span>
+                    <span class="s-row__meta t-truncate">@inbox-butler · mimo-v2.5</span>
+                  </span>
+                </button>
+
+                <div class="section-label t-upper row"><span>Unassigned</span><span class="ml-auto">1</span></div>
+
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-purple) 30%, transparent)" aria-hidden="true">H</span>
+                  <span class="grow col">
+                    <span class="row gap-2">
+                      <span class="s-row__title t-truncate">Hermes</span>
+                      <span class="s-row__age">1d</span>
+                    </span>
+                    <span class="s-row__preview t-truncate">Release notes are in docs/CHANGELOG.md.</span>
+                    <span class="s-row__meta t-truncate">@default · inherits mimo-v2.5</span>
+                  </span>
+                </button>
+
+                <hr class="hair" style="margin:8px 16px" />
+                <!-- the desktop's collapsed "Hidden" block, always visible (no hover) -->
+                <button class="list-row"><i class="ti ti-chevron-right t-quaternary"></i><span class="list-row__title t-body-sm t-tertiary">Hidden</span><span class="list-row__value">1</span></button>
+              </div>
+            </div>
+
+            <!-- ══ empty: no bots yet (PanelEmpty "No bots yet / Create your first bot.") ══ -->
+            <div data-view="empty" class="grow col" style="min-height:0" hidden>
+              <div class="empty" style="height:100%;align-content:center">
+                <i class="ti ti-robot t-quaternary" style="font-size:28px"></i>
+                <div class="t-body t-medium">No bots yet</div>
+                <div class="t-body-sm t-tertiary" style="max-width:280px">Create your first bot. It gets its own memory, skills and chat, and can message your other bots.</div>
+                <button class="btn btn--primary" style="margin-top:8px" data-show="bots:new"><i class="ti ti-plus"></i>New bot</button>
+              </div>
+            </div>
+
+            <!-- ══ loading: skeleton rows at the roster's own row height ══ -->
+            <div data-view="loading" class="grow col" style="min-height:0" hidden>
+              <div class="scroll" aria-busy="true" aria-label="Loading bots">
+                <div class="section-label"><span class="skeleton" style="display:block;width:64px;height:11px"></span></div>
+                <div class="s-row" aria-hidden="true">
+                  <span class="skeleton" style="width:40px;height:40px;border-radius:14px 14px 16px 12px"></span>
+                  <span class="grow col gap-2" style="padding-top:4px">
+                    <span class="skeleton" style="width:48%;height:14px"></span>
+                    <span class="skeleton" style="width:82%;height:12px"></span>
+                    <span class="skeleton" style="width:38%;height:10px"></span>
+                  </span>
+                </div>
+                <div class="s-row" aria-hidden="true">
+                  <span class="skeleton" style="width:40px;height:40px;border-radius:14px 14px 16px 12px"></span>
+                  <span class="grow col gap-2" style="padding-top:4px">
+                    <span class="skeleton" style="width:56%;height:14px"></span>
+                    <span class="skeleton" style="width:70%;height:12px"></span>
+                    <span class="skeleton" style="width:44%;height:10px"></span>
+                  </span>
+                </div>
+                <div class="s-row" aria-hidden="true">
+                  <span class="skeleton" style="width:40px;height:40px;border-radius:14px 14px 16px 12px"></span>
+                  <span class="grow col gap-2" style="padding-top:4px">
+                    <span class="skeleton" style="width:40%;height:14px"></span>
+                    <span class="skeleton" style="width:76%;height:12px"></span>
+                    <span class="skeleton" style="width:34%;height:10px"></span>
+                  </span>
+                </div>
+                <div class="s-row" aria-hidden="true">
+                  <span class="skeleton" style="width:40px;height:40px;border-radius:14px 14px 16px 12px"></span>
+                  <span class="grow col gap-2" style="padding-top:4px">
+                    <span class="skeleton" style="width:52%;height:14px"></span>
+                    <span class="skeleton" style="width:64%;height:12px"></span>
+                    <span class="skeleton" style="width:40%;height:10px"></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ new: the New bot sheet (desktop CreateAgentDialog, fields in its order) ══ -->
+            <div data-view="new" class="grow col" style="min-height:0" hidden>
+              <div class="scroll">
+                <div class="section-label t-upper row"><span>Team</span><span class="ml-auto">3</span></div>
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+                  <span class="grow col">
+                    <span class="row gap-2"><span class="s-row__title t-truncate">Research Lead</span><span class="s-row__age">now</span></span>
+                    <span class="s-row__meta t-truncate">@researcher · mimo-v2.5</span>
+                  </span>
+                </button>
+              </div>
+              <div class="scrim" data-show="bots:roster"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Cancel" data-show="bots:roster"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title">New bot</span>
+                  <span style="width:48px"></span>
+                </div>
+                <!-- Field: step dots — the flow's length is visible before you start -->
+                <div class="row gap-1" style="justify-content:center;padding-bottom:4px">
+                  <span class="dot dot--busy"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                </div>
+                <div class="sheet__body">
+                  <div class="t-body t-medium">Who is this bot?</div>
+                  <div class="t-body-sm t-tertiary" style="margin-bottom:6px">Name it and give it a job.</div>
+
+                  <!-- Field: archetype tiles PREFILL the handle and the description -->
+                  <div class="t-upper" style="padding:0 0 6px">Start from</div>
+                  <div class="tile-row tile-row--2" style="padding-inline:0;padding-bottom:4px">
+                    <button class="tile"><i class="ti ti-microscope"></i>Researcher<span class="tile__sub">@researcher</span></button>
+                    <button class="tile is-on"><i class="ti ti-code"></i>Coder<span class="tile__sub">@patch</span></button>
+                    <button class="tile"><i class="ti ti-writing"></i>Writer<span class="tile__sub">@scribe</span></button>
+                    <button class="tile"><i class="ti ti-chart-bar"></i>Analyst<span class="tile__sub">@analyst</span></button>
+                    <button class="tile"><i class="ti ti-sparkles"></i>Custom<span class="tile__sub">blank</span></button>
+                  </div>
+
+                  <div class="field" style="margin-bottom:10px">
+                    <label class="field__label">Name</label>
+                    <input class="input is-focused" value="patch" />
+                    <div class="field__hint">Lowercase profile handle, for example research-rabbit.</div>
+                  </div>
+                  <div class="field" style="margin-bottom:4px">
+                    <label class="field__label">What should it do?</label>
+                    <textarea class="input" rows="2">Writes, reviews, and ships code.</textarea>
+                  </div>
+                  <button class="sheet-item t-body-sm" style="padding-inline:0">
+                    <i class="ti ti-adjustments t-tertiary"></i>Advanced — model, skills, toolsets, SOUL.md
+                    <span class="list-row__chev ml-auto">›</span>
+                  </button>
+                </div>
+                <div class="sheet__actions">
+                  <button class="btn btn--secondary" data-show="bots:roster">Cancel</button>
+                  <button class="btn btn--primary">Continue</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ settings: bot settings sheet (from the chat header, and from Edit below) ══ -->
+            <div data-view="settings" class="grow col" style="min-height:0" hidden>
+              <div class="scroll">
+                <div class="section-label t-upper row"><span>Team</span><span class="ml-auto">3</span></div>
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+                  <span class="grow col">
+                    <span class="row gap-2"><span class="s-row__title t-truncate">Research Lead</span><span class="s-row__age">now</span></span>
+                    <span class="s-row__meta t-truncate">@researcher · mimo-v2.5</span>
+                  </span>
+                </button>
+              </div>
+              <div class="scrim" data-show="bots:roster"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Close" data-show="bots:roster"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title">Bot settings</span>
+                  <span style="width:48px"></span>
+                </div>
+                <div class="sheet__body">
+                  <div class="empty" style="padding:0 0 12px">
+                    <span class="avatar avatar--lg" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+                    <div class="t-body t-semibold">Research Lead</div>
+                    <div class="t-caption t-tertiary">@researcher</div>
+                  </div>
+
+                  <div class="field" style="margin-bottom:14px">
+                    <label class="field__label">Description</label>
+                    <textarea class="input" rows="3">Finds, reads and summarizes papers, benchmarks and changelogs. Always cites sources.</textarea>
+                  </div>
+
+                  <div class="field" style="margin-bottom:14px">
+                    <label class="field__label">SOUL.md</label>
+                    <textarea class="input soul"># Research Lead
+
+You are the research lead. Read primary
+sources before secondary ones. Always cite
+with a link and a date. Say "not found"
+rather than guessing a number.</textarea>
+                    <div class="field__hint">Replaces the generated persona. Saves on blur; a change on the host asks first.</div>
+                  </div>
+
+                  <hr class="hair" />
+                  <button class="list-row" style="padding-inline:0">
+                    <span class="col"><span class="list-row__title">Model</span><span class="list-row__sub">Pinned for this bot</span></span>
+                    <span class="list-row__value">mimo-v2.5</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <button class="list-row" style="padding-inline:0">
+                    <span class="col"><span class="list-row__title">Capabilities</span><span class="list-row__sub">Skills and toolsets for this bot</span></span>
+                    <span class="list-row__value">9 skills · 3 toolsets</span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <hr class="hair" />
+                  <!-- Field: host-authority framing in the copy -->
+                  <div class="t-caption t-quaternary" style="padding:10px 0 2px">The host owns models, credentials, tools, memory, skills and approvals. This client is the control surface.</div>
+                </div>
+                <div class="sheet__actions">
+                  <button class="btn btn--secondary" data-show="bots:roster">Cancel</button>
+                  <button class="btn btn--primary">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ menu: long-press on a bot row (the desktop context menu, destructive last) ══ -->
+            <div data-view="menu" class="grow col" style="min-height:0" hidden>
+              <div class="scroll">
+                <div class="section-label t-upper row"><span>Team</span><span class="ml-auto">3</span></div>
+                <button class="s-row">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)" aria-hidden="true">R</span>
+                  <span class="grow col">
+                    <span class="row gap-2"><span class="s-row__title t-truncate">Research Lead</span><span class="s-row__age">now</span></span>
+                    <span class="s-row__meta t-truncate">@researcher · mimo-v2.5</span>
+                  </span>
+                </button>
+                <div class="s-row is-open">
+                  <span class="avatar" style="background:color-mix(in srgb, var(--ui-blue) 30%, transparent)" aria-hidden="true">C</span>
+                  <span class="grow col">
+                    <span class="row gap-2"><span class="s-row__title t-truncate">Code Reviewer</span><span class="s-row__age">12m</span></span>
+                    <span class="s-row__preview t-truncate">Can you review the reconnect patch before I push?</span>
+                    <span class="s-row__meta t-truncate">@coder · deepseek-v4-flash</span>
+                  </span>
+                </div>
+              </div>
+              <div class="scrim" data-show="bots:roster"></div>
+              <div class="sheet">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Close" data-show="bots:roster"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title">Code Reviewer</span>
+                  <span style="width:48px"></span>
+                </div>
+                <div class="sheet__body" style="padding-inline:0">
+                  <button class="sheet-item"><i class="ti ti-message"></i>Open chat</button>
+                  <button class="sheet-item" data-show="bots:settings"><i class="ti ti-pencil"></i>Edit</button>
+                  <button class="sheet-item"><i class="ti ti-copy"></i>Duplicate</button>
+                  <button class="sheet-item is-danger"><i class="ti ti-trash"></i>Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="bots:roster">Roster</button>
+        <button class="btn" data-show="bots:empty">Empty</button>
+        <button class="btn" data-show="bots:loading">Loading</button>
+        <button class="btn" data-show="bots:new">New bot sheet</button>
+        <button class="btn" data-show="bots:settings">Bot settings</button>
+        <button class="btn" data-show="bots:menu">Long-press menu</button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,446 @@
+<!doctype html>
+<!--
+  Screen:       Primitives reference sheet — what M14 asks src/components/ui/* to provide
+                (not a route; the sheet every other mobile prototype is built out of)
+  Adapts:       docs/DESKTOP-DESIGN.md §8 "Components (src/components/ui/*)" — the authority for every
+                variant list, fill rule and radius below,
+                docs/desktop-prototypes/g-elements/primitives.html (the sheet's shape and its
+                per-item class labels), docs/desktop-prototypes/a-main/chat.html (thread cards),
+                docs/DESKTOP-DESIGN.md §7 (radius/elevation) and §5 (type)
+  Rules:        M14 "Adaptation rules" — the desktop's variants survive, the sizes do not: every
+                target is ≥48 dp (hitSlop counts, M13 criterion 6), dialogs/menus/popovers become
+                bottom sheets, hover-only affordances become always-visible, radius family D15.1b
+                (control 3 / icon 4 / card 5 / sheet 8), type only from the Appendix C roles.
+                Desktop primitives with no phone equivalent — Tooltip, Popover, DropdownMenu,
+                ContextMenu, Kbd, PaneTab — are absent here on purpose: no hover, no keyboard.
+  Field:        tool call as a one-line card — icon · mono name · state · duration, collapsed
+  Field:        reasoning card shows a one-line preview of the thinking text
+  Field:        jump-to-latest pill carries a count ("Latest · 3")
+  Field:        composer model + effort chips whose label IS the current value, never truncated
+  Field:        composer placeholder advertises the palette ("Ask anything…  /commands")
+  Field (ours): the approval card — the gap the field test found in BOTH apps
+  Views:        #prim=sheet (one scrolling screen; the sections are the outline)
+  Measurements: phone 412×915 dp · header 56 · gutters 16
+                · Button min 48, pad 0×20, radius control(3); icon button 48×48, radius icon(4);
+                  disabled = 50% opacity
+                · Chip 32 visual, hit box 48 via ::after inset -8/-6; radius full
+                · Badge 20 tall (2×8 pad, 16 line), radius control(3)
+                · Input min 48, pad 12×14; field label 11 upper; hint + error 12/16
+                · Search 48 · ListRow min 56 · Switch 44×26, thumb 20 · Segmented option 40 (track 46)
+                · Checkbox 22 · Card radius card(5), pad 12 · Banner pad 12, margin 8×16
+                · Sheet radius sheet(8) top corners, handle 32×4, max-height 88%, item min 48
+                · Alert inset 24, pad 20, top 42% · Avatar 28 / 40 / 64 · Dot 8 · Spinner 16
+                · Tool card min 48 · Reasoning card min 48 · Latest pill 36
+                · Composer input min 44, controls 48, send 48 circle
+  Behaviour:    Nothing here is interactive; the sheet exists so a component's look, its class name
+                and its one load-bearing dp number can be read in one place, in both themes. Press
+                states are the :active rules in assets/components.css (no hover states exist on the
+                phone). Focus is shown by the control's border colour — there are no focus rings,
+                same as the desktop (DESKTOP-DESIGN.md §8 "Focus").
+  Mobile:       This is the mobile half of docs/desktop-prototypes/g-elements/primitives.html; the
+                mapping between the two sets is docs/PARITY.md.
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Primitives · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only: the reference sheet's own scaffolding. None of this is a
+         component — it is the ruled paper the components are pinned to. */
+      .psec { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; padding: 18px var(--gutter) 6px; border-top: 1px solid var(--ui-stroke-tertiary); }
+      .psec:first-child { margin-top: 0; border-top: 0; }
+      .psec h2 { margin: 0; font-size: var(--type-body); line-height: var(--type-body-lh); font-weight: 600; color: var(--ui-text-primary); }
+      .psec small { font-family: var(--font-mono); font-size: var(--type-caption); line-height: var(--type-caption-lh); color: var(--ui-text-quaternary); }
+      .pbody { display: grid; gap: 10px; padding: 0 var(--gutter) 8px; }
+      .pbody > * { min-width: 0; } /* grid items default to min-width:auto and would refuse to truncate */
+      .pbody--bleed { padding-left: 0; padding-right: 0; }
+      .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      .plabel { font-family: var(--font-mono); font-size: var(--type-caption); line-height: var(--type-caption-lh); color: var(--ui-text-quaternary); }
+      .pbox { position: relative; overflow: hidden; border: 1px dashed var(--ui-stroke-secondary); border-radius: var(--radius-card); background: var(--ui-bg-chrome); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <header class="header">
+            <button class="header__btn" aria-label="Back"><i class="ti ti-chevron-left"></i></button>
+            <div class="header__titles">
+              <div class="header__title t-truncate">Primitives</div>
+              <div class="header__sub t-truncate">src/components/ui/* · DESKTOP-DESIGN.md §8</div>
+            </div>
+          </header>
+
+          <section data-views="prim" data-default="sheet" class="grow col" style="min-height:0">
+            <div data-view="sheet" class="grow col" style="min-height:0">
+              <div class="scroll">
+
+                <!-- ══ Button ══ -->
+                <div class="psec"><h2>Button</h2><small>.btn · min 48 dp</small></div>
+                <div class="pbody">
+                  <div class="prow">
+                    <button class="btn btn--primary">Primary</button>
+                    <button class="btn btn--secondary">Secondary</button>
+                  </div>
+                  <div class="plabel">.btn--primary (dt-primary fill) · .btn--secondary (bg-quaternary)</div>
+                  <div class="prow">
+                    <button class="btn btn--outline">Outline</button>
+                    <button class="btn btn--ghost">Ghost</button>
+                    <button class="btn btn--danger">Delete</button>
+                  </div>
+                  <div class="plabel">.btn--outline (inset 1 px ring) · .btn--ghost · .btn--danger</div>
+                  <button class="btn btn--primary btn--block"><i class="ti ti-plug-connected"></i>Sign in &amp; connect</button>
+                  <div class="plabel">.btn--block — full width, the only shape a phone form uses</div>
+                  <div class="prow">
+                    <button class="btn btn--icon" aria-label="Search"><i class="ti ti-search"></i></button>
+                    <button class="btn btn--icon btn--outline" aria-label="Refresh"><i class="ti ti-refresh"></i></button>
+                    <button class="btn btn--icon btn--secondary" aria-label="More"><i class="ti ti-dots-vertical"></i></button>
+                    <button class="btn btn--secondary" disabled>Disabled</button>
+                  </div>
+                  <div class="plabel">.btn--icon 48×48, radius icon (4) — bare, +--outline, +--secondary · [disabled] = 50 % opacity</div>
+                </div>
+
+                <!-- ══ Chip ══ -->
+                <div class="psec"><h2>Chip</h2><small>.chip · 32 dp visual / 48 dp hit</small></div>
+                <div class="pbody">
+                  <div class="prow">
+                    <button class="chip">All</button>
+                    <button class="chip is-on">Starred</button>
+                    <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                    <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                  </div>
+                  <div class="plabel">.chip · .chip.is-on (primary 12 %) · .chip--hit adds ::after inset −8/−6, the RN hitSlop that carries 32 dp to 48 dp</div>
+                  <div class="plabel">Field: the composer chips' label IS the current value, and the effort label never truncates at 360 dp.</div>
+                </div>
+
+                <!-- ══ Badge ══ -->
+                <div class="psec"><h2>Badge</h2><small>.badge · radius control (3)</small></div>
+                <div class="pbody">
+                  <div class="prow">
+                    <span class="badge">Recommended</span>
+                    <span class="badge badge--muted">draft</span>
+                    <span class="badge badge--warn">degraded</span>
+                    <span class="badge badge--danger">recursive delete</span>
+                    <span class="badge badge--good">connected</span>
+                  </div>
+                  <div class="plabel">.badge · --muted · --warn (amber 14 %) · --danger · --good (ui-success 14 %)</div>
+                </div>
+
+                <!-- ══ Input + field ══ -->
+                <div class="psec"><h2>Input</h2><small>.input · min 48 dp, pad 12×14</small></div>
+                <div class="pbody">
+                  <div class="field">
+                    <label class="field__label" for="p-a">Gateway URL</label>
+                    <input class="input" id="p-a" placeholder="https://your-pc.tailnet.ts.net:9119" readonly />
+                    <div class="field__hint">.field__hint — 12/16, tertiary. Where the guard sentence lives.</div>
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="p-b">Username</label>
+                    <input class="input is-focused" id="p-b" value="tester" readonly />
+                    <div class="field__hint">.input.is-focused — focus is the border colour; there are no focus rings.</div>
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="p-c">Gateway URL</label>
+                    <input class="input is-invalid" id="p-c" value="http://127.0.0.1:9119" aria-invalid="true" readonly />
+                    <div class="field__error">.field__error — 12 dp, destructive. States the reason, not just the rule.</div>
+                  </div>
+                  <div class="plabel">.field wraps label + control + hint/error at 6 dp gaps · .field__label 11 upper</div>
+                </div>
+
+                <!-- ══ Search ══ -->
+                <div class="psec"><h2>Search</h2><small>.search · 48 dp</small></div>
+                <div class="pbody">
+                  <div class="search"><i class="ti ti-search"></i>Search models…</div>
+                  <div class="plabel">.search — quinary fill, tertiary text. The desktop's borderless SearchField at touch height.</div>
+                </div>
+
+                <!-- ══ ListRow ══ -->
+                <div class="psec"><h2>ListRow</h2><small>.list-row · min 56 dp</small></div>
+                <div class="pbody pbody--bleed">
+                  <button class="list-row"><span class="list-row__title">Notifications</span></button>
+                  <hr class="hair" />
+                  <button class="list-row">
+                    <span class="col grow"><span class="list-row__title">Security &amp; pairing</span><span class="list-row__sub">How this phone reaches your host</span></span>
+                  </button>
+                  <hr class="hair" />
+                  <button class="list-row">
+                    <span class="list-row__title">Appearance</span>
+                    <span class="list-row__value">Nous · dark</span>
+                  </button>
+                  <hr class="hair" />
+                  <div class="list-row">
+                    <span class="col grow"><span class="list-row__title">Stream replies</span><span class="list-row__sub">Render tokens as they arrive</span></span>
+                    <span class="switch is-on" role="switch" aria-checked="true"></span>
+                  </div>
+                  <hr class="hair" />
+                  <button class="list-row">
+                    <span class="col grow"><span class="list-row__title">Connections</span><span class="list-row__sub">2 hosts</span></span>
+                    <span class="list-row__chev">›</span>
+                  </button>
+                  <div class="pbody" style="padding-top:8px">
+                    <div class="plabel">.list-row (title) · (+ .list-row__sub) · (+ .list-row__value) · (+ .switch) · (+ .list-row__chev). Rows own the 16 dp gutter; separators are .hair.</div>
+                  </div>
+                </div>
+
+                <!-- ══ Switch ══ -->
+                <div class="psec"><h2>Switch</h2><small>.switch · 44×26 dp, thumb 20</small></div>
+                <div class="pbody">
+                  <div class="prow">
+                    <span class="switch" role="switch" aria-checked="false"></span>
+                    <span class="switch is-on" role="switch" aria-checked="true"></span>
+                  </div>
+                  <div class="plabel">.switch · .switch.is-on (primary fill). Always inside a 56 dp row, so the row is the target.</div>
+                </div>
+
+                <!-- ══ SegmentedControl ══ -->
+                <div class="psec"><h2>SegmentedControl</h2><small>.seg · option 40 dp (track 46)</small></div>
+                <div class="pbody">
+                  <div class="seg" style="width:100%">
+                    <button class="seg__opt is-active">Light</button>
+                    <button class="seg__opt">Dark</button>
+                    <button class="seg__opt">System</button>
+                  </div>
+                  <div class="plabel">.seg &gt; .seg__opt · .is-active = background fill + shadow-sm. Three options maximum at 360 dp.</div>
+                </div>
+
+                <!-- ══ Checkbox ══ -->
+                <div class="psec"><h2>Checkbox</h2><small>.check · 22 dp</small></div>
+                <div class="pbody pbody--bleed">
+                  <div class="list-row">
+                    <span class="check is-on"><i class="ti ti-check" style="font-size:14px"></i></span>
+                    <span class="list-row__title">Remember this host</span>
+                  </div>
+                  <div class="list-row">
+                    <span class="check"></span>
+                    <span class="list-row__title">Auto-approve read-only tools</span>
+                  </div>
+                  <div class="pbody" style="padding-top:8px"><div class="plabel">.check · .check.is-on. 22 dp glyph inside a 56 dp row — never a bare 22 dp target.</div></div>
+                </div>
+
+                <!-- ══ Card ══ -->
+                <div class="psec"><h2>Card</h2><small>.card · radius card (5), pad 12</small></div>
+                <div class="pbody">
+                  <div class="card col gap-1">
+                    <div class="t-body t-semibold">Hermes 0.21.0 is reachable</div>
+                    <div class="t-caption t-tertiary">Authentication required · password provider</div>
+                  </div>
+                  <div class="card card--flat col gap-1">
+                    <div class="t-body-sm t-medium">.card--flat</div>
+                    <div class="t-caption t-tertiary">Same border and radius, no fill — for cards on an already-tinted surface.</div>
+                  </div>
+                  <div class="plabel">.card (bg-card + stroke-tertiary) · .card--flat</div>
+                </div>
+
+                <!-- ══ Banner ══ -->
+                <div class="psec"><h2>Banner</h2><small>.banner · pad 12, margin 8×16</small></div>
+                <div class="pbody pbody--bleed">
+                  <div class="banner">
+                    <i class="ti ti-plug-connected-x t-danger" style="font-size:20px"></i>
+                    <div class="col grow">
+                      <div class="banner__title">Hermes is unreachable</div>
+                      <div class="banner__body">No answer from 10.0.2.2:9126 for 40 s.</div>
+                      <div class="banner__action"><button class="btn btn--primary btn--block">Retry</button></div>
+                    </div>
+                  </div>
+                  <div class="banner banner--warn">
+                    <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--tw-amber-500)"></i>
+                    <div class="col grow">
+                      <div class="banner__title">Reconnecting</div>
+                      <div class="banner__body">Attempt 3 · backing off 8 s.</div>
+                    </div>
+                  </div>
+                  <div class="pbody" style="padding-top:8px"><div class="plabel">.banner (destructive 8 %) · .banner--warn (amber 8 %) · .banner__title / __body / __action. One persistent state, never a toast — and .banner__action is the action that actually recovers the stated cause.</div></div>
+                </div>
+
+                <!-- ══ Sheet ══ -->
+                <div class="psec"><h2>Sheet</h2><small>.sheet · radius sheet (8), handle 32×4</small></div>
+                <div class="pbody">
+                  <div class="pbox" style="height:364px">
+                    <div class="scrim"></div>
+                    <div class="sheet">
+                      <div class="sheet__handle"></div>
+                      <div class="sheet__head">
+                        <button class="header__btn" aria-label="Close"><i class="ti ti-x"></i></button>
+                        <span class="sheet__title">Reasoning effort</span>
+                        <span style="width:48px"></span>
+                      </div>
+                      <div class="sheet__body">
+                        <button class="sheet-item"><span style="width:16px"></span><span class="col"><span>Low</span><span class="t-caption t-tertiary">Fastest, least thinking</span></span></button>
+                        <button class="sheet-item is-active"><i class="ti ti-check"></i><span class="col"><span>Medium</span><span class="t-caption t-tertiary">The host's default</span></span></button>
+                        <button class="sheet-item is-danger"><i class="ti ti-trash"></i><span>Forget this host</span></button>
+                      </div>
+                      <div class="sheet__actions">
+                        <button class="btn btn--secondary">Cancel</button>
+                        <button class="btn btn--primary">Save</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="plabel">.scrim + .sheet &gt; .sheet__handle / __head (.sheet__title) / __body (.sheet-item, .is-active, .is-danger) / __actions. Replaces every desktop dialog, menu and popover; max-height 88 %, swipe-down dismiss.</div>
+                </div>
+
+                <!-- ══ Alert ══ -->
+                <div class="psec"><h2>Alert</h2><small>.alert · inset 24, pad 20</small></div>
+                <div class="pbody">
+                  <div class="pbox" style="height:212px">
+                    <div class="scrim"></div>
+                    <div class="alert" style="top:20px;left:20px;right:20px">
+                      <div class="alert__title">Delete this connection?</div>
+                      <div class="alert__body">Its saved tokens are removed from this phone. Sessions on the host are untouched.</div>
+                      <div class="alert__actions">
+                        <button class="btn btn--ghost">Cancel</button>
+                        <button class="btn btn--danger">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="plabel">.alert &gt; .alert__title / __body / __actions. Drawn only to fix copy and button order — the app uses the platform dialog, which sits at 42 % from the top.</div>
+                </div>
+
+                <!-- ══ Avatar ══ -->
+                <div class="psec"><h2>Avatar</h2><small>.avatar · 28 / 40 / 64 dp</small></div>
+                <div class="pbody">
+                  <div class="prow" style="gap:12px">
+                    <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                    <span class="avatar" style="background:color-mix(in srgb, var(--ui-purple) 30%, transparent)">C</span>
+                    <span class="avatar avatar--lg" style="background:color-mix(in srgb, var(--ui-green) 30%, transparent)">W</span>
+                  </div>
+                  <div class="plabel">.avatar--sm (28, thread gutter) · .avatar (40, list rows) · .avatar--lg (64, empty states). In the app the fill is the bot's blobatar SVG, seeded exactly as the desktop seeds it.</div>
+                </div>
+
+                <!-- ══ Status dots ══ -->
+                <div class="psec"><h2>Status dot</h2><small>.dot · 8 dp</small></div>
+                <div class="pbody">
+                  <div class="prow" style="gap:14px">
+                    <span class="row gap-2"><span class="dot dot--ok"></span><span class="t-caption t-tertiary">.dot--ok</span></span>
+                    <span class="row gap-2"><span class="dot dot--busy"></span><span class="t-caption t-tertiary">.dot--busy</span></span>
+                    <span class="row gap-2"><span class="dot dot--warn"></span><span class="t-caption t-tertiary">.dot--warn</span></span>
+                    <span class="row gap-2"><span class="dot dot--bad"></span><span class="t-caption t-tertiary">.dot--bad</span></span>
+                    <span class="row gap-2"><span class="dot"></span><span class="t-caption t-tertiary">.dot</span></span>
+                  </div>
+                  <div class="plabel">Never the only carrier of a state: every dot sits beside its word.</div>
+                </div>
+
+                <!-- ══ Skeleton ══ -->
+                <div class="psec"><h2>Skeleton</h2><small>.skeleton · radius control (3)</small></div>
+                <div class="pbody">
+                  <div class="row gap-3">
+                    <span class="skeleton" style="width:40px;height:40px;border-radius:14px 14px 16px 12px"></span>
+                    <span class="col gap-2 grow">
+                      <span class="skeleton" style="height:14px;width:58%"></span>
+                      <span class="skeleton" style="height:12px;width:82%"></span>
+                    </span>
+                  </div>
+                  <div class="plabel">.skeleton — bg-tertiary blocks at the real row's metrics. No shimmer: reduced motion is honoured by default.</div>
+                </div>
+
+                <!-- ══ Spinner ══ -->
+                <div class="psec"><h2>Spinner</h2><small>.spinner · 16 dp</small></div>
+                <div class="pbody">
+                  <div class="prow" style="gap:14px">
+                    <span class="spinner"></span>
+                    <button class="btn btn--primary" disabled aria-busy="true"><span class="spinner" style="border-color:color-mix(in srgb, var(--dt-primary-foreground) 32%, transparent);border-top-color:var(--dt-primary-foreground)"></span>Signing in…</button>
+                  </div>
+                  <div class="plabel">.spinner — 2 dp ring, primary head, 0.9 s. Inside a busy button it replaces the icon, never the label, and the ring is redrawn in that button's foreground.</div>
+                </div>
+
+                <!-- ══ Tool card ══ -->
+                <div class="psec"><h2>Tool card</h2><small>.tool · min 48 dp</small></div>
+                <div class="pbody">
+                  <div class="tool"><span class="tool__icon is-done"><i class="ti ti-check"></i></span><span class="tool__name">terminal</span><span class="tool__state">done</span><span class="tool__dur">1.0s</span></div>
+                  <div class="tool"><span class="tool__icon"><span class="spinner"></span></span><span class="tool__name">read</span><span class="tool__state">running…</span></div>
+                  <div class="tool"><span class="tool__icon is-fail"><i class="ti ti-x"></i></span><span class="tool__name">edit</span><span class="tool__state">failed · file not found</span><span class="tool__dur">0.2s</span></div>
+                  <div class="plabel">.tool &gt; .tool__icon (.is-done / .is-fail) · __name (mono 13) · __state · __dur. Field: icon · name · state · duration, collapsed; tapping opens the output sheet.</div>
+                </div>
+
+                <!-- ══ Reasoning card ══ -->
+                <div class="psec"><h2>Reasoning card</h2><small>.think · min 48 dp</small></div>
+                <div class="pbody">
+                  <button class="think" aria-expanded="false">
+                    <i class="ti ti-bulb"></i>
+                    <span class="think__label">Thinking</span>
+                    <span class="think__preview">The revoked-token path retries because the reconnect…</span>
+                    <i class="ti ti-chevron-down think__chev"></i>
+                  </button>
+                  <div class="plabel">.think &gt; .think__label / __preview / __chev. Field: the one-line preview is what tells you whether expanding is worth it.</div>
+                </div>
+
+                <!-- ══ Approval card ══ -->
+                <div class="psec"><h2>Approval card</h2><small>.prompt-card · radius card (5)</small></div>
+                <div class="pbody">
+                  <div class="prompt-card prompt-card--risk">
+                    <div class="prompt-card__head">
+                      <i class="ti ti-alert-triangle t-danger"></i>
+                      <span class="prompt-card__title">Approve this command?</span>
+                      <span class="badge badge--danger ml-auto">recursive delete</span>
+                    </div>
+                    <div class="prompt-card__body">
+                      <div class="prompt-card__cmd">rm -rf /tmp/hermes-field-target</div>
+                      <div class="prompt-card__why">Matched the host's dangerous-command rule “delete in root path”.</div>
+                    </div>
+                    <div class="prompt-card__actions">
+                      <button class="btn btn--secondary">Deny</button>
+                      <button class="btn btn--danger">Approve</button>
+                    </div>
+                  </div>
+                  <div class="prompt-card">
+                    <div class="prompt-card__head"><i class="ti ti-help-circle t-accent"></i><span class="prompt-card__title">Hermes needs an answer</span></div>
+                    <div class="prompt-card__body col gap-2">
+                      <div class="t-body">Bullets or prose?</div>
+                      <button class="choice"><i class="ti ti-list"></i>Bullets</button>
+                    </div>
+                  </div>
+                  <div class="plabel">.prompt-card (+ --risk) &gt; __head (__title) / __body (__cmd, __why) / __actions · .choice (48 dp, .is-on). Field (ours): the card lives in the transcript, not in an overlay, so scrolling away keeps it.</div>
+                </div>
+
+                <!-- ══ Latest pill ══ -->
+                <div class="psec"><h2>Latest pill</h2><small>.latest · 36 dp</small></div>
+                <div class="pbody">
+                  <div class="pbox" style="height:92px">
+                    <div class="t-caption t-quaternary" style="padding:10px 12px">…12 — Twelve</div>
+                    <button class="latest" style="--composer-h:12px"><i class="ti ti-arrow-down"></i>Latest · 3</button>
+                  </div>
+                  <div class="plabel">.latest — absolute, centred, 12 dp above the composer (--composer-h). Field: the count is what makes returning worth deciding; a bare “Latest” does not.</div>
+                </div>
+
+                <!-- ══ Composer ══ -->
+                <div class="psec"><h2>Composer</h2><small>.composer · input min 44, controls 48</small></div>
+                <div class="pbody pbody--bleed">
+                  <div class="composer">
+                    <div class="composer__attach">
+                      <span class="attach-chip"><i class="ti ti-photo"></i>screenshot.png · 1.1 kB<button class="attach-chip__x" aria-label="Remove screenshot.png"><i class="ti ti-x"></i></button></span>
+                    </div>
+                    <div class="composer__input is-placeholder">Ask anything…  /commands</div>
+                    <div class="composer__controls">
+                      <button class="composer__btn" aria-label="Add context"><i class="ti ti-plus"></i></button>
+                      <button class="chip chip--hit">mimo-v2.5<i class="ti ti-chevron-down"></i></button>
+                      <button class="chip chip--hit">Medium<i class="ti ti-chevron-down"></i></button>
+                      <button class="composer__btn" aria-label="Record voice. Hold 2.5 s to auto-send"><i class="ti ti-microphone"></i></button>
+                      <button class="composer__send is-idle" aria-label="Send" disabled><i class="ti ti-arrow-up"></i></button>
+                    </div>
+                  </div>
+                  <div class="pbody" style="padding-top:8px">
+                    <div class="plabel">.composer &gt; __attach (.attach-chip, .attach-chip__x) / __input (.is-placeholder, .is-focused) / __controls (.composer__btn 48, .chip--hit, .composer__send 48 circle: .is-idle 30 %, .is-stop destructive).</div>
+                    <div class="plabel">Field: the placeholder advertises the slash palette — otherwise invisible on a phone.</div>
+                  </div>
+                </div>
+
+                <div style="height:24px"></div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="prim:sheet">All primitives</button>
+      </nav>
+    </div>
+  </body>
+</html>

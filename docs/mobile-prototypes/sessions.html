@@ -1,0 +1,427 @@
+<!doctype html>
+<!--
+  Screen:       Session list — app/(main)/sessions/index.tsx, plus the M10 drawer
+  Adapts:       docs/desktop-prototypes/b-panels/sessions-sidebar.html (recents · search · empty,
+                row anatomy, date dividers, pinned group, the sidebar's nav rows),
+                docs/desktop-prototypes/a-main/settings.html (the drawer's Settings entry),
+                docs/DESKTOP-SCREENS.md §A (the nav order the drawer replays)
+  Rules:        M14 "Adaptation rules" — 237 px sessions sidebar → the M10 drawer with the SAME nav
+                rows in the SAME order and the same Tabler icons, 48 dp tall, the session list its
+                own screen; the SESSIONS / BOTS zone strip → the Bots · Sessions · Tasks tab row
+                (D16); 34 px titlebar → 56 dp ScreenHeader (menu, title, ≤2 actions); 26 px row
+                shell → 72 dp session row with the desktop's lead cell / label / meta anatomy;
+                right-click context menu → long-press bottom-sheet action list, same items in the
+                same order, destructive last and red; hover-revealed kebab and star → always
+                visible; date dividers keep the desktop's uppercase style at the caption role;
+                radius family D15.1b (control 3 / icon 4 / card 5 / sheet 8); type roles Appendix C;
+                touch ≥ 48 dp with hitSlop counted.
+  Field:        relative age on every row ("4m"), the way theirs reads
+  Field:        row preview line under the title — theirs shows `Profile · first-message preview`
+  Field:        real tabs that switch in place (theirs push a screen and swap the strip for
+                "Back to Bots" — §5 "Tabs that are really a stack")
+  Field:        large-ish identity in the header with a connection line under it (theirs: green dot
+                + host), here as the 56 dp header subtitle so the rule about ≤2 actions still holds
+  Field (ours): search, pin and per-row model — §6 records all three as missing in theirs
+  Field (ours): "+ New session" in the header — theirs has no way to start a conversation at all
+  Field (ours): 48 dp targets; their row controls are 26–32 dp (fails M13 criterion 6)
+  Views:        #sessions=list | search | empty | loading | drawer | row-menu
+  Measurements: phone 412×915 dp · header 56 · tab row 48 (indicator 2, inset 12) · search field 48
+                in an 8/16 dp well · session row min 72 (title 22 · preview 20 · meta 16) · lead
+                cell 14 with an 8 dp status dot · star 48×48 hit box (visual 20) · group label 20/16/8
+                · drawer 300 wide, rows 48 with a 2 dp gap, head 20/16/12, foot 12/16 over a 1 px rule
+                · scrim = the shared --scrim (22%) · sheet radius 8, handle 32×4, items 48 · skeletons 72
+  Behaviour:    Tap resumes the session; long-press (500 ms) opens the action sheet — the desktop's
+                right-click menu, with Delete last and red; the star pins without opening the row
+                (desktop Shift-click). Pinned rows sort first under their own group label, then date
+                dividers in the desktop's order. Search runs FTS on the backend, so results include
+                sessions outside the loaded page; results replace every section and matches are
+                marked. The tab row swipes between Bots · Sessions · Tasks and switches in place.
+                The drawer opens from the header's menu button or an edge swipe, over a scrim; its
+                rows are the desktop sidebar's nav in the desktop's order, active row marked. Pull
+                to refresh re-lists. Reduced motion honoured (AccessibilityInfo.isReduceMotionEnabled).
+  Mobile:       Sessions are at parity (list with search, pin, unread, new, delete, rename — M07,
+                docs/PARITY.md). Thinner: no inbox-card density, no worktree lanes and no profile /
+                fleet rail (local git and multi-pane are machine-bound).
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sessions · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only. The shared CSS has no FTS-match mark; the desktop's
+         `.fts-hit` (sessions-sidebar.html l.181) is weight + colour, which is invisible on a
+         mobile row whose title is already primary/500, so the mobile mark adds an accent tint. */
+      .fts-hit { border-radius: var(--radius-control); background: color-mix(in srgb, var(--dt-primary) 16%, transparent); color: var(--dt-primary); font-weight: 600; }
+      /* Lead cell: the desktop row's size-3.5 (14px) status column, centred on the title line. */
+      .s-row__lead { display: grid; place-items: center; width: 14px; height: 22px; flex-shrink: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <section data-views="sessions" data-default="list" class="grow col" style="min-height:0">
+
+            <!-- ══ list: pinned group, date dividers, one row per session ══ -->
+            <div data-view="list" class="grow col" style="min-height:0">
+              <!-- ScreenHeader: menu · title/subtitle · 2 actions (desktop cluster order) -->
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation" data-show="sessions:drawer"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <!-- Field: the connection line under the title -->
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--ok"></span>gateway.example.org</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+
+              <!-- Field: real tabs, switched in place (D16) -->
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots<span class="tab__count">3</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions<span class="tab__count">9</span></button>
+                <button class="tab" role="tab">Tasks<span class="tab__count">3</span></button>
+              </div>
+
+              <div style="padding:8px var(--gutter)">
+                <div class="search"><i class="ti ti-search"></i>Search sessions…</div>
+              </div>
+
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:8px"><i class="ti ti-pin"></i> Pinned</div>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Release checklist for v0.9</span>
+                    <span class="s-row__preview t-truncate">Cut the tag once the emulator run is green.</span>
+                    <span class="s-row__meta">2d · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star is-on" role="button" aria-label="Unpin Release checklist for v0.9"><i class="ti ti-star"></i></span>
+                </button>
+
+                <div class="section-label t-upper">Earlier today</div>
+                <button class="s-row is-open" data-show="sessions:row-menu">
+                  <span class="s-row__lead"><span class="dot dot--busy"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Refactor gateway auth handshake</span>
+                    <span class="s-row__preview t-truncate">Revoked tokens now stop the reconnect loop on the first auth_required event.</span>
+                    <span class="s-row__meta">now · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Refactor gateway auth handshake"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot dot--warn"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Rotate staging API keys</span>
+                    <span class="s-row__preview t-truncate">Waiting for you — approve the key rotation?</span>
+                    <span class="s-row__meta">4m · deepseek-v4-flash</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Rotate staging API keys"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot dot--ok"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Why is the e2e suite flaky on Windows?</span>
+                    <span class="s-row__preview t-truncate">Three of the four failures share the same temp path.</span>
+                    <span class="s-row__meta">12m · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Why is the e2e suite flaky on Windows?"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Draft README for the Android client</span>
+                    <span class="s-row__preview t-truncate">Added the connect section and the parity table.</span>
+                    <span class="s-row__meta">1h · kimi-k3</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Draft README for the Android client"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Summarize inbox every morning</span>
+                    <span class="s-row__preview t-truncate">Digest sent · 14 threads, 3 need a reply.</span>
+                    <span class="s-row__meta">3h · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Summarize inbox every morning"><i class="ti ti-star"></i></span>
+                </button>
+
+                <div class="section-label t-upper">Yesterday</div>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Port nous theme tokens to mobile</span>
+                    <span class="s-row__preview t-truncate">The skin chain lands unchanged; only type and radius differ.</span>
+                    <span class="s-row__meta">1d · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Port nous theme tokens to mobile"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Benchmark streaming throttle</span>
+                    <span class="s-row__preview t-truncate">60 fps holds at 40 tok/s with the 50 ms batch.</span>
+                    <span class="s-row__meta">1d · deepseek-v4-flash</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Benchmark streaming throttle"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot dot--bad"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">SQLite FTS for session search</span>
+                    <span class="s-row__preview t-truncate">Turn failed — the migration lock was still held.</span>
+                    <span class="s-row__meta">1d · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin SQLite FTS for session search"><i class="ti ti-star"></i></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ══ search: FTS results replace every section, matches marked ══ -->
+            <div data-view="search" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation" data-show="sessions:drawer"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--ok"></span>gateway.example.org</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots<span class="tab__count">3</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions<span class="tab__count">9</span></button>
+                <button class="tab" role="tab">Tasks<span class="tab__count">3</span></button>
+              </div>
+              <div style="padding:8px var(--gutter)">
+                <div class="search" style="color:var(--ui-text-primary);border-color:var(--dt-composer-ring)">
+                  <i class="ti ti-search"></i>gateway
+                  <!-- 48 dp clear target inside the 48 dp field (the field's 12 dp inset is eaten) -->
+                  <button class="header__btn ml-auto" aria-label="Clear search" style="margin-right:-12px;font-size:18px" data-show="sessions:list"><i class="ti ti-x"></i></button>
+                </div>
+              </div>
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:8px">Results · 4</div>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot dot--busy"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Refactor <span class="fts-hit">gateway</span> auth handshake</span>
+                    <span class="s-row__preview t-truncate">Revoked tokens now stop the reconnect loop on the first auth_required event.</span>
+                    <span class="s-row__meta">now · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Refactor gateway auth handshake"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate"><span class="fts-hit">Gateway</span> connecting overlay polish</span>
+                    <span class="s-row__preview t-truncate">Same copy as desktop; the banner keeps the retry action.</span>
+                    <span class="s-row__meta">3d · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Gateway connecting overlay polish"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Summarize what changed in the <span class="fts-hit">gateway</span></span>
+                    <span class="s-row__preview t-truncate">Session resume got lazier; the bot relay learned retries.</span>
+                    <span class="s-row__meta">3w · deepseek-v4-flash</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Summarize what changed in the gateway"><i class="ti ti-star"></i></span>
+                </button>
+                <!-- FTS matches the body too, so a row can hit with no mark in its title -->
+                <button class="s-row">
+                  <span class="s-row__lead"><span class="dot"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">SSH remote backend setup</span>
+                    <span class="s-row__preview t-truncate">…tunnelled the <span class="fts-hit">gateway</span> to 127.0.0.1 on the host, not the phone.</span>
+                    <span class="s-row__meta">6d · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin SSH remote backend setup"><i class="ti ti-star"></i></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ══ empty: no sessions on this gateway (SidebarBlankState) ══ -->
+            <div data-view="empty" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation" data-show="sessions:drawer"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--ok"></span>gateway.example.org</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots<span class="tab__count">3</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions</button>
+                <button class="tab" role="tab">Tasks<span class="tab__count">3</span></button>
+              </div>
+              <div class="scroll">
+                <div class="empty" style="height:100%;align-content:center">
+                  <i class="ti ti-messages" style="font-size:28px;color:var(--ui-text-quaternary)"></i>
+                  <div class="t-body-sm t-tertiary">No sessions yet</div>
+                  <!-- Ours starts a conversation from here; theirs cannot start one at all (§6) -->
+                  <div class="t-caption t-quaternary" style="max-width:260px">Sessions you start here live on the host and keep running while the phone sleeps.</div>
+                  <button class="btn btn--primary" style="margin-top:10px"><i class="ti ti-edit"></i>New session</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ loading: first list for this gateway (skeletons) ══ -->
+            <div data-view="loading" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation" data-show="sessions:drawer"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--busy"></span>Loading…</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots</button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions</button>
+                <button class="tab" role="tab">Tasks</button>
+              </div>
+              <div style="padding:8px var(--gutter)">
+                <div class="search"><i class="ti ti-search"></i>Search sessions…</div>
+              </div>
+              <div class="scroll" aria-busy="true" aria-label="Loading sessions">
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:72%"></span><span class="skeleton" style="height:12px;width:92%"></span><span class="skeleton" style="height:10px;width:38%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:58%"></span><span class="skeleton" style="height:12px;width:84%"></span><span class="skeleton" style="height:10px;width:44%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:80%"></span><span class="skeleton" style="height:12px;width:66%"></span><span class="skeleton" style="height:10px;width:34%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:64%"></span><span class="skeleton" style="height:12px;width:90%"></span><span class="skeleton" style="height:10px;width:40%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:74%"></span><span class="skeleton" style="height:12px;width:70%"></span><span class="skeleton" style="height:10px;width:36%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:52%"></span><span class="skeleton" style="height:12px;width:88%"></span><span class="skeleton" style="height:10px;width:42%"></span></span></div>
+                <div class="s-row"><span class="s-row__lead"><span class="skeleton" style="width:8px;height:8px;border-radius:999px"></span></span><span class="col grow gap-2" style="padding-top:3px"><span class="skeleton" style="height:14px;width:68%"></span><span class="skeleton" style="height:12px;width:76%"></span><span class="skeleton" style="height:10px;width:32%"></span></span></div>
+              </div>
+            </div>
+
+            <!-- ══ drawer: the desktop sidebar's nav, in the desktop's order, over a scrim ══ -->
+            <div data-view="drawer" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn is-active" aria-label="Close navigation" data-show="sessions:list"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--ok"></span>gateway.example.org</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots<span class="tab__count">3</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions<span class="tab__count">9</span></button>
+                <button class="tab" role="tab">Tasks<span class="tab__count">3</span></button>
+              </div>
+              <div class="scroll">
+                <button class="s-row"><span class="s-row__lead"><span class="dot dot--busy"></span></span><span class="col grow"><span class="s-row__title t-truncate">Refactor gateway auth handshake</span><span class="s-row__preview t-truncate">Revoked tokens now stop the reconnect loop.</span><span class="s-row__meta">now · mimo-v2.5</span></span></button>
+                <button class="s-row"><span class="s-row__lead"><span class="dot dot--warn"></span></span><span class="col grow"><span class="s-row__title t-truncate">Rotate staging API keys</span><span class="s-row__preview t-truncate">Waiting for you — approve the key rotation?</span><span class="s-row__meta">4m · deepseek-v4-flash</span></span></button>
+                <button class="s-row"><span class="s-row__lead"><span class="dot dot--ok"></span></span><span class="col grow"><span class="s-row__title t-truncate">Why is the e2e suite flaky on Windows?</span><span class="s-row__preview t-truncate">Three of the four failures share a temp path.</span><span class="s-row__meta">12m · mimo-v2.5</span></span></button>
+              </div>
+
+              <div class="scrim" data-show="sessions:list"></div>
+              <nav class="drawer" aria-label="Navigation">
+                <div class="drawer__head">
+                  <div class="t-title">Hermes</div>
+                  <div class="t-caption t-tertiary">default profile</div>
+                </div>
+                <div class="drawer__nav">
+                  <!-- Same rows, same order, same Tabler icons as the desktop sidebar / DESKTOP-SCREENS §A -->
+                  <button class="drawer-item"><i class="ti ti-robot"></i>Bots<span class="t-caption t-quaternary ml-auto">3</span></button>
+                  <button class="drawer-item is-active"><i class="ti ti-messages"></i>Sessions<span class="t-caption t-quaternary ml-auto">9</span></button>
+                  <button class="drawer-item"><i class="ti ti-checklist"></i>Tasks<span class="t-caption t-quaternary ml-auto">3</span></button>
+                  <button class="drawer-item"><i class="ti ti-puzzle"></i>Capabilities</button>
+                  <button class="drawer-item"><i class="ti ti-message-circle"></i>Messaging</button>
+                  <button class="drawer-item"><i class="ti ti-photo"></i>Artifacts</button>
+                  <button class="drawer-item"><i class="ti ti-clock"></i>Scheduled jobs</button>
+                  <button class="drawer-item"><i class="ti ti-hierarchy-2"></i>Agents</button>
+                  <button class="drawer-item"><i class="ti ti-webhook"></i>Webhooks</button>
+                  <button class="drawer-item"><i class="ti ti-dashboard"></i>Command center</button>
+                  <button class="drawer-item"><i class="ti ti-settings"></i>Settings</button>
+                </div>
+                <!-- The desktop's status-bar connection switcher, moved to the drawer foot -->
+                <button class="drawer__foot row gap-2" style="border:0;background:transparent;text-align:left;width:100%;min-height:var(--touch-min);cursor:pointer">
+                  <span class="dot dot--ok"></span>
+                  <span class="col grow" style="min-width:0">
+                    <span class="t-body-sm t-primary t-truncate">gateway.example.org</span>
+                    <span class="t-caption t-tertiary">Connected · Password · primary</span>
+                  </span>
+                  <span class="list-row__chev">›</span>
+                </button>
+              </nav>
+            </div>
+
+            <!-- ══ row-menu: long-press → the desktop's context menu as a sheet ══ -->
+            <div data-view="row-menu" class="grow col" style="min-height:0">
+              <header class="header">
+                <button class="header__btn" aria-label="Open navigation" data-show="sessions:drawer"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--ok"></span>gateway.example.org</div>
+                </div>
+                <button class="header__btn" aria-label="New session"><i class="ti ti-edit"></i></button>
+                <button class="header__btn" aria-label="Filters"><i class="ti ti-filter"></i></button>
+              </header>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab">Bots<span class="tab__count">3</span></button>
+                <button class="tab is-active" role="tab" aria-selected="true">Sessions<span class="tab__count">9</span></button>
+                <button class="tab" role="tab">Tasks<span class="tab__count">3</span></button>
+              </div>
+              <div class="scroll">
+                <div class="section-label t-upper" style="padding-top:8px">Earlier today</div>
+                <button class="s-row is-open">
+                  <span class="s-row__lead"><span class="dot dot--busy"></span></span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Refactor gateway auth handshake</span>
+                    <span class="s-row__preview t-truncate">Revoked tokens now stop the reconnect loop on the first auth_required event.</span>
+                    <span class="s-row__meta">now · mimo-v2.5</span>
+                  </span>
+                  <span class="s-row__star" role="button" aria-label="Pin Refactor gateway auth handshake"><i class="ti ti-star"></i></span>
+                </button>
+                <button class="s-row"><span class="s-row__lead"><span class="dot dot--warn"></span></span><span class="col grow"><span class="s-row__title t-truncate">Rotate staging API keys</span><span class="s-row__preview t-truncate">Waiting for you — approve the key rotation?</span><span class="s-row__meta">4m · deepseek-v4-flash</span></span><span class="s-row__star"><i class="ti ti-star"></i></span></button>
+                <button class="s-row"><span class="s-row__lead"><span class="dot dot--ok"></span></span><span class="col grow"><span class="s-row__title t-truncate">Why is the e2e suite flaky on Windows?</span><span class="s-row__preview t-truncate">Three of the four failures share a temp path.</span><span class="s-row__meta">12m · mimo-v2.5</span></span><span class="s-row__star"><i class="ti ti-star"></i></span></button>
+              </div>
+
+              <div class="scrim" data-show="sessions:list"></div>
+              <div class="sheet" role="menu" aria-label="Session actions">
+                <div class="sheet__handle"></div>
+                <div class="sheet__head">
+                  <button class="header__btn" aria-label="Close" data-show="sessions:list"><i class="ti ti-x"></i></button>
+                  <span class="sheet__title t-truncate">Refactor gateway auth handshake</span>
+                  <span style="width:48px"></span>
+                </div>
+                <div class="sheet__body" style="padding-left:0;padding-right:0">
+                  <button class="sheet-item"><i class="ti ti-arrow-right"></i>Open</button>
+                  <button class="sheet-item"><i class="ti ti-pin"></i>Pin</button>
+                  <button class="sheet-item"><i class="ti ti-pencil"></i>Rename</button>
+                  <button class="sheet-item"><i class="ti ti-archive"></i>Archive</button>
+                  <!-- destructive last and red (M14: confirm dialogs and menus) -->
+                  <button class="sheet-item is-danger"><i class="ti ti-trash"></i>Delete</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="sessions:list">List</button>
+        <button class="btn" data-show="sessions:search">Search</button>
+        <button class="btn" data-show="sessions:empty">Empty</button>
+        <button class="btn" data-show="sessions:loading">Loading</button>
+        <button class="btn" data-show="sessions:drawer">Drawer</button>
+        <button class="btn" data-show="sessions:row-menu">Row menu</button>
+      </nav>
+    </div>
+  </body>
+</html>

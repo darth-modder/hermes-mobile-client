@@ -1,0 +1,550 @@
+<!doctype html>
+<!--
+  Screen:       Connect + pairing — app/connect/* (index · [id] · scan), M15 group D
+  Adapts:       docs/desktop-prototypes/e-overlays/onboarding.html (the remote form: fields, order,
+                labels, "connect to an existing gateway" framing),
+                docs/desktop-prototypes/d-windows/login-window.html (the sign-in step, minus the
+                separate BrowserWindow — mobile signs in in place / in a Custom Tab),
+                docs/desktop-prototypes/g-elements/primitives.html (Input · field label/hint/error ·
+                Button · Badge · Banner), DESKTOP-DESIGN.md §8 for those specs
+  Rules:        M14 "Adaptation rules" — the desktop's 45 rem remote-form card becomes a full-width
+                screen with 16 dp gutters; every step of the desktop overlay becomes its own stack
+                screen in the same order; 34 px titlebar → 56 dp ScreenHeader; dialogs → bottom
+                sheets; radius family D15.1b (control 3 / icon 4 / card 5 / sheet 8); type roles
+                Appendix C only; touch targets ≥48 dp; nothing hover-only.
+  Field:        test-gateway-before-sign-in with progressive disclosure — the probe reports version,
+                whether auth is required and which method, and ONLY THEN are the credential fields
+                rendered, so a password cannot be typed at an unreachable host (#url → #tested)
+  Field:        the wrong-address guard stated with its reason — "127.0.0.1 or localhost point back
+                at the phone itself, not at your computer"; our old form placeholdered
+                http://127.0.0.1:9119 and no longer does (#url placeholder, #rejected)
+  Field:        "Copy setup checklist" on the pairing screen, plus the linked connection guide —
+                turns a multi-machine setup into something pasteable on the host (#steps)
+  Field:        a banner whose primary action actually recovers the stated cause — Retry for
+                unreachable, Sign in again for a 401 (#banner-unreachable, #banner-401). Their
+                banner offered only "Try again", which cannot fix an expired refresh token.
+  Field (ours): a session-token path. Their client has username + password only, so a loopback/token
+                gateway — the first row of our README auth matrix — has no way in. We keep #token.
+  Views:        #connect=start | steps | url | tested | rejected | signing | failed | token
+                | banner-unreachable | banner-401
+  Measurements: phone 412×915 dp · header 56 · gutters 16 · input min 48, pad 12×14, radius control(3)
+                · buttons 48, block width · step icon tile 36 circle · card radius 5, pad 12
+                · probe grid labels 11 upper / values 14 · banner pad 12, margin 8×16, radius 5
+                · session rows 72 · field label 11 upper, hint + error 12/16
+  Behaviour:    "Test gateway" is the only enabled control on #url; the username, password and Sign in
+                controls do not exist in the tree until the probe answers (#tested). The guard runs on
+                every keystroke: on 127.0.0.1 / localhost the field turns destructive, the error states
+                the reason, and Test is disabled — there is nothing to test. On the Tailscale path
+                10.0.2.2 is rejected the same way (M15 exit criterion); on the "Enter a URL" path it is
+                allowed, because on an emulator it IS the computer. Sign in keeps both fields on
+                failure so one character can be fixed. The password is exchanged for revocable tokens
+                in Android's keystore and is never stored. The connection banner is one persistent
+                state (never a toast), it names the reason from the M04 ladder, and its primary action
+                is the recovering one; "Sync now" lives as the secondary on the unreachable state.
+                Copy setup checklist writes the three host commands to the clipboard.
+  Mobile:       Connect is a mobile-only flow: the desktop reaches a gateway from its own settings and
+                has no pairing story. Parity is recorded in docs/PARITY.md; the host-side recipe this
+                screen points at is docs/CONNECTING.md.
+-->
+<html lang="en" data-proto-root="./">
+  <head>
+    <meta charset="utf-8" />
+    <title>Connect · hermes-android mobile prototype</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.44.0/dist/tabler-icons.min.css" />
+    <link rel="stylesheet" href="assets/tokens.css" />
+    <link rel="stylesheet" href="assets/components.css" />
+    <link rel="stylesheet" href="assets/shell.css" />
+    <script src="assets/proto.js"></script>
+    <style>
+      /* Page-local, tokens only: inline code inside body copy. components.css styles `code` only
+         inside .msg-ai__body; this screen needs the same treatment for addresses and commands. */
+      .phone code { font-family: var(--font-mono); font-size: 0.92em; white-space: nowrap; padding: 1px 5px; border-radius: var(--radius-control); background: var(--ui-inline-code-background); color: var(--ui-inline-code-foreground); }
+    </style>
+  </head>
+  <body>
+    <div class="proto-page">
+      <div class="stage">
+        <div class="phone">
+          <div class="statusbar-os"><span>9:41</span><span class="row gap-1"><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></span></div>
+
+          <!-- Each view carries its own ScreenHeader: these are separate stack screens under
+               app/connect/*, not one screen with swapped bodies. -->
+          <section data-views="connect" data-default="start" class="grow col" style="min-height:0">
+
+            <!-- ══ start: first run — what a Hermes host is, and the two ways in ══ -->
+            <div data-view="start" class="grow col" style="min-height:0">
+              <header class="header" style="padding-left:12px">
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Connect to Hermes</div>
+                  <div class="header__sub t-truncate">Nothing on this phone runs the agent</div>
+                </div>
+                <button class="header__btn" aria-label="Help"><i class="ti ti-help-circle"></i></button>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="col gap-2" style="align-items:center;padding:8px 0 4px;text-align:center">
+                    <span class="avatar avatar--lg" style="background:color-mix(in srgb, var(--dt-primary) 18%, transparent);color:var(--dt-primary)"><i class="ti ti-server-2" style="font-size:28px"></i></span>
+                    <div class="t-title">Your Hermes host</div>
+                    <div class="t-body-sm t-secondary">Hermes runs on your computer. It owns the models, credentials, tools, memory, skills and approvals — this phone is the control surface.</div>
+                  </div>
+
+                  <!-- Primary path: the recommended one carries the badge, the reason and the button -->
+                  <div class="card col gap-2">
+                    <div class="row gap-2">
+                      <i class="ti ti-shield-lock t-accent" style="font-size:20px"></i>
+                      <span class="t-body t-semibold">Pair over Tailscale</span>
+                      <span class="badge ml-auto">Recommended</span>
+                    </div>
+                    <div class="t-body-sm t-secondary">The phone joins the same private tailnet as your computer, so port 9119 never faces the public internet.</div>
+                    <button class="btn btn--primary btn--block" data-show="connect:steps">Pair over Tailscale</button>
+                  </div>
+
+                  <!-- Secondary path: same destination, no tailnet -->
+                  <div class="card col gap-2">
+                    <div class="row gap-2">
+                      <i class="ti ti-link" style="font-size:20px;color:var(--ui-text-secondary)"></i>
+                      <span class="t-body t-semibold">Enter a URL</span>
+                    </div>
+                    <div class="t-body-sm t-secondary">You already have a reachable, authenticated gateway — a LAN address, a reverse proxy, or an emulator host.</div>
+                    <button class="btn btn--outline btn--block" data-show="connect:url">Enter a URL</button>
+                  </div>
+
+                  <button class="btn btn--ghost btn--block"><i class="ti ti-book"></i>Gateway connection guide</button>
+
+                  <div class="t-caption t-quaternary" style="text-align:center;padding:4px 8px 8px">The host owns models, credentials, tools, memory, skills and approvals. This client is the control surface.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ steps: the three pairing steps + Copy setup checklist ══ -->
+            <div data-view="steps" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:start"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Pair a phone</div>
+                  <div class="header__sub t-truncate">Three steps, two machines</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+
+                  <div class="card row gap-3" style="align-items:flex-start">
+                    <span class="center shrink-0" style="width:36px;height:36px;border-radius:999px;background:var(--ui-bg-tertiary)"><i class="ti ti-network" style="font-size:18px"></i></span>
+                    <span class="col grow">
+                      <span class="t-body t-medium">Join the same Tailnet</span>
+                      <span class="t-caption t-tertiary">Install Tailscale here and on your computer, then sign both into the same tailnet.</span>
+                    </span>
+                  </div>
+
+                  <div class="card row gap-3" style="align-items:flex-start">
+                    <span class="center shrink-0" style="width:36px;height:36px;border-radius:999px;background:var(--ui-bg-tertiary)"><i class="ti ti-server-2" style="font-size:18px"></i></span>
+                    <span class="col grow">
+                      <span class="t-body t-medium">Run a reachable gateway</span>
+                      <span class="t-caption t-tertiary">On the computer, bind <code>hermes serve</code> to the tailnet address so the auth gate engages.</span>
+                    </span>
+                  </div>
+
+                  <div class="card row gap-3" style="align-items:flex-start">
+                    <span class="center shrink-0" style="width:36px;height:36px;border-radius:999px;background:var(--ui-bg-tertiary)"><i class="ti ti-lock-open" style="font-size:18px"></i></span>
+                    <span class="col grow">
+                      <span class="t-body t-medium">Authenticate in the app</span>
+                      <span class="t-caption t-tertiary">Enter the tailnet URL, test it, then sign in. The password is exchanged for revocable tokens.</span>
+                    </span>
+                  </div>
+
+                  <!-- Field: the checklist is the whole point — it is pasteable on the host -->
+                  <div class="col gap-2">
+                    <div class="prompt-card__cmd">tailscale up
+hermes serve --host $(tailscale ip -4) --port 9119
+hermes auth add password --user tester</div>
+                    <button class="btn btn--secondary btn--block"><i class="ti ti-clipboard"></i>Copy setup checklist</button>
+                    <div class="field__hint">Copies the three commands, in order, for the computer's terminal.</div>
+                  </div>
+
+                  <button class="btn btn--ghost btn--block"><i class="ti ti-book"></i>Gateway connection guide</button>
+
+                  <hr class="hair" />
+                  <button class="btn btn--primary btn--block" data-show="connect:url">Next: enter the gateway URL</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ url: the field, the guard, and Test gateway — no credentials yet ══ -->
+            <div data-view="url" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:steps"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Gateway URL</div>
+                  <div class="header__sub t-truncate">Step 3 of 3</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="field">
+                    <label class="field__label" for="u-url">Gateway URL</label>
+                    <!-- Field: the placeholder is tailnet-shaped. It used to be http://127.0.0.1:9119. -->
+                    <input class="input is-focused" id="u-url" type="url" inputmode="url" placeholder="https://your-pc.tailnet.ts.net:9119" readonly />
+                    <!-- Field: the guard states the REASON, not just the rule -->
+                    <div class="field__hint">Never enter <code>127.0.0.1</code>, <code>localhost</code> or <code>10.0.2.2</code> on your phone — those point back at the phone itself, not at your computer.</div>
+                  </div>
+
+                  <button class="btn btn--primary btn--block" data-show="connect:tested">Test gateway</button>
+
+                  <div class="t-caption t-tertiary">Nothing is sent anywhere yet. Sign-in appears only after the gateway answers.</div>
+
+                  <hr class="hair" />
+
+                  <div class="card col gap-1">
+                    <div class="t-body-sm t-medium">On an emulator</div>
+                    <div class="t-caption t-tertiary">This step wants a tailnet address, and rejects <code>10.0.2.2</code> like the other loopback aliases. For a dev build on an emulator, use <em>Enter a URL</em> from the first screen, where <code>http://10.0.2.2:9126</code> reaches the machine running it. On a real phone it means nothing.</div>
+                  </div>
+
+                  <button class="btn btn--ghost btn--block" data-show="connect:token"><i class="ti ti-key"></i>Use a session token instead</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ tested: the probe answered — progressive disclosure of the credentials ══ -->
+            <div data-view="tested" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:url"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Gateway URL</div>
+                  <div class="header__sub t-truncate">Reachable · sign in</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="field">
+                    <label class="field__label" for="t-url">Gateway URL</label>
+                    <input class="input" id="t-url" type="url" value="http://10.0.2.2:9126" readonly />
+                  </div>
+                  <button class="btn btn--outline btn--block">Test again</button>
+
+                  <!-- The probe result: version, whether auth is required, and which method -->
+                  <div class="card col gap-1">
+                    <div class="row gap-2">
+                      <i class="ti ti-circle-check" style="font-size:20px;color:var(--ui-success)"></i>
+                      <span class="t-body t-semibold">Hermes 0.21.0 is reachable</span>
+                    </div>
+                    <dl class="task-grid" style="margin-top:6px">
+                      <dt>Version</dt><dd>0.21.0</dd>
+                      <dt>Auth</dt><dd>Required</dd>
+                      <dt>Method</dt><dd>Password — gateway account</dd>
+                    </dl>
+                  </div>
+
+                  <hr class="hair" />
+
+                  <!-- ONLY NOW: the credential fields exist -->
+                  <div class="field">
+                    <label class="field__label" for="t-user">Username</label>
+                    <input class="input" id="t-user" value="tester" readonly />
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="t-pass">Password</label>
+                    <input class="input" id="t-pass" type="password" value="scratch-password" readonly />
+                    <div class="field__hint">Exchanged for revocable tokens kept in Android's keystore. The password itself is not saved.</div>
+                  </div>
+
+                  <button class="btn btn--primary btn--block" data-show="connect:signing">Sign in &amp; connect</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ rejected: the guard fires — inline error, Test disabled ══ -->
+            <div data-view="rejected" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:steps"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Gateway URL</div>
+                  <div class="header__sub t-truncate">Step 3 of 3</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="field">
+                    <label class="field__label" for="r-url">Gateway URL</label>
+                    <input class="input is-invalid" id="r-url" type="url" value="http://127.0.0.1:9119" aria-invalid="true" aria-describedby="r-err" readonly />
+                    <!-- The error IS the guard sentence: rule plus reason, in the field, not a toast -->
+                    <div class="field__error" id="r-err">That address is this phone, not your computer. <code>127.0.0.1</code>, <code>localhost</code> and <code>10.0.2.2</code> point back at the phone (or at its emulator host), so there is nothing here to test.</div>
+                  </div>
+
+                  <!-- There is nothing to test, so Test is disabled rather than failing slowly -->
+                  <button class="btn btn--primary btn--block" disabled>Test gateway</button>
+
+                  <div class="card col gap-1">
+                    <div class="t-body-sm t-medium">Use the computer's address</div>
+                    <div class="t-caption t-tertiary">Its tailnet name, for example <code>https://your-pc.tailnet.ts.net:9119</code>.</div>
+                  </div>
+
+                  <button class="btn btn--ghost btn--block" data-show="connect:steps"><i class="ti ti-list-check"></i>Back to the pairing steps</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ signing: busy — everything the request depends on is frozen ══ -->
+            <div data-view="signing" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:tested"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Gateway URL</div>
+                  <div class="header__sub t-truncate">Signing in…</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="field">
+                    <label class="field__label" for="s-url">Gateway URL</label>
+                    <input class="input" id="s-url" type="url" value="http://10.0.2.2:9126" readonly disabled />
+                  </div>
+
+                  <div class="card col gap-1">
+                    <div class="row gap-2">
+                      <i class="ti ti-circle-check" style="font-size:20px;color:var(--ui-success)"></i>
+                      <span class="t-body t-semibold">Hermes 0.21.0 is reachable</span>
+                    </div>
+                    <dl class="task-grid" style="margin-top:6px">
+                      <dt>Version</dt><dd>0.21.0</dd>
+                      <dt>Auth</dt><dd>Required</dd>
+                      <dt>Method</dt><dd>Password — gateway account</dd>
+                    </dl>
+                  </div>
+
+                  <hr class="hair" />
+
+                  <div class="field">
+                    <label class="field__label" for="s-user">Username</label>
+                    <input class="input" id="s-user" value="tester" readonly disabled />
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="s-pass">Password</label>
+                    <input class="input" id="s-pass" type="password" value="scratch-password" readonly disabled />
+                  </div>
+
+                  <!-- the ring is drawn in the button's own foreground, not the primary colour -->
+                  <button class="btn btn--primary btn--block" disabled aria-busy="true"><span class="spinner" style="border-color:color-mix(in srgb, var(--dt-primary-foreground) 32%, transparent);border-top-color:var(--dt-primary-foreground)"></span>Signing in…</button>
+                  <div class="t-caption t-tertiary" style="text-align:center">Exchanging the password for tokens. This does not leave the tailnet.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ failed: the gateway rejected the credentials — fields kept ══ -->
+            <div data-view="failed" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:tested"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Gateway URL</div>
+                  <div class="header__sub t-truncate">Sign-in failed</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="col gap-3" style="padding-bottom:16px">
+                  <!-- The banner carries the server's own words, not a paraphrase -->
+                  <div class="banner">
+                    <i class="ti ti-alert-circle t-danger" style="font-size:20px"></i>
+                    <div class="col grow">
+                      <div class="banner__title">The gateway rejected these credentials</div>
+                      <div class="banner__body">HTTP 401 from <code>http://10.0.2.2:9126</code> — “invalid username or password”. These are the gateway's own credentials, set on the host, not a Hermes Cloud login.</div>
+                    </div>
+                  </div>
+
+                  <div class="pad col gap-3" style="padding-top:0">
+                    <div class="card col gap-1">
+                      <div class="row gap-2">
+                        <i class="ti ti-circle-check" style="font-size:20px;color:var(--ui-success)"></i>
+                        <span class="t-body t-semibold">Hermes 0.21.0 is reachable</span>
+                      </div>
+                      <div class="t-caption t-tertiary">The host is fine. Only the sign-in failed.</div>
+                    </div>
+
+                    <!-- Both fields keep their values: one character usually needs fixing, not both -->
+                    <div class="field">
+                      <label class="field__label" for="f-user">Username</label>
+                      <input class="input" id="f-user" value="tester" readonly />
+                    </div>
+                    <div class="field">
+                      <label class="field__label" for="f-pass">Password</label>
+                      <input class="input is-invalid" id="f-pass" type="password" value="scratch-password" aria-invalid="true" readonly />
+                      <div class="field__error">Check the password set on the host.</div>
+                    </div>
+
+                    <button class="btn btn--primary btn--block" data-show="connect:signing">Sign in &amp; connect</button>
+                    <button class="btn btn--ghost btn--block" data-show="connect:token"><i class="ti ti-key"></i>Use a session token instead</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ token: the loopback/token gateway — the path their client has no field for ══ -->
+            <div data-view="token" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Back" data-show="connect:url"><i class="ti ti-chevron-left"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Session token</div>
+                  <div class="header__sub t-truncate">Ungated gateway</div>
+                </div>
+              </header>
+
+              <div class="scroll">
+                <div class="pad col gap-3">
+                  <div class="field">
+                    <label class="field__label" for="k-url">Gateway URL</label>
+                    <input class="input" id="k-url" type="url" value="http://10.0.2.2:9126" readonly />
+                  </div>
+
+                  <div class="card col gap-1">
+                    <div class="row gap-2">
+                      <i class="ti ti-circle-check" style="font-size:20px;color:var(--ui-success)"></i>
+                      <span class="t-body t-semibold">Hermes 0.21.0 is reachable</span>
+                    </div>
+                    <dl class="task-grid" style="margin-top:6px">
+                      <dt>Version</dt><dd>0.21.0</dd>
+                      <dt>Auth</dt><dd>Not required</dd>
+                      <dt>Method</dt><dd>Session token</dd>
+                    </dl>
+                  </div>
+
+                  <hr class="hair" />
+
+                  <div class="field">
+                    <label class="field__label" for="k-tok">Session token</label>
+                    <input class="input" id="k-tok" style="font-family:var(--font-mono);font-size:var(--type-mono)" placeholder="hd_sess_…" readonly />
+                    <div class="field__hint">From the host: the value of <code>HERMES_DASHBOARD_SESSION_TOKEN</code>, or the token <code>hermes serve</code> printed on start. Stored in Android's keystore.</div>
+                  </div>
+
+                  <button class="btn btn--primary btn--block">Connect</button>
+
+                  <div class="card col gap-1">
+                    <div class="t-body-sm t-medium">A token gateway must stay on loopback</div>
+                    <div class="t-caption t-tertiary">Hermes refuses to bind the dashboard to <code>0.0.0.0</code> with no auth provider registered, so a token host is reached over a tunnel or the tailnet, never over the open port.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ══ banner-unreachable: over the session list — the action that recovers is Retry ══ -->
+            <div data-view="banner-unreachable" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--bad"></span>Hermes unavailable</div>
+                </div>
+                <button class="header__btn" aria-label="Search"><i class="ti ti-search"></i></button>
+              </header>
+
+              <div class="scroll">
+                <!-- One persistent banner, never a toast. Cause from the M04 ladder; the primary
+                     action is the one that fixes THIS cause: redial and re-resume. -->
+                <div class="banner">
+                  <i class="ti ti-plug-connected-x t-danger" style="font-size:20px"></i>
+                  <div class="col grow">
+                    <div class="banner__title">Hermes is unreachable</div>
+                    <div class="banner__body">No answer from <code>10.0.2.2:9126</code> for 40 s. The computer may be asleep, off the tailnet, or <code>hermes serve</code> may have stopped.</div>
+                    <div class="banner__action row gap-2">
+                      <button class="btn btn--primary" style="flex:1">Retry</button>
+                      <button class="btn btn--outline" style="flex:1">Change gateway</button>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="s-row">
+                  <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Gateway auth handshake</span>
+                    <span class="s-row__preview t-truncate">Researcher · Revoked tokens now stop the reconnect loop…</span>
+                    <span class="s-row__meta">mimo-v2.5 · cached</span>
+                  </span>
+                  <span class="s-row__age">4m</span>
+                </button>
+                <button class="s-row">
+                  <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-purple) 30%, transparent)">C</span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Release notes pass</span>
+                    <span class="s-row__preview t-truncate">Coder · Three themes stand out: session resume…</span>
+                    <span class="s-row__meta">deepseek-v4-flash · cached</span>
+                  </span>
+                  <span class="s-row__age">1h</span>
+                </button>
+
+                <div class="t-caption t-quaternary" style="padding:12px var(--gutter)">Cached transcripts stay readable while the host is away. New turns need the connection back.</div>
+              </div>
+            </div>
+
+            <!-- ══ banner-401: the same banner, a different cause — so a different action ══ -->
+            <div data-view="banner-401" class="grow col" style="min-height:0" hidden>
+              <header class="header">
+                <button class="header__btn" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+                <div class="header__titles">
+                  <div class="header__title t-truncate">Sessions</div>
+                  <div class="header__sub t-truncate row gap-1"><span class="dot dot--warn"></span>Signed out</div>
+                </div>
+                <button class="header__btn" aria-label="Search"><i class="ti ti-search"></i></button>
+              </header>
+
+              <div class="scroll">
+                <!-- "Try again" cannot fix an expired refresh token (field notes §5). The primary
+                     action opens sign-in for THIS connection, pre-filled with its URL. -->
+                <div class="banner">
+                  <i class="ti ti-lock-exclamation t-danger" style="font-size:20px"></i>
+                  <div class="col grow">
+                    <div class="banner__title">Sign in again</div>
+                    <div class="banner__body">The gateway rejected the stored session: “Refresh token expired or invalid; start a new sign-in.” Retrying sends the same dead token, so it cannot recover on its own.</div>
+                    <div class="banner__action row gap-2">
+                      <button class="btn btn--primary" style="flex:1" data-show="connect:tested">Sign in again</button>
+                      <button class="btn btn--ghost" style="flex:1">Not now</button>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="s-row">
+                  <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-cyan) 30%, transparent)">R</span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Gateway auth handshake</span>
+                    <span class="s-row__preview t-truncate">Researcher · Revoked tokens now stop the reconnect loop…</span>
+                    <span class="s-row__meta">mimo-v2.5 · cached</span>
+                  </span>
+                  <span class="s-row__age">4m</span>
+                </button>
+                <button class="s-row">
+                  <span class="avatar avatar--sm" style="background:color-mix(in srgb, var(--ui-purple) 30%, transparent)">C</span>
+                  <span class="col grow">
+                    <span class="s-row__title t-truncate">Release notes pass</span>
+                    <span class="s-row__preview t-truncate">Coder · Three themes stand out: session resume…</span>
+                    <span class="s-row__meta">deepseek-v4-flash · cached</span>
+                  </span>
+                  <span class="s-row__age">1h</span>
+                </button>
+
+                <div class="t-caption t-quaternary" style="padding:12px var(--gutter)">The host still holds every message. Signing in again brings the transcripts back in full.</div>
+              </div>
+            </div>
+
+          </section>
+
+          <div class="gesturebar"></div>
+        </div>
+      </div>
+      <nav class="proto-views" aria-label="Views">
+        <button class="btn" data-show="connect:start">Start</button>
+        <button class="btn" data-show="connect:steps">Pairing steps</button>
+        <button class="btn" data-show="connect:url">Gateway URL</button>
+        <button class="btn" data-show="connect:tested">Tested · sign in</button>
+        <button class="btn" data-show="connect:rejected">Guard fires</button>
+        <button class="btn" data-show="connect:signing">Signing in</button>
+        <button class="btn" data-show="connect:failed">Sign-in failed</button>
+        <button class="btn" data-show="connect:token">Session token</button>
+        <button class="btn" data-show="connect:banner-unreachable">Banner · unreachable</button>
+        <button class="btn" data-show="connect:banner-401">Banner · 401</button>
+      </nav>
+    </div>
+  </body>
+</html>
