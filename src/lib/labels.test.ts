@@ -7,14 +7,14 @@
 // @shopify/flash-list breaks vitest's transform — see drawer-rows.ts's
 // header). Recorded as Deviation 6 in M14-screen-layouts.md.
 //
-// Was settings-labels.test.ts, scoped to app/(main)/settings/** only
-// (2026-09-12). Widened to every route file under app/ (excluding app/dev/,
-// same exclusions as route-replicates.test.ts) per the same day's follow-up
-// review: "a passing test scoped to settings with a dozen screens held by
-// hand is the weakest link in this milestone." Ratcheted exactly like
-// route-replicates.test.ts's own PENDING: a file not yet swept goes in
-// PENDING, and comes out the same commit that cleans up its screen. A
-// genuinely mobile-only string (no desktop counterpart) belongs in
+// Was settings-labels.test.ts (scoped to app/(main)/settings/** only), then
+// widened to every route file under app/ (excluding app/dev/) with a
+// PENDING ratchet while the sweep worked through the rest of the app. Every
+// route file passed as of the M14 task-list's completion (`e64fb2c`) —
+// PENDING dropped here per route-replicates.test.ts's own precedent ("once
+// PENDING is empty, drop it... the loop then hard-fails on literally
+// everything"). This criterion is now closed, not open-with-ratchet. A
+// genuinely mobile-only string (no desktop counterpart) still belongs in
 // src/lib/strings.mobile.ts, the one module this test whitelists —
 // importing a value from there makes it an identifier reference, not a
 // literal, so it naturally stops tripping the scan below.
@@ -40,16 +40,6 @@ const APP_ROOT = join(REPO_ROOT, 'app')
 // screen by itself, and these two are pure `<Redirect>` shims with no
 // rendered UI of their own.
 const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
-
-// Not yet swept for labels — remove an entry the same commit that cleans up
-// its screen. The other nine files this test originally seeded (agents,
-// artifacts, channels, command-center, cron, projects, session-list,
-// sessions/[id] (chat), webhooks) turned out to already comply or needed
-// only small fixes, cleared the same day this file was widened. `connect/*`
-// is deliberately left here even though it's mid-sweep elsewhere (a
-// separate, concurrently-running task): pulling it out from under that work
-// would race a file another pass owns right now.
-const PENDING = new Set<string>([])
 
 // A literal that "looks like" a bare identifier/path/style value rather
 // than user-facing prose: module specifiers ('react-native',
@@ -146,25 +136,16 @@ describe('every ported screen uses only vendored or whitelisted labels', () => {
     expect(routeFiles.length).toBeGreaterThan(0)
   })
 
-  it('PENDING names only route files that actually exist', () => {
-    const relFiles = new Set(routeFiles.map(file => relative(APP_ROOT, file).split('\\').join('/')))
+  it.each(routeFiles.map(file => [relative(APP_ROOT, file).split('\\').join('/'), file] as const))(
+    '%s has no retyped label',
+    (_rel, file) => {
+      const source = readFileSync(file, 'utf8')
+      const offenders = extractLiteralCandidates(source, file).filter(literal => !vendoredStrings.has(literal))
 
-    for (const rel of PENDING) {
-      expect(relFiles.has(rel), `PENDING lists "${rel}", which listRouteFiles didn't find`).toBe(true)
+      expect(
+        offenders,
+        `Found ${offenders.length} literal(s) not in the vendored en.ts or src/lib/strings.mobile.ts: ${JSON.stringify(offenders)}`
+      ).toEqual([])
     }
-  })
-
-  it.each(
-    routeFiles
-      .map(file => [relative(APP_ROOT, file).split('\\').join('/'), file] as const)
-      .filter(([rel]) => !PENDING.has(rel))
-  )('%s has no retyped label', (_rel, file) => {
-    const source = readFileSync(file, 'utf8')
-    const offenders = extractLiteralCandidates(source, file).filter(literal => !vendoredStrings.has(literal))
-
-    expect(
-      offenders,
-      `Found ${offenders.length} literal(s) not in the vendored en.ts or src/lib/strings.mobile.ts: ${JSON.stringify(offenders)}`
-    ).toEqual([])
-  })
+  )
 })

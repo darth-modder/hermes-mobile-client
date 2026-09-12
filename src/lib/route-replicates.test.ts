@@ -5,14 +5,14 @@
 // fs/path work), so a new route file is caught the next time this test runs
 // without needing its own entry added anywhere.
 //
-// Ratcheted like M13's hex-colour rule (`f20efaf`, "sweep complete — ratchet
-// the hex-colour rule to error"): the M14 screen sweep lands one screen per
-// commit, so this can't hard-fail on every not-yet-restyled screen without
-// breaking "npm run check green before every handoff" for the whole sweep.
-// PENDING is the sweep's own punch list — remove an entry the same commit
-// that adds its screen's Replicates comment. Once PENDING is empty, drop it
-// and the two tests that reference it; the loop below then hard-fails on
-// literally everything, which is the criterion as written.
+// Was ratcheted like M13's hex-colour rule (`f20efaf`) while the M14 screen
+// sweep landed one screen per commit, via a PENDING punch-list Set and a
+// test asserting PENDING stayed accurate. The sweep finished (M14 task list
+// complete as of `e64fb2c`) and PENDING reached empty — dropped here per
+// this file's own prior instruction ("once PENDING is empty, drop it... the
+// loop then hard-fails on literally everything, which is the criterion as
+// written"). This criterion is now closed, not open-with-ratchet: every
+// route file is checked unconditionally, no exemption list left to shrink.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -31,13 +31,6 @@ const APP_ROOT = join(REPO_ROOT, 'app')
 // comment. Listed explicitly, not sniffed, so a genuinely new screen can't
 // slip through this exclusion by accident.
 const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
-
-// M14's screen sweep, not yet reached (task list order). Remove the line the
-// same commit that restyles that screen and adds its comment. Empty as of
-// the connect/onboarding sweep (M14 task 1) — left as an empty Set rather
-// than dropped, per instruction: emptying PENDING is a separate decision for
-// whoever reviews the sweep as a whole, not something to do quietly here.
-const PENDING = new Set<string>([])
 
 function listRouteFiles(dir: string): string[] {
   const out: string[] = []
@@ -69,32 +62,17 @@ function listRouteFiles(dir: string): string[] {
 
 describe('every ported route has a Replicates: comment', () => {
   const routeFiles = listRouteFiles(APP_ROOT)
-  const routesByRel = new Map(routeFiles.map(file => [relative(APP_ROOT, file).split('\\').join('/'), file]))
 
   it('found at least one route file to check (the walk itself works)', () => {
     expect(routeFiles.length).toBeGreaterThan(0)
   })
 
-  it('PENDING names only route files that actually exist and are not already done', () => {
-    for (const rel of PENDING) {
-      const file = routesByRel.get(rel)
+  it.each(routeFiles.map(file => [relative(APP_ROOT, file).split('\\').join('/'), file] as const))(
+    '%s names its prototype page',
+    (_label, file) => {
+      const content = readFileSync(file, 'utf8')
 
-      expect(file, `PENDING lists "${rel}", which listRouteFiles didn't find`).toBeDefined()
-      expect(
-        readFileSync(file as string, 'utf8'),
-        `"${rel}" already has a Replicates: comment — remove it from PENDING`
-      ).not.toMatch(/Replicates:/)
+      expect(content).toMatch(/Replicates:/)
     }
-  })
-
-  it.each(
-    routeFiles
-      .map(file => relative(APP_ROOT, file).split('\\').join('/'))
-      .filter(rel => !PENDING.has(rel))
-      .map(rel => [rel, routesByRel.get(rel) as string] as const)
-  )('%s names its prototype page', (_label, file) => {
-    const content = readFileSync(file, 'utf8')
-
-    expect(content).toMatch(/Replicates:/)
-  })
+  )
 })
