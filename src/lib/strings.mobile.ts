@@ -86,6 +86,60 @@ export function projectsMoreFoldersSuffix(count: number): string {
 // there's no matching "Delete project?" question anywhere in en.ts).
 export const PROJECTS_DELETE_CONFIRM_TITLE = 'Delete project?'
 
+// agents/index.tsx — the desktop's Agents view (docs/desktop-prototypes/
+// a-main/agents.html) aggregates subagent delegations across every open
+// session from its own `store/subagents`; nothing on mobile fills that
+// role. A session's own delegations already reach this app as chat tool
+// cards (per-session, via src/gateway/session-stream — checked: no
+// cross-session subagent store exists anywhere under src/gateway or
+// src/store), so this screen genuinely has no live feed to show. Per M14's
+// "may not invent new backend API surface" rule (models.tsx/appearance.tsx/
+// safety.tsx already drew this line for their own gaps), it says so rather
+// than showing the vendored t.agents.emptyTitle/emptyDesc "No live
+// subagents" copy — that copy means "checked, found none," which would
+// misrepresent a capability gap as a verified data point when a session
+// elsewhere might have subagents running this app just can't see.
+export const AGENTS_NOT_AVAILABLE =
+  "Live subagent activity isn't available from this app yet — no mobile API aggregates delegation status across sessions the way the desktop's own store does. Progress for a session you have open still streams inline as tool cards in that chat."
+
+// Status legend descriptions for the AGENTS_NOT_AVAILABLE screen — paired in
+// the component with vendored titles (t.agents.running/done/failed) since
+// t.agents has no field text of its own beyond those bare status words.
+// Adapted from docs/desktop-prototypes/a-main/agents.html's own Measurements
+// block (status glyph meanings: braille spinner while running, circle-check
+// when done, alert-circle on failure/interrupt) — the same "copy the
+// prototype's own field text" precedent as CHAT_FIELDS/SAFETY_FIELDS/
+// MEMORY_FIELDS below, since there's no vendored sentence-length
+// description for any of them either.
+export const AGENTS_RUNNING_DESC = 'A child agent is actively working — its latest step streams here.'
+export const AGENTS_DONE_DESC = 'A child agent finished its delegated task.'
+export const AGENTS_FAILED_DESC = 'A child agent stopped on an error or was interrupted.'
+
+// command-center/index.tsx — the desktop's Usage panel (docs/desktop-
+// prototypes/a-main/command-center.html) reads `getUsageAnalytics`
+// (capability-scoped, multi-gateway analytics), which src/api/models.ts's
+// own header already says isn't ported: "desktop's own multi-gateway
+// concept ... not ported — no equivalent surface here." Reusing the
+// vendored t.commandCenter.noUsage/noModelUsage/noSkillActivity/
+// noDailyActivity empty-state copy here would claim "queried, found
+// nothing" when this app never queries at all — same concern as
+// AGENTS_NOT_AVAILABLE above — so this says so instead.
+export const COMMAND_CENTER_USAGE_NOT_AVAILABLE =
+  "Usage analytics aren't available from this app yet — no mobile API reads token, cost, or skill activity the way the desktop's dashboard does. View usage from the Hermes desktop app."
+
+// Field descriptions for the stats/lists the desktop's Usage panel shows —
+// paired in the component with vendored titles (t.commandCenter.
+// statSessions/statApiCalls/statTokens/dailyTokens/topModels/topSkills).
+// Adapted from the prototype's own markup and sectionDescriptions.usage
+// ("Token, cost, and skill activity over time"), same precedent as
+// AGENTS_*_DESC above.
+export const USAGE_SESSIONS_DESC = 'Sessions active in the selected period.'
+export const USAGE_API_CALLS_DESC = 'Model calls made across all sessions.'
+export const USAGE_TOKENS_DESC = 'Total input and output tokens processed.'
+export const USAGE_DAILY_TOKENS_DESC = 'Input vs. output tokens per day over the period.'
+export const USAGE_TOP_MODELS_DESC = 'Models used most, by tokens processed.'
+export const USAGE_TOP_SKILLS_DESC = 'Skills invoked most, by action count.'
+
 // settings/archived-chats.tsx — nearly every string this screen needs
 // (loading/empty/error states, Unarchive, Delete permanently, the message
 // count) already exists under t.settings.sessions (D15.4). The one
