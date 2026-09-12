@@ -7,17 +7,26 @@
 // @shopify/flash-list breaks vitest's transform — see drawer-rows.ts's
 // header). Recorded as Deviation 6 in M14-screen-layouts.md.
 //
-// Ratcheted like the Replicates rule (`f20efaf`'s hex-colour ratchet is the
-// original precedent): scoped to app/(main)/settings/** for now, per the
-// 2026-09-12 review that found this batch's own labels non-compliant.
-// PENDING names settings screens not yet swept; remove an entry the same
-// commit that cleans up its screen. A genuinely mobile-only string (no
-// desktop counterpart) belongs in src/lib/strings.mobile.ts, the one
-// module this test whitelists — importing a value from there makes it an
-// identifier reference, not a literal, so it naturally stops tripping the
-// scan below.
+// Was settings-labels.test.ts, scoped to app/(main)/settings/** only
+// (2026-09-12). Widened to every route file under app/ (excluding app/dev/,
+// same exclusions as route-replicates.test.ts) per the same day's follow-up
+// review: "a passing test scoped to settings with a dozen screens held by
+// hand is the weakest link in this milestone." Ratcheted exactly like
+// route-replicates.test.ts's own PENDING: a file not yet swept goes in
+// PENDING, and comes out the same commit that cleans up its screen. A
+// genuinely mobile-only string (no desktop counterpart) belongs in
+// src/lib/strings.mobile.ts, the one module this test whitelists —
+// importing a value from there makes it an identifier reference, not a
+// literal, so it naturally stops tripping the scan below.
+//
+// Scope note: this walks app/ (route files) only, matching the exit
+// criterion's own "each ported screen" wording. src/components/AppDrawer.tsx
+// is not a route file and isn't scanned here — its row TITLES are covered
+// separately by drawer-rows.test.ts (which checks the pure DRAWER_ROW_META
+// data AppDrawer.tsx renders), but any other literal inside AppDrawer.tsx
+// itself (its "Hermes" heading, for instance) is outside both tests.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { extname, join, relative } from 'node:path'
+import { join, relative } from 'node:path'
 
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -25,14 +34,31 @@ import { describe, expect, it } from 'vitest'
 import { t } from './t'
 
 const REPO_ROOT = join(__dirname, '..', '..')
-const SETTINGS_ROOT = join(REPO_ROOT, 'app', '(main)', 'settings')
+const APP_ROOT = join(REPO_ROOT, 'app')
 
-// Empty: this review's whole point was to bring all ten shipped screens
-// into compliance before any more are added, so nothing gets a pass here.
-// A future settings screen that lands mid-sweep (still being built across
-// more than one commit) can be listed here temporarily, same discipline as
-// route-replicates.test.ts's PENDING.
-const PENDING = new Set<string>([])
+// Same exclusions as route-replicates.test.ts: `_layout.tsx` is never a
+// screen by itself, and these two are pure `<Redirect>` shims with no
+// rendered UI of their own.
+const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
+
+// Not yet swept for labels — remove an entry the same commit that cleans up
+// its screen. `connect/*` is deliberately left here even though it's
+// mid-sweep elsewhere (a separate, concurrently-running task): pulling it
+// out from under that work would race a file another pass owns right now.
+const PENDING = new Set([
+  '(main)/agents/index.tsx',
+  '(main)/artifacts/index.tsx',
+  '(main)/channels/index.tsx',
+  '(main)/command-center/index.tsx',
+  '(main)/cron/index.tsx',
+  '(main)/projects/index.tsx',
+  '(main)/session-list.tsx',
+  '(main)/sessions/[id].tsx',
+  '(main)/webhooks/index.tsx',
+  'connect/[id]/login.tsx',
+  'connect/index.tsx',
+  'connect/scan.tsx'
+])
 
 // A literal that "looks like" a bare identifier/path/style value rather
 // than user-facing prose: module specifiers ('react-native',
@@ -91,47 +117,55 @@ function flattenStrings(value: unknown, out: Set<string>): void {
   }
 }
 
-function listSettingsScreens(dir: string): string[] {
+function listRouteFiles(dir: string): string[] {
   const out: string[] = []
 
   for (const entry of readdirSync(dir)) {
     const abs = join(dir, entry)
 
     if (statSync(abs).isDirectory()) {
-      out.push(...listSettingsScreens(abs))
+      out.push(...listRouteFiles(abs))
 
       continue
     }
 
-    if (extname(entry) === '.tsx') {
-      out.push(abs)
+    if (!entry.endsWith('.tsx') || entry === '_layout.tsx') {
+      continue
     }
+
+    const rel = relative(APP_ROOT, abs).split('\\').join('/')
+
+    if (rel.startsWith('dev/') || NOT_A_SCREEN.has(rel)) {
+      continue
+    }
+
+    out.push(abs)
   }
 
   return out
 }
 
-describe('settings screens use only vendored or whitelisted labels', () => {
-  const screenFiles = listSettingsScreens(SETTINGS_ROOT)
+describe('every ported screen uses only vendored or whitelisted labels', () => {
+  const routeFiles = listRouteFiles(APP_ROOT)
   const vendoredStrings = new Set<string>()
 
   flattenStrings(t, vendoredStrings)
 
-  it('found at least one settings screen to check (the walk itself works)', () => {
-    expect(screenFiles.length).toBeGreaterThan(0)
+  it('found at least one route file to check (the walk itself works)', () => {
+    expect(routeFiles.length).toBeGreaterThan(0)
   })
 
-  it('PENDING names only settings screens that actually exist', () => {
-    const relFiles = new Set(screenFiles.map(file => relative(SETTINGS_ROOT, file).split('\\').join('/')))
+  it('PENDING names only route files that actually exist', () => {
+    const relFiles = new Set(routeFiles.map(file => relative(APP_ROOT, file).split('\\').join('/')))
 
     for (const rel of PENDING) {
-      expect(relFiles.has(rel), `PENDING lists "${rel}", which listSettingsScreens didn't find`).toBe(true)
+      expect(relFiles.has(rel), `PENDING lists "${rel}", which listRouteFiles didn't find`).toBe(true)
     }
   })
 
   it.each(
-    screenFiles
-      .map(file => [relative(SETTINGS_ROOT, file).split('\\').join('/'), file] as const)
+    routeFiles
+      .map(file => [relative(APP_ROOT, file).split('\\').join('/'), file] as const)
       .filter(([rel]) => !PENDING.has(rel))
   )('%s has no retyped label', (_rel, file) => {
     const source = readFileSync(file, 'utf8')
