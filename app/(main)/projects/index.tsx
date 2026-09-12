@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View
 } from 'react-native'
@@ -16,6 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { archiveProject, createProject, deleteProject, listProjects, setActiveProject } from '../../../src/api/projects'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { Button } from '../../../src/components/ui/Button'
+import { Input } from '../../../src/components/ui/Input'
+import { Sheet } from '../../../src/components/ui/Sheet'
 import {
   PROJECTS_DELETE_CONFIRM_TITLE,
   PROJECTS_EMPTY,
@@ -40,6 +42,19 @@ import type { ProjectInfo } from '../../../src/upstream/types/hermes'
 // t.sidebar.row.archive and t.zones.restore. The folder-path placeholder
 // and the delete-confirm title stay mobile-only strings (strings.mobile.ts)
 // — see its header comment for why no vendored form fits either.
+//
+// Also replicates docs/desktop-prototypes/f-dialogs/project.html's create
+// dialog, now a Sheet (M14 task 5) in that prototype's own field order
+// (Name, then Folders). Two of that dialog's pieces are left out, not
+// silently: the folder add/remove list with a native directory picker (that
+// prototype's own Mobile line: "the native folder picker is machine-bound
+// (local filesystem is absent by design)" — this screen already only ever
+// took one server-side path, per this file's own pre-existing header) and
+// the "Idea" textarea with its sparkle-generate button and template pills
+// (checked src/api/projects.ts and upstream/types/hermes.ts directly: no
+// `idea`/IDEA.md field or RPC exists anywhere in the ported surface — the
+// generation itself is new backend-calling functionality no mobile API
+// backs, not a layout gap).
 /**
  * Projects screen (M10). `projects.*` RPCs only — never the local
  * filesystem (the task line's own wording): a project's folder is a path on
@@ -55,6 +70,7 @@ export default function ProjectsScreen() {
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
 
+  const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [folder, setFolder] = useState('')
 
@@ -72,6 +88,7 @@ export default function ProjectsScreen() {
         profile
       ),
     onSuccess: () => {
+      setCreateOpen(false)
       setName('')
       setFolder('')
       invalidate()
@@ -183,37 +200,50 @@ export default function ProjectsScreen() {
           )
         })}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.sidebar.projects.newButton}</Text>
-        <TextInput
-          onChangeText={setName}
-          placeholder={t.sidebar.projects.namePlaceholder}
-          placeholderTextColor={tokens.mutedForeground}
-          style={[styles.input, { backgroundColor: tokens.card, borderColor: tokens.border, color: tokens.foreground }]}
-          value={name}
-        />
-        <TextInput
-          autoCapitalize="none"
-          onChangeText={setFolder}
-          placeholder={PROJECTS_FOLDER_PLACEHOLDER}
-          placeholderTextColor={tokens.mutedForeground}
-          style={[styles.input, { backgroundColor: tokens.card, borderColor: tokens.border, color: tokens.foreground }]}
-          value={folder}
-        />
-        <TouchableOpacity
-          disabled={createMutation.isPending || !name.trim() || !folder.trim()}
-          onPress={() => createMutation.mutate()}
-          style={[styles.addButton, { backgroundColor: tokens.primary }]}
-        >
-          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
-            {createMutation.isPending ? t.profiles.creating : t.sidebar.projects.create}
-          </Text>
-        </TouchableOpacity>
+        <Button block onPress={() => setCreateOpen(true)} style={styles.newProjectButton} variant="secondary">
+          {t.sidebar.projects.newButton}
+        </Button>
+      </ScrollView>
+
+      <Sheet
+        footer={
+          <>
+            <Button block onPress={() => setCreateOpen(false)} style={styles.sheetFooterButton} variant="ghost">
+              {t.common.cancel}
+            </Button>
+            <Button
+              block
+              disabled={!name.trim() || !folder.trim()}
+              loading={createMutation.isPending}
+              onPress={() => createMutation.mutate()}
+              style={styles.sheetFooterButton}
+              variant="primary"
+            >
+              {t.sidebar.projects.create}
+            </Button>
+          </>
+        }
+        onClose={() => setCreateOpen(false)}
+        title={t.sidebar.projects.createTitle}
+        visible={createOpen}
+      >
+        <Text style={[styles.sheetDesc, { color: tokens.mutedForeground }]}>{t.sidebar.projects.createDesc}</Text>
+        <Input onChangeText={setName} placeholder={t.sidebar.projects.namePlaceholder} value={name} />
+        <View style={styles.field}>
+          <Text style={[styles.fieldLabel, { color: tokens.textTertiary }]}>{t.sidebar.projects.foldersLabel}</Text>
+          <Input
+            autoCapitalize="none"
+            onChangeText={setFolder}
+            placeholder={PROJECTS_FOLDER_PLACEHOLDER}
+            value={folder}
+          />
+        </View>
         {createMutation.isError ? (
           <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof Error ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
-      </ScrollView>
+      </Sheet>
     </SafeAreaView>
   )
 }
@@ -229,16 +259,6 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     marginTop: 8
-  },
-  addButton: {
-    alignItems: 'center',
-    borderRadius: radius.control,
-    marginTop: 4,
-    paddingVertical: 12
-  },
-  addButtonText: {
-    ...type.bodySmall,
-    fontWeight: '600'
   },
   card: {
     borderRadius: radius.card,
@@ -268,13 +288,18 @@ const styles = StyleSheet.create({
     ...type.caption,
     marginTop: 6
   },
-  input: {
-    ...type.mono,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10
+  field: {
+    gap: 6,
+    marginTop: 12
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase'
+  },
+  newProjectButton: {
+    marginTop: 20
   },
   retryButton: {
     alignSelf: 'flex-start',
@@ -299,11 +324,12 @@ const styles = StyleSheet.create({
     ...type.caption,
     marginBottom: 6
   },
-  sectionTitle: {
-    ...type.label,
-    fontWeight: '700',
-    marginTop: 20,
-    textTransform: 'uppercase'
+  sheetDesc: {
+    ...type.caption,
+    marginBottom: 8
+  },
+  sheetFooterButton: {
+    flex: 1
   },
   spinner: {
     marginBottom: 12
