@@ -453,3 +453,36 @@ milestone rather than more M13 because M13's exit criteria are about tokens, ico
 touch, all of which are closable now, while layout parity is per screen and needs the prototypes
 Opus has just produced. Vendoring `en.ts` is the same move as vendoring the theme model: parity by
 construction, checked by a test, instead of parity by inspection.
+
+## D16 — M15 added (bots, tasks, chat affordances, pairing); Bot Mode is no longer "absent by design"; M12's internal-track build is pulled forward (2026-09-12)
+
+**Decision.** Four parts.
+
+1. **New milestone M15**, file `implementation-plan/M15-bots-and-mobile-ux.md`, depends on M14
+   for its screens; its three data-layer tasks (bots, models, cron templates) may start on a
+   branch during M14. Scope: a Bots tab with the desktop's avatars and souls, a Tasks tab, composer
+   model and effort chips, response stats, jump-to-latest, hold-to-dictate-and-send, edit-and-
+   resend, a Tailscale pairing path with a wrong-address guard, a connection-health banner, and
+   edge-swipe navigation. Every item is specified against the desktop source and the gateway
+   contract.
+2. **PARITY reversed for Bot Mode.** Bots are profiles, canonical chats, souls and capabilities,
+   all ordinary gateway data; only group rooms remain absent until the gateway offers a group
+   transport to non-desktop sources. `docs/PARITY.md` is updated accordingly.
+3. **Licensing rule.** `CodeUpdaterBot/Hermes-Mobile-App` is AGPL-3.0; this project is MIT. Its
+   code is not read for implementation. Product ideas and interaction patterns are not
+   copyrightable and are fair to adopt; code, assets and copy are not. Three numeric tunings in
+   M15 (a 2.5 s hold, an 88 px swipe commit, a one-viewport follow window) are design choices
+   restated from observation of the product, not from its source.
+4. **M12 reordered.** The Play internal-track build and the landing page start now, in parallel
+   with M13 and M14, gated only on the user's EAS and Play accounts (D11.2). M12's `done` (store
+   release) still depends on M13, M14 and M15. Being second to a v0.1.1 costs nothing; being
+   unfindable does.
+
+**Reasoning.** The competitor's own architecture notes list as future work the transport, auth,
+recovery, approval and attachment behaviour this project has verified on device across M03 to
+M11. What it has that we lack is a product framing (bots as teammates), four or five composer and
+reader affordances, an onboarding path that assumes Tailscale, and a listing people can find.
+All of those are cheap relative to what is done, and the bots framing is a thin layer over data
+the app already fetches. The order (M13 close-out, M14 layouts, then M15) holds because M15's
+screens are built from M14's primitives and rules; starting M15's data layer early costs
+nothing and shortens the tail.

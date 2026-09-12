@@ -27,7 +27,10 @@ backend runs on and have no mobile equivalent:
   models.
 - `voice.*` and `wake.*` RPCs (they drive the server's microphone and speaker; mobile voice goes
   through `/api/audio/*` with on-device capture).
-- Desktop plugin UIs (bots, group chat). Plugins have no UI surface on mobile.
+- Group chat rooms (Bot Mode groups), until the gateway offers a group transport to non-desktop
+  sources. Bots themselves are **not** absent: profiles, canonical chats, souls, avatars and
+  capabilities are ordinary gateway data and are M15's Bots tab (D16, 2026-09-12). Kanban is
+  absent.
 
 ## Thinner than desktop
 

@@ -24,7 +24,7 @@ Added by decision D15 (2026-09-12). M12 depends on this milestone.
 | Desktop | Mobile | Notes |
 |---|---|---|
 | Window 1220×800, landscape | 360–412 dp wide, portrait, `useWindowDimensions` | Nothing fixed-width; columns stack |
-| Sessions sidebar (237px, nav rows 28px, then session rows) | The M10 drawer: same nav rows in the same order with the same Tabler icons and labels, 48 dp tall; the session list is its own screen | The SESSIONS / BOTS strip is not ported (Bots absent, PARITY) |
+| Sessions sidebar (237px, nav rows 28px, then session rows) | The M10 drawer: same nav rows in the same order with the same Tabler icons and labels, 48 dp tall; the session list is its own screen | The SESSIONS / BOTS strip becomes the Bots · Sessions · Tasks tab row (D16; see group C) |
 | Titlebar 34px with the title and a control cluster | `ScreenHeader` 56 dp: back, title, up to two actions; overflow into a bottom-sheet menu | Same action order as the desktop cluster |
 | Status bar 20px with model, gateway and context-usage pop-ups | Chat header chips: model chip opens the model picker sheet; usage chip opens the context-usage sheet; gateway state is the connection banner | The status bar itself is not ported |
 | Full pages (Chat, Capabilities, Messaging, Artifacts) | Stack routes under the drawer | One route file per page, as today |
@@ -73,9 +73,18 @@ same row anatomy (lead cell, label, meta), pinned first, date dividers with the 
 uppercase style at the `caption` role. All other panels (files, review, terminal, logs, preview,
 layout edit, zone editor, workspace tabs) are *absent* by design.
 
-### C. Plugins
+### C. Plugins (Bot Mode is in scope since D16; Kanban stays absent)
 
-*Absent* by design (Bots, Kanban, routines).
+| Prototype | Mobile route | Adaptation |
+|---|---|---|
+| `c-plugins/bots-tab.html` (roster, user sections) | `app/(main)/bots/index.tsx` (M15 A) | The SESSIONS / BOTS strip becomes the drawer's first entry and a tab row Bots · Sessions · Tasks; roster rows keep the desktop anatomy (avatar, name, handle, preview, time); user sections become list headers |
+| `c-plugins/bot-chat.html` (canonical chat, empty-chat view) | `app/(main)/sessions/[id].tsx` with the bot identity in the header (M15 A) | Same chat screen; the bot's avatar and handle replace the session title; the empty-chat view is the bot's empty state |
+| `c-plugins/bot-dialogs.html` (New Bot, Edit bot/profile, avatar picker, model picker, MCP setup) | Sheets from the Bots roster and the bot settings sheet (M15 A) | Each dialog becomes a sheet with the desktop's fields in the desktop's order; the avatar picker keeps `blobatar` seeds |
+| `c-plugins/routines.html` (Routines panel) | `app/(main)/tasks/index.tsx` (M15 C) | The right-edge panel becomes the Tasks tab |
+| `c-plugins/group-chat.html`, `c-plugins/kanban.html` | _absent_ | Group rooms wait on a gateway transport for non-desktop sources; Kanban is absent by design |
+
+The prototypes for these screens are M15's, drawn by Opus in `docs/mobile-prototypes/` from the
+desktop pages above plus the field notes; M14 owns the primitives they use.
 
 ### D. Windows
 
