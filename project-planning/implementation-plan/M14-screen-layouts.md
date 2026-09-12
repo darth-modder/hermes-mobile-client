@@ -156,7 +156,40 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
 
 ## Deviations from the literal spec (and why)
 
-(none yet)
+1. **Chat thread: one gap value, not two.** The adaptation table gives the desktop's turn gap
+   (`.375rem` → 6 dp) and block gap (`.75rem` → 12 dp) as two different numbers. `ChatMessage`
+   carries no turn/block boundary field to tell them apart by, so `Transcript.tsx` uses 12 dp
+   between every message rather than inventing a boundary heuristic. Revisit if/when the reducer
+   gains a turn id.
+2. **Session-list lead-cell status dot is the existing unread dot, not the prototype's
+   busy/warn/ok/bad states.** `sessions.html`'s `.s-row__lead` carries a live per-session status
+   (streaming, needs-approval, idle, errored). The REST `SessionInfo` list (`GET /api/sessions`)
+   this screen already runs on has no such field — it would need either a second per-row gateway
+   subscription or a backend change, both out of scope for a layout milestone. Kept the row's
+   existing unread signal in that slot instead of fabricating states with no data behind them.
+3. **Drawer-order exit criterion needs a decision before it can be written as a test.** "Equal the
+   desktop's sidebar nav order from `DESKTOP-SCREENS.md` §A with the Bots and machine-bound rows
+   removed" has two readings that disagree:
+   - The desktop's literal sidebar nav strip (`sessions-sidebar.html`'s `.side-nav` buttons) is
+     just four items: New session, Capabilities, Messaging, Artifacts.
+   - §A's full main-screens table (the more likely intended source, given "with the Bots … rows
+     removed" only makes sense against a list that contains Bots) is: Capabilities, Messaging,
+     Artifacts, Settings, Command Center, Cron, Profiles, Agents, Starmap (absent), Webhooks.
+   Neither list contains **Projects**, which the current drawer has had since M10 and which real
+   users depend on today. A test written against either literal source would require deleting a
+   working entry point with no replacement named anywhere in M14's own spec. Left the drawer's
+   existing 7 rows (Sessions, Projects, Cron, Webhooks, Artifacts, Channels, Settings) and their
+   order untouched — already Bots-free and machine-bound-free, so it doesn't fail either reading,
+   it just doesn't yet include the newer §A destinations (Capabilities, Command Center, Profiles,
+   Agents) this milestone still has to build. Added their entries to the drawer in the same commit
+   that builds each screen, in §A's order, rather than guessing the test's intended list now and
+   possibly writing a hard-fail check against the wrong one. Flagged for Fable/Opus: which source
+   is authoritative, and whether Projects gets a §A-equivalent slot or stays as a mobile-only
+   addition the test should explicitly allow.
+4. **`docs/mobile-prototypes/sessions.html`'s date-divider and pinned-group grouping is not
+   `Field:`-tagged (unlike its tab row, header subtitle and per-row preview elaborations), so it
+   was built now**: `src/lib/session-groups.ts` (pure, tested) buckets into Pinned / Earlier today /
+   Yesterday / a weekday name / a short date, matching the desktop's own divider granularity.
 
 ## Verification log
 

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -17,12 +17,24 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
 import { Plus, Settings } from '../../src/lib/icons'
+import { groupSessions } from '../../src/lib/session-groups'
 import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
 import { useTheme } from '../../src/theme/provider'
 import { radius, type } from '../../src/theme/type'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
+
+/**
+ * Replicates: docs/mobile-prototypes/sessions.html, `list` view. The other
+ * views in that prototype are excluded here: the Bots·Sessions·Tasks tab
+ * row (`Field:`, D16/M15), the connection-status header subtitle (`Field:`),
+ * and the row preview's per-row model chip beyond what already existed
+ * (`Field (ours):` — already built, M07) stay as they were; see M14
+ * Deviations for the lead-cell status dot (kept as the existing unread dot,
+ * not the busy/warn/ok/bad state the prototype draws — that needs live
+ * per-row session state this REST list doesn't carry).
+ */
 
 /** `session.started_at`/`last_active` are epoch seconds (REST, unlike the
  *  gateway's own ms timestamps elsewhere in this app) — a plain relative
@@ -188,6 +200,11 @@ export default function SessionListScreen() {
     })
   }, [sessions, query])
 
+  // groupSessions repeats the "pinned first" half of the sort above as its
+  // own leading group, then re-groups the (already-sorted) rest by day — the
+  // desktop's own date dividers (sessions-sidebar.html), not a `Field:` item.
+  const sections = useMemo(() => groupSessions(filtered).map(g => ({ data: g.sessions, title: g.label })), [filtered])
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <View style={styles.header}>
@@ -255,9 +272,8 @@ export default function SessionListScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <SectionList
           contentContainerStyle={styles.list}
-          data={filtered}
           keyExtractor={session => session.id}
           refreshControl={
             <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.textSecondary} />
@@ -268,13 +284,15 @@ export default function SessionListScreen() {
               onPress={() => openSession(item.id)}
               style={[styles.row, { borderBottomColor: tokens.border }]}
             >
+              <View style={styles.rowLead}>
+                <View
+                  style={[styles.leadDot, { backgroundColor: item.unread ? tokens.primary : tokens.strokeSecondary }]}
+                />
+              </View>
               <View style={styles.rowMain}>
-                <View style={styles.rowTitleLine}>
-                  {item.unread ? <View style={[styles.unreadDot, { backgroundColor: tokens.primary }]} /> : null}
-                  <Text numberOfLines={1} style={[styles.rowTitle, { color: tokens.foreground }]}>
-                    {item.title || 'Untitled'}
-                  </Text>
-                </View>
+                <Text numberOfLines={1} style={[styles.rowTitle, { color: tokens.foreground }]}>
+                  {item.title || 'Untitled'}
+                </Text>
                 {item.preview ? (
                   <Text numberOfLines={1} style={[styles.rowPreview, { color: tokens.textSecondary }]}>
                     {item.preview}
@@ -304,6 +322,10 @@ export default function SessionListScreen() {
               </TouchableOpacity>
             </TouchableOpacity>
           )}
+          renderSectionHeader={({ section }) => (
+            <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{section.title}</Text>
+          )}
+          sections={sections}
         />
       )}
     </SafeAreaView>
@@ -332,8 +354,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12
+    minHeight: 56,
+    paddingHorizontal: 16
   },
   headerActions: {
     alignItems: 'center',
@@ -379,33 +401,48 @@ const styles = StyleSheet.create({
     ...type.bodySmall,
     fontWeight: '600'
   },
+  leadDot: {
+    borderRadius: radius.full,
+    height: 8,
+    width: 8
+  },
   row: {
     alignItems: 'center',
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+    gap: 12,
+    minHeight: 72,
     paddingHorizontal: 16,
-    paddingVertical: 14
+    paddingVertical: 10
+  },
+  rowLead: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 14
   },
   rowMain: {
-    flex: 1
+    flex: 1,
+    gap: 2
   },
   rowMeta: {
-    ...type.caption,
-    marginTop: 2
+    ...type.caption
   },
   rowPreview: {
-    ...type.label,
-    marginTop: 2
+    ...type.label
   },
   rowTitle: {
     ...type.body,
     flexShrink: 1,
     fontWeight: '600'
   },
-  rowTitleLine: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6
+  sectionLabel: {
+    ...type.caption,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 8,
+    textTransform: 'uppercase'
   },
   search: {
     ...type.bodySmall,
@@ -423,10 +460,5 @@ const styles = StyleSheet.create({
   title: {
     ...type.title,
     fontWeight: '700'
-  },
-  unreadDot: {
-    borderRadius: radius.full,
-    height: 8,
-    width: 8
   }
 })

@@ -9,7 +9,7 @@ import { $drawerOpen, closeDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
 
-const DRAWER_WIDTH = 260
+const DRAWER_WIDTH = 300
 
 interface DrawerRow {
   route: Href
@@ -128,8 +128,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 14
+    marginBottom: 2,
+    minHeight: 48,
+    paddingHorizontal: 20
   },
   rowIcon: {
     alignItems: 'center',
