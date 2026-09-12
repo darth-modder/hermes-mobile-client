@@ -503,3 +503,73 @@ with `minHeight: 48` on the header (matching the other M14 touch-target fixes) s
 alone clears 48dp regardless of hitSlop reach or neighboring controls; re-measured after the fix,
 both are 126px = 48.0dp native, and tapping within that native area reliably toggles the intended
 control. Fixed in commit `582c02d`.
+
+#### M13 closing pass (2026-09-13, throwaway gateway, device)
+
+M13 exit criterion 6 taken literally — no clickable `uiautomator` node under 48×48dp, hitSlop not
+counted — still failed in three more places, found and fixed this round:
+
+- **SessionHeader** (`src/chat/SessionHeader.tsx`): the title touchable measured 24.0dp and the
+  Model control 16.0dp. Two independent 48dp targets stacked in one column need at least 96dp
+  regardless of hitbox arrangement, so rather than an overlapping-hitbox trick to hold the header at
+  its old 56dp (which would recreate the exact adjacent-control ambiguity just fixed above for
+  Reasoning/tool-call), both got `minHeight: 48` directly and the header's `minHeight` grew to 96.
+  Still a two-line title-over-subtitle layout, just no longer artificially short. Commit `5623bdc`.
+- **Registered gateways** (`app/(main)/settings/connections.tsx`): Test/Sign out/Remove/Switch
+  to…/Make primary measured ~28dp tall, and the connection title row (label + primary/current pills)
+  measured 24dp. Both given `minHeight: 48`. Commit `521f9c0`.
+- **Add connection** (`app/connect/index.tsx`, `app/connect/[id]/login.tsx`): the Name/Gateway
+  URL/Token fields and the Username/Password sign-in fields all measured ~36-38dp tall (no
+  `minHeight` on the shared mono-text input style). All five given `minHeight: 48`. Commit
+  `262840a`.
+
+**New, unfixed finding from this pass:** on Registered gateways, the `Test` button's *width* — not
+height, already fixed above — measures 43.8-44.2dp, under 48dp, on both connection cards. Its
+siblings (Sign out 65.5dp, Remove 64.4dp, Switch to… 102.9dp, Make primary 95.2dp) all clear 48dp
+because their labels are longer; `Test`'s four characters don't fill the button even with
+`paddingHorizontal: 10`. Not fixed here — this round's instructions were to measure and report, not
+to chase new findings — flagging for a follow-up: `connections.tsx`'s `actionButton` style needs a
+`minWidth: 48` alongside its `minHeight: 48`.
+
+**Tool-call spinner after resume, reproduced and fixed:** a finished tool call showed a running
+spinner immediately upon leaving and re-entering its session — before any app reload. Root cause
+confirmed via the raw `session.resume` payload: this gateway's resume projection drops the
+assistant's `tool_calls` message entirely and represents the call as a standalone `role: "tool"`
+message with no `timestamp` field. `storedToolMessagePart` (`tool-parts.ts:754`) unconditionally set
+`completedAt: toolMessage.timestamp`, so `completedAt` came out `undefined` — indistinguishable from
+`ToolCallCard.tsx:40`'s `running` check. Fixed by falling back to `Date.now()` when the source row
+has no timestamp; `completedAt`'s only consumer is that `undefined` check; the value itself is
+never displayed. Commit `bb045b1`.
+
+**Full device verification, all five screens (`uiautomator` bounds ÷ 2.625 at 420dpi):**
+
+*Chat* (a turn with reasoning + a tool call): Back 48.0×48.0, title 275.4×48.0, Model 143.6×48.0,
+Compress 72.0×48.0, tool-call row 198.9×48.0, Reasoning 221.0×48.0, the four composer icons
+48.0×48.0 each, input 141.0×64.0, Send 58.3×48.0 (measured with the field non-empty — Send is
+`disabled` and drops out of the accessibility tree when the composer is blank, which is expected,
+not a defect). Nothing under 48dp, nothing cut off.
+
+*Session list*: Open menu 48.0×48.0, Settings 48.0×48.0, New session 124.2×48.0, search field
+379.4×48.0, the session row 411.4×82.7, Pin 48.0×48.0. Nothing under 48dp, nothing cut off.
+
+*Settings index* (scrolled through in three passes): every row — Registered gateways, Profiles,
+Providers, Model, MCP, Skills, Tools, Appearance, Chat, Safety, Memory & Context, Notifications,
+Voice, Plugins, Billing, Archived Chats, About — measured 57.9-58.3dp tall each time it was fully
+inside the scroll viewport; Navigate up 56.0×56.0, the header's Open menu 48.0×48.0. **Cut off at
+the screen edge, not a real defect:** whichever row sits right at the scroll viewport's top or
+bottom boundary at a given scroll position reports a squashed or negative height in the same dump
+(seen on Memory & Context, Skills, Tools, Providers, Plugins, and Billing at different scroll
+positions) — the row is clipped by the ScrollView's own viewport, not by the physical screen, and
+every one of them measured a normal 57.9-58.3dp once scrolled to a position where it was fully
+inside the viewport. Named here so a future pass doesn't mistake a scroll-clip artifact for a
+touch-target failure.
+
+*Registered gateways*: Navigate up 56.0×56.0, Open menu 48.0×48.0, each connection's title row
+353.5×48.0, Switch to Hone 102.9×48.0, Make primary 95.2×48.0, Sign out 65.5×48.0, Remove 64.4×48.0,
+Add connection 379.4×48.0. `Test` is the one exception, noted above (43.8-44.2dp wide). Nothing cut
+off.
+
+*Add connection*: Name field 379.4×48.0, Gateway URL field 379.4×48.0, Detect auth mode 140.2×48.0,
+Scan QR 81.5×48.0. This screen has no back arrow or hamburger in its own UI (the OS back
+gesture/button is the only way out) — not a missing node, just nothing to measure there. Nothing
+under 48dp, nothing cut off.
