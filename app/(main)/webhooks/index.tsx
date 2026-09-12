@@ -22,12 +22,21 @@ import {
   setWebhookEnabled
 } from '../../../src/api/messaging'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 import type { WebhookRoute } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY = ['webhooks']
 
+// Replicates: docs/desktop-prototypes/a-main/webhooks.html (PanelList +
+// PanelDetail, the disabled-receiver Alert, the create dialog's "Subscription
+// created" secret reveal) — collapsed here into one scrolling list, as this
+// screen predates M14's list/detail adaptation and a real M09/M10 build isn't
+// worth rewriting for layout alone. Labels below come from the vendored
+// `t.webhooks` block (D15.4); the screen title stays the drawer's own
+// "Webhooks" (`t.shell.statusbar.webhooks`, src/components/drawer-rows.ts)
+// rather than the desktop's per-route "Subscriptions (N)" header.
 /**
  * Webhooks screen (M10). `/api/webhooks/*` (src/api/messaging.ts, ported by
  * M09 for this milestone to consume). Exit criterion: "Webhook create /
@@ -80,9 +89,9 @@ export default function WebhooksScreen() {
   })
 
   const confirmDelete = (route: WebhookRoute) => {
-    Alert.alert('Delete webhook?', route.name, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteMutation.mutate(route.name), style: 'destructive', text: 'Delete' }
+    Alert.alert(t.webhooks.deleteTitle, `${t.webhooks.deleteDescPrefix}${route.name}${t.webhooks.deleteDescSuffix}`, [
+      { style: 'cancel', text: t.common.cancel },
+      { onPress: () => deleteMutation.mutate(route.name), style: 'destructive', text: t.webhooks.delete }
     ])
   }
 
@@ -91,7 +100,7 @@ export default function WebhooksScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <ScreenHeader title="Webhooks" />
+      <ScreenHeader title={t.shell.statusbar.webhooks} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -109,24 +118,26 @@ export default function WebhooksScreen() {
               {webhooksQuery.error instanceof Error ? webhooksQuery.error.message : String(webhooksQuery.error)}
             </Text>
             <TouchableOpacity
+              hitSlop={8}
               onPress={() => void webhooksQuery.refetch()}
               style={[styles.retryButton, { backgroundColor: tokens.primary }]}
             >
-              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
         {data && !data.enabled ? (
           <View style={[styles.banner, { backgroundColor: tokens.muted, borderColor: tokens.semantic.orange }]}>
-            <Text style={[styles.bannerText, { color: tokens.semantic.orange }]}>The webhook gateway is disabled.</Text>
+            <Text style={[styles.bannerText, { color: tokens.semantic.orange }]}>{t.webhooks.disabledTitle}</Text>
             <TouchableOpacity
               disabled={enableGatewayMutation.isPending}
+              hitSlop={8}
               onPress={() => enableGatewayMutation.mutate()}
               style={styles.bannerButton}
             >
               <Text style={[styles.actionText, { color: tokens.primary }]}>
-                {enableGatewayMutation.isPending ? 'Enabling…' : 'Enable'}
+                {enableGatewayMutation.isPending ? t.webhooks.enabling : t.webhooks.enable}
               </Text>
             </TouchableOpacity>
           </View>
@@ -134,21 +145,19 @@ export default function WebhooksScreen() {
 
         {newSecret ? (
           <View style={[styles.secretCard, { backgroundColor: tokens.muted, borderColor: tokens.semantic.green }]}>
-            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>Webhook created</Text>
-            <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-              Secret (shown once) — save it now:
-            </Text>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{t.webhooks.createdTitle}</Text>
+            <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{t.webhooks.createdSecretHint}</Text>
             <Text selectable style={[styles.secretText, { color: tokens.inlineCodeForeground }]}>
               {newSecret}
             </Text>
-            <TouchableOpacity onPress={() => setNewSecret(null)} style={styles.actionButton}>
-              <Text style={[styles.actionText, { color: tokens.primary }]}>Dismiss</Text>
+            <TouchableOpacity hitSlop={8} onPress={() => setNewSecret(null)} style={styles.actionButton}>
+              <Text style={[styles.actionText, { color: tokens.primary }]}>{t.webhooks.done}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
         {subscriptions.length === 0 && !webhooksQuery.isLoading && !webhooksQuery.isError ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No webhooks yet.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.webhooks.empty}</Text>
         ) : null}
 
         {subscriptions.map(route => (
@@ -165,21 +174,21 @@ export default function WebhooksScreen() {
             </Text>
             {route.events.length > 0 ? (
               <Text numberOfLines={1} style={[styles.rowMeta, { color: tokens.textQuaternary }]}>
-                Events: {route.events.join(', ')}
+                {t.webhooks.fieldEvents}: {route.events.join(', ')}
               </Text>
             ) : null}
             <View style={styles.actions}>
-              <TouchableOpacity onPress={() => confirmDelete(route)} style={styles.actionButton}>
-                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
+              <TouchableOpacity hitSlop={8} onPress={() => confirmDelete(route)} style={styles.actionButton}>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.webhooks.delete}</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New webhook</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.webhooks.newSubscription}</Text>
         <TextInput
           onChangeText={setName}
-          placeholder="Name"
+          placeholder={t.webhooks.fieldNamePlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -189,7 +198,7 @@ export default function WebhooksScreen() {
         />
         <TextInput
           onChangeText={setPrompt}
-          placeholder="Prompt (what Hermes does when it fires)"
+          placeholder={t.webhooks.fieldPromptPlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -200,7 +209,7 @@ export default function WebhooksScreen() {
         <TextInput
           autoCapitalize="none"
           onChangeText={setEvents}
-          placeholder="Events (comma-separated, optional)"
+          placeholder={t.webhooks.fieldEventsPlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -214,7 +223,7 @@ export default function WebhooksScreen() {
           style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
           <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
-            {createMutation.isPending ? 'Creating…' : 'Create webhook'}
+            {createMutation.isPending ? t.webhooks.creating : t.webhooks.create}
           </Text>
         </TouchableOpacity>
         {createMutation.isError ? (
