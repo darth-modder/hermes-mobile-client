@@ -138,7 +138,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
           <TouchableOpacity
             accessibilityLabel={t.settings.sections.model}
             accessibilityRole="button"
-            hitSlop={{ bottom: 12, left: 4, right: 4, top: 12 }}
+            hitSlop={{ bottom: 16, left: 8, right: 8, top: 16 }}
             onPress={() => router.push('/(main)/settings/models')}
           >
             <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>

@@ -379,15 +379,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.control,
     flexDirection: 'row',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
+    minHeight: 48,
+    paddingHorizontal: 12
   },
   newButtonText: {
     ...type.bodySmall,
     fontWeight: '600'
   },
   pinButton: {
-    paddingLeft: 12
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48
   },
   pinIcon: {
     ...type.title
@@ -459,7 +462,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   settingsButton: {
-    padding: 4
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48
   },
   title: {
     ...type.title,

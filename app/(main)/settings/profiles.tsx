@@ -418,7 +418,9 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     alignSelf: 'flex-start',
-    marginTop: 16
+    justifyContent: 'center',
+    marginTop: 16,
+    minHeight: 48
   },
   refreshText: {
     ...type.label
