@@ -25,6 +25,7 @@ import {
   setEnvVar
 } from '../../../src/api/config'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { type } from '../../../src/theme/type'
@@ -68,6 +69,7 @@ function EnvVarRow({
           />
           <TouchableOpacity
             disabled={saving || !value}
+            hitSlop={10}
             onPress={() => {
               onSet(value)
               setEditing(false)
@@ -79,12 +81,14 @@ function EnvVarRow({
         </View>
       ) : (
         <View style={styles.rowActions}>
-          <TouchableOpacity onPress={() => setEditing(true)}>
-            <Text style={[styles.actionText, { color: tokens.primary }]}>{entry.is_set ? 'Change' : 'Set'}</Text>
+          <TouchableOpacity hitSlop={10} onPress={() => setEditing(true)}>
+            <Text style={[styles.actionText, { color: tokens.primary }]}>
+              {entry.is_set ? t.settings.envActions.replace : t.settings.envActions.set}
+            </Text>
           </TouchableOpacity>
           {entry.is_set ? (
-            <TouchableOpacity onPress={onDelete} style={styles.clearButton}>
-              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Clear</Text>
+            <TouchableOpacity hitSlop={10} onPress={onDelete} style={styles.clearButton}>
+              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.settings.envActions.clear}</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -93,6 +97,18 @@ function EnvVarRow({
   )
 }
 
+// Replicates: docs/desktop-prototypes/a-main/settings.html's `data-view=
+// "providers-accounts"`, `data-view="providers-keys"` and `data-view=
+// "providers-custom"` panels (no dedicated mobile-prototype view exists for
+// Providers, per the M14 mapping's desktop fallback). Section order follows
+// the desktop nav rail's own Providers sub-items (Accounts, API keys,
+// Custom Endpoints), so "OAuth providers" moves first and is relabelled to
+// the desktop's own "Accounts" (t.settings.nav.providerAccounts) — same
+// feature (provider sign-in/status), different heading. Section titles and
+// the Save/Replace/Set/Clear/Disconnect action labels come from the
+// vendored en.ts (D15.4); "Retry" and the custom-endpoint "Delete" have no
+// vendored counterpart in this screen's sections and stay hand-authored.
+//
 /**
  * Providers settings screen (M09): env-var-keyed provider credentials and
  * OpenAI-compatible custom endpoints. Provider-OAuth connect (a device-code
@@ -131,14 +147,18 @@ export default function ProvidersSettings() {
   const confirmDeleteEnvVar = (name: string) => {
     Alert.alert('Clear API key?', name, [
       { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteEnvMutation.mutate(name), style: 'destructive', text: 'Clear' }
+      { onPress: () => deleteEnvMutation.mutate(name), style: 'destructive', text: t.settings.envActions.clear }
     ])
   }
 
   const confirmDisconnect = (providerId: string, providerName: string) => {
     Alert.alert('Disconnect provider?', providerName, [
       { style: 'cancel', text: 'Cancel' },
-      { onPress: () => disconnectMutation.mutate(providerId), style: 'destructive', text: 'Disconnect' }
+      {
+        onPress: () => disconnectMutation.mutate(providerId),
+        style: 'destructive',
+        text: t.settings.providers.disconnect
+      }
     ])
   }
 
@@ -161,21 +181,57 @@ export default function ProvidersSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Providers' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.providers }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
         }
       >
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>API keys</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.nav.providerAccounts}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+          Connecting a new provider needs the CLI (`hermes model`) for now.
+        </Text>
+        {oauthQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
+        {oauthQuery.isError ? (
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {oauthQuery.error instanceof Error ? oauthQuery.error.message : String(oauthQuery.error)}
+            </Text>
+            <TouchableOpacity hitSlop={10} onPress={() => void oauthQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {(oauthQuery.data?.providers ?? []).map(provider => (
+          <View key={provider.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{provider.name}</Text>
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
+                {provider.status.logged_in ? t.settings.providers.connected : 'Not connected'}
+              </Text>
+            </View>
+            {provider.status.logged_in && provider.disconnectable !== false ? (
+              <TouchableOpacity hitSlop={10} onPress={() => confirmDisconnect(provider.id, provider.name)}>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
+                  {t.settings.providers.disconnect}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ))}
+        {oauthQuery.data?.providers.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No OAuth providers available.</Text>
+        ) : null}
+
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.nav.providerApiKeys}</Text>
         {envQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {envQuery.isError ? (
           <View>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {envQuery.error instanceof Error ? envQuery.error.message : String(envQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void envQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void envQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -194,48 +250,16 @@ export default function ProvidersSettings() {
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No API keys configured.</Text>
         ) : null}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>OAuth providers</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Connecting a new provider needs the CLI (`hermes model`) for now.
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>
+          {t.settings.nav.providerCustomEndpoints}
         </Text>
-        {oauthQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
-        {oauthQuery.isError ? (
-          <View>
-            <Text style={[styles.errorText, { color: tokens.destructive }]}>
-              {oauthQuery.error instanceof Error ? oauthQuery.error.message : String(oauthQuery.error)}
-            </Text>
-            <TouchableOpacity onPress={() => void oauthQuery.refetch()} style={styles.retryButton}>
-              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-        {(oauthQuery.data?.providers ?? []).map(provider => (
-          <View key={provider.id} style={[styles.row, { borderBottomColor: tokens.border }]}>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{provider.name}</Text>
-              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-                {provider.status.logged_in ? 'Connected' : 'Not connected'}
-              </Text>
-            </View>
-            {provider.status.logged_in && provider.disconnectable !== false ? (
-              <TouchableOpacity onPress={() => confirmDisconnect(provider.id, provider.name)}>
-                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Disconnect</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        ))}
-        {oauthQuery.data?.providers.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No OAuth providers available.</Text>
-        ) : null}
-
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Custom endpoints</Text>
         {endpointsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {endpointsQuery.isError ? (
           <View>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {endpointsQuery.error instanceof Error ? endpointsQuery.error.message : String(endpointsQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void endpointsQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void endpointsQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -251,7 +275,7 @@ export default function ProvidersSettings() {
                 {endpoint.base_url} · {endpoint.model}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => confirmDeleteEndpoint(endpoint.id, endpoint.name)}>
+            <TouchableOpacity hitSlop={10} onPress={() => confirmDeleteEndpoint(endpoint.id, endpoint.name)}>
               <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
             </TouchableOpacity>
           </View>

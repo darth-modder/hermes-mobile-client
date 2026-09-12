@@ -40,7 +40,6 @@ const PENDING = new Set([
   '(main)/settings/notifications.tsx',
   '(main)/settings/plugins.tsx',
   '(main)/settings/profiles.tsx',
-  '(main)/settings/providers.tsx',
   '(main)/settings/skills.tsx',
   '(main)/settings/voice.tsx',
   '(main)/cron/index.tsx',
