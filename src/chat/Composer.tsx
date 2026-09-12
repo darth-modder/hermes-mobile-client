@@ -481,34 +481,58 @@ export function Composer({ storedSessionId }: ComposerProps) {
             style={[styles.input, { color: tokens.foreground }]}
             value={text}
           />
-          {busy ? (
+          {busy ? null : (
+            <TouchableOpacity
+              disabled={sending || (!text.trim() && attachments.length === 0)}
+              onPress={() => void send()}
+              style={[styles.sendButton, { backgroundColor: tokens.primary }]}
+            >
+              {sending ? (
+                <ActivityIndicator color={tokens.primaryForeground} size="small" />
+              ) : (
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>Send</Text>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+        {busy ? (
+          // Stop and Steer alongside the four utility icons would squeeze the
+          // input below its placeholder's width, wrapping it mid-word (see
+          // M14-screen-layouts.md's verification log). Its own row keeps the
+          // input's line free instead.
+          <View style={styles.actionRow}>
             <TouchableOpacity
               onPress={() => void stop()}
               style={[styles.sendButton, { backgroundColor: tokens.diffRemoveBackground }]}
             >
               <Text style={[styles.sendButtonText, { color: tokens.destructive }]}>Stop</Text>
             </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            disabled={sending || (!text.trim() && attachments.length === 0)}
-            onPress={() => void send()}
-            style={[styles.sendButton, { backgroundColor: tokens.primary }]}
-          >
-            {sending ? (
-              <ActivityIndicator color={tokens.primaryForeground} size="small" />
-            ) : (
-              <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>
-                {busy ? 'Steer' : 'Send'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              disabled={sending || (!text.trim() && attachments.length === 0)}
+              onPress={() => void send()}
+              style={[styles.sendButton, { backgroundColor: tokens.primary }]}
+            >
+              {sending ? (
+                <ActivityIndicator color={tokens.primaryForeground} size="small" />
+              ) : (
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>Steer</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </KeyboardStickyView>
   )
 }
 
 const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+    paddingBottom: 8,
+    paddingHorizontal: 8
+  },
   attachmentChip: {
     alignItems: 'center',
     borderRadius: radius.control,
