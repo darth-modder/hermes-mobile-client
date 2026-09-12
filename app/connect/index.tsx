@@ -345,6 +345,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     ...type.mono,
     marginBottom: 12,
+    minHeight: 48,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
