@@ -254,6 +254,34 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
    shipping them only once real. `docs/PARITY.md`'s "Thinner than desktop" table carries all six as
    of this entry.
 
+10. **The Section E "confirmed absent, nothing to build" cluster — checked each, not assumed.**
+    `command-palette.html`: not ported as a palette (its actions reachable from the drawer and the
+    slash palette, per the mapping); went through the prototype's own root list (empty-query) group
+    by group against `src/components/drawer-rows.ts` and `src/lib/mobile-slash-commands.ts` rather
+    than taking that for granted. Nearly every row has a home: Go to → drawer rows or `/new`/`/model`/
+    `/profile`/`/skills`; Command Center → the command-center screen; Appearance → the appearance
+    screen; the Commands group's layout/status-bar/tabs/terminal/logs toggles are the absent panels
+    from Section B (not gaps); `/yolo` is deliberately `no-mobile-ui` (documented, not silent);
+    Starmap is already recorded absent. One row does not have a home: **"No project"** (clearing the
+    active project back to none) — `setActiveProject` (`src/api/projects.ts`) already accepts `id:
+    null` for exactly this, but `app/(main)/projects/index.tsx` never calls it with `null`; there is
+    no UI path to clear an active project once one is set. Recording rather than fixing here — task
+    7 is the audit, not another screen pass.
+
+    `find-bar.html`: the M14 doc's own summary table asserted this was "already noted in
+    `docs/PARITY.md` as 'thinner'" — checked, and it wasn't; no PARITY row existed for it at all.
+    Added one (`docs/PARITY.md`'s "Thinner than desktop" table) rather than leaving the claim
+    uncorrected, per this task's own "genuinely new gap" carve-out.
+
+    `updates.html`, `desktop-install.html`, `pet-generate.html`, `chat-swap-drop.html`: grepped
+    `app/` and `src/` for anything referencing them (deep link routes, screen names, API calls) —
+    nothing does. Confirmed absent, no action needed.
+
+    `worktree.html`, `real-browser-consent.html`, `remote-folder-picker.html`,
+    `profile-remote-override.html`: same grep, plus `t.profiles.remoteOverride` (en.ts) — vendored
+    and fully shaped (connect/disconnect/status copy) but unused anywhere under `app/`. Confirmed
+    absent, machine-bound per `AGENTS.md`'s "machine features don't exist here."
+
 ## Verification log
 
 (none yet — side-by-side pairs land as each screen's own commit reaches that exit criterion.)
