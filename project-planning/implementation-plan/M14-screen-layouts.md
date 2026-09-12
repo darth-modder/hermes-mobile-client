@@ -190,6 +190,21 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
    `Field:`-tagged (unlike its tab row, header subtitle and per-row preview elaborations), so it
    was built now**: `src/lib/session-groups.ts` (pure, tested) buckets into Pinned / Earlier today /
    Yesterday / a weekday name / a short date, matching the desktop's own divider granularity.
+5. **Settings index group order needs a decision.** `docs/mobile-prototypes/settings.html`'s own
+   header comment flags this: the four group labels shown (Host, Models and tools, App, Account)
+   and the row order under them are the prototype's own *draft* — this app's pre-existing flat
+   index order (Connections, Profiles, Providers, Models, MCP, Skills, Appearance, Notifications,
+   Voice, Plugins) with M14's additions folded in, not the desktop rail's literal order (Model,
+   Chat, Appearance, Workspace, Safety, Browser, Memory & Context, Voice, Advanced, Notifications,
+   Billing | Providers…, Gateways, Keybinds, Tools & Keys, Plugins, Archived Chats | About). This
+   criterion (line 58, "sections in the desktop's order from `settings/constants.ts`") is loose the
+   same way the drawer-order §A wording was: it names an order that doesn't obviously survive the
+   flat-rail-to-two-level-list adaptation. Implemented the prototype's drawn draft order for now
+   (`src/components/settings-rows.ts`, pure, tested) so the index has a real, working layout;
+   **flagging for a D-entry, not deciding it or rewriting the criterion.** Six sections (Chat,
+   Safety, Memory & Context, Billing, Archived chats, About) and Toolsets have no row yet — each
+   lands in its own later M14 commit — so today's group contents are a subset of the prototype's
+   full draft, not a placement disagreement with it.
 
 ## Verification log
 
