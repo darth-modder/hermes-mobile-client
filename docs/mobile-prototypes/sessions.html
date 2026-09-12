@@ -24,6 +24,15 @@
   Field (ours): search, pin and per-row model — §6 records all three as missing in theirs
   Field (ours): "+ New session" in the header — theirs has no way to start a conversation at all
   Field (ours): 48 dp targets; their row controls are 26–32 dp (fails M13 criterion 6)
+  Drawer order: derived, not invented — the desktop nav strip in its own order (Capabilities,
+                Messaging, Artifacts, Scheduled jobs; `sidebar.nav` in the vendored en.ts), then the
+                ported overlay screens in DESKTOP-SCREENS §A order (Profiles, Agents, Webhooks,
+                Command center), then Projects (mobile-only: the desktop keeps projects inside its
+                session tree, not the nav), then Settings last. "New session" stays the list's
+                header action, not a drawer row. Bots / Sessions / Tasks are the TAB ROW in M14 and
+                are prepended to the drawer by M15 A — so an M14 drawer test should assert the list
+                from Capabilities down. Absent by design: Starmap, Kanban, Command center's System
+                and Maintenance sections.
   Views:        #sessions=list | search | empty | loading | drawer | row-menu
   Measurements: phone 412×915 dp · header 56 · tab row 48 (indicator 2, inset 12) · search field 48
                 in an 8/16 dp well · session row min 72 (title 22 · preview 20 · meta 16) · lead
@@ -336,6 +345,7 @@
                 </div>
                 <div class="drawer__nav">
                   <!-- Same rows, same order, same Tabler icons as the desktop sidebar / DESKTOP-SCREENS §A -->
+                  <!-- M15 A prepends these three (they mirror the tab row); in M14 the drawer starts at Capabilities -->
                   <button class="drawer-item"><i class="ti ti-robot"></i>Bots<span class="t-caption t-quaternary ml-auto">3</span></button>
                   <button class="drawer-item is-active"><i class="ti ti-messages"></i>Sessions<span class="t-caption t-quaternary ml-auto">9</span></button>
                   <button class="drawer-item"><i class="ti ti-checklist"></i>Tasks<span class="t-caption t-quaternary ml-auto">3</span></button>
@@ -343,9 +353,12 @@
                   <button class="drawer-item"><i class="ti ti-message-circle"></i>Messaging</button>
                   <button class="drawer-item"><i class="ti ti-photo"></i>Artifacts</button>
                   <button class="drawer-item"><i class="ti ti-clock"></i>Scheduled jobs</button>
+                  <button class="drawer-item"><i class="ti ti-users"></i>Profiles</button>
                   <button class="drawer-item"><i class="ti ti-hierarchy-2"></i>Agents</button>
                   <button class="drawer-item"><i class="ti ti-webhook"></i>Webhooks</button>
                   <button class="drawer-item"><i class="ti ti-dashboard"></i>Command center</button>
+                  <!-- mobile-only: the desktop has no Projects nav row (projects live in its session tree) -->
+                  <button class="drawer-item"><i class="ti ti-folder"></i>Projects</button>
                   <button class="drawer-item"><i class="ti ti-settings"></i>Settings</button>
                 </div>
                 <!-- The desktop's status-bar connection switcher, moved to the drawer foot -->
