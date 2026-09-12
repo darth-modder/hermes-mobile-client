@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { $backendSkinName, $backendSkins } from '../../../src/theme/backend-skin'
 import { useTheme } from '../../../src/theme/provider'
 import {
@@ -19,10 +20,12 @@ import { radius, type } from '../../../src/theme/type'
 import { DEFAULT_SKIN_NAME } from '../../../src/upstream/themes/presets'
 import type { DesktopTheme } from '../../../src/upstream/themes/types'
 
+// Order matches docs/mobile-prototypes/settings.html's `data-view="appearance"`
+// segmented control (Light, Dark, System), not this file's pre-M14 order.
 const MODE_OPTIONS: { label: string; value: ModeOverride }[] = [
-  { label: 'System', value: 'system' },
-  { label: 'Light', value: 'light' },
-  { label: 'Dark', value: 'dark' }
+  { label: t.settings.modeOptions.light.label, value: 'light' },
+  { label: t.settings.modeOptions.dark.label, value: 'dark' },
+  { label: t.settings.modeOptions.system.label, value: 'system' }
 ]
 
 function Swatch({ color }: { color: string }) {
@@ -56,6 +59,11 @@ function SkinRow({ active, theme }: { active: boolean; theme: DesktopTheme }) {
   )
 }
 
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="appearance"`
+// (Colour mode segment, Skin list). That view's own "Chat" toggle preview at
+// the bottom (Collapse thinking by default, Message reactions) is content
+// for the new Chat settings section (M14's add-list), not this screen — it
+// only appears here because the prototype is a single static mockup file.
 export default function AppearanceSettings() {
   const tokens = useTheme()
   const skinName = useStore($skinName)
@@ -71,9 +79,9 @@ export default function AppearanceSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Appearance' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.appearance }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>Appearance mode</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>{t.settings.appearance.colorMode}</Text>
         <View style={[styles.modeRow, { borderColor: tokens.border }]}>
           {MODE_OPTIONS.map(option => {
             const selected = option.value === modeOverride
