@@ -48,7 +48,8 @@ const styles = StyleSheet.create({
     marginVertical: 2
   },
   header: {
-    paddingVertical: 2
+    justifyContent: 'center',
+    minHeight: 48
   },
   headerText: {
     ...type.caption,

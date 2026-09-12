@@ -111,7 +111,8 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8
+    gap: 8,
+    minHeight: 48
   },
   name: {
     ...type.mono,
