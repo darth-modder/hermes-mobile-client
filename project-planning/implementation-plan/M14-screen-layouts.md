@@ -403,12 +403,12 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
       as originally written; no correction.
     - **Not re-litigated:** the model-picker correction (Deviation 11) already covers `slash.model`
       and isn't repeated here.
-14. **Chat pairing table correction: approval/clarify cards are expected-absent (a known defect), not
-    expected-present.** An earlier version of this milestone's pairing table (this document's own
-    2026-09-13 review round) read `chat.html`'s `Field (ours): approval and clarify cards in the
-    thread` line as this app already having them working, on the assumption "theirs" meant the
-    desktop. It doesn't: that line compares against the *competitor* mobile app fielded in
-    `docs/FIELD-NOTES-hermes-mobile-app-2026-09-12.md` (§3, row 20 — "Approval,
+14. **~~Chat pairing table correction: approval/clarify cards are expected-absent (a known defect), not
+    expected-present.~~ Superseded 2026-09-13.** An earlier version of this milestone's pairing table
+    (this document's own 2026-09-13 review round) read `chat.html`'s `Field (ours): approval and
+    clarify cards in the thread` line as this app already having them working, on the assumption
+    "theirs" meant the desktop. It doesn't: that line compares against the *competitor* mobile app
+    fielded in `docs/FIELD-NOTES-hermes-mobile-app-2026-09-12.md` (§3, row 20 — "Approval,
     `approvals.mode: manual`"), not `apps/desktop`. Verified by reading that row directly: the
     competitor app executed the risky command with no prompt at all; this app's own build showed
     **no card either — the turn hung for over 50 seconds** — and the row's own verdict is
@@ -421,6 +421,43 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
     row) is for. No speculative fix attempted here or anywhere in this milestone pending that
     diagnosis, per direction.
 
+    **Superseded by a reviewer device session (2026-09-13, M14/M13 device pass):** the field test's
+    "no card" result was a false lead — the competitor-app field test's model turn never called a
+    tool at all (it refused in text), so no `approval.request` was ever sent for either app to
+    render; that pairing was never actually exercising this app's approval-card path. On the
+    reviewer's own device session, a turn that *did* call a risky tool produced a live approval card
+    roughly 5 seconds after the tool call, in both light and dark. Leaving the session and returning
+    to it restored the same card rather than losing it. Pressing Reject cleared the card and returned
+    the composer to idle. Approval/clarify cards are expected-present after all; nothing here
+    indicates a rendering defect in `ApprovalCard.tsx` or `input-requests.ts`.
+
 ## Verification log
 
-(none yet — side-by-side pairs land as each screen's own commit reaches that exit criterion.)
+#### Reviewer device session (2026-09-13, M14/M13 device pass)
+
+These results come from the reviewer's own device session, not a run performed by the assistant.
+
+All eight required side-by-side pairs — chat, session list, settings index, one settings section,
+cron, profiles, mid-turn prompt, and one sheet — were present and checked in both light and dark
+mode. The approval card was present and live (see Deviation 14's supersession above: it rendered
+~5s after a real tool call, in both modes, survived leaving and re-entering the session, and Reject
+cleared it correctly).
+
+The same session surfaced defects, since fixed one-per-commit on this branch:
+
+- Dark inline code derived from the light (`#141414`) seed in both modes instead of the desktop
+  dark block's `#ffffff`-based `color-mix`.
+- Cron detail: `relativeTime` treated `run.last_active` (epoch seconds) as milliseconds, rendering
+  "20688d ago"; `last_run_at`/`next_run_at` rendered as raw ISO strings; Trigger now/Pause/Delete
+  measured ~18dp with no hitSlop or minHeight.
+- M13 criterion 6, taken literally (native size, not hitSlop-padded area): session-list's Open
+  menu/Settings/New session/Pin measured 28-32dp; SessionHeader's Model control measured 40dp even
+  with hitSlop; "Refresh profiles" measured ~38dp.
+- Chat header showed "Untitled" for sessions opened from the list, whose REST title was already
+  known — `$sessionStates` only picked up a title from a `session.title` event.
+- The create-profile sheet let the underlying screen's text show through its top, in both modes —
+  `Sheet`'s translucent `popover` background with no blur behind it.
+- With Stop and Steer both showing, the composer's input shrank to ~80dp and its placeholder
+  wrapped mid-word ("Messag/e Herme/s…").
+- The connect screen's URL field was pre-filled with real text (`http://127.0.0.1:9119`), so typing
+  appended to it instead of replacing it, producing "Invalid base URL".
