@@ -44,9 +44,14 @@ export function appearanceSkinSyncHint(themeLabel: string): string {
   return `Matches the desktop app's skins. The backend's active skin (${themeLabel}) applies automatically the first time it changes; pick a different one here to override it on this device.`
 }
 
-// settings/archived-chats.tsx has no entry here: every string it needs
+// settings/archived-chats.tsx — nearly every string this screen needs
 // (loading/empty/error states, Unarchive, Delete permanently, the message
-// count) already exists under t.settings.sessions (D15.4).
+// count) already exists under t.settings.sessions (D15.4). The one
+// exception is the untitled-session fallback, which mirrors this app's own
+// pre-existing term (app/(main)/session-list.tsx already falls back to
+// "Untitled" for a null `SessionInfo.title`) rather than any desktop string
+// (checked en.ts: no standalone "Untitled" value exists there).
+export const ARCHIVED_SESSION_UNTITLED = 'Untitled'
 
 // settings/billing.tsx — this app has no billing/credits API at all: past
 // the mid-turn "out of credits" wall carried on the message stream
