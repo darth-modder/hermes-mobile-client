@@ -1,9 +1,10 @@
 /**
  * `/api/tools/toolsets*` REST helpers — ported from
  * `apps/desktop/src/api/toolsets.ts` onto `src/net/http.ts` (see `rest.ts`).
- * No dedicated M09 sub-screen names "toolsets"; the models screen surfaces a
- * compact toolset list (enable toggle only, no per-toolset provider/model
- * picker — that is a deep enough surface to deserve its own pass later).
+ * `settings/toolsets.tsx` (M14) surfaces a compact toolset list (enable
+ * toggle only, no per-toolset provider/model picker — that is a deep enough
+ * surface to deserve its own pass later); M09 had this same list embedded
+ * in the models screen before that M14 commit moved it to its own route.
  *
  * `getTerminalBackends`/`selectTerminalBackend` and
  * `getComputerUseStatus`/`grantComputerUsePermissions` are deliberately NOT

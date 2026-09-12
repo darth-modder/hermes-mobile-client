@@ -21,8 +21,10 @@
 // Chats | About). M14 says "sections in the desktop's order"; which order
 // wins on a phone needs a D-entry — flagging it, not deciding it here.
 //
-// Toolsets is the only mobile prototype row still without a route — its own
-// later M14 commit, per the milestone's own task order. Chat, Safety and
+// Toolsets joined "Models and tools" (alongside Providers/Model/MCP/Skills)
+// in its own later M14 commit, per the milestone's own task order — moved
+// off settings/models.tsx, where it used to live, per the 2026-09-12 review.
+// Chat, Safety and
 // Memory & Context landed in the "App" group alongside Appearance/
 // Notifications/Voice: the M14 task doc places them there (device-facing
 // app preferences). Billing, Archived chats and About landed in "Account"
@@ -76,7 +78,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         title: t.settings.sections.model
       },
       { route: '/(main)/settings/mcp', subtitle: 'Add, test, enable MCP servers', title: t.settings.nav.mcp },
-      { route: '/(main)/settings/skills', subtitle: 'Enable, install, uninstall', title: t.skills.tabSkills }
+      { route: '/(main)/settings/skills', subtitle: 'Enable, install, uninstall', title: t.skills.tabSkills },
+      { route: '/(main)/settings/toolsets', subtitle: 'Enable or disable a tool group', title: t.skills.tabToolsets }
     ]
   },
   {
