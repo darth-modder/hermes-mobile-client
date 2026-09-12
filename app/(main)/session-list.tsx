@@ -144,8 +144,11 @@ export default function SessionListScreen() {
   }, [load])
 
   const openSession = useCallback(
-    (id: string) => {
-      router.push({ params: { id }, pathname: '/(main)/sessions/[id]' })
+    (session: SessionInfo) => {
+      router.push({
+        params: { id: session.id, ...(session.title ? { title: session.title } : {}) },
+        pathname: '/(main)/sessions/[id]'
+      })
     },
     [router]
   )
@@ -285,7 +288,7 @@ export default function SessionListScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               onLongPress={() => confirmDelete(item)}
-              onPress={() => openSession(item.id)}
+              onPress={() => openSession(item)}
               style={[styles.row, { borderBottomColor: tokens.border }]}
             >
               <View style={styles.rowLead}>

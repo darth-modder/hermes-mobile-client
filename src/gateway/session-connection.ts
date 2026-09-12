@@ -570,6 +570,21 @@ function seedSessionMessages(storedSessionId: string, messages: SessionMessage[]
   reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
 }
 
+/** Seed a session's title from a caller who already knows it (e.g. the REST
+ *  list this resume was opened from) — the reducer only ever learns a title
+ *  from a `session.title` event, which can lag well behind the screen
+ *  mounting and show "Untitled" in the meantime. Never overwrites a title
+ *  the reducer already has. */
+function seedSessionTitle(storedSessionId: string, title: string | undefined): void {
+  if (!title) {
+    return
+  }
+
+  reducerState = updateSession(reducerState, storedSessionId, session =>
+    session.title ? session : { ...session, title }
+  ).state
+}
+
 /** Start a brand-new session (no session-list screen exists yet — M07 — so
  *  this is also today's only way to reach a chat). Binds it as the active
  *  session and returns its stored id for navigation.
@@ -604,12 +619,13 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
  *  Both reconnect branches (inside the server's orphan grace, and after a
  *  `session.reclaimed`) call this the same way, so pending-request restore
  *  (D10.2) runs identically on either. */
-export async function resumeSession(storedSessionId: string): Promise<string> {
+export async function resumeSession(storedSessionId: string, knownTitle?: string): Promise<string> {
   const client = await ensureGatewayConnection()
   const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
+  seedSessionTitle(storedSessionId, knownTitle)
 
   const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
 

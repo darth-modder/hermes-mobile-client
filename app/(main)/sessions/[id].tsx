@@ -42,7 +42,7 @@ import { radius, type } from '../../../src/theme/type'
 export default function SessionScreen() {
   const router = useRouter()
   const tokens = useTheme()
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, title } = useLocalSearchParams<{ id: string; title?: string }>()
   const [error, setError] = useState<null | string>(null)
   const [ready, setReady] = useState(false)
   const startedFor = useRef<string | null>(null)
@@ -55,7 +55,7 @@ export default function SessionScreen() {
     setError(null)
     setReady(false)
 
-    const open = id === 'new' ? createSession() : resumeSession(id)
+    const open = id === 'new' ? createSession() : resumeSession(id, title)
 
     open
       .then(storedId => {
@@ -66,7 +66,7 @@ export default function SessionScreen() {
         }
       })
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
-  }, [id, router])
+  }, [id, router, title])
 
   useEffect(() => {
     if (!id || startedFor.current === id) {
