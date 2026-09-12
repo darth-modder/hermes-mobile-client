@@ -22,10 +22,21 @@ import {
   uninstallSkillFromHub
 } from '../../../src/api/skills'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { type } from '../../../src/theme/type'
 
+// Replicates: docs/desktop-prototypes/a-main/capabilities.html's
+// `data-view="skills"` panel (installed list + "Available to install"
+// catalog). No dedicated mobile-prototype view exists for Skills — the
+// M14 mapping's Skills/Toolsets/MCP tabs become three settings rows, this
+// being one of them — and the desktop's MasterDetail (list + SKILL.md
+// preview pane) stays a single list here, same structural-rewrite call as
+// mcp.tsx. Section/action labels with a vendored match (D15.4): screen
+// title (t.skills.tabSkills), "Available to install" -> officialCatalog,
+// Install/Uninstall -> t.skills.hub.{install,uninstall} (the same hub
+// install action this screen already calls).
 /**
  * Skills settings screen (M09). Exit criterion: "skill toggle persists" —
  * `setSkillEnabled` writes through the backend; this screen re-fetches
@@ -64,7 +75,7 @@ export default function SkillsSettings() {
   const confirmUninstall = (skillName: string) => {
     Alert.alert('Uninstall skill?', skillName, [
       { style: 'cancel', text: 'Cancel' },
-      { onPress: () => uninstallMutation.mutate(skillName), style: 'destructive', text: 'Uninstall' }
+      { onPress: () => uninstallMutation.mutate(skillName), style: 'destructive', text: t.skills.hub.uninstall }
     ])
   }
 
@@ -77,21 +88,21 @@ export default function SkillsSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Skills' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.skills.tabSkills }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
         }
       >
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Installed</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.skills.hub.installed}</Text>
         {skillsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {skillsQuery.isError ? (
           <View>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {skillsQuery.error instanceof Error ? skillsQuery.error.message : String(skillsQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void skillsQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void skillsQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -114,14 +125,14 @@ export default function SkillsSettings() {
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No skills installed.</Text>
         ) : null}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Available to install</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.skills.officialCatalog}</Text>
         {officialQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {officialQuery.isError ? (
           <View>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {officialQuery.error instanceof Error ? officialQuery.error.message : String(officialQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void officialQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void officialQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -135,16 +146,19 @@ export default function SkillsSettings() {
               </Text>
             </View>
             {skill.installed ? (
-              <TouchableOpacity onPress={() => confirmUninstall(skill.name)}>
-                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Uninstall</Text>
+              <TouchableOpacity hitSlop={10} onPress={() => confirmUninstall(skill.name)}>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.skills.hub.uninstall}</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 disabled={installMutation.isPending && installMutation.variables === skill.identifier}
+                hitSlop={10}
                 onPress={() => installMutation.mutate(skill.identifier)}
               >
                 <Text style={[styles.actionText, { color: tokens.primary }]}>
-                  {installMutation.isPending && installMutation.variables === skill.identifier ? '…' : 'Install'}
+                  {installMutation.isPending && installMutation.variables === skill.identifier
+                    ? '…'
+                    : t.skills.hub.install}
                 </Text>
               </TouchableOpacity>
             )}
