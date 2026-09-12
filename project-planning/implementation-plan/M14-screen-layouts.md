@@ -156,36 +156,36 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
 
 ## Deviations from the literal spec (and why)
 
-1. **Chat thread: one gap value, not two.** The adaptation table gives the desktop's turn gap
-   (`.375rem` → 6 dp) and block gap (`.75rem` → 12 dp) as two different numbers. `ChatMessage`
-   carries no turn/block boundary field to tell them apart by, so `Transcript.tsx` uses 12 dp
-   between every message rather than inventing a boundary heuristic. Revisit if/when the reducer
-   gains a turn id.
+1. **~~Chat thread: one gap value, not two.~~ Resolved 2026-09-12.** Retried per review: the
+   turn/block boundary is derivable from `role` alone — a role change (user→assistant or back)
+   opens a new turn (6 dp); consecutive same-role messages are blocks inside one turn (12 dp). It
+   didn't fail for tool-call/reasoning parts (they live inside one message's `parts` array, not as
+   separate list rows, so they never hit this boundary at all). Implemented as `messageGap` in the
+   new `src/chat/message-gap.ts` (pure, tested; split out of `Transcript.tsx` for the same reason
+   as `drawer-rows.ts` below), wired into `Transcript`'s `renderItem` by comparing each row to
+   `data[index + 1]` (the reversed list's next entry is the chronologically-older neighbour).
 2. **Session-list lead-cell status dot is the existing unread dot, not the prototype's
    busy/warn/ok/bad states.** `sessions.html`'s `.s-row__lead` carries a live per-session status
    (streaming, needs-approval, idle, errored). The REST `SessionInfo` list (`GET /api/sessions`)
    this screen already runs on has no such field — it would need either a second per-row gateway
    subscription or a backend change, both out of scope for a layout milestone. Kept the row's
    existing unread signal in that slot instead of fabricating states with no data behind them.
-3. **Drawer-order exit criterion needs a decision before it can be written as a test.** "Equal the
-   desktop's sidebar nav order from `DESKTOP-SCREENS.md` §A with the Bots and machine-bound rows
-   removed" has two readings that disagree:
-   - The desktop's literal sidebar nav strip (`sessions-sidebar.html`'s `.side-nav` buttons) is
-     just four items: New session, Capabilities, Messaging, Artifacts.
-   - §A's full main-screens table (the more likely intended source, given "with the Bots … rows
-     removed" only makes sense against a list that contains Bots) is: Capabilities, Messaging,
-     Artifacts, Settings, Command Center, Cron, Profiles, Agents, Starmap (absent), Webhooks.
-   Neither list contains **Projects**, which the current drawer has had since M10 and which real
-   users depend on today. A test written against either literal source would require deleting a
-   working entry point with no replacement named anywhere in M14's own spec. Left the drawer's
-   existing 7 rows (Sessions, Projects, Cron, Webhooks, Artifacts, Channels, Settings) and their
-   order untouched — already Bots-free and machine-bound-free, so it doesn't fail either reading,
-   it just doesn't yet include the newer §A destinations (Capabilities, Command Center, Profiles,
-   Agents) this milestone still has to build. Added their entries to the drawer in the same commit
-   that builds each screen, in §A's order, rather than guessing the test's intended list now and
-   possibly writing a hard-fail check against the wrong one. Flagged for Fable/Opus: which source
-   is authoritative, and whether Projects gets a §A-equivalent slot or stays as a mobile-only
-   addition the test should explicitly allow.
+   **Accepted as written (2026-09-12 review).**
+3. **~~Drawer-order exit criterion needs a decision~~ Resolved 2026-09-12**, decision recorded in
+   `docs/mobile-prototypes/sessions.html`'s "Drawer order" note and in `src/components/
+   drawer-rows.ts`: derived as the desktop's nav strip in its own order (Capabilities, Messaging,
+   Artifacts, Scheduled jobs — `sidebar.nav` in the vendored en.ts) → the ported overlay screens in
+   `DESKTOP-SCREENS.md` §A order (Profiles, Agents, Webhooks, Command center) → Projects
+   (mobile-only: the desktop keeps projects inside its session tree, not the nav) → Settings last.
+   Bots/Sessions/Tasks are the M14 tab row (inside the session list screen), prepended to the
+   drawer by M15 A, so the drawer-order test (`src/components/drawer-rows.test.ts`) asserts only
+   from Capabilities down. `Agents` and `Command center` got minimal placeholder screens
+   (`app/(main)/agents/index.tsx`, `app/(main)/command-center/index.tsx`) so the new drawer rows
+   aren't dead links before this milestone reaches their own commits — both are in
+   `route-replicates.test.ts`'s PENDING list, not yet `Replicates:`-commented.
+   **Flagged, per the review: the criterion's "from `DESKTOP-SCREENS.md` §A" wording is loose (§A
+   is a screen inventory, not a nav order) — needs a D-entry, not a silent rewrite of the
+   criterion's text.**
 4. **`docs/mobile-prototypes/sessions.html`'s date-divider and pinned-group grouping is not
    `Field:`-tagged (unlike its tab row, header subtitle and per-row preview elaborations), so it
    was built now**: `src/lib/session-groups.ts` (pure, tested) buckets into Pinned / Earlier today /
@@ -193,4 +193,4 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
 
 ## Verification log
 
-(none yet)
+(none yet — side-by-side pairs land as each screen's own commit reaches that exit criterion.)

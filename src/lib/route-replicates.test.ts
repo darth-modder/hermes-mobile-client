@@ -51,6 +51,8 @@ const PENDING = new Set([
   '(main)/channels/index.tsx',
   '(main)/artifacts/index.tsx',
   '(main)/projects/index.tsx',
+  '(main)/agents/index.tsx',
+  '(main)/command-center/index.tsx',
   'connect/index.tsx',
   'connect/scan.tsx',
   'connect/[id]/login.tsx'

@@ -11,6 +11,7 @@ import { type MobileTokens, useTheme } from '../theme/provider'
 import { radius, type } from '../theme/type'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
+import { type MessageGap, messageGap } from './message-gap'
 import { ApprovalCard } from './parts/ApprovalCard'
 import { ClarifyCard } from './parts/ClarifyCard'
 import { ReasoningDisclosure } from './parts/ReasoningDisclosure'
@@ -82,7 +83,7 @@ export const messageRenderCounts: Record<string, number> = {}
  */
 let nextRecycleSlotId = 0
 
-const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
+const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: MessageGap; message: ChatMessage }) {
   const tokens = useTheme()
   const roleStyle = roleStyleFor(tokens, message.role)
   const recycleSlotId = useRef<null | number>(null)
@@ -98,7 +99,7 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
   }
 
   return (
-    <View style={roleStyle.row}>
+    <View style={[roleStyle.row, gap === 'turn' ? styles.turnGap : gap === 'block' ? styles.blockGap : null]}>
       <View style={[styles.bubble, roleStyle.bubble]}>
         {message.parts.map((part, index) => (
           <MessagePart key={index} part={part} />
@@ -165,19 +166,25 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
       }
       maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}
       ref={listRef}
-      renderItem={({ item }) => <MessageBubble message={item} />}
+      renderItem={({ index, item }) => (
+        // `data` is reversed (index 0 = newest), so `data[index + 1]` is the
+        // message chronologically BEFORE `item` — the boundary messageGap sizes.
+        <MessageBubble gap={messageGap(item, data[index + 1])} message={item} />
+      )}
     />
   )
 }
 
 const styles = StyleSheet.create({
   assistantRow: {
-    alignItems: 'flex-start',
-    marginBottom: 12
+    alignItems: 'flex-start'
   },
   attachments: {
     ...type.caption,
     marginTop: 4
+  },
+  blockGap: {
+    marginBottom: 12
   },
   bubble: {
     borderRadius: radius.card,
@@ -201,11 +208,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent'
   },
   systemRow: {
-    alignItems: 'center',
-    marginBottom: 12
+    alignItems: 'center'
+  },
+  turnGap: {
+    marginBottom: 6
   },
   userRow: {
-    alignItems: 'flex-end',
-    marginBottom: 12
+    alignItems: 'flex-end'
   }
 })

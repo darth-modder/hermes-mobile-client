@@ -1,42 +1,66 @@
 import { useStore } from '@nanostores/react'
+import { IconHierarchy2, IconMessages, IconPuzzle } from '@tabler/icons-react-native'
 import { type Href, useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import { Clock, FileImage, FolderOpen, type IconComponent, Link, MessageCircle, Network, Settings } from '../lib/icons'
+import {
+  Clock,
+  FileImage,
+  FolderOpen,
+  type IconComponent,
+  LayoutDashboard,
+  Link,
+  MessageCircle,
+  Settings,
+  Users
+} from '../lib/icons'
 import { $drawerOpen, closeDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
 
+import { DRAWER_ROW_META } from './drawer-rows'
+
 const DRAWER_WIDTH = 300
 
 interface DrawerRow {
-  route: Href
+  // `string`, not `Href` — see drawer-rows.ts's DrawerRowMeta for why; cast
+  // back to `Href` at the one call site that actually navigates with it.
+  route: string
   title: string
   Icon: IconComponent
 }
 
-// M10 task: "Drawer navigation in app/(main)/_layout.tsx: Sessions,
-// Projects, Cron, Webhooks, Artifacts, Channels, Settings." Routes use the
-// bare folder+index alias (`/(main)/projects`, not `/(main)/projects/index`)
-// — the form that typechecks against THIS worktree's freshly regenerated
-// `.expo/types/router.d.ts` (`npx expo start`, once, to produce it; `expo
-// export` alone does not). M09 hit the opposite mismatch after merging to
-// `main` (`/(main)/settings/index` typechecked in its own worktree but not
-// against main's regenerated types, fixed to the bare alias post-merge) —
-// AGENTS.md/D12 name this as a known, environment-sensitive flake and say
-// explicitly not to assume either form survives a merge. Flagged again here
-// in M10-management-screens.md's Deviations for Opus's re-verification pass.
-const ROWS: DrawerRow[] = [
-  { Icon: MessageCircle, route: '/(main)/session-list', title: 'Sessions' },
-  { Icon: FolderOpen, route: '/(main)/projects', title: 'Projects' },
-  { Icon: Clock, route: '/(main)/cron', title: 'Cron' },
-  { Icon: Link, route: '/(main)/webhooks', title: 'Webhooks' },
-  { Icon: FileImage, route: '/(main)/artifacts', title: 'Artifacts' },
-  { Icon: Network, route: '/(main)/channels', title: 'Channels' },
-  { Icon: Settings, route: '/(main)/settings', title: 'Settings' }
-]
+/**
+ * D16/M15A note: `IconPuzzle`/`IconMessages`/`IconHierarchy2` aren't in
+ * `src/lib/icons.ts`'s generated alias table — like `ScreenHeader`'s
+ * `IconMenu2`, the desktop's own icon module has no alias for a concept it
+ * doesn't need (a persistent sidebar has no drawer to iconify), so these are
+ * imported straight from the Tabler package rather than hand-edited into a
+ * generated file.
+ *
+ * The order/route/title triples live in `./drawer-rows.ts` (pure, no
+ * react-native import — see that file's header for why the split exists:
+ * drawer-rows.test.ts needs to import the order without dragging in
+ * react-native's own Flow-typed entry point, which vitest's transform can't
+ * parse). Icons stay here since they DO need react-native/Tabler.
+ */
+const DRAWER_ICONS: Record<string, IconComponent> = {
+  '/(main)/agents': IconHierarchy2,
+  '/(main)/artifacts': FileImage,
+  '/(main)/channels': MessageCircle,
+  '/(main)/command-center': LayoutDashboard,
+  '/(main)/cron': Clock,
+  '/(main)/projects': FolderOpen,
+  '/(main)/session-list': IconMessages,
+  '/(main)/settings': Settings,
+  '/(main)/settings/profiles': Users,
+  '/(main)/settings/skills': IconPuzzle,
+  '/(main)/webhooks': Link
+}
+
+export const DRAWER_ROWS: DrawerRow[] = DRAWER_ROW_META.map(row => ({ ...row, Icon: DRAWER_ICONS[row.route] }))
 
 /** Slide-out navigation overlay, mounted once in `app/(main)/_layout.tsx`
  *  alongside the `Stack` (see `src/store/drawer.ts` for why this isn't
@@ -65,9 +89,9 @@ export function AppDrawer() {
 
   mounted.current = open
 
-  const navigate = (route: Href) => {
+  const navigate = (route: string) => {
     closeDrawer()
-    router.push(route)
+    router.push(route as Href)
   }
 
   return (
@@ -88,8 +112,14 @@ export function AppDrawer() {
         ]}
       >
         <Text style={[styles.heading, { color: tokens.mutedForeground }]}>Hermes</Text>
-        {ROWS.map(row => (
-          <TouchableOpacity key={row.title} onPress={() => navigate(row.route)} style={styles.row}>
+        {DRAWER_ROWS.map(row => (
+          <TouchableOpacity
+            accessibilityLabel={row.title}
+            accessibilityRole="button"
+            key={row.title}
+            onPress={() => navigate(row.route)}
+            style={styles.row}
+          >
             <View style={styles.rowIcon}>
               <row.Icon color={tokens.mutedForeground} size={20} />
             </View>
