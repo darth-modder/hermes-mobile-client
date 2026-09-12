@@ -65,6 +65,33 @@ export const ARCHIVED_SESSION_UNTITLED = 'Untitled'
 export const BILLING_NOT_AVAILABLE =
   "Billing isn't available from this app yet. Manage your plan, payment method, and usage from the Hermes desktop app or your account portal."
 
+// The three config-schema-only settings sections (Chat, Safety, Memory &
+// Context) show their host's field NAMES as read-only rows so a visitor
+// learns what lives there instead of only reading an apology (2026-09-12
+// review). Those field names/descriptions come from the desktop prototype's
+// own markup (docs/desktop-prototypes/a-main/settings.html's data-view
+// panels), copied faithfully — NOT from the vendored en.ts, despite it
+// having the right shape for exactly this (`t.settings.fieldLabels` /
+// `fieldDescriptions`, both typed `Record<string, string>` in
+// src/upstream/i18n/types.ts): checked src/upstream/i18n/en.ts directly,
+// both objects are empty (`fieldLabels: {}`, `fieldDescriptions: {}`,
+// lines 671-672) — the desktop's config-schema field text was never
+// vendored as translatable data, only ever hardcoded into the prototype
+// HTML. This is the most faithful available source, and reproduces the
+// desktop's real field text rather than the prototype's a step removed.
+export interface HostManagedField {
+  description: string
+  title: string
+}
+
+// settings/index.tsx row value for Chat, Safety and Memory & Context: told
+// up front, not after a tap, that the section is read-only (2026-09-12
+// review — "a chevron that leads to a paragraph is the competitor's dead
+// Notifications row with better manners"). No vendored equivalent exists
+// for this either (checked) — the desktop has no notion of a section
+// belonging to "the host" since it IS the host.
+export const HOST_MANAGED_INDEX_VALUE = 'Host-managed'
+
 // settings/chat.tsx — every row on the desktop's Chat panel (Personality,
 // Timezone, Show Reasoning, Image Input Mode) is a config.yaml-schema field,
 // autosaved through the desktop's generic config editor that src/api/
@@ -77,6 +104,13 @@ export const BILLING_NOT_AVAILABLE =
 // preference store either. Nothing here is backed by real state yet.
 export const CHAT_NOT_AVAILABLE =
   "Chat preferences aren't editable from this app yet — they live in the host's config file, which this app doesn't read or write. Change them from the Hermes desktop app or hermes-cli."
+
+export const CHAT_FIELDS: readonly HostManagedField[] = [
+  { description: 'Default assistant style for new sessions.', title: 'Personality' },
+  { description: 'Used for timestamps and scheduled jobs.', title: 'Timezone' },
+  { description: "Stream the model's thinking into the transcript.", title: 'Show Reasoning' },
+  { description: 'Controls how image attachments are sent to the model.', title: 'Image Input Mode' }
+]
 
 // settings/connections.tsx — this compact per-row auth-mode badge has no
 // desktop equivalent: the desktop describes auth mode with full sentences
@@ -124,6 +158,15 @@ export const MCP_ADDING = 'Adding…'
 // API surface is data-fetching work, out of scope for a layout pass.
 export const MEMORY_NOT_AVAILABLE =
   "Memory and context settings aren't available from this app yet — no mobile API exists to read or change them. Change them from the Hermes desktop app or hermes-cli."
+
+export const MEMORY_FIELDS: readonly HostManagedField[] = [
+  { description: 'Save durable memories that can help future sessions.', title: 'Memory' },
+  { description: 'Maintain a compact profile of user preferences.', title: 'User Profile' },
+  { description: 'Where memories are stored and recalled from.', title: 'Memory Provider' },
+  { description: 'Strategy for managing long conversations near the context limit.', title: 'Context Engine' },
+  { description: 'Summarize older context when conversations get large.', title: 'Auto-Compression' },
+  { description: 'Share of the context window that triggers compression.', title: 'Compression Threshold' }
+]
 
 // settings/models.tsx — section titles/hints for the model list and the
 // per-provider "(not configured)" suffix have no vendored match in
@@ -188,6 +231,16 @@ export function providersDeleteEndpointConfirmTitle(name: string): string {
 export const SAFETY_NOT_AVAILABLE =
   "Safety settings aren't editable from this app yet — approval mode, command allowlists, and the rest live in the host's config file. Change them from the Hermes desktop app or hermes-cli."
 
+export const SAFETY_FIELDS: readonly HostManagedField[] = [
+  { description: 'How Hermes handles commands that need explicit approval.', title: 'Approval Mode' },
+  { description: 'How long approval prompts wait before timing out.', title: 'Approval Timeout' },
+  { description: 'Ask before reloading MCP servers mid-session.', title: 'Confirm MCP Reloads' },
+  { description: 'Commands that never need approval.', title: 'Command Allowlist' },
+  { description: 'Hide detected secrets from model-visible content when possible.', title: 'Redact Secrets' },
+  { description: 'Let web tools reach localhost and private network addresses.', title: 'Allow Private URLs' },
+  { description: 'Create rollback snapshots before file edits.', title: 'File Checkpoints' }
+]
+
 // settings/skills.tsx — no vendored remove-confirm for skills (t.skills.hub
 // has bare "Uninstall", not a "Uninstall X?" confirm); the two empty states
 // are more specific than the vendored t.skills.noSkillsTitle ("No skills
@@ -200,7 +253,7 @@ export const SKILLS_NONE_AVAILABLE = 'No skills available to install.'
 // gestures on mobile (mic hold, speaker tap), not a desktop settings
 // concept at all (this screen's own Replicates comment explains the
 // adaptation); the mic-permission status words have no vendored match
-// beyond "Checking…" (t.settings.gateway.checking, already reused as-is).
+// beyond "Checking…" (t.settings.about.checking, already reused as-is).
 export const VOICE_DICTATION_SECTION_TITLE = 'Dictation'
 export const VOICE_DICTATION_HINT =
   'Tap the mic in the composer to record; releasing it sends the clip to the backend for transcription and inserts the text into your message.'

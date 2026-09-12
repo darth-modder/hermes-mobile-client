@@ -28,6 +28,13 @@
 // app preferences). Billing, Archived chats and About landed in "Account"
 // alongside Plugins, matching the desktop rail's own adjacency (Plugins,
 // Archived Chats, About are consecutive there).
+//
+// Chat/Safety/Memory & Context carry `value: HOST_MANAGED_INDEX_VALUE`
+// (2026-09-12 review): those three screens are read-only (see each
+// screen's own Replicates comment for why — M09 dropped the config.yaml
+// read/write API they'd need), so the index says so before the tap rather
+// than after.
+import { HOST_MANAGED_INDEX_VALUE } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
 export interface SettingsRowMeta {
@@ -37,6 +44,9 @@ export interface SettingsRowMeta {
   route: string
   subtitle: string
   title: string
+  // Told up front that a section is read-only, not after the tap — see
+  // HOST_MANAGED_INDEX_VALUE's own comment. Absent for every writable row.
+  value?: string
 }
 
 export interface SettingsGroup {
@@ -80,17 +90,20 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       {
         route: '/(main)/settings/chat',
         subtitle: 'Personality, reasoning, reactions',
-        title: t.settings.sections.chat
+        title: t.settings.sections.chat,
+        value: HOST_MANAGED_INDEX_VALUE
       },
       {
         route: '/(main)/settings/safety',
         subtitle: 'Approvals, allowlists, checkpoints',
-        title: t.settings.sections.safety
+        title: t.settings.sections.safety,
+        value: HOST_MANAGED_INDEX_VALUE
       },
       {
         route: '/(main)/settings/memory',
         subtitle: 'Memory, context engine, compression',
-        title: t.settings.sections.memory
+        title: t.settings.sections.memory,
+        value: HOST_MANAGED_INDEX_VALUE
       },
       {
         route: '/(main)/settings/notifications',

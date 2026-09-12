@@ -223,6 +223,22 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
    preview) — layout-only work for M14 can't add that without also inventing the behaviour behind it,
    which is exactly what M14 is not supposed to do. Omitted rather than shown disabled or wired to
    nothing, so the screen never presents a control that silently does nothing when pressed.
+8. **Chat, Safety and Memory & Context ship read-only, with no D-entry yet to close the gap.**
+   Every field on all three desktop panels is either a config.yaml-schema value (the desktop's
+   generic config editor — `src/api/config.ts`'s header already decided that editor isn't ported to
+   mobile) or, for Safety's Approval Mode specifically, a value `session-info.ts`'s header says was
+   dropped reconciling the desktop's session-info handler ("approval_mode reconciliation
+   (profile-scoped desktop settings sync)"). Both gaps predate this milestone (M09), not introduced
+   by it. Each screen now lists its desktop's field names and one-line descriptions as inert rows
+   (2026-09-12 review: "teach what lives there, not just apologise") instead of only a notice
+   paragraph, and the settings-index row for each carries a `Host-managed` value so a visitor knows
+   before tapping, not after — both `src/lib/strings.mobile.ts` additions, since the field text is
+   copied from `docs/desktop-prototypes/a-main/settings.html`'s markup, not the vendored `en.ts`
+   (checked: `t.settings.fieldLabels`/`fieldDescriptions` are typed for exactly this in
+   `src/upstream/i18n/types.ts` but both are empty objects in `en.ts` — the desktop's config-schema
+   field text was never vendored as translatable data). Porting `config.get`/`config.set` (and,
+   separately, `approval_mode` read access) is real data-layer work, not a layout task — **flagging
+   for a D-entry to decide whether that's M15's or its own milestone, not deciding it here.**
 
 ## Verification log
 

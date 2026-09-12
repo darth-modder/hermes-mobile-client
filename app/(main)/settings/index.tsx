@@ -52,7 +52,12 @@ export default function SettingsIndex() {
             <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{group.label}</Text>
             {group.rows.map((row, index) => (
               <Fragment key={row.route}>
-                <ListRow onPress={() => router.push(row.route as Href)} subtitle={row.subtitle} title={row.title} />
+                <ListRow
+                  onPress={() => router.push(row.route as Href)}
+                  subtitle={row.subtitle}
+                  title={row.title}
+                  value={row.value}
+                />
                 {index < group.rows.length - 1 ? <ListRowSeparator /> : null}
               </Fragment>
             ))}

@@ -41,6 +41,7 @@ backend runs on and have no mobile equivalent:
 | `@` file completion | Completes only at the end of the text, not at the cursor | M06 Deviation #7, open |
 | Haptics and sound | Reducer effects accepted and ignored | M13 (usability) |
 | PDF attachment | Client path exists; unverified pending poppler on the server host | Register (D8) |
+| Settings: Chat, Safety, Memory & Context | Read-only: each screen names its desktop fields (labels copied from the prototype, not vendored — see `src/lib/strings.mobile.ts`) but none can be read or changed here. Cause is M09, not M14: `getHermesConfig`/`saveHermesConfig` (the desktop's schema-driven config editor) were never ported, and `session-info.ts` drops `approval_mode` reconciliation on top for Safety specifically | M14 Deviation 8; porting `config.get`/`config.set` is its own data-layer task, flagged for a D-entry |
 
 ## Mobile has that desktop does not
 
