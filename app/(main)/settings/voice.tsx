@@ -4,6 +4,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 
@@ -16,6 +17,19 @@ async function checkMicrophonePermission(): Promise<PermissionState> {
   return status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'undetermined'
 }
 
+// Replicates: docs/desktop-prototypes/a-main/settings.html's
+// `data-view="voice"` panel, adapted rather than transcribed: that panel is
+// provider configuration (Text-To-Speech/Speech-To-Text provider pickers,
+// a "Record Key" hold-to-talk keybind) — the provider choice isn't exposed
+// through this app's API and "Record Key" is keyboard-only, already
+// excluded by the M14 mapping's own skip list (Workspace/Browser/Advanced/
+// Keybinds/Local models). Mobile has no keyboard, so dictation/playback are
+// gestures on the composer (mic hold, speaker tap) rather than settings —
+// this screen's job is only the OS microphone permission this app needs to
+// support that, which the desktop panel has no equivalent of. Screen title
+// still moves to the vendored t.settings.sections.voice (D15.4), matching
+// the settings index row (979bbcc); the permission-status copy below is
+// mobile-only and stays hand-authored.
 export default function VoiceSettings() {
   const tokens = useTheme()
   const [permission, setPermission] = useState<PermissionState>('checking')
@@ -37,7 +51,7 @@ export default function VoiceSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Voice' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.voice }} />
       <View style={styles.content}>
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Dictation</Text>
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
