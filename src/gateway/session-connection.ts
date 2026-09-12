@@ -94,6 +94,14 @@ export function onGatewayConnectionState(listener: (state: ConnectionState) => v
   return () => stateListeners.delete(listener)
 }
 
+/** The gateway's connection state right now — for a component mounting
+ *  after the gateway already connected (`onGatewayConnectionState` only
+ *  reports future transitions, not the value at subscribe time). M14:
+ *  `src/chat/ConnectionBanner.tsx`'s initial render. */
+export function getGatewayConnectionState(): ConnectionState {
+  return gateway?.connectionState ?? 'idle'
+}
+
 function publishAll(): void {
   publishReducerState(reducerState)
   publishTodosFromReducerState(reducerState)
