@@ -14,10 +14,20 @@ import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 
 /**
- * The chat screen. No session-list screen exists yet (M07), so `id: "new"`
- * is also today's only entry point into a fresh conversation — it creates
- * one and replaces this route with the real stored id so back/forward and a
- * later resume both address it the normal way.
+ * Replicates: docs/mobile-prototypes/chat.html (conversation view only —
+ * the approval/clarify/attach/palette/dictation/model/effort views and
+ * every `Field:`-tagged addition in that prototype are M15's; see M14
+ * Deviations). Adaptation rules applied: thread full width with 16 dp
+ * gutters, block gap 12 dp (turn-vs-block gap collapsed to one value, see
+ * Deviations); message bubble `radius.card`, max width 86%, pad 14×10;
+ * SessionHeader at 56 dp; composer controls 48 dp (already M13); structure
+ * of the composer and the approval/clarify/sudo/secret cards is
+ * device-verified and unchanged, restyle only.
+ *
+ * No session-list screen exists yet (M07), so `id: "new"` is also today's
+ * only entry point into a fresh conversation — it creates one and replaces
+ * this route with the real stored id so back/forward and a later resume
+ * both address it the normal way.
  */
 export default function SessionScreen() {
   const router = useRouter()

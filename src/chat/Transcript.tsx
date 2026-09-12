@@ -172,7 +172,8 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
 
 const styles = StyleSheet.create({
   assistantRow: {
-    alignItems: 'flex-start'
+    alignItems: 'flex-start',
+    marginBottom: 12
   },
   attachments: {
     ...type.caption,
@@ -180,12 +181,13 @@ const styles = StyleSheet.create({
   },
   bubble: {
     borderRadius: radius.card,
-    maxWidth: '92%',
-    padding: 10
+    maxWidth: '86%',
+    paddingHorizontal: 14,
+    paddingVertical: 10
   },
   content: {
-    paddingHorizontal: 10,
-    paddingVertical: 8
+    paddingHorizontal: 16,
+    paddingVertical: 12
   },
   error: {
     ...type.label,
@@ -199,9 +201,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent'
   },
   systemRow: {
-    alignItems: 'center'
+    alignItems: 'center',
+    marginBottom: 12
   },
   userRow: {
-    alignItems: 'flex-end'
+    alignItems: 'flex-end',
+    marginBottom: 12
   }
 })

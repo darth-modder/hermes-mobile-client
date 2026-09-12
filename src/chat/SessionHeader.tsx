@@ -138,11 +138,16 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
 
 const styles = StyleSheet.create({
   back: {
-    paddingRight: 8
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48
   },
   compressButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 8
   },
   compressText: {
     ...type.caption
@@ -151,8 +156,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    paddingHorizontal: 10,
-    paddingVertical: 10
+    minHeight: 56,
+    paddingHorizontal: 8
   },
   subtitle: {
     ...type.caption,
