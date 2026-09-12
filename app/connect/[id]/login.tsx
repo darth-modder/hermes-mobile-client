@@ -6,11 +6,32 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { setActiveConnection } from '../../../src/connections/registry'
 import type { MobileConnection } from '../../../src/connections/types'
 import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gateway/dial'
+import { CONNECT_PASSWORD_LABEL, CONNECT_SIGNING_IN, CONNECT_USERNAME_LABEL } from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
 import { mintWsTicket, passwordLogin, PasswordLoginError } from '../../../src/net/auth/password-login'
 import { probeStatus } from '../../../src/net/auth/probe'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 
+// Replicates: no desktop counterpart — docs/desktop-prototypes/d-windows/
+// login-window.html documents only the OAuth and Hermes Cloud portal
+// windows (its own header: "NOTHING inside the window is Hermes UI"; the
+// mock pages are generic external-IdP stand-ins), and neither it nor
+// docs/DESKTOP-SCREENS.md nor en.ts names a username/password sign-in form
+// at all. A gated-by-username-and-password backend (M04) is real on this
+// app but has no desktop screen to replicate; Username/Password field
+// labels and "Signing in…" are named in strings.mobile.ts's "app/connect"
+// section for exactly that reason. "Sign in" (title/button) and "Connected"
+// do have vendored matches (`t.install.signIn`, `t.settings.gateway.
+// cloudConnectedTitle`) and are used below.
+//
+// The "Test WS ticket dial" control below (post-login) has no desktop
+// counterpart either and isn't part of any replicated flow — it's an M04/
+// M08 connectivity self-check left in deliberately for on-device
+// verification of the WS ticket handshake, not a dead control masquerading
+// as a real one (it does something real when pressed). Flagging rather than
+// removing it: a labels sweep isn't the place to decide whether a
+// diagnostic tool stays in the shipped screen.
 /**
  * Password sign-in for a gated backend (M04). `id`/`baseUrl`/`label`/
  * `provider` come from app/connect/index.tsx's auto-detect step. On success
@@ -117,7 +138,7 @@ export default function PasswordLoginScreen() {
   if (connected) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-        <Text style={[styles.title, { color: tokens.foreground }]}>Connected</Text>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{t.settings.gateway.cloudConnectedTitle}</Text>
         <Text style={[styles.status, { color: tokens.semantic.green }]}>{label || baseUrl}</Text>
         <TouchableOpacity onPress={testWsTicketDial} style={[styles.button, { backgroundColor: tokens.primary }]}>
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Test WS ticket dial</Text>
@@ -136,12 +157,12 @@ export default function PasswordLoginScreen() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: tokens.background }]}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={[styles.title, { color: tokens.foreground }]}>Sign in</Text>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{t.install.signIn}</Text>
         <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
           {label || baseUrl} · {provider}
         </Text>
 
-        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Username</Text>
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>{CONNECT_USERNAME_LABEL}</Text>
         <TextInput
           autoCapitalize="none"
           onChangeText={setUsername}
@@ -152,7 +173,7 @@ export default function PasswordLoginScreen() {
           value={username}
         />
 
-        <Text style={[styles.label, { color: tokens.mutedForeground }]}>Password</Text>
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>{CONNECT_PASSWORD_LABEL}</Text>
         <TextInput
           autoCapitalize="none"
           onChangeText={setPassword}
@@ -172,7 +193,7 @@ export default function PasswordLoginScreen() {
           style={[styles.button, { backgroundColor: tokens.primary }]}
         >
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? CONNECT_SIGNING_IN : t.install.signIn}
           </Text>
         </TouchableOpacity>
       </ScrollView>

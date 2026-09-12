@@ -33,8 +33,11 @@ const APP_ROOT = join(REPO_ROOT, 'app')
 const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 
 // M14's screen sweep, not yet reached (task list order). Remove the line the
-// same commit that restyles that screen and adds its comment.
-const PENDING = new Set(['connect/index.tsx', 'connect/scan.tsx', 'connect/[id]/login.tsx'])
+// same commit that restyles that screen and adds its comment. Empty as of
+// the connect/onboarding sweep (M14 task 1) — left as an empty Set rather
+// than dropped, per instruction: emptying PENDING is a separate decision for
+// whoever reviews the sweep as a whole, not something to do quietly here.
+const PENDING = new Set<string>([])
 
 function listRouteFiles(dir: string): string[] {
   const out: string[] = []

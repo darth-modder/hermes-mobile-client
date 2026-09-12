@@ -226,6 +226,64 @@ export const CHAT_FIELDS: readonly HostManagedField[] = [
 export const CHANNELS_NO_PLATFORMS = 'No messaging platforms available.'
 export const CHANNELS_NO_PENDING_PAIRING = 'No pending pairing requests.'
 
+// app/connect/{index,scan}.tsx, app/connect/[id]/login.tsx (M04/M08, M14
+// sweep) — the desktop's own login windows (docs/desktop-prototypes/
+// d-windows/login-window.html) are external identity-provider pages Hermes
+// doesn't author (OAuth/portal only — its own header comment: "NOTHING
+// inside the window is Hermes UI"), and its onboarding remote form
+// (e-overlays/onboarding.html #onboarding=remote/remote-token) covers only
+// URL + OAuth + token, never a username/password form — checked both files
+// and en.ts directly: no Username/Password field label, no QR-code string,
+// and no camera-permission copy exists anywhere in the vendored strings,
+// since none of this has a desktop counterpart at all (gated-by-password
+// backends, this app's QR-pairing shortcut, and the OS camera permission
+// prompt are all mobile-only concepts). Named individually rather than one
+// shared blob so each stays traceable to the field it labels.
+export const CONNECT_USERNAME_LABEL = 'Username'
+export const CONNECT_PASSWORD_LABEL = 'Password'
+export const CONNECT_SIGNING_IN = 'Signing in…'
+
+export const CONNECT_SCAN_QR = 'Scan QR'
+export const CONNECT_SCAN_PROMPT = 'Point the camera at a connection QR code.'
+export const CONNECT_SCAN_INVALID_CODE = 'Not a valid connect code.'
+export const CONNECT_SCAN_NOT_HERMES = 'Not a Hermes connect code.'
+export const CONNECT_SCAN_MISSING_FIELDS = 'Connect code is missing url or token.'
+export const CONNECT_CAMERA_ACCESS_NEEDED = 'Camera access is needed to scan a connect code.'
+export const CONNECT_GRANT_CAMERA_ACCESS = 'Grant camera access'
+
+// The manual "detect" trigger and its in-flight/result copy: the desktop's
+// remote form (onboarding.html) probes as you type (debounced, no button of
+// its own) and shows only `install.probing`/`probeError` while it works —
+// this app instead needs an explicit trigger and a short human-readable
+// summary of what the probe found (ungated/password/oauth), none of which
+// the desktop expresses as its own string since it never surfaces the
+// distinction in words, only by which fields it reveals next.
+export const CONNECT_DETECT_LABEL = 'Detect auth mode'
+
+export function connectUngatedStatus(version: string): string {
+  return `Ungated backend (version ${version}) — token mode.`
+}
+
+export function connectPasswordStatus(providerLabel: string): string {
+  return `Gated backend — password sign-in via "${providerLabel}".`
+}
+
+export function connectOauthStatus(providerLabel: string): string {
+  return `Gated backend — sign in with ${providerLabel}.`
+}
+
+export const CONNECT_NO_AUTH_PROVIDER = 'Gated backend with no registered auth provider — cannot sign in yet.'
+
+// The post-connect confirmation surfaces this app's own per-install
+// identifier (installId, from MobileConnection — used elsewhere for
+// session.create) rather than the desktop's backend version
+// (`install.testSucceeded`/`connectedTo`): the two connections don't carry
+// the same metadata, so reusing either vendored template would either drop
+// data or print a value it was never written for.
+export function connectSucceededStatus(installId: string | undefined): string {
+  return `Connected — install_id=${installId ?? '(none)'}`
+}
+
 // settings/connections.tsx — this compact per-row auth-mode badge has no
 // desktop equivalent: the desktop describes auth mode with full sentences
 // ("This gateway uses a username and password...", en.ts's authSignedIn*/
