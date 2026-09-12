@@ -29,6 +29,7 @@ interface DrawerRow {
   // back to `Href` at the one call site that actually navigates with it.
   route: string
   title: string
+  value?: string
   Icon: IconComponent
 }
 
@@ -124,6 +125,7 @@ export function AppDrawer() {
               <row.Icon color={tokens.mutedForeground} size={20} />
             </View>
             <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{row.title}</Text>
+            {row.value ? <Text style={[styles.rowValue, { color: tokens.textTertiary }]}>{row.value}</Text> : null}
           </TouchableOpacity>
         ))}
       </Animated.View>
@@ -168,6 +170,10 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     ...type.body,
+    flex: 1,
     fontWeight: '600'
+  },
+  rowValue: {
+    ...type.caption
   }
 })

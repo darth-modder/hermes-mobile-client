@@ -239,6 +239,20 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
    field text was never vendored as translatable data). Porting `config.get`/`config.set` (and,
    separately, `approval_mode` read access) is real data-layer work, not a layout task — **flagging
    for a D-entry to decide whether that's M15's or its own milestone, not deciding it here.**
+9. **Milestone-level fact, not a per-screen note: six shipped screens are inert.** `settings/chat.tsx`,
+   `settings/safety.tsx`, `settings/memory.tsx`, `settings/billing.tsx`, `command-center/index.tsx`
+   and `agents/index.tsx` all render for real but cannot act — about one shipped screen in five, and
+   they cluster in the management surface (Settings, Command center, Agents) a tester is likely to
+   open first. Causes split three ways: config.yaml never got a mobile read/write path (M09, Chat/
+   Safety/Memory), no billing API exists on mobile at all (Billing), and two desktop analytics/
+   aggregation stores were never ported (`getUsageAnalytics` for Command center, `store/subagents`
+   for Agents) — none introduced by this milestone, all pre-existing gaps M14's layout-only pass
+   surfaced by finally building the screens that expose them. **Flagging for a D-entry with two
+   options, not choosing between them:** (a) accept this state and schedule the data-layer catch-up
+   (`config.get`/`config.set`, a usage-analytics endpoint, a cross-session subagent feed) as its own
+   milestone or M15 slice, or (b) gate all six inert screens behind a flag for the first public build,
+   shipping them only once real. `docs/PARITY.md`'s "Thinner than desktop" table carries all six as
+   of this entry.
 
 ## Verification log
 

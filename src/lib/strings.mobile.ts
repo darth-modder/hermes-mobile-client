@@ -16,6 +16,15 @@
 // the two-line "Connected to <x>" summary card (a mobile-only settings-index
 // affordance).
 
+// src/components/drawer-rows.ts — the drawer row value for Agents and
+// Command center (2026-09-12 review: "the user doesn't care whether the
+// cause is host-managed config or an unported endpoint" — one shared
+// string for both, not one per screen the way the settings-index rows
+// get HOST_MANAGED_INDEX_VALUE below). No vendored equivalent: the desktop
+// has no notion of a drawer row that describes itself as living elsewhere,
+// since it IS the host.
+export const DRAWER_ON_DESKTOP_VALUE = 'On the desktop'
+
 // settings/about.tsx — this section header has no desktop counterpart: the
 // desktop's about-settings.tsx never shows a per-connection host card (it
 // isn't dialing anywhere), so there's no vendored word to reuse for the

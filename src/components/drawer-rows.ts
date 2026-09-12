@@ -20,6 +20,7 @@
 // M14 tab row (inside the session list screen itself), prepended to this
 // drawer by M15 A — the drawer-order test asserts from Capabilities down,
 // agnostic to whatever precedes it.
+import { DRAWER_ON_DESKTOP_VALUE } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
 export interface DrawerRowMeta {
@@ -30,6 +31,12 @@ export interface DrawerRowMeta {
   // at the one place these strings are actually navigated with.
   route: string
   title: string
+  // Told up front that a screen is inert, not after the tap — mirrors
+  // settings-rows.ts's HOST_MANAGED_INDEX_VALUE, but a single shared string
+  // here (2026-09-12 review: "the user doesn't care whether the cause is
+  // host-managed config or an unported endpoint"). Absent for every real
+  // screen's row.
+  value?: string
 }
 
 export const DRAWER_ROW_META: readonly DrawerRowMeta[] = [
@@ -39,9 +46,9 @@ export const DRAWER_ROW_META: readonly DrawerRowMeta[] = [
   { route: '/(main)/artifacts', title: t.sidebar.nav.artifacts },
   { route: '/(main)/cron', title: t.sidebar.nav.cron },
   { route: '/(main)/settings/profiles', title: t.profiles.title },
-  { route: '/(main)/agents', title: t.shell.statusbar.agents },
+  { route: '/(main)/agents', title: t.shell.statusbar.agents, value: DRAWER_ON_DESKTOP_VALUE },
   { route: '/(main)/webhooks', title: t.shell.statusbar.webhooks },
-  { route: '/(main)/command-center', title: t.commandCenter.commandCenter },
+  { route: '/(main)/command-center', title: t.commandCenter.commandCenter, value: DRAWER_ON_DESKTOP_VALUE },
   { route: '/(main)/projects', title: t.commandCenter.projects },
   { route: '/(main)/settings', title: t.commandCenter.settings }
 ]
