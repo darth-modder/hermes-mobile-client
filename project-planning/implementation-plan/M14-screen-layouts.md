@@ -421,15 +421,35 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
     row) is for. No speculative fix attempted here or anywhere in this milestone pending that
     diagnosis, per direction.
 
-    **Superseded by a reviewer device session (2026-09-13, M14/M13 device pass):** the field test's
-    "no card" result was a false lead — the competitor-app field test's model turn never called a
-    tool at all (it refused in text), so no `approval.request` was ever sent for either app to
-    render; that pairing was never actually exercising this app's approval-card path. On the
-    reviewer's own device session, a turn that *did* call a risky tool produced a live approval card
-    roughly 5 seconds after the tool call, in both light and dark. Leaving the session and returning
-    to it restored the same card rather than losing it. Pressing Reject cleared the card and returned
-    the composer to idle. Approval/clarify cards are expected-present after all; nothing here
-    indicates a rendering defect in `ApprovalCard.tsx` or `input-requests.ts`.
+    **Superseded by a reviewer device session (2026-09-13, M14/M13 device pass):** on the reviewer's
+    own device, a turn that called a risky tool produced a live approval card roughly 5 seconds
+    after the tool call, in both light and dark. Leaving the session and returning to it restored
+    the same card rather than losing it. Pressing Reject cleared the card and returned the composer
+    to idle. Approval/clarify cards are expected-present after all; nothing here indicates a
+    rendering defect in `ApprovalCard.tsx` or `input-requests.ts`.
+
+    Separately, in that same device session, a *first* attempt — where the model refused in text
+    instead of calling a tool — correctly showed no card; that's expected behavior, not a defect,
+    since no `approval.request` is ever sent for a turn that never calls a tool. What this does
+    **not** establish is why the original field test's turn hung: whether that turn also refused in
+    text (and something else caused the 50-second hang) or called a tool that produced no card is
+    still undetermined — the claim that it "never called a tool at all" in an earlier version of
+    this note was not verified and has been removed. See the Verification log below for a further
+    wrinkle: a *second* request in the same reviewer session did log a tool turn and still showed no
+    card.
+
+15. **Composer: Stop and Steer moved to their own row, off `chat.html`'s inline layout.**
+    `docs/mobile-prototypes/chat.html:157-159` keeps `Steer`/`Stop` inline in `.composer__controls`,
+    alongside the input and the model/effort chips, with a comment noting mobile keeps Steer
+    alongside Stop as-is (desktop parity; "theirs" — the competitor app — has Stop only). This
+    milestone's device pass found that with both buttons showing, the four 48dp utility icons plus
+    Stop and Steer left the input too narrow for its own placeholder on one line ("Messag/e Herme/s…",
+    device-observed, see Verification log). Reproducing the prototype's flat inline row would need
+    either dropping icons or the input shrinking further — neither acceptable — so `Composer.tsx` now
+    renders Stop/Steer on a second row beneath icons+input, only while `busy`; the normal (Send-only)
+    row is unchanged and still matches the prototype. A restyle, not a rebuild, per this document's
+    own adaptation rule — but a real layout departure from the prototype's row structure, named here
+    since M14's mapping table otherwise treats the composer as struct-unchanged.
 
 ## Verification log
 
@@ -461,3 +481,14 @@ The same session surfaced defects, since fixed one-per-commit on this branch:
   wrapped mid-word ("Messag/e Herme/s…").
 - The connect screen's URL field was pre-filled with real text (`http://127.0.0.1:9119`), so typing
   appended to it instead of replacing it, producing "Invalid base URL".
+
+Two open items from that session, neither chased down further here:
+
+- After one Reject in a session, a second request in the same session logged a tool turn but showed
+  no approval card; the model's own reply said the action was "blocked." Unexplained — possibly a
+  server-side auto-deny following a prior reject, but not confirmed. Flagging it rather than
+  guessing at a cause.
+- The reviewer did not measure the Reasoning toggle or the tool-call row header against 48dp,
+  including hitSlop. Item 3's fix report reasoned through those two from their line-height and
+  existing hitSlop values and concluded they already clear 48dp, but that arithmetic was never
+  checked against an actual on-device measurement.
