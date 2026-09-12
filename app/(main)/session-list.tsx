@@ -18,6 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
 import { Plus, Settings } from '../../src/lib/icons'
 import { groupSessions } from '../../src/lib/session-groups'
+import { OPEN_MENU_ACCESSIBILITY_LABEL } from '../../src/lib/strings.mobile'
+import { t } from '../../src/lib/t'
 import { openDrawer } from '../../src/store/drawer'
 import { $activeProfile } from '../../src/store/profile'
 import { $sessionListRefreshRequests } from '../../src/store/sessions'
@@ -166,7 +168,7 @@ export default function SessionListScreen() {
 
   const confirmDelete = useCallback(
     (session: SessionInfo) => {
-      Alert.alert('Delete session?', session.title || 'Untitled', [
+      Alert.alert(t.sidebar.row.deleteTitle, session.title || t.sidebar.row.untitledPlaceholder, [
         { style: 'cancel', text: 'Cancel' },
         {
           onPress: () => {
@@ -210,7 +212,7 @@ export default function SessionListScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
-            accessibilityLabel="Open menu"
+            accessibilityLabel={OPEN_MENU_ACCESSIBILITY_LABEL}
             accessibilityRole="button"
             hitSlop={12}
             onPress={openDrawer}
@@ -238,7 +240,9 @@ export default function SessionListScreen() {
             style={[styles.newButton, { backgroundColor: tokens.primary }]}
           >
             <Plus color={tokens.primaryForeground} size={16} />
-            <Text style={[styles.newButtonText, { color: tokens.primaryForeground }]}>New</Text>
+            <Text style={[styles.newButtonText, { color: tokens.primaryForeground }]}>
+              {t.sidebar.nav['new-session']}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -268,7 +272,7 @@ export default function SessionListScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.center}>
           <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>
-            {query ? 'No matching sessions.' : 'No sessions yet.'}
+            {query ? t.sidebar.noMatch(query) : t.commandCenter.noSessions}
           </Text>
         </View>
       ) : (
@@ -291,7 +295,7 @@ export default function SessionListScreen() {
               </View>
               <View style={styles.rowMain}>
                 <Text numberOfLines={1} style={[styles.rowTitle, { color: tokens.foreground }]}>
-                  {item.title || 'Untitled'}
+                  {item.title || t.sidebar.row.untitledPlaceholder}
                 </Text>
                 {item.preview ? (
                   <Text numberOfLines={1} style={[styles.rowPreview, { color: tokens.textSecondary }]}>

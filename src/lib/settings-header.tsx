@@ -23,11 +23,13 @@ import { TouchableOpacity } from 'react-native'
 import { openDrawer } from '../store/drawer'
 import type { MobileTokens } from '../theme/resolve'
 
+import { OPEN_MENU_ACCESSIBILITY_LABEL } from './strings.mobile'
+
 export function settingsHeaderOptions(tokens: MobileTokens) {
   return {
     headerRight: () => (
       <TouchableOpacity
-        accessibilityLabel="Open menu"
+        accessibilityLabel={OPEN_MENU_ACCESSIBILITY_LABEL}
         accessibilityRole="button"
         hitSlop={12}
         onPress={openDrawer}

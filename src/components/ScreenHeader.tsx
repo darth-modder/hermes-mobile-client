@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { ChevronLeft, MoreVertical } from '../lib/icons'
+import { OPEN_MENU_ACCESSIBILITY_LABEL } from '../lib/strings.mobile'
 import { openDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
@@ -53,7 +54,7 @@ export function ScreenHeader({ actions = [], onBack, right, title }: ScreenHeade
     <View style={[styles.header, { backgroundColor: tokens.background }]}>
       <View style={styles.left}>
         <TouchableOpacity
-          accessibilityLabel={onBack ? 'Back' : 'Open menu'}
+          accessibilityLabel={onBack ? 'Back' : OPEN_MENU_ACCESSIBILITY_LABEL}
           accessibilityRole="button"
           hitSlop={12}
           onPress={onBack ?? openDrawer}

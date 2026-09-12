@@ -25,6 +25,14 @@
 // since it IS the host.
 export const DRAWER_ON_DESKTOP_VALUE = 'On the desktop'
 
+// src/components/ScreenHeader.tsx, src/lib/settings-header.tsx,
+// app/(main)/session-list.tsx — the drawer-hamburger button's
+// accessibilityLabel. The desktop's closest concept ("Toggle sessions
+// sidebar", a keybind description in en.ts) names a different interaction —
+// a persistent sidebar's own toggle, not opening a full-screen overlay
+// drawer — and no bare "Menu"/"Open menu" string exists anywhere in en.ts.
+export const OPEN_MENU_ACCESSIBILITY_LABEL = 'Open menu'
+
 // settings/about.tsx — this section header has no desktop counterpart: the
 // desktop's about-settings.tsx never shows a per-connection host card (it
 // isn't dialing anywhere), so there's no vendored word to reuse for the

@@ -42,23 +42,14 @@ const APP_ROOT = join(REPO_ROOT, 'app')
 const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 
 // Not yet swept for labels — remove an entry the same commit that cleans up
-// its screen. `connect/*` is deliberately left here even though it's
-// mid-sweep elsewhere (a separate, concurrently-running task): pulling it
-// out from under that work would race a file another pass owns right now.
-const PENDING = new Set([
-  '(main)/agents/index.tsx',
-  '(main)/artifacts/index.tsx',
-  '(main)/channels/index.tsx',
-  '(main)/command-center/index.tsx',
-  '(main)/cron/index.tsx',
-  '(main)/projects/index.tsx',
-  '(main)/session-list.tsx',
-  '(main)/sessions/[id].tsx',
-  '(main)/webhooks/index.tsx',
-  'connect/[id]/login.tsx',
-  'connect/index.tsx',
-  'connect/scan.tsx'
-])
+// its screen. The other nine files this test originally seeded (agents,
+// artifacts, channels, command-center, cron, projects, session-list,
+// sessions/[id] (chat), webhooks) turned out to already comply or needed
+// only small fixes, cleared the same day this file was widened. `connect/*`
+// is deliberately left here even though it's mid-sweep elsewhere (a
+// separate, concurrently-running task): pulling it out from under that work
+// would race a file another pass owns right now.
+const PENDING = new Set(['connect/[id]/login.tsx', 'connect/index.tsx', 'connect/scan.tsx'])
 
 // A literal that "looks like" a bare identifier/path/style value rather
 // than user-facing prose: module specifiers ('react-native',
