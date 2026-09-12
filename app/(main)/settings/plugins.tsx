@@ -5,9 +5,21 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { listInstalledPlugins } from '../../../src/api/plugins'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 
+// Replicates: docs/desktop-prototypes/a-main/settings.html's
+// `data-view="plugins"` panel, "Agent plugins" section only (its "Desktop
+// plugins" section — a folder on that machine, Open folder / Rescan — is
+// machine-bound, absent per the M14 mapping's own carve-out for Local
+// models and similar). This screen's `listInstalledPlugins` already lists
+// backend-installed plugins (tools/skills/MCP servers/hooks/slash
+// commands), the same "Agent plugins" concept, so the empty state uses
+// t.settings.plugins.agent.empty (D15.4). The intro line keeps its
+// mobile-specific caveat (no per-plugin dashboards here) rather than
+// swapping in the vendored blurb, which describes what agent plugins are
+// but doesn't cover that gap.
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
  * header — a plugin's own dashboard page (desktop: an embedded web view) has
@@ -21,7 +33,7 @@ export default function PluginsSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Plugins' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.plugins }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -42,7 +54,7 @@ export default function PluginsSettings() {
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void pluginsQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void pluginsQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -61,7 +73,7 @@ export default function PluginsSettings() {
           </View>
         ))}
         {pluginsQuery.data?.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No plugins installed.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.settings.plugins.agent.empty}</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>
