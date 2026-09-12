@@ -751,7 +751,15 @@ export function storedToolMessagePart(toolMessage: SessionMessage, fallbackIndex
     args: args as never,
     argsText: Object.keys(args).length ? JSON.stringify(args) : '',
     timestamp: toolMessage.timestamp,
-    completedAt: toolMessage.timestamp,
+    // This part is built directly from a persisted `tool` message that
+    // already carries its result — it is by definition not still running,
+    // even when the gateway's resume projection omits `timestamp` (seen on
+    // at least one gateway shape: the row this hydrates has no `timestamp`
+    // key at all). ToolCallCard's only use of `completedAt` is an
+    // `=== undefined` running check (ToolCallCard.tsx:40) — the value
+    // itself is never displayed — so a hydration-time fallback can't show
+    // a wrong "completed at" time on screen.
+    completedAt: toolMessage.timestamp ?? Date.now(),
     result: context ? { context } : {},
     isError: false
   }
