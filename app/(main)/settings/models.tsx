@@ -7,11 +7,32 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { getGlobalModelInfo, getGlobalModelOptions, setGlobalModel } from '../../../src/api/models'
 import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
 
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="models"`
+// (current/default model list with a checkmark lead icon, provider-grouped
+// options). Screen title moves to t.settings.sections.model ("Model",
+// singular) per D15.4, matching the settings index row (979bbcc) — the
+// prototype's own header types "Models" (plural), but the vendored copy
+// wins. Two of that view's sections have no home here yet: "Fallback
+// providers" (reorderable fallback list) and "Visible in the model picker"
+// (docs/desktop-prototypes/e-overlays/model-visibility.html, per the M14
+// mapping) both need API surface `src/api/models.ts` doesn't expose today
+// (no list/reorder-fallbacks or get/set-visibility endpoint) — adding it
+// is data-fetching/mutation work, out of scope for a layout pass, so
+// they're left out rather than faked with local-only state. The search
+// field above the list is likewise not implemented (needs live filtering
+// logic, not just relabelling).
+//
+// The "Toolsets" section below is pre-existing (M09) but isn't part of
+// this prototype view's own content — per the M14 mapping it belongs to
+// the new settings/toolsets.tsx (from capabilities.html), not Models. That
+// route doesn't exist yet ("don't create it" — M14 task order), so
+// Toolsets stays here rather than being dropped.
 /**
  * Models settings screen (M09). Exit criterion: "a model switch is
  * reflected in the next `session.info`" — this screen only owns the switch
@@ -57,7 +78,7 @@ export default function ModelsSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Models' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.model }} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Current model</Text>
         {infoQuery.isLoading ? (
@@ -77,6 +98,9 @@ export default function ModelsSettings() {
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Choose a model</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+          Used for new sessions. A session can still switch model from the composer chip.
+        </Text>
         {optionsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {optionsQuery.isError ? (
           <Text style={[styles.errorText, { color: tokens.destructive }]}>

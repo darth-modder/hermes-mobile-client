@@ -36,7 +36,6 @@ const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 // same commit that restyles that screen and adds its comment.
 const PENDING = new Set([
   '(main)/settings/mcp.tsx',
-  '(main)/settings/models.tsx',
   '(main)/settings/notifications.tsx',
   '(main)/settings/plugins.tsx',
   '(main)/settings/profiles.tsx',
