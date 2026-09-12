@@ -35,7 +35,6 @@ const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 // M14's screen sweep, not yet reached (task list order). Remove the line the
 // same commit that restyles that screen and adds its comment.
 const PENDING = new Set([
-  '(main)/artifacts/index.tsx',
   '(main)/projects/index.tsx',
   '(main)/agents/index.tsx',
   '(main)/command-center/index.tsx',

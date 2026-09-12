@@ -14,17 +14,43 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { loadRecentArtifacts, shareArtifact } from '../../../src/api/artifacts'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
-import { ARTIFACT_FILTERS, type ArtifactFilter, type ArtifactRecord } from '../../../src/lib/artifacts'
+import {
+  ARTIFACT_FILTERS,
+  type ArtifactFilter,
+  type ArtifactKind,
+  type ArtifactRecord
+} from '../../../src/lib/artifacts'
+import { ARTIFACTS_SHARE, ARTIFACTS_SHARE_FAILED_TITLE, ARTIFACTS_SHARING } from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 
-const FILTER_LABEL: Record<ArtifactFilter, string> = { all: 'All', file: 'Files', image: 'Images', link: 'Links' }
+const FILTER_LABEL: Record<ArtifactFilter, string> = {
+  all: t.artifacts.tabAll,
+  file: t.artifacts.tabFiles,
+  image: t.artifacts.tabImages,
+  link: t.artifacts.tabLinks
+}
+
+const KIND_LABEL: Record<ArtifactKind, string> = {
+  file: t.artifacts.kindFile,
+  image: t.artifacts.kindImage,
+  link: t.artifacts.kindLink
+}
 
 function formatTime(timestampMs: number): string {
   return new Date(timestampMs).toLocaleString()
 }
 
+// Replicates: docs/desktop-prototypes/a-main/artifacts.html (TextTab row,
+// ArtifactImageCard/ArtifactTable rows) — collapsed into one filtered list
+// since this screen predates M14's gallery/table split and a real M09/M10
+// build isn't worth rewriting for layout alone. Tab and kind labels below
+// come from the vendored `t.artifacts` block (D15.4); "Share" has no
+// desktop counterpart at all (see strings.mobile.ts's header) since the
+// desktop offers Download/Copy content/Open in browser instead of a native
+// share sheet.
 /**
  * Artifacts screen (M10). No server-side artifact list exists — this walks
  * the most recently active sessions' messages and runs the same
@@ -88,7 +114,7 @@ export default function ArtifactsScreen() {
     try {
       await shareArtifact(artifact)
     } catch (err) {
-      Alert.alert('Could not share', err instanceof Error ? err.message : String(err))
+      Alert.alert(ARTIFACTS_SHARE_FAILED_TITLE, err instanceof Error ? err.message : String(err))
     } finally {
       setSharingId(null)
     }
@@ -96,11 +122,12 @@ export default function ArtifactsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <ScreenHeader title="Artifacts" />
+      <ScreenHeader title={t.sidebar.nav.artifacts} />
 
       <View style={styles.filterRow}>
         {ARTIFACT_FILTERS.map(item => (
           <TouchableOpacity
+            hitSlop={8}
             key={item}
             onPress={() => setFilter(item)}
             style={[
@@ -126,10 +153,11 @@ export default function ArtifactsScreen() {
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
           <TouchableOpacity
+            hitSlop={8}
             onPress={() => void load()}
             style={[styles.retryButton, { backgroundColor: tokens.primary }]}
           >
-            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
           </TouchableOpacity>
         </View>
       ) : artifacts === null ? (
@@ -138,7 +166,7 @@ export default function ArtifactsScreen() {
         </View>
       ) : visible.length === 0 ? (
         <View style={styles.center}>
-          <Text style={[styles.emptyText, { color: tokens.textTertiary }]}>No artifacts found in recent sessions.</Text>
+          <Text style={[styles.emptyText, { color: tokens.textTertiary }]}>{t.artifacts.noArtifactsTitle}</Text>
         </View>
       ) : (
         <FlatList
@@ -157,15 +185,16 @@ export default function ArtifactsScreen() {
                 {item.value}
               </Text>
               <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
-                {item.kind} · {item.sessionTitle} · {formatTime(item.timestamp)}
+                {KIND_LABEL[item.kind]} · {item.sessionTitle} · {formatTime(item.timestamp)}
               </Text>
               <TouchableOpacity
                 disabled={sharingId === item.id}
+                hitSlop={8}
                 onPress={() => void onShare(item)}
                 style={styles.shareButton}
               >
                 <Text style={[styles.shareText, { color: tokens.primary }]}>
-                  {sharingId === item.id ? 'Sharing…' : 'Share'}
+                  {sharingId === item.id ? ARTIFACTS_SHARING : ARTIFACTS_SHARE}
                 </Text>
               </TouchableOpacity>
             </View>

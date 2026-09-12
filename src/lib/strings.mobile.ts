@@ -44,6 +44,17 @@ export function appearanceSkinSyncHint(themeLabel: string): string {
   return `Matches the desktop app's skins. The backend's active skin (${themeLabel}) applies automatically the first time it changes; pick a different one here to override it on this device.`
 }
 
+// artifacts/index.tsx (M10, M14 sweep) — the desktop's Artifacts page has no
+// native share sheet at all (it offers Download / Copy content / Open in
+// browser instead — a desktop app has no OS share target to hand off to);
+// checked en.ts's artifacts/artifactCard/artifactPreview blocks and the rest
+// of the file for a "Share" word, none exists. This app's own
+// `shareArtifact` (src/api/artifacts.ts, expo-sharing) is the mobile-only
+// equivalent.
+export const ARTIFACTS_SHARE = 'Share'
+export const ARTIFACTS_SHARING = 'Sharing…'
+export const ARTIFACTS_SHARE_FAILED_TITLE = 'Could not share'
+
 // settings/archived-chats.tsx — nearly every string this screen needs
 // (loading/empty/error states, Unarchive, Delete permanently, the message
 // count) already exists under t.settings.sessions (D15.4). The one
