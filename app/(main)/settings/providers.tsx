@@ -25,6 +25,14 @@ import {
   setEnvVar
 } from '../../../src/api/config'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  PROVIDERS_ACTIVE_ENDPOINT_SUFFIX,
+  PROVIDERS_CLI_HINT,
+  PROVIDERS_NO_CUSTOM_ENDPOINTS,
+  PROVIDERS_NO_OAUTH,
+  PROVIDERS_NOT_CONNECTED,
+  providersDeleteEndpointConfirmTitle
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
@@ -105,9 +113,13 @@ function EnvVarRow({
 // Custom Endpoints), so "OAuth providers" moves first and is relabelled to
 // the desktop's own "Accounts" (t.settings.nav.providerAccounts) — same
 // feature (provider sign-in/status), different heading. Section titles and
-// the Save/Replace/Set/Clear/Disconnect action labels come from the
-// vendored en.ts (D15.4); "Retry" and the custom-endpoint "Delete" have no
-// vendored counterpart in this screen's sections and stay hand-authored.
+// the Save/Replace/Set/Clear/Disconnect/Delete action labels, and every
+// confirm-dialog title, come from the vendored en.ts (D15.4) — provider
+// disconnect and API-key removal reuse t.settings.providers.removeConfirm/
+// t.settings.toolsets.removeConfirm rather than a hand-typed "X?" title.
+// The custom-endpoint delete confirm and a handful of status/empty strings
+// have no vendored counterpart at all (checked) and live in
+// src/lib/strings.mobile.ts instead.
 //
 /**
  * Providers settings screen (M09): env-var-keyed provider credentials and
@@ -145,14 +157,14 @@ export default function ProvidersSettings() {
   })
 
   const confirmDeleteEnvVar = (name: string) => {
-    Alert.alert('Clear API key?', name, [
+    Alert.alert(t.settings.toolsets.removeConfirm(name), undefined, [
       { style: 'cancel', text: 'Cancel' },
       { onPress: () => deleteEnvMutation.mutate(name), style: 'destructive', text: t.settings.envActions.clear }
     ])
   }
 
   const confirmDisconnect = (providerId: string, providerName: string) => {
-    Alert.alert('Disconnect provider?', providerName, [
+    Alert.alert(t.settings.providers.removeConfirm(providerName), undefined, [
       { style: 'cancel', text: 'Cancel' },
       {
         onPress: () => disconnectMutation.mutate(providerId),
@@ -163,9 +175,9 @@ export default function ProvidersSettings() {
   }
 
   const confirmDeleteEndpoint = (id: string, name: string) => {
-    Alert.alert('Delete custom endpoint?', name, [
+    Alert.alert(providersDeleteEndpointConfirmTitle(name), undefined, [
       { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteEndpointMutation.mutate(id), style: 'destructive', text: 'Delete' }
+      { onPress: () => deleteEndpointMutation.mutate(id), style: 'destructive', text: t.common.delete }
     ])
   }
 
@@ -189,9 +201,7 @@ export default function ProvidersSettings() {
         }
       >
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.nav.providerAccounts}</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Connecting a new provider needs the CLI (`hermes model`) for now.
-        </Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PROVIDERS_CLI_HINT}</Text>
         {oauthQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {oauthQuery.isError ? (
           <View>
@@ -208,7 +218,7 @@ export default function ProvidersSettings() {
             <View style={styles.rowText}>
               <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{provider.name}</Text>
               <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-                {provider.status.logged_in ? t.settings.providers.connected : 'Not connected'}
+                {provider.status.logged_in ? t.settings.providers.connected : PROVIDERS_NOT_CONNECTED}
               </Text>
             </View>
             {provider.status.logged_in && provider.disconnectable !== false ? (
@@ -221,7 +231,7 @@ export default function ProvidersSettings() {
           </View>
         ))}
         {oauthQuery.data?.providers.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No OAuth providers available.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PROVIDERS_NO_OAUTH}</Text>
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.nav.providerApiKeys}</Text>
@@ -247,7 +257,9 @@ export default function ProvidersSettings() {
           />
         ))}
         {envQuery.data && envEntries.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No API keys configured.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+            {t.settings.providers.noProviderKeys}
+          </Text>
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>
@@ -269,19 +281,19 @@ export default function ProvidersSettings() {
             <View style={styles.rowText}>
               <Text style={[styles.rowTitle, { color: tokens.foreground }]}>
                 {endpoint.name}
-                {endpoint.is_current ? ' (active)' : ''}
+                {endpoint.is_current ? ` ${PROVIDERS_ACTIVE_ENDPOINT_SUFFIX}` : ''}
               </Text>
               <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
                 {endpoint.base_url} · {endpoint.model}
               </Text>
             </View>
             <TouchableOpacity hitSlop={10} onPress={() => confirmDeleteEndpoint(endpoint.id, endpoint.name)}>
-              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
+              <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.common.delete}</Text>
             </TouchableOpacity>
           </View>
         ))}
         {endpointsQuery.data?.endpoints.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No custom endpoints configured.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PROVIDERS_NO_CUSTOM_ENDPOINTS}</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>

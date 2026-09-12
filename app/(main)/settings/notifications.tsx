@@ -4,6 +4,12 @@ import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  NOTIFICATIONS_IN_APP_HINT,
+  NOTIFICATIONS_IN_APP_SECTION_TITLE,
+  NOTIFICATIONS_PUSH_HINT,
+  NOTIFICATIONS_PUSH_SECTION_TITLE
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import {
   $nativeNotifyPrefs,
@@ -59,19 +65,14 @@ export default function NotificationsSettings() {
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.notifications.title }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Push notifications</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Delivered by the server when this device is backgrounded — never while the app is open. Requires an
-          EAS-published build and a server with the hermes-push plugin installed.
-        </Text>
-        <Row label="Enable push">
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{NOTIFICATIONS_PUSH_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{NOTIFICATIONS_PUSH_HINT}</Text>
+        <Row label={t.settings.notifications.enableAll}>
           <Switch onValueChange={setPushEnabled} value={pushEnabled} />
         </Row>
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>In-app notifications</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Shown locally while the app is running, for events on other sessions.
-        </Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{NOTIFICATIONS_IN_APP_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{NOTIFICATIONS_IN_APP_HINT}</Text>
         <Row description={t.settings.notifications.enableAllDesc} label={t.settings.notifications.enableAll}>
           <Switch onValueChange={setNativeNotifyEnabled} value={localPrefs.enabled} />
         </Row>

@@ -4,6 +4,16 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  VOICE_DICTATION_HINT,
+  VOICE_DICTATION_SECTION_TITLE,
+  VOICE_GRANT_MIC_ACCESS,
+  VOICE_MIC_ACCESS_LABEL,
+  VOICE_MIC_GRANTED,
+  VOICE_MIC_NOT_GRANTED,
+  VOICE_SPOKEN_REPLIES_HINT,
+  VOICE_SPOKEN_REPLIES_SECTION_TITLE
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
@@ -53,20 +63,21 @@ export default function VoiceSettings() {
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.voice }} />
       <View style={styles.content}>
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Dictation</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Tap the mic in the composer to record; releasing it sends the clip to the backend for transcription and
-          inserts the text into your message.
-        </Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{VOICE_DICTATION_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{VOICE_DICTATION_HINT}</Text>
         <View style={[styles.row, { borderBottomColor: tokens.border }]}>
-          <Text style={[styles.rowLabel, { color: tokens.foreground }]}>Microphone access</Text>
+          <Text style={[styles.rowLabel, { color: tokens.foreground }]}>{VOICE_MIC_ACCESS_LABEL}</Text>
           <Text
             style={[
               styles.status,
               { color: permission === 'granted' ? tokens.semantic.green : tokens.semantic.yellow }
             ]}
           >
-            {permission === 'checking' ? 'Checking…' : permission === 'granted' ? 'Granted' : 'Not granted'}
+            {permission === 'checking'
+              ? t.settings.about.checking
+              : permission === 'granted'
+                ? VOICE_MIC_GRANTED
+                : VOICE_MIC_NOT_GRANTED}
           </Text>
         </View>
         {permission !== 'granted' ? (
@@ -74,15 +85,12 @@ export default function VoiceSettings() {
             onPress={() => void requestPermission()}
             style={[styles.button, { backgroundColor: tokens.primary }]}
           >
-            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Grant microphone access</Text>
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{VOICE_GRANT_MIC_ACCESS}</Text>
           </TouchableOpacity>
         ) : null}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Spoken replies</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Tap the speaker in the composer to hear the assistant's latest reply, synthesized by the backend and played
-          back on this device.
-        </Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{VOICE_SPOKEN_REPLIES_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{VOICE_SPOKEN_REPLIES_HINT}</Text>
       </View>
     </SafeAreaView>
   )

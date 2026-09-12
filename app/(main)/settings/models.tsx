@@ -1,17 +1,23 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getGlobalModelInfo, getGlobalModelOptions, setGlobalModel } from '../../../src/api/models'
-import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  MODELS_CHOOSE_HINT,
+  MODELS_CHOOSE_SECTION_TITLE,
+  MODELS_CURRENT_SECTION_TITLE,
+  MODELS_NOT_CONFIGURED_SUFFIX,
+  MODELS_SWITCHING
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
-import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
+import type { ModelOptionProvider } from '../../../src/upstream/types/hermes'
 
 // Replicates: docs/mobile-prototypes/settings.html's `data-view="models"`
 // (current/default model list with a checkmark lead icon, provider-grouped
@@ -28,11 +34,11 @@ import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/typ
 // field above the list is likewise not implemented (needs live filtering
 // logic, not just relabelling).
 //
-// The "Toolsets" section below is pre-existing (M09) but isn't part of
-// this prototype view's own content — per the M14 mapping it belongs to
-// the new settings/toolsets.tsx (from capabilities.html), not Models. That
-// route doesn't exist yet ("don't create it" — M14 task order), so
-// Toolsets stays here rather than being dropped.
+// The "Toolsets" section that used to live below (pre-existing, M09) is
+// removed here, not just relabelled: it was never part of this prototype
+// view's own content, and per the M14 mapping it belongs on the new
+// settings/toolsets.tsx (from capabilities.html) — its own later M14 commit
+// (2026-09-12 review decision). It comes back there, not here.
 /**
  * Models settings screen (M09). Exit criterion: "a model switch is
  * reflected in the next `session.info`" — this screen only owns the switch
@@ -55,22 +61,10 @@ export default function ModelsSettings() {
     queryKey: ['model-options', profile]
   })
 
-  const toolsetsQuery = useQuery({
-    queryFn: () => getToolsets(profile),
-    queryKey: ['toolsets', profile]
-  })
-
   const setModelMutation = useMutation({
     mutationFn: (args: { model: string; provider: string }) => setGlobalModel(args.provider, args.model, profile),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['model-info', profile] })
-    }
-  })
-
-  const toggleToolsetMutation = useMutation({
-    mutationFn: (args: { enabled: boolean; name: string }) => setToolsetEnabled(args.name, args.enabled, profile),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['toolsets', profile] })
     }
   })
 
@@ -80,7 +74,7 @@ export default function ModelsSettings() {
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.model }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Current model</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{MODELS_CURRENT_SECTION_TITLE}</Text>
         {infoQuery.isLoading ? (
           <ActivityIndicator color={tokens.mutedForeground} />
         ) : current ? (
@@ -91,16 +85,14 @@ export default function ModelsSettings() {
           <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(infoQuery.error)}</Text>
         )}
         {setModelMutation.isPending ? (
-          <Text style={[styles.pendingText, { color: tokens.mutedForeground }]}>Switching…</Text>
+          <Text style={[styles.pendingText, { color: tokens.mutedForeground }]}>{MODELS_SWITCHING}</Text>
         ) : null}
         {setModelMutation.isError ? (
           <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(setModelMutation.error)}</Text>
         ) : null}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Choose a model</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Used for new sessions. A session can still switch model from the composer chip.
-        </Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{MODELS_CHOOSE_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{MODELS_CHOOSE_HINT}</Text>
         {optionsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {optionsQuery.isError ? (
           <Text style={[styles.errorText, { color: tokens.destructive }]}>
@@ -114,7 +106,7 @@ export default function ModelsSettings() {
           >
             <Text style={[styles.providerName, { color: tokens.mutedForeground }]}>
               {provider.name}
-              {provider.authenticated === false ? ' (not configured)' : ''}
+              {provider.authenticated === false ? ` ${MODELS_NOT_CONFIGURED_SUFFIX}` : ''}
             </Text>
             {(provider.featured_models?.length ? provider.featured_models : (provider.models ?? []).slice(0, 6)).map(
               model => {
@@ -133,31 +125,6 @@ export default function ModelsSettings() {
                 )
               }
             )}
-          </View>
-        ))}
-
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Toolsets</Text>
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Enable or disable a whole tool group. Per-tool provider setup is not on mobile yet.
-        </Text>
-        {toolsetsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
-        {toolsetsQuery.isError ? (
-          <Text style={[styles.errorText, { color: tokens.destructive }]}>
-            {toolsetsQuery.error instanceof Error ? toolsetsQuery.error.message : String(toolsetsQuery.error)}
-          </Text>
-        ) : null}
-        {(toolsetsQuery.data ?? []).map((toolset: ToolsetInfo) => (
-          <View key={toolset.name} style={[styles.row, { borderBottomColor: tokens.border }]}>
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{toolset.label}</Text>
-              <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-                {toolset.description}
-              </Text>
-            </View>
-            <Switch
-              onValueChange={value => toggleToolsetMutation.mutate({ enabled: value, name: toolset.name })}
-              value={toolset.enabled}
-            />
           </View>
         ))}
       </ScrollView>
@@ -213,25 +180,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 4,
     textTransform: 'uppercase'
-  },
-  row: {
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 10
-  },
-  rowSubtitle: {
-    ...type.caption,
-    marginTop: 2
-  },
-  rowText: {
-    flex: 1,
-    paddingRight: 12
-  },
-  rowTitle: {
-    ...type.bodySmall,
-    fontWeight: '600'
   },
   sectionHint: {
     ...type.caption,

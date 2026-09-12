@@ -8,6 +8,7 @@ import { SETTINGS_GROUPS } from '../../../src/components/settings-rows'
 import { ListRow, ListRowSeparator } from '../../../src/components/ui/ListRow'
 import { getActiveConnection } from '../../../src/connections/registry'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { CONNECTED_TO_LABEL, NO_ACTIVE_CONNECTION, PROFILE_LABEL_PREFIX } from '../../../src/lib/strings.mobile'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { type } from '../../../src/theme/type'
@@ -35,12 +36,14 @@ export default function SettingsIndex() {
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Settings' }} />
       <View style={[styles.summary, { borderBottomColor: tokens.border }]}>
-        <Text style={[styles.summaryLabel, { color: tokens.textTertiary }]}>Connected to</Text>
+        <Text style={[styles.summaryLabel, { color: tokens.textTertiary }]}>{CONNECTED_TO_LABEL}</Text>
         <Text numberOfLines={1} style={[styles.summaryValue, { color: tokens.foreground }]}>
-          {connection ? connection.label || connection.baseUrl : 'No active connection'}
+          {connection ? connection.label || connection.baseUrl : NO_ACTIVE_CONNECTION}
         </Text>
         {activeProfile ? (
-          <Text style={[styles.summaryProfile, { color: tokens.mutedForeground }]}>Profile: {activeProfile}</Text>
+          <Text style={[styles.summaryProfile, { color: tokens.mutedForeground }]}>
+            {PROFILE_LABEL_PREFIX} {activeProfile}
+          </Text>
         ) : null}
       </View>
       <ScrollView contentContainerStyle={styles.content}>

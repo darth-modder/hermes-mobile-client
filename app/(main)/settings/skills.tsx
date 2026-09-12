@@ -22,6 +22,11 @@ import {
   uninstallSkillFromHub
 } from '../../../src/api/skills'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  SKILLS_NONE_AVAILABLE,
+  SKILLS_NONE_INSTALLED,
+  SKILLS_UNINSTALL_CONFIRM_TITLE
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
@@ -73,7 +78,7 @@ export default function SkillsSettings() {
   })
 
   const confirmUninstall = (skillName: string) => {
-    Alert.alert('Uninstall skill?', skillName, [
+    Alert.alert(SKILLS_UNINSTALL_CONFIRM_TITLE, skillName, [
       { style: 'cancel', text: 'Cancel' },
       { onPress: () => uninstallMutation.mutate(skillName), style: 'destructive', text: t.skills.hub.uninstall }
     ])
@@ -122,7 +127,7 @@ export default function SkillsSettings() {
           </View>
         ))}
         {skillsQuery.data?.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No skills installed.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{SKILLS_NONE_INSTALLED}</Text>
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.skills.officialCatalog}</Text>
@@ -165,7 +170,7 @@ export default function SkillsSettings() {
           </View>
         ))}
         {officialQuery.data?.skills.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No skills available to install.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{SKILLS_NONE_AVAILABLE}</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>

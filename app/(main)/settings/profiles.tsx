@@ -17,6 +17,12 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { createProfile, deleteProfile, getProfiles } from '../../../src/api/profiles'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  PROFILES_DEFAULT_SUBTITLE,
+  PROFILES_DELETE_HINT,
+  PROFILES_EXPLAINER,
+  PROFILES_NAME_PLACEHOLDER
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { HttpError } from '../../../src/net/http'
 import { $activeProfile, setActiveProfile } from '../../../src/store/profile'
@@ -105,10 +111,7 @@ export default function ProfilesSettings() {
           />
         }
       >
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          A profile is a separate config, sessions, and skill set on the same backend. Switching scopes every settings
-          screen and new sessions to it.
-        </Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PROFILES_EXPLAINER}</Text>
 
         {isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {error ? (
@@ -131,9 +134,7 @@ export default function ProfilesSettings() {
         >
           <View style={styles.rowText}>
             <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{t.profiles.default}</Text>
-            <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-              The connection&apos;s default profile
-            </Text>
+            <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{PROFILES_DEFAULT_SUBTITLE}</Text>
           </View>
           {activeProfile === '' ? <Text style={[styles.checkmark, { color: tokens.semantic.green }]}>✓</Text> : null}
         </TouchableOpacity>
@@ -174,7 +175,7 @@ export default function ProfilesSettings() {
             autoCapitalize="none"
             onChangeText={setNewName}
             onSubmitEditing={submitCreate}
-            placeholder="profile name"
+            placeholder={PROFILES_NAME_PLACEHOLDER}
             placeholderTextColor={tokens.mutedForeground}
             style={[
               styles.input,
@@ -198,9 +199,7 @@ export default function ProfilesSettings() {
             {createMutation.error instanceof HttpError ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
-        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
-          Long-press a profile to delete it. The default profile cannot be deleted.
-        </Text>
+        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{PROFILES_DELETE_HINT}</Text>
         <TouchableOpacity hitSlop={10} onPress={() => void refetch()} style={styles.refreshButton}>
           <Text style={[styles.refreshText, { color: tokens.mutedForeground }]}>{t.profiles.refresh}</Text>
         </TouchableOpacity>

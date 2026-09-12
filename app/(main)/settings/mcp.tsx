@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { addMcpServer, listMcpServers, removeMcpServer, setMcpServerEnabled, testMcpServer } from '../../../src/api/mcp'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { MCP_ADDING, MCP_REMOVE_SERVER_CONFIRM_TITLE, MCP_TARGET_PLACEHOLDER } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
@@ -81,7 +82,7 @@ export default function McpSettings() {
   })
 
   const confirmRemove = (serverName: string) => {
-    Alert.alert('Remove MCP server?', serverName, [
+    Alert.alert(MCP_REMOVE_SERVER_CONFIRM_TITLE, serverName, [
       { style: 'cancel', text: 'Cancel' },
       { onPress: () => removeMutation.mutate(serverName), style: 'destructive', text: t.settings.mcp.remove }
     ])
@@ -164,7 +165,7 @@ export default function McpSettings() {
           <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.settings.mcp.emptyTitle}</Text>
         ) : null}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Add a server</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.mcp.newServer}</Text>
         <TextInput
           autoCapitalize="none"
           onChangeText={setName}
@@ -179,7 +180,7 @@ export default function McpSettings() {
         <TextInput
           autoCapitalize="none"
           onChangeText={setTarget}
-          placeholder="command, or https:// url"
+          placeholder={MCP_TARGET_PLACEHOLDER}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -193,7 +194,7 @@ export default function McpSettings() {
           style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
           <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
-            {addMutation.isPending ? 'Adding…' : t.settings.mcp.newServer}
+            {addMutation.isPending ? MCP_ADDING : t.settings.mcp.newServer}
           </Text>
         </TouchableOpacity>
         {addMutation.isError ? (

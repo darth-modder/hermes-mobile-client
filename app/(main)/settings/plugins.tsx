@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { listInstalledPlugins } from '../../../src/api/plugins'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { PLUGINS_MOBILE_CAVEAT } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
@@ -44,10 +45,7 @@ export default function PluginsSettings() {
           />
         }
       >
-        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Plugins installed on the backend. Per-plugin dashboards (a plugin's own web UI) aren&apos;t available on
-          mobile yet — install and configure a plugin from the desktop app or CLI.
-        </Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PLUGINS_MOBILE_CAVEAT}</Text>
         {pluginsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {pluginsQuery.isError ? (
           <View>

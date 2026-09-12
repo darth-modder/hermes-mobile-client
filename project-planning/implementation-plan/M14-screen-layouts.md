@@ -205,6 +205,24 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
    Safety, Memory & Context, Billing, Archived chats, About) and Toolsets have no row yet — each
    lands in its own later M14 commit — so today's group contents are a subset of the prototype's
    full draft, not a placement disagreement with it.
+6. **Labels exit criterion (line 141-142) says a unit test "renders each ported screen" — implemented
+   as a static source-scan instead**, per direction in the 2026-09-12 review ("Write the label test
+   now, ratcheted like the Replicates one"). Rendering a `.tsx` screen isn't possible in this
+   project's vitest setup at all (no `.tsx` component tests exist anywhere — see `drawer-rows.ts`'s
+   header for why), so `src/lib/settings-labels.test.ts` parses each `app/(main)/settings/**/*.tsx`
+   file with the TypeScript compiler's own AST (`ts.createSourceFile`) and asserts every string
+   literal / JSX text node either equals a value from the vendored `en.ts` or is absent because it's
+   imported from the one whitelisted module, `src/lib/strings.mobile.ts`. Same substance as the
+   criterion (no retyped label survives), different verification mechanism. The same review found
+   and fixed ten pre-existing violations across the settings batch this test now guards (`Enable
+   push` → `t.settings.notifications.enableAll`, `Connections` → `t.settings.connections.title`
+   ["Registered gateways"], etc.) — see the commit that added this test for the full list.
+7. **Notifications: "Send test notification" and "Completion Sound" stay unimplemented, not
+   half-wired.** Per the 2026-09-12 review ("no dead controls... wire it or omit it"): both need new
+   plumbing `src/push/*` doesn't have today (a test-dispatch call; a sound-preset picker with audio
+   preview) — layout-only work for M14 can't add that without also inventing the behaviour behind it,
+   which is exactly what M14 is not supposed to do. Omitted rather than shown disabled or wired to
+   nothing, so the screen never presents a control that silently does nothing when pressed.
 
 ## Verification log
 

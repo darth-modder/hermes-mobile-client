@@ -24,6 +24,13 @@ import {
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
 import type { MobileConnection } from '../../../src/connections/types'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  CONNECTION_AUTH_MODE_LABEL,
+  CONNECTION_NEEDS_SIGN_IN_SUFFIX,
+  CONNECTION_NEVER_USED_SUFFIX,
+  CONNECTION_SIGN_OUT_CONFIRM_TITLE,
+  CONNECTION_SIGNING_OUT
+} from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
@@ -51,11 +58,7 @@ function relativeTime(epochMs: number): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = {
-  oauth: 'Nous Portal',
-  password: 'Password',
-  token: 'Token'
-}
+const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = CONNECTION_AUTH_MODE_LABEL
 
 // Replicates: docs/mobile-prototypes/settings.html's `data-view="connections"`
 // (card anatomy: name + primary/current pills, base URL, meta line, Test /
@@ -141,7 +144,7 @@ export default function ConnectionsSettings() {
   }
 
   const signOut = (connection: MobileConnection) => {
-    Alert.alert('Sign out?', connection.label, [
+    Alert.alert(CONNECTION_SIGN_OUT_CONFIRM_TITLE, connection.label, [
       { style: 'cancel', text: 'Cancel' },
       {
         onPress: () => {
@@ -197,7 +200,7 @@ export default function ConnectionsSettings() {
             <ActivityIndicator color={tokens.mutedForeground} size="large" />
           </View>
         ) : connections.length === 0 ? (
-          <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>No saved connections yet.</Text>
+          <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>{t.settings.connections.empty}</Text>
         ) : (
           connections.map(connection => {
             const result = results[connection.id]
@@ -241,8 +244,10 @@ export default function ConnectionsSettings() {
                 </Text>
                 <Text style={[styles.meta, { color: tokens.mutedForeground }]}>
                   {AUTH_MODE_LABEL[connection.authMode]}
-                  {connection.lastUsedAt ? ` · used ${relativeTime(connection.lastUsedAt)}` : ' · never used'}
-                  {connection.needsLogin ? ' · needs sign-in' : ''}
+                  {connection.lastUsedAt
+                    ? ` · used ${relativeTime(connection.lastUsedAt)}`
+                    : ` ${CONNECTION_NEVER_USED_SUFFIX}`}
+                  {connection.needsLogin ? ` ${CONNECTION_NEEDS_SIGN_IN_SUFFIX}` : ''}
                 </Text>
 
                 {result ? (
@@ -270,7 +275,7 @@ export default function ConnectionsSettings() {
                     style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
                     <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
-                      {testing === connection.id ? 'Testing…' : t.settings.connections.testConnection}
+                      {testing === connection.id ? t.settings.mcp.testing : t.settings.connections.testConnection}
                     </Text>
                   </TouchableOpacity>
                   {!connection.primary ? (
@@ -291,7 +296,7 @@ export default function ConnectionsSettings() {
                     style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
                     <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
-                      {signingOut === connection.id ? 'Signing out…' : t.settings.gateway.signOut}
+                      {signingOut === connection.id ? CONNECTION_SIGNING_OUT : t.settings.gateway.signOut}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity

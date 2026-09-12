@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { APPEARANCE_SKIN_SECTION_TITLE, appearanceSkinSyncHint } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { $backendSkinName, $backendSkins } from '../../../src/theme/backend-skin'
 import { useTheme } from '../../../src/theme/provider'
@@ -105,10 +106,9 @@ export default function AppearanceSettings() {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>Skin</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>{APPEARANCE_SKIN_SECTION_TITLE}</Text>
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
-          Matches the desktop app's skins. The backend's active skin ({syncedTheme.label}) applies automatically the
-          first time it changes; pick a different one here to override it on this device.
+          {appearanceSkinSyncHint(syncedTheme.label)}
         </Text>
         {skins.map(theme => (
           <SkinRow active={theme.name === skinName} key={theme.name} theme={theme} />
