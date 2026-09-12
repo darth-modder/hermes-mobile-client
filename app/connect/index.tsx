@@ -64,7 +64,7 @@ export default function ConnectScreen() {
   const router = useRouter()
   const tokens = useTheme()
   const [label, setLabel] = useState('')
-  const [url, setUrl] = useState('http://127.0.0.1:9119')
+  const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [detecting, setDetecting] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -242,6 +242,8 @@ export default function ConnectScreen() {
         <TextInput
           autoCapitalize="none"
           onChangeText={setUrl}
+          placeholder="http://127.0.0.1:9119"
+          placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
             { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
