@@ -17,8 +17,9 @@ export default [
       'android/**',
       'ios/**',
       '.expo/**',
-      // Static HTML/CSS/JS prototype mockups (D15.3), not app source.
-      'docs/desktop-prototypes/**'
+      // Static HTML/CSS/JS prototype mockups (D15.3, D16), not app source.
+      'docs/desktop-prototypes/**',
+      'docs/mobile-prototypes/**'
     ]
   },
   js.configs.recommended,
