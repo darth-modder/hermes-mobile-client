@@ -21,15 +21,14 @@
 // Chats | About). M14 says "sections in the desktop's order"; which order
 // wins on a phone needs a D-entry — flagging it, not deciding it here.
 //
-// Five of the mobile prototype's rows (Safety, Memory & Context, Billing,
-// Archived chats, About) and Toolsets have no route yet — each lands in its
-// own later M14 commit, per the milestone's own task order. Chat landed
-// above, in the "App" group alongside Appearance/Notifications/Voice per
-// settings-rows.ts's own header: the M14 task doc places Chat, Safety and
-// Memory & Context there (device-facing app preferences), while Billing,
-// Archived chats and About join "Account" alongside Plugins, matching the
-// desktop rail's own adjacency (Plugins, Archived Chats, About are
-// consecutive there).
+// Four of the mobile prototype's rows (Memory & Context, Billing, Archived
+// chats, About) and Toolsets have no route yet — each lands in its own
+// later M14 commit, per the milestone's own task order. Chat and Safety
+// landed above, in the "App" group alongside Appearance/Notifications/Voice:
+// the M14 task doc places Chat, Safety and Memory & Context there
+// (device-facing app preferences), while Billing, Archived chats and About
+// join "Account" alongside Plugins, matching the desktop rail's own
+// adjacency (Plugins, Archived Chats, About are consecutive there).
 import { t } from '../lib/t'
 
 export interface SettingsRowMeta {
@@ -83,6 +82,11 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         route: '/(main)/settings/chat',
         subtitle: 'Personality, reasoning, reactions',
         title: t.settings.sections.chat
+      },
+      {
+        route: '/(main)/settings/safety',
+        subtitle: 'Approvals, allowlists, checkpoints',
+        title: t.settings.sections.safety
       },
       {
         route: '/(main)/settings/notifications',
