@@ -24,6 +24,7 @@ import {
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
 import type { MobileConnection } from '../../../src/connections/types'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
@@ -56,8 +57,15 @@ const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = {
   token: 'Token'
 }
 
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="connections"`
+// (card anatomy: name + primary/current pills, base URL, meta line, Test /
+// Sign out / Remove actions, "Add connection" at the bottom). The pill and
+// action labels below come from the vendored `t.settings.connections` block
+// (D15.4) — that same registry, so "Delete" is renamed to "Remove" and the
+// confirm copy to the desktop's own removeConfirmTitle/removeConfirmDesc.
+//
 /**
- * Connections settings screen (M09): add / edit / test / delete, primary and
+ * Connections settings screen (M09): add / edit / test / remove, primary and
  * last-used. "Add" reuses the existing `/connect` flow (M04/M08) rather than
  * a second add form — that screen already handles auth-mode detection.
  */
@@ -150,7 +158,7 @@ export default function ConnectionsSettings() {
   }
 
   const remove = (connection: MobileConnection) => {
-    Alert.alert('Delete connection?', connection.label, [
+    Alert.alert(t.settings.connections.removeConfirmTitle, t.settings.connections.removeConfirmDesc(connection.label), [
       { style: 'cancel', text: 'Cancel' },
       {
         onPress: () => {
@@ -159,14 +167,14 @@ export default function ConnectionsSettings() {
           refresh()
         },
         style: 'destructive',
-        text: 'Delete'
+        text: t.settings.connections.removeConnection
       }
     ])
   }
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Connections' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.connections.title }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -177,6 +185,7 @@ export default function ConnectionsSettings() {
           <View style={styles.center}>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
             <TouchableOpacity
+              hitSlop={8}
               onPress={() => refresh()}
               style={[styles.retryButton, { backgroundColor: tokens.primary }]}
             >
@@ -209,15 +218,19 @@ export default function ConnectionsSettings() {
                       value={editingLabel}
                     />
                   ) : (
-                    <TouchableOpacity onPress={() => startEditing(connection)} style={styles.labelRow}>
+                    <TouchableOpacity hitSlop={10} onPress={() => startEditing(connection)} style={styles.labelRow}>
                       <Text numberOfLines={1} style={[styles.label, { color: tokens.foreground }]}>
                         {connection.label}
                       </Text>
                       {connection.primary ? (
-                        <Text style={[styles.primaryBadge, { color: tokens.semantic.yellow }]}>★ primary</Text>
+                        <Text style={[styles.primaryBadge, { color: tokens.semantic.yellow }]}>
+                          {t.settings.connections.primaryPill}
+                        </Text>
                       ) : null}
                       {isActive ? (
-                        <Text style={[styles.activeBadge, { color: tokens.semantic.green }]}>active</Text>
+                        <Text style={[styles.activeBadge, { color: tokens.semantic.green }]}>
+                          {t.settings.connections.currentPill}
+                        </Text>
                       ) : null}
                     </TouchableOpacity>
                   )}
@@ -241,43 +254,54 @@ export default function ConnectionsSettings() {
                 <View style={styles.actions}>
                   {!isActive ? (
                     <TouchableOpacity
+                      hitSlop={8}
                       onPress={() => use(connection)}
                       style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                     >
-                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>Use</Text>
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                        {t.profiles.switchToConnection(connection.label)}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={testing === connection.id}
+                    hitSlop={8}
                     onPress={() => void test(connection)}
                     style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
                     <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
-                      {testing === connection.id ? 'Testing…' : 'Test'}
+                      {testing === connection.id ? 'Testing…' : t.settings.connections.testConnection}
                     </Text>
                   </TouchableOpacity>
                   {!connection.primary ? (
                     <TouchableOpacity
+                      hitSlop={8}
                       onPress={() => makePrimary(connection)}
                       style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                     >
-                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>Set primary</Text>
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                        {t.settings.connections.makePrimary}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={signingOut === connection.id}
+                    hitSlop={8}
                     onPress={() => signOut(connection)}
                     style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
                     <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
-                      {signingOut === connection.id ? 'Signing out…' : 'Sign out'}
+                      {signingOut === connection.id ? 'Signing out…' : t.settings.gateway.signOut}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    hitSlop={8}
                     onPress={() => remove(connection)}
                     style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
-                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
+                      {t.settings.connections.removeConnection}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -286,10 +310,14 @@ export default function ConnectionsSettings() {
         )}
 
         <TouchableOpacity
+          accessibilityLabel={t.settings.connections.addConnection}
+          accessibilityRole="button"
           onPress={() => router.push('/connect')}
           style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
-          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>+ Add connection</Text>
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            + {t.settings.connections.addConnection}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -320,7 +348,9 @@ const styles = StyleSheet.create({
   addButton: {
     alignItems: 'center',
     borderRadius: radius.control,
+    justifyContent: 'center',
     marginTop: 4,
+    minHeight: 48,
     paddingVertical: 12
   },
   addButtonText: {
