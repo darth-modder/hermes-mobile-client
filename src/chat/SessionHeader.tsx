@@ -5,12 +5,33 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { compressSession, renameSession } from '../gateway/session-connection'
 import { ChevronLeft } from '../lib/icons'
+import { t } from '../lib/t'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
 
 import { UsageChip } from './parts/UsageChip'
+
+// Replicates: docs/desktop-prototypes/e-overlays/model-picker.html's
+// composer model-pill / dialog trigger — with its own scope narrowed by
+// that prototype's header comment: "Mobile: At parity: providers and models
+// live in Settings on mobile (M09, docs/PARITY.md)." No new sheet is built
+// here for that reason, not by oversight — checked src/api/models.ts
+// directly: `ModelAssignmentRequest.scope` (src/upstream/types/hermes.ts)
+// is typed `'main' | 'auxiliary'` only, no session-scoped variant and no
+// `session_id` field anywhere on the request. The desktop's dialog applies
+// the pick "to the focused session/tile" (that prototype's own Behaviour
+// block); mobile's only model-switch call (`setGlobalModel`, scope: 'main')
+// changes the default for new sessions, not the open one. A sheet that
+// looked like the desktop's per-session picker but silently changed a
+// different scope would misrepresent what the tap does — the same
+// "no invented API surface" line settings/models.tsx's own header already
+// draws for this endpoint. What IS built: this subtitle row is now a real
+// shortcut to Settings -> Models (t.settings.sections.model), where the
+// actual switch lives — same resolution precedent as the onboarding.html
+// and gateway-connecting.html mapping-table/header-comment conflicts
+// earlier in this milestone (prototype's own comment wins).
 
 export interface SessionHeaderProps {
   storedSessionId: string
@@ -114,9 +135,16 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
           </TouchableOpacity>
         )}
         <View style={styles.subtitleRow}>
-          <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
-            {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
-          </Text>
+          <TouchableOpacity
+            accessibilityLabel={t.settings.sections.model}
+            accessibilityRole="button"
+            hitSlop={{ bottom: 12, left: 4, right: 4, top: 12 }}
+            onPress={() => router.push('/(main)/settings/models')}
+          >
+            <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
+              {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
+            </Text>
+          </TouchableOpacity>
           <UsageChip usage={session.usage} />
         </View>
       </View>
