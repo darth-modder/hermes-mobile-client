@@ -17,12 +17,24 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { createProfile, deleteProfile, getProfiles } from '../../../src/api/profiles'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { HttpError } from '../../../src/net/http'
 import { $activeProfile, setActiveProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 import type { ProfileInfo } from '../../../src/upstream/types/hermes'
 
+// Replicates: docs/desktop-prototypes/a-main/profiles.html (ProfilesView
+// row anatomy: name, model/skill-count subtitle, a checkmark for the
+// active row). That prototype's own detail pane (SOUL.md editor, per-
+// profile stats) isn't ported — the desktop's own header comment already
+// says "Mobile: Profiles is at parity on mobile" for the create/switch/
+// delete surface this screen has had since M09, and a SOUL.md editor is
+// new functionality this layout pass doesn't add. Its Create/Rename/Delete
+// dialogs becoming bottom sheets (the M14 adaptation-rules table's "Dialogs
+// with a form" row) is its own later M14 task ("dialogs to sheets and
+// alerts", last in the task list) — this screen's inline create form and
+// native Delete Alert are left as they are for now, not converted here.
 /**
  * Profiles settings screen (M09). Switching sets `$activeProfile`, which
  * scopes REST calls (`?profile=`) and `session.create`'s `profile` field —
@@ -62,10 +74,14 @@ export default function ProfilesSettings() {
   })
 
   const confirmDelete = (profile: ProfileInfo) => {
-    Alert.alert('Delete profile?', profile.name, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteMutation.mutate(profile.name), style: 'destructive', text: 'Delete' }
-    ])
+    Alert.alert(
+      t.profiles.deleteTitle,
+      `${t.profiles.deleteDescPrefix}${profile.name}${t.profiles.deleteDescMid}${profile.name}${t.profiles.deleteDescSuffix}`,
+      [
+        { style: 'cancel', text: 'Cancel' },
+        { onPress: () => deleteMutation.mutate(profile.name), style: 'destructive', text: 'Delete' }
+      ]
+    )
   }
 
   const submitCreate = () => {
@@ -78,7 +94,7 @@ export default function ProfilesSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Profiles' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.profiles.title }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -100,7 +116,7 @@ export default function ProfilesSettings() {
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {error instanceof Error ? error.message : String(error)}
             </Text>
-            <TouchableOpacity onPress={() => void refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -114,7 +130,7 @@ export default function ProfilesSettings() {
           ]}
         >
           <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>default</Text>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{t.profiles.default}</Text>
             <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
               The connection&apos;s default profile
             </Text>
@@ -142,7 +158,7 @@ export default function ProfilesSettings() {
                   {profile.display_name || profile.name}
                 </Text>
                 <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
-                  {profile.skill_count} skill{profile.skill_count === 1 ? '' : 's'}
+                  {t.profiles.skills(profile.skill_count)}
                   {profile.model ? ` · ${profile.model}` : ''}
                 </Text>
               </View>
@@ -152,7 +168,7 @@ export default function ProfilesSettings() {
             </TouchableOpacity>
           ))}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New profile</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.profiles.newProfile}</Text>
         <View style={styles.createRow}>
           <TextInput
             autoCapitalize="none"
@@ -172,10 +188,11 @@ export default function ProfilesSettings() {
             style={[styles.createButton, { backgroundColor: tokens.primary }]}
           >
             <Text style={[styles.createButtonText, { color: tokens.primaryForeground }]}>
-              {createMutation.isPending ? '…' : 'Create'}
+              {createMutation.isPending ? t.profiles.creating : t.profiles.createAction}
             </Text>
           </TouchableOpacity>
         </View>
+        <Text style={[styles.hint, { color: tokens.mutedForeground }]}>{t.profiles.nameHint}</Text>
         {createMutation.isError ? (
           <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof HttpError ? createMutation.error.message : String(createMutation.error)}
@@ -184,8 +201,8 @@ export default function ProfilesSettings() {
         <Text style={[styles.hint, { color: tokens.mutedForeground }]}>
           Long-press a profile to delete it. The default profile cannot be deleted.
         </Text>
-        <TouchableOpacity onPress={() => void refetch()} style={styles.refreshButton}>
-          <Text style={[styles.refreshText, { color: tokens.mutedForeground }]}>Refresh</Text>
+        <TouchableOpacity hitSlop={10} onPress={() => void refetch()} style={styles.refreshButton}>
+          <Text style={[styles.refreshText, { color: tokens.mutedForeground }]}>{t.profiles.refresh}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -206,6 +223,7 @@ const styles = StyleSheet.create({
   createButton: {
     borderRadius: radius.control,
     justifyContent: 'center',
+    minHeight: 48,
     paddingHorizontal: 14
   },
   createButtonText: {
