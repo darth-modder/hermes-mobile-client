@@ -40,7 +40,7 @@ describe('settings index rows', () => {
     }
   })
 
-  it('has every M14 row except About, which still needs its own commit', () => {
+  it('has a row for all six M14 settings sections (Toolsets excepted — its own future screen)', () => {
     const titles = SETTINGS_GROUPS.flatMap(group => group.rows.map(row => row.title))
 
     expect(titles).toContain(t.settings.sections.chat)
@@ -48,6 +48,6 @@ describe('settings index rows', () => {
     expect(titles).toContain(t.settings.sections.memory)
     expect(titles).toContain(t.settings.nav.billing)
     expect(titles).toContain(t.settings.nav.archivedChats)
-    expect(titles).not.toContain(t.settings.nav.about)
+    expect(titles).toContain(t.settings.nav.about)
   })
 })

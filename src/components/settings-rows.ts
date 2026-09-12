@@ -21,14 +21,13 @@
 // Chats | About). M14 says "sections in the desktop's order"; which order
 // wins on a phone needs a D-entry — flagging it, not deciding it here.
 //
-// One of the mobile prototype's rows (About) and Toolsets have no route yet
-// — each lands in its own later M14 commit, per the milestone's own task
-// order. Chat, Safety and Memory & Context landed above, in the "App" group
-// alongside Appearance/Notifications/Voice: the M14 task doc places them
-// there (device-facing app preferences). Billing and Archived chats land
-// below, in "Account" alongside Plugins — About joins it there too, matching
-// the desktop rail's own adjacency (Plugins, Archived Chats, About are
-// consecutive there).
+// Toolsets is the only mobile prototype row still without a route — its own
+// later M14 commit, per the milestone's own task order. Chat, Safety and
+// Memory & Context landed in the "App" group alongside Appearance/
+// Notifications/Voice: the M14 task doc places them there (device-facing
+// app preferences). Billing, Archived chats and About landed in "Account"
+// alongside Plugins, matching the desktop rail's own adjacency (Plugins,
+// Archived Chats, About are consecutive there).
 import { t } from '../lib/t'
 
 export interface SettingsRowMeta {
@@ -110,7 +109,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
         route: '/(main)/settings/archived-chats',
         subtitle: 'Unarchive or delete permanently',
         title: t.settings.nav.archivedChats
-      }
+      },
+      { route: '/(main)/settings/about', subtitle: 'Version, host, gateway', title: t.settings.nav.about }
     ]
   }
 ]

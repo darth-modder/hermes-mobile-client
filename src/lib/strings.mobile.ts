@@ -23,8 +23,8 @@
 // prototype's own `data-view="about"` `.section-label`.
 export const ABOUT_HOST_SECTION_TITLE = 'Host'
 
-// t.about.version(value) already covers "Version X" (the desktop's own
-// format, checked against en.ts's `about` block); the parenthetical build
+// t.settings.about.version(value) already covers "Version X" (the desktop's
+// own format, checked against en.ts's `settings.about` block); the parenthetical build
 // number is an Android versionCode, a concept the desktop's about screen has
 // no equivalent for (it pairs a git branch and commit via `branchCommit`
 // instead — values this app has no build-time injection for, so they're not
