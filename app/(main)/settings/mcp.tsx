@@ -17,10 +17,26 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { addMcpServer, listMcpServers, removeMcpServer, setMcpServerEnabled, testMcpServer } from '../../../src/api/mcp'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { t } from '../../../src/lib/t'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
 import type { McpServerSummary } from '../../../src/upstream/types/hermes'
 
+// Replicates: docs/desktop-prototypes/a-main/capabilities.html's
+// `data-view="mcp"` panel (no dedicated mobile-prototype view exists for
+// MCP — the M14 mapping's Skills/Toolsets/MCP tabs become three settings
+// rows, this being one of them). The desktop tab is a wide master-detail
+// split (server list aside + a JSON-editor/logs detail pane); this screen
+// keeps its pre-existing single-list-with-inline-actions shape rather than
+// building a second (list -> detail) navigation level for it — that's a
+// structural rewrite, not a relabel/reorder, and `src/api/mcp.ts`'s header
+// already documents the catalog-browse UI as cut for the same M09 mobile-
+// scope reason. Labels that do have a vendored match (D15.4) now use it:
+// section title "Servers" (t.settings.mcp.tabServers), "Test connection",
+// "Testing…", "Remove", "Name", the empty state, and the test-result
+// copy (testOk's counted-tools phrasing; testFailed prefixes the specific
+// server error this screen already surfaced, since the vendored string
+// alone has no room for it).
 /**
  * MCP settings screen (M09). Exit criterion: "MCP server add and test
  * succeed" — manual add (name + command-or-url) covers it without the
@@ -67,7 +83,7 @@ export default function McpSettings() {
   const confirmRemove = (serverName: string) => {
     Alert.alert('Remove MCP server?', serverName, [
       { style: 'cancel', text: 'Cancel' },
-      { onPress: () => removeMutation.mutate(serverName), style: 'destructive', text: 'Remove' }
+      { onPress: () => removeMutation.mutate(serverName), style: 'destructive', text: t.settings.mcp.remove }
     ])
   }
 
@@ -75,8 +91,8 @@ export default function McpSettings() {
     mutationFn: (serverName: string) => testMcpServer(serverName),
     onSuccess: (result, serverName) => {
       const message = result.ok
-        ? `${result.tools.length} tool${result.tools.length === 1 ? '' : 's'} found.`
-        : `Failed: ${result.error ?? 'unknown error'}`
+        ? t.settings.mcp.testOk(result.tools.length)
+        : `${t.settings.mcp.testFailed}: ${result.error ?? 'unknown error'}`
 
       setTestMessages(current => ({ ...current, [serverName]: message }))
     },
@@ -87,7 +103,7 @@ export default function McpSettings() {
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'MCP' }} />
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.mcp }} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -98,14 +114,14 @@ export default function McpSettings() {
           />
         }
       >
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Servers</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.settings.mcp.tabServers}</Text>
         {serversQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {serversQuery.isError ? (
           <View>
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {serversQuery.error instanceof Error ? serversQuery.error.message : String(serversQuery.error)}
             </Text>
-            <TouchableOpacity onPress={() => void serversQuery.refetch()} style={styles.retryButton}>
+            <TouchableOpacity hitSlop={10} onPress={() => void serversQuery.refetch()} style={styles.retryButton}>
               <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -128,28 +144,31 @@ export default function McpSettings() {
             <View style={styles.actions}>
               <TouchableOpacity
                 disabled={testMutation.isPending && testMutation.variables === server.name}
+                hitSlop={8}
                 onPress={() => testMutation.mutate(server.name)}
                 style={styles.actionButton}
               >
                 <Text style={[styles.actionText, { color: tokens.primary }]}>
-                  {testMutation.isPending && testMutation.variables === server.name ? 'Testing…' : 'Test'}
+                  {testMutation.isPending && testMutation.variables === server.name
+                    ? t.settings.mcp.testing
+                    : t.settings.mcp.test}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => confirmRemove(server.name)} style={styles.actionButton}>
-                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Remove</Text>
+              <TouchableOpacity hitSlop={8} onPress={() => confirmRemove(server.name)} style={styles.actionButton}>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.settings.mcp.remove}</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
         {serversQuery.data?.servers.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No MCP servers configured.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.settings.mcp.emptyTitle}</Text>
         ) : null}
 
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Add a server</Text>
         <TextInput
           autoCapitalize="none"
           onChangeText={setName}
-          placeholder="name"
+          placeholder={t.settings.mcp.name}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -174,7 +193,7 @@ export default function McpSettings() {
           style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
           <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
-            {addMutation.isPending ? 'Adding…' : 'Add server'}
+            {addMutation.isPending ? 'Adding…' : t.settings.mcp.newServer}
           </Text>
         </TouchableOpacity>
         {addMutation.isError ? (
@@ -202,7 +221,9 @@ const styles = StyleSheet.create({
   addButton: {
     alignItems: 'center',
     borderRadius: radius.control,
+    justifyContent: 'center',
     marginTop: 4,
+    minHeight: 48,
     paddingVertical: 12
   },
   addButtonText: {
