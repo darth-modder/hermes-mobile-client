@@ -24,6 +24,8 @@ import {
   updateMessagingPlatform
 } from '../../../src/api/messaging'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { CHANNELS_NO_PENDING_PAIRING, CHANNELS_NO_PLATFORMS } from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
 import { $pairingChangeTick, $platformsChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
@@ -33,6 +35,19 @@ import type { MessagingPlatformInfo, PairingUser } from '../../../src/upstream/t
 const PLATFORMS_KEY = 'messaging-platforms'
 const PAIRING_KEY = 'pairing'
 
+// Replicates: docs/desktop-prototypes/a-main/messaging.html (MasterDetail
+// platform rail + detail, the pairing pending/approved lists) — collapsed
+// into one scrolling list since this screen predates M14's list/detail
+// adaptation and a real M09/M10 build isn't worth rewriting for layout
+// alone. Labels below come from the vendored `t.messaging` block (D15.4),
+// with a couple of generic words cross-reused from elsewhere in en.ts by
+// value (t.shell.gatewayMenu.messagingPlatforms for the "Platforms"
+// heading, t.settings.connections.testConnection for "Test",
+// t.settings.mcp.testing for "Testing…", t.cron.states.running for the
+// inline "running" status word — none of `messaging`'s own keys cover
+// these). Per the earlier review's other named trap: this screen's own
+// header said "Channels" while the drawer already calls the same route
+// "Messaging" (t.sidebar.nav.messaging) — now both agree.
 /**
  * Channels screen (M10). `/api/messaging/*` + `/api/pairing/*`
  * (src/api/messaging.ts, ported by M09 with no UI for this milestone to
@@ -139,9 +154,9 @@ export default function ChannelsScreen() {
   })
 
   const confirmRevoke = (user: PairingUser) => {
-    Alert.alert('Revoke pairing?', user.user_name || user.user_id, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: () => revokeMutation.mutate(user), style: 'destructive', text: 'Revoke' }
+    Alert.alert(t.messaging.revokeTitle, t.messaging.revokeDesc(user.user_name || user.user_id), [
+      { style: 'cancel', text: t.common.cancel },
+      { onPress: () => revokeMutation.mutate(user), style: 'destructive', text: t.messaging.revoke }
     ])
   }
 
@@ -176,14 +191,16 @@ export default function ChannelsScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <ScreenHeader title="Channels" />
+      <ScreenHeader title={t.sidebar.nav.messaging} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
         }
       >
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Platforms</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>
+          {t.shell.gatewayMenu.messagingPlatforms}
+        </Text>
         {platformsQuery.isLoading ? (
           <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} />
         ) : platformsQuery.isError ? (
@@ -192,14 +209,15 @@ export default function ChannelsScreen() {
               {platformsQuery.error instanceof Error ? platformsQuery.error.message : String(platformsQuery.error)}
             </Text>
             <TouchableOpacity
+              hitSlop={8}
               onPress={() => void platformsQuery.refetch()}
               style={[styles.retryButton, { backgroundColor: tokens.primary }]}
             >
-              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
             </TouchableOpacity>
           </View>
         ) : platforms.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No messaging platforms available.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{CHANNELS_NO_PLATFORMS}</Text>
         ) : null}
 
         {platforms.map(platform => {
@@ -222,8 +240,8 @@ export default function ChannelsScreen() {
                   {platform.description}
                 </Text>
                 <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
-                  {platform.configured ? 'Configured' : 'Not configured'}
-                  {platform.gateway_running ? ' · running' : ''}
+                  {platform.configured ? t.messaging.credentialsSet : t.messaging.needsSetup}
+                  {platform.gateway_running ? ` · ${t.cron.states.running}` : ''}
                   {platform.state ? ` · ${platform.state}` : ''}
                   {platform.error_message ? ` · ${platform.error_message}` : ''}
                 </Text>
@@ -235,7 +253,7 @@ export default function ChannelsScreen() {
                     <View key={envVar.key} style={styles.envRow}>
                       <Text style={[styles.envLabel, { color: tokens.mutedForeground }]}>
                         {envVar.key}
-                        {envVar.is_set ? ' (set)' : envVar.required ? ' (required)' : ''}
+                        {envVar.is_set ? ` (${t.common.set})` : envVar.required ? ` (${t.messaging.required})` : ''}
                       </Text>
                       <TextInput
                         autoCapitalize="none"
@@ -259,14 +277,20 @@ export default function ChannelsScreen() {
                     </Text>
                   ) : null}
                   <View style={styles.actions}>
-                    <TouchableOpacity onPress={() => saveEnv(platform)} style={styles.actionButton}>
+                    <TouchableOpacity hitSlop={8} onPress={() => saveEnv(platform)} style={styles.actionButton}>
                       <Text style={[styles.actionText, { color: tokens.primary }]}>
-                        {saveEnvMutation.isPending ? 'Saving…' : 'Save'}
+                        {saveEnvMutation.isPending ? t.messaging.saving : t.messaging.saveChanges}
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => testMutation.mutate(platform.id)} style={styles.actionButton}>
+                    <TouchableOpacity
+                      hitSlop={8}
+                      onPress={() => testMutation.mutate(platform.id)}
+                      style={styles.actionButton}
+                    >
                       <Text style={[styles.actionText, { color: tokens.primary }]}>
-                        {testMutation.isPending && testMutation.variables === platform.id ? 'Testing…' : 'Test'}
+                        {testMutation.isPending && testMutation.variables === platform.id
+                          ? t.settings.mcp.testing
+                          : t.settings.connections.testConnection}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -276,7 +300,9 @@ export default function ChannelsScreen() {
           )
         })}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>Pairing</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>
+          {t.messaging.pendingRequests(pending.length)}
+        </Text>
         {pairingQuery.isLoading ? (
           <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} />
         ) : pairingQuery.isError ? (
@@ -285,14 +311,15 @@ export default function ChannelsScreen() {
               {pairingQuery.error instanceof Error ? pairingQuery.error.message : String(pairingQuery.error)}
             </Text>
             <TouchableOpacity
+              hitSlop={8}
               onPress={() => void pairingQuery.refetch()}
               style={[styles.retryButton, { backgroundColor: tokens.primary }]}
             >
-              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
             </TouchableOpacity>
           </View>
         ) : pending.length === 0 ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No pending pairing requests.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{CHANNELS_NO_PENDING_PAIRING}</Text>
         ) : (
           pending.map(user => (
             <View
@@ -305,8 +332,12 @@ export default function ChannelsScreen() {
                 {typeof user.age_minutes === 'number' ? ` · ${Math.round(user.age_minutes)}m ago` : ''}
               </Text>
               <View style={styles.actions}>
-                <TouchableOpacity onPress={() => approveMutation.mutate(user)} style={styles.actionButton}>
-                  <Text style={[styles.actionText, { color: tokens.primary }]}>Approve</Text>
+                <TouchableOpacity hitSlop={8} onPress={() => approveMutation.mutate(user)} style={styles.actionButton}>
+                  <Text style={[styles.actionText, { color: tokens.primary }]}>
+                    {approveMutation.isPending && approveMutation.variables === user
+                      ? t.messaging.approving
+                      : t.messaging.approve}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -315,7 +346,9 @@ export default function ChannelsScreen() {
 
         {approved.length > 0 ? (
           <>
-            <Text style={[styles.sectionSubtitle, { color: tokens.mutedForeground }]}>Approved</Text>
+            <Text style={[styles.sectionSubtitle, { color: tokens.mutedForeground }]}>
+              {t.messaging.approvedUsers(approved.length)}
+            </Text>
             {approved.map(user => (
               <View
                 key={`${user.platform}:${user.user_id}`}
@@ -324,8 +357,8 @@ export default function ChannelsScreen() {
                 <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{user.user_name || user.user_id}</Text>
                 <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{user.platform}</Text>
                 <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => confirmRevoke(user)} style={styles.actionButton}>
-                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Revoke</Text>
+                  <TouchableOpacity hitSlop={8} onPress={() => confirmRevoke(user)} style={styles.actionButton}>
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.messaging.revoke}</Text>
                   </TouchableOpacity>
                 </View>
               </View>

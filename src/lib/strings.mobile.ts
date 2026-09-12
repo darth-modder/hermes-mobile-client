@@ -112,6 +112,15 @@ export const CHAT_FIELDS: readonly HostManagedField[] = [
   { description: 'Controls how image attachments are sent to the model.', title: 'Image Input Mode' }
 ]
 
+// channels/index.tsx (M10, M14 sweep) — the messaging platform list and the
+// pairing list each have a vendored count-based header (t.messaging.
+// pendingRequests(count), t.messaging.approvedUsers(count)) but no vendored
+// empty-state sentence for either list at zero (checked t.messaging: no
+// "no platforms"/"no pending" string exists there or anywhere else in
+// en.ts).
+export const CHANNELS_NO_PLATFORMS = 'No messaging platforms available.'
+export const CHANNELS_NO_PENDING_PAIRING = 'No pending pairing requests.'
+
 // settings/connections.tsx — this compact per-row auth-mode badge has no
 // desktop equivalent: the desktop describes auth mode with full sentences
 // ("This gateway uses a username and password...", en.ts's authSignedIn*/
