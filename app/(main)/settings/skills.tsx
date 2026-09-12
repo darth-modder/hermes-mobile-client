@@ -42,6 +42,20 @@ import { type } from '../../../src/theme/type'
 // title (t.skills.tabSkills), "Available to install" -> officialCatalog,
 // Install/Uninstall -> t.skills.hub.{install,uninstall} (the same hub
 // install action this screen already calls).
+// M14 task 6: docs/desktop-prototypes/f-dialogs/archive-skill.html — per the
+// M14 mapping, this is the one dialog in that absent-dialogs cluster meant
+// to exist, as a confirm `Alert` (not a sheet). Checked src/api/skills.ts
+// directly: it has setSkillEnabled (toggle), installSkillFromHub, and
+// uninstallSkillFromHub — no archive endpoint. Archive is a distinct
+// desktop concept from uninstall: it targets a LEARNED skill specifically
+// (the curator-managed kind this screen's own header notes has "no named
+// M09 sub-screen"), is restorable via `hermes curator restore`, and that
+// prototype's own description string is written for exactly that
+// distinction. Faking it by calling `uninstallSkillFromHub` under an
+// "Archive" label would both mislabel a permanent removal as a restorable
+// one and apply to skills the real archive action was never meant to
+// affect. Left unbuilt rather than invented — not a gap this layout pass
+// can close without new backend support.
 /**
  * Skills settings screen (M09). Exit criterion: "skill toggle persists" —
  * `setSkillEnabled` writes through the backend; this screen re-fetches
