@@ -23,6 +23,7 @@ import {
   triggerCronJob
 } from '../../../src/api/cron'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { t } from '../../../src/lib/t'
 import { $cronChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
 import { useTheme } from '../../../src/theme/provider'
@@ -32,6 +33,13 @@ import type { CronJob } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY_ROOT = 'cron-jobs'
 
+// Replicates: docs/desktop-prototypes/a-main/cron.html (PanelList + PanelDetail
+// anatomy, collapsed here into one scrolling list since this screen predates
+// M14's list/detail adaptation and a fully real M09/M10 build isn't worth
+// rewriting for layout alone). Labels below come from the vendored
+// `t.cron` block (D15.4) — including the screen's own title, which the
+// drawer (`src/components/drawer-rows.ts`) already calls "Scheduled jobs"
+// (t.sidebar.nav.cron / t.cron.title), not "Cron".
 /**
  * Cron screen (M10). `/api/cron/*` (src/api/cron.ts) for CRUD; the list
  * refetches on the `cron.changed` gateway broadcast (src/store/live-sync.ts)
@@ -133,9 +141,11 @@ export default function CronScreen() {
   }
 
   const confirmDelete = (job: CronJob) => {
-    Alert.alert('Delete cron job?', job.name || job.id, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteMutation.mutate(job.id), style: 'destructive', text: 'Delete' }
+    const jobLabel = job.name || job.id
+
+    Alert.alert(t.cron.deleteTitle, `${t.cron.deleteDescPrefix}${jobLabel}${t.cron.deleteDescSuffix}`, [
+      { style: 'cancel', text: t.common.cancel },
+      { onPress: () => deleteMutation.mutate(job.id), style: 'destructive', text: t.common.delete }
     ])
   }
 
@@ -143,7 +153,7 @@ export default function CronScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <ScreenHeader title="Cron" />
+      <ScreenHeader title={t.cron.title} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -161,15 +171,16 @@ export default function CronScreen() {
               {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
             </Text>
             <TouchableOpacity
+              hitSlop={8}
               onPress={() => void jobsQuery.refetch()}
               style={[styles.retryButton, { backgroundColor: tokens.primary }]}
             >
-              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
         {jobs.length === 0 && !jobsQuery.isLoading && !jobsQuery.isError ? (
-          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>No cron jobs yet.</Text>
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.cron.emptyTitleNew}</Text>
         ) : null}
 
         {jobs.map(job => (
@@ -179,7 +190,7 @@ export default function CronScreen() {
               <Text
                 style={[styles.statusEnabled, { color: job.enabled ? tokens.semantic.green : tokens.mutedForeground }]}
               >
-                {job.state || (job.enabled ? 'enabled' : 'paused')}
+                {job.state || (job.enabled ? t.cron.states.enabled : t.cron.states.paused)}
               </Text>
             </View>
             <Text numberOfLines={1} style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>
@@ -199,27 +210,30 @@ export default function CronScreen() {
             <View style={styles.actions}>
               <TouchableOpacity
                 disabled={runningIds.has(job.id)}
+                hitSlop={8}
                 onPress={() => onTrigger(job)}
                 style={styles.actionButton}
               >
                 <Text style={[styles.actionText, { color: tokens.primary }]}>
-                  {runningIds.has(job.id) ? 'Running…' : 'Trigger'}
+                  {runningIds.has(job.id) ? t.commandCenter.maintenance.running : t.cron.triggerNow}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => pauseMutation.mutate(job)} style={styles.actionButton}>
-                <Text style={[styles.actionText, { color: tokens.primary }]}>{job.enabled ? 'Pause' : 'Resume'}</Text>
+              <TouchableOpacity hitSlop={8} onPress={() => pauseMutation.mutate(job)} style={styles.actionButton}>
+                <Text style={[styles.actionText, { color: tokens.primary }]}>
+                  {job.enabled ? t.cron.pauseTitle : t.cron.resumeTitle}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => confirmDelete(job)} style={styles.actionButton}>
-                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>Delete</Text>
+              <TouchableOpacity hitSlop={8} onPress={() => confirmDelete(job)} style={styles.actionButton}>
+                <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.common.delete}</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
 
-        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>New job</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.cron.newCron}</Text>
         <TextInput
           onChangeText={setName}
-          placeholder="Name (optional)"
+          placeholder={t.cron.namePlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -231,7 +245,7 @@ export default function CronScreen() {
           multiline
           numberOfLines={3}
           onChangeText={setPrompt}
-          placeholder="Prompt"
+          placeholder={t.cron.promptPlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -243,7 +257,7 @@ export default function CronScreen() {
         <TextInput
           autoCapitalize="none"
           onChangeText={setSchedule}
-          placeholder="Schedule (cron expr, e.g. 0 9 * * *)"
+          placeholder={t.cron.customPlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           style={[
             styles.input,
@@ -257,7 +271,7 @@ export default function CronScreen() {
           style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
           <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
-            {createMutation.isPending ? 'Creating…' : 'Create job'}
+            {createMutation.isPending ? t.webhooks.creating : t.cron.createAction}
           </Text>
         </TouchableOpacity>
         {createMutation.isError ? (
