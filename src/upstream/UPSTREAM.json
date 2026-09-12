@@ -1,6 +1,8 @@
 {
   "commit": "b973068c60ae92c1928041cb6a8e53a80bcf9c4c",
   "files": [
+    "i18n/en.ts",
+    "i18n/types.ts",
     "lib/chat-messages/hydration.ts",
     "lib/chat-messages/index.ts",
     "lib/chat-messages/parts.ts",
@@ -14,6 +16,7 @@
     "lib/keyed-timeouts.ts",
     "lib/reconnect-backoff.ts",
     "lib/text.ts",
+    "lib/tips/catalog.ts",
     "lib/todos.ts",
     "lib/with-timeout.ts",
     "shared/backend-scope.ts",
