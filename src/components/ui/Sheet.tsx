@@ -82,7 +82,13 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
         style={[
           styles.sheet,
           {
-            backgroundColor: tokens.popover,
+            // `tokens.popover` is deliberately translucent (resolve.ts:
+            // `mix(bgElevated, TRANSPARENT, 0.96)`) — a desktop material meant
+            // to sit over a blurred backdrop. This sheet has no blur behind
+            // it, so at 96% opacity the screen underneath (its text included)
+            // showed through; `card` is the same family of surface, fully
+            // opaque.
+            backgroundColor: tokens.card,
             borderTopLeftRadius: radius.sheet,
             borderTopRightRadius: radius.sheet,
             paddingBottom: insets.bottom + 8,
