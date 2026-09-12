@@ -128,6 +128,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
           <TouchableOpacity
             hitSlop={{ bottom: 12, left: 8, right: 8, top: 12 }}
             onPress={() => setEditingTitle(session.title || 'Untitled')}
+            style={styles.titleTouchable}
           >
             <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
               {session.title || 'Untitled'}
@@ -140,6 +141,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
             accessibilityRole="button"
             hitSlop={{ bottom: 16, left: 8, right: 8, top: 16 }}
             onPress={() => router.push('/(main)/settings/models')}
+            style={styles.modelTouchable}
           >
             <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
               {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
@@ -184,8 +186,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    minHeight: 56,
+    minHeight: 96,
     paddingHorizontal: 8
+  },
+  modelTouchable: {
+    justifyContent: 'center',
+    minHeight: 48
   },
   subtitle: {
     ...type.caption,
@@ -201,6 +207,10 @@ const styles = StyleSheet.create({
   },
   titleColumn: {
     flex: 1
+  },
+  titleTouchable: {
+    justifyContent: 'center',
+    minHeight: 48
   },
   titleInput: {
     ...type.body,
