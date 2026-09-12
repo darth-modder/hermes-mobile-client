@@ -55,6 +55,37 @@ export const ARTIFACTS_SHARE = 'Share'
 export const ARTIFACTS_SHARING = 'Sharing…'
 export const ARTIFACTS_SHARE_FAILED_TITLE = 'Could not share'
 
+// projects/index.tsx (M10, M14 sweep) — the desktop keeps project
+// management inside the sessions sidebar (docs/desktop-prototypes/b-panels/
+// sessions-sidebar.html's `#sb=projects`/`#sb=project` views), which picks a
+// folder from an on-device file browser; this screen's own header comment
+// already explains why mobile instead types a server-side path, a concept
+// the desktop's own folder picker has no placeholder text for (checked
+// t.sidebar.projects: foldersLabel/addFolder/noFolders all assume the
+// desktop's multi-folder-picker flow, none fits a single typed path).
+export const PROJECTS_FOLDER_PLACEHOLDER = 'Primary folder path (on the server)'
+
+// No vendored "you have no projects yet" empty state exists either: the
+// closest string, t.sidebar.projects.moveNoProjects ("No other projects"),
+// means something different (no OTHER project to move a session into, not
+// zero projects total) and would misrepresent the actual state if reused
+// here.
+export const PROJECTS_EMPTY = 'No projects yet — create one below.'
+
+// No vendored "+N more folders" template exists (checked t.sidebar.projects
+// — only singular removeFolder/addFolder actions, no count summary; the
+// closest shape, t.agents.moreFiles, is a different domain's "+N more
+// files").
+export function projectsMoreFoldersSuffix(count: number): string {
+  return ` (+${count} more)`
+}
+
+// No vendored confirm-dialog TITLE exists for deleting a project (checked
+// t.sidebar.projects — menuDelete is the menu item's bare "Delete", and
+// deleteConfirm is the dialog BODY text, reused below for the Alert message;
+// there's no matching "Delete project?" question anywhere in en.ts).
+export const PROJECTS_DELETE_CONFIRM_TITLE = 'Delete project?'
+
 // settings/archived-chats.tsx — nearly every string this screen needs
 // (loading/empty/error states, Unarchive, Delete permanently, the message
 // count) already exists under t.settings.sessions (D15.4). The one
