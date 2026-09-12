@@ -21,8 +21,10 @@ import { radius, type } from '../../../src/theme/type'
 
 const QUERY_KEY_ROOT = 'cron-jobs'
 
-function relativeTime(epochMs: number): string {
-  const minutes = Math.floor((Date.now() - epochMs) / 60_000)
+/** `run.last_active` is epoch SECONDS (REST, same as `SessionInfo` elsewhere —
+ *  see session-list.tsx's own `relativeTime`), not milliseconds. */
+function relativeTime(epochSeconds: number): string {
+  const minutes = Math.floor((Date.now() - epochSeconds * 1000) / 60_000)
 
   if (minutes < 1) {
     return 'just now'
@@ -39,6 +41,13 @@ function relativeTime(epochMs: number): string {
   }
 
   return `${Math.floor(hours / 24)}d ago`
+}
+
+/** `last_run_at`/`next_run_at` are ISO strings — render them, not the raw wire format. */
+function formatTimestamp(iso: string): string {
+  const date = new Date(iso)
+
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString()
 }
 
 // Replicates: docs/desktop-prototypes/a-main/cron.html's PanelDetail half
@@ -161,12 +170,12 @@ export default function CronJobDetailScreen() {
           ) : null}
           {job.last_run_at ? (
             <Text style={[styles.fieldValue, { color: tokens.mutedForeground }]}>
-              {t.cron.last} {job.last_run_at}
+              {t.cron.last} {formatTimestamp(job.last_run_at)}
             </Text>
           ) : null}
           {job.next_run_at ? (
             <Text style={[styles.fieldValue, { color: tokens.mutedForeground }]}>
-              {t.cron.next} {job.next_run_at}
+              {t.cron.next} {formatTimestamp(job.next_run_at)}
             </Text>
           ) : null}
           {job.last_error ? (
@@ -177,6 +186,7 @@ export default function CronJobDetailScreen() {
         <View style={styles.actions}>
           <TouchableOpacity
             disabled={triggerMutation.isPending}
+            hitSlop={8}
             onPress={() => triggerMutation.mutate()}
             style={styles.actionButton}
           >
@@ -186,6 +196,7 @@ export default function CronJobDetailScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             disabled={pauseMutation.isPending}
+            hitSlop={8}
             onPress={() => pauseMutation.mutate()}
             style={styles.actionButton}
           >
@@ -193,7 +204,7 @@ export default function CronJobDetailScreen() {
               {job.enabled ? t.cron.pauseTitle : t.cron.resumeTitle}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={confirmDelete} style={styles.actionButton}>
+          <TouchableOpacity hitSlop={8} onPress={confirmDelete} style={styles.actionButton}>
             <Text style={[styles.destructiveText, { color: tokens.destructive }]}>{t.common.delete}</Text>
           </TouchableOpacity>
         </View>
@@ -226,7 +237,9 @@ export default function CronJobDetailScreen() {
 
 const styles = StyleSheet.create({
   actionButton: {
-    marginRight: 16
+    justifyContent: 'center',
+    marginRight: 16,
+    minHeight: 48
   },
   actionText: {
     ...type.label,
