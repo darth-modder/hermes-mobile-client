@@ -21,14 +21,14 @@
 // Chats | About). M14 says "sections in the desktop's order"; which order
 // wins on a phone needs a D-entry — flagging it, not deciding it here.
 //
-// Three of the mobile prototype's rows (Billing, Archived chats, About) and
-// Toolsets have no route yet — each lands in its own later M14 commit, per
-// the milestone's own task order. Chat, Safety and Memory & Context landed
+// Two of the mobile prototype's rows (Archived chats, About) and Toolsets
+// have no route yet — each lands in its own later M14 commit, per the
+// milestone's own task order. Chat, Safety and Memory & Context landed
 // above, in the "App" group alongside Appearance/Notifications/Voice: the
-// M14 task doc places them there (device-facing app preferences), while
-// Billing, Archived chats and About join "Account" alongside Plugins,
-// matching the desktop rail's own adjacency (Plugins, Archived Chats, About
-// are consecutive there).
+// M14 task doc places them there (device-facing app preferences). Billing
+// lands below, in "Account" alongside Plugins — Archived chats and About
+// join it there too, matching the desktop rail's own adjacency (Plugins,
+// Archived Chats, About are consecutive there).
 import { t } from '../lib/t'
 
 export interface SettingsRowMeta {
@@ -104,7 +104,8 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   {
     label: 'Account',
     rows: [
-      { route: '/(main)/settings/plugins', subtitle: 'Installed plugin dashboards', title: t.settings.nav.plugins }
+      { route: '/(main)/settings/plugins', subtitle: 'Installed plugin dashboards', title: t.settings.nav.plugins },
+      { route: '/(main)/settings/billing', subtitle: 'Plan, payment, usage', title: t.settings.nav.billing }
     ]
   }
 ]
