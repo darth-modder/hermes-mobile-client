@@ -305,6 +305,104 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
     app's UI would need to disclose, or the gateway would need to stop doing) is acceptable — a
     product/gateway decision, not a layout one. `slash.model` is not wired anywhere in this app as
     of this entry.
+12. **Profile detail/SOUL editor: not delivered in M14, and the premise is corrected here.**
+    `settings/profiles.tsx`'s own comment said the SOUL.md field (Create) and the detail pane (SOUL
+    editor, per-profile stats) were absent because `src/api/profiles.ts` has no `soul`/`description`/
+    `model` field and no detail-read call — true, and checked (`ProfileCreatePayload` in
+    `src/upstream/types/hermes.ts` has none of those fields). That checked the client REST wrapper
+    only. The gateway (`hermes-agent`, read-only) has the full data layer already: `profiles.describe`
+    (RPC 5063) returns `soul` (full `SOUL.md` text), `description`, `model` `{provider, default}`,
+    `skills`, `toolsets`, `mcp_servers` in one call; `profiles.configure` (RPC 5064) writes `soul`,
+    `description`, `model`+`provider`, `disabled_skills`, `enabled_toolsets`, `enabled_mcp_servers`
+    (sections independent, `applied` reports each); `profiles.create`'s params already include `soul`,
+    `model`+`provider`, `description`; `profiles.set_asset`/`get_asset` (RPC 5065/5066) handle avatar
+    upload/read. All five read directly, not inferred. **Not wired — souls, description, model and
+    avatars are M15 A's bot-settings data layer, and this is the whole of it.** Recording this so M15 A
+    starts from "the gateway already does this," not from `profiles.tsx`'s own comment reading as
+    "impossible."
+13. **Gateway re-audit of Deviations 8–10's "no API" claims: every one of them checked the client only.**
+    Per the standing rule this session now follows (name the layer searched; check the gateway before
+    writing "no API"), each claim below was re-checked directly against `hermes-agent` (read-only). None
+    of these are wired as a result of this entry — this corrects the *reason* six screens are inert (or
+    one dialog is absent), not the *fact* that they still are, today.
+    - **Chat — Personality, Show Reasoning.** Both have a real gateway RPC pair: `config.get`/
+      `config.set` (`tui_gateway/methods_config.py` / `methods_config_set.py`) dispatch on keys
+      `"personality"` and `"reasoning"`, both with a getter *and* a setter. Corrected: these two fields
+      are not config.yaml-only:no-mobile-port; they're a wrapped-nowhere RPC pair.
+    - **Chat — Timezone, Image Input Mode.** No dedicated `config.get`/`config.set` key for either
+      (checked both dispatch tables in full). `Image Input Mode` in particular isn't a stored setting
+      at all — `decide_image_input_mode` (`agent/image_routing.py`, referenced from
+      `tui_gateway/prompt_turn.py`) computes it automatically. These two premises hold as originally
+      stated.
+    - **Safety — Approval Mode.** Same `config.get`/`config.set` pair, key `"approval_mode"` (also
+      aliased `"approvals.mode"`). Corrected: `session-info.ts` dropping *reconciliation* (a live push
+      of the current value) is real and unrelated — a read/write RPC exists regardless of whether this
+      app's session-info handler mirrors it passively.
+    - **Safety — Approval Timeout, Confirm MCP Reloads, Command Allowlist, Redact Secrets, Allow
+      Private URLs, File Checkpoints; Chat — Timezone; all of Memory & Context's config.yaml-backed
+      fields.** No per-field RPC key exists for any of these — but `GET/PUT /api/config/raw`
+      (`hermes_cli/web_routers/analytics.py`) reads and writes the *entire* `config.yaml` as text in
+      one call each way. This is, verified by reading the route handlers directly, the same endpoint
+      this app's own `getHermesConfig`/`saveHermesConfig` wrapped before M09 dropped them (per your own
+      check of `src/api/config.ts`). Corrected: "no read or write path" is wrong for every field that
+      lives in `config.yaml` — the gap is entirely the dropped client wrapper, not any missing
+      capability. A mobile UI over raw YAML is real product-scoping work (which fields, what widgets),
+      not a data-layer gap — still not M14's to build, but the premise "the data isn't there" is wrong.
+    - **Memory & Context — Memory, User Profile, Memory Provider, Context Engine, Auto-Compression,
+      Compression Threshold.** Beyond the raw-config path above, there's a *dedicated* REST surface:
+      `GET /api/memory`, `PUT /api/memory/provider`, `POST /api/memory/reset`,
+      `GET/PUT /api/memory/providers/{name}/config`, `POST /api/memory/providers/{name}/setup`
+      (`hermes_cli/web_routers/ops.py`, `memory_providers.py`), plus `GET /api/curator`,
+      `PUT /api/curator/paused`, `POST /api/curator/run` (`hermes_cli/web_routers/status.py`) — a
+      complete, purpose-built API, not just the generic raw-config fallback. `src/api/system.ts`'s
+      header names these same operations (`getMemoryStatus`/`resetMemory`/`getCuratorStatus`/
+      `setCuratorPaused`/`runCurator`/`getMemoryProviderConfig`/`saveMemoryProviderConfig`) and was
+      right that this app's client never wraps them — but the endpoints it's describing are real REST
+      routes, not a capability that stops at "no named M09 sub-screen."
+    - **Billing.** `tui_gateway/billing_view.py` plus RPCs registered in `server.py`'s own comment
+      ("billing/subscription/usage = blocking portal (+Stripe) round-trips; **complete**"):
+      `billing.state`, `subscription.state`/`preview`/`change`/`resume`/`upgrade`, `usage.bars`,
+      `session.usage`, `billing.step_up`. This is a finished feature server-side. Corrected: "no
+      billing/credits API exists on mobile at all" is wrong — no billing/credits API is *wrapped by
+      this app's client*, which is a different, much narrower claim.
+    - **Command center (Usage).** `GET /api/analytics/usage` and `GET /api/analytics/models`
+      (`hermes_cli/web_routers/analytics.py`) are real, registered REST routes. Corrected:
+      `getUsageAnalytics` isn't unported because the desktop's capability doesn't exist for mobile to
+      call — the REST endpoint is sitting there; `src/api/models.ts`'s header describes the client
+      side accurately but the screen's Replicates comment overstated it into "no usage API."
+    - **Agents.** `tui_gateway/methods_session.py` (header: "Session / delegation / spawn-tree /
+      billing / pet JSON-RPC handlers") registers `delegation.status` — returns
+      `dt.list_active_subagents()` with no session-scoping in the handler, i.e. host-wide, not
+      per-connection — plus `delegation.pause`, `subagent.interrupt`, `subagent.steer`,
+      `spawn_tree.save`/`list`/`load`. Corrected: "no cross-session subagent store exists anywhere
+      under `src/gateway` or `src/store`" was true of this app's own code and false as a claim about
+      the gateway — `delegation.status` is exactly the cross-session aggregation this screen said
+      didn't exist.
+    - **`archive-skill.html` (Deviation 10 / commit `db13ce7`).** `src/api/skills.ts` genuinely has no
+      archive endpoint for *hub-installed* skills (toggle/install/uninstall only) — checked, still
+      true. But the prototype itself isn't about those skills: its own header says
+      "Screen: Archive skill confirm ... from Capabilities → Skills (**and the memory graph**)" and
+      "Restorable via `hermes curator restore`" — this is the curator's auto-*learned* skills, and the
+      gateway has exactly that action: `learning.delete` (`tui_gateway/methods_tools.py`, dispatched
+      via `_learning_mutation`; own comment: "delete → skills archived (restorable)"). Corrected: the
+      capability isn't absent — it's for a skill population (curator-learned, surfaced via a "memory
+      graph" this app has no screen for at all) that `settings/skills.tsx` was never going to be the
+      right home for, archive endpoint or not. Building this dialog on the hub-skills screen would
+      misapply an action meant for a different data set, so the outcome (not built there) still
+      stands, for a different reason than originally written.
+    - **`plugin-install.html` (Deviation 10 cluster).** `src/api/plugins.ts` genuinely has no install
+      call — checked, still true of the client. But `POST /api/dashboard/agent-plugins/install`
+      (`hermes_cli/web_routers/dashboard_ui.py`, params: `identifier`, `force`, `enable`) exists and
+      does exactly what the prototype describes (install a plugin from a git identifier). Corrected:
+      "no mobile API surface to build a real sheet on top of" is wrong — the surface exists, unwrapped.
+    - **`add-url.html`, `mcp-install-link.html`.** Re-checked against the gateway specifically (not
+      re-checked before): no URL-fetch-and-attach-as-context RPC exists anywhere in `tui_gateway`
+      (grepped for `fetch_url`/`url_context`/`attach_url`/any `url.*` method — none), and
+      `mcp-install-link.html`'s claim was about this app registering no `hermes://mcp/install` deep
+      link at all, a client-side routing fact untouched by what the gateway can do. Both premises hold
+      as originally written; no correction.
+    - **Not re-litigated:** the model-picker correction (Deviation 11) already covers `slash.model`
+      and isn't repeated here.
 
 ## Verification log
 
