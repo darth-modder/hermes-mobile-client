@@ -5,18 +5,27 @@
  * `src/store/live-sync.ts` / `src/gateway/session-connection.ts`), not
  * polling — `GET /api/cron/jobs` returns a bare array, not `{jobs: [...]}`.
  *
- * Cut from this module: `GET /api/cron/blueprints` +
- * `POST /api/cron/blueprints/instantiate` (Automation Blueprints — a
- * parameterized template catalog with its own form-builder UI) and
- * `GET /api/cron/jobs/{id}/runs` (run history, itself just `SessionInfo`
- * rows the M07 session list already renders). Neither is named by M10's task
- * list or exit criteria (create + trigger a job, `cron.changed` updates the
- * list live); the create/read/update/pause/resume/trigger/delete surface
- * below is the whole of what's needed and it's a strict subset of desktop's
- * own `apps/desktop/src/api/cron.ts`, not a divergent shape.
+ * `getCronJobRuns`/`listCronBlueprints`/`instantiateCronBlueprint` (M14):
+ * this module's own header used to say these three were cut because M10's
+ * task list didn't name them — re-checked directly against
+ * `hermes_cli/web_routers/cron.py` (M14 Deviation 13's standing rule: name
+ * the layer searched before calling something absent) and all three are
+ * real, registered routes, not a desktop-only shape this app doesn't have.
+ * `GET .../{id}/runs` returns `{runs: SessionInfo[], limit}` — "same row
+ * shape as `/api/sessions` so the frontend reuses `SessionInfo`" per that
+ * route's own docstring, which is why no separate `CronJobRun` type exists
+ * below. The M10-era decision to leave these unwrapped stands corrected in
+ * cause, not in effect until this milestone: `cron/[id].tsx` (M14) now
+ * wraps and uses both.
  */
 
-import type { CronJob, CronJobCreatePayload, CronJobUpdates } from '../upstream/types/hermes'
+import type {
+  CronBlueprint,
+  CronJob,
+  CronJobCreatePayload,
+  CronJobUpdates,
+  SessionInfo
+} from '../upstream/types/hermes'
 
 import { restRequest } from './rest'
 
@@ -78,6 +87,42 @@ export function triggerCronJob(jobId: string, profile?: string): Promise<CronJob
 export function deleteCronJob(jobId: string, profile?: string): Promise<{ ok: boolean }> {
   return restRequest<{ ok: boolean }>(`/api/cron/jobs/${encodeURIComponent(jobId)}`, {
     method: 'DELETE',
+    ...profileQuery(profile)
+  })
+}
+
+/** `GET /api/cron/jobs/{id}/runs` — newest first, `SessionInfo`-shaped
+ *  (each run is a real session, id `cron_{job_id}_{timestamp}`). */
+export function getCronJobRuns(
+  jobId: string,
+  profile?: string,
+  limit?: number
+): Promise<{ limit: number; runs: SessionInfo[] }> {
+  const suffix = limit ? `?limit=${encodeURIComponent(String(limit))}` : ''
+
+  return restRequest<{ limit: number; runs: SessionInfo[] }>(
+    `/api/cron/jobs/${encodeURIComponent(jobId)}/runs${suffix}`,
+    profileQuery(profile)
+  )
+}
+
+/** `GET /api/cron/blueprints` — the template catalog, one form schema per
+ *  entry (see `CronBlueprint`'s own doc comment for the field shape). */
+export function listCronBlueprints(): Promise<{ blueprints: CronBlueprint[] }> {
+  return restRequest<{ blueprints: CronBlueprint[] }>('/api/cron/blueprints')
+}
+
+/** `POST /api/cron/blueprints/instantiate` — fills a blueprint's fields and
+ *  creates the job server-side (the form-submit path; values are the raw
+ *  field values keyed by `CronBlueprintField.name`). */
+export function instantiateCronBlueprint(
+  blueprint: string,
+  values: Record<string, string>,
+  profile?: string
+): Promise<CronJob> {
+  return restRequest<CronJob>('/api/cron/blueprints/instantiate', {
+    body: { blueprint, values },
+    method: 'POST',
     ...profileQuery(profile)
   })
 }
