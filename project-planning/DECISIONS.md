@@ -539,3 +539,35 @@ nothing and shortens the tail.
 Memory & Context, Billing, Command center, Agents). The options are to schedule their data-layer
 catch-up, or to hide them in the first public build. It must be decided before M12's public
 release. It does not block M14.
+
+## D18 — The six screens that can't act yet: hidden in public builds, shown to testers, wired in M16 (2026-09-14)
+
+**Decision.** Settles M14 Deviation 9 and the question D17 left open. Three parts.
+
+1. **Public builds hide them; internal builds show them.** The six screens are Chat, Safety,
+   Memory & Context, Billing, Command center and Agents.
+   - The public (store) build removes their drawer rows and settings-index rows. The routes stay in
+     the code, unreachable.
+   - The Play internal-track build and dev builds keep them visible, with their existing
+     `Host-managed` / explanatory states, so testers can see what's coming and report on it.
+   - One build-time switch controls this. It lives in `app.config.ts` `extra` and is read in one
+     place, so drawer and settings rows can't disagree.
+   - M12 owns implementing it, as a release-hardening task: add the switch, filter
+     `drawer-rows.ts` and `settings-rows.ts` through it, and test both flavours.
+2. **M16 wires all six.** D17.2 already put Chat, Safety and Memory & Context in M16 (host config
+   editor). Billing, Command center and Agents join it. Before M16 builds any of them, it checks the
+   gateway for each screen's data (M14 Deviation 13's rule: name the layer searched). Possible
+   sources, not yet confirmed as sufficient:
+   - Command center: `/api/analytics/usage`, `/api/analytics/models`
+   - Agents: `delegation.status`, `delegation.pause`
+   - Billing: `billing.state`, `usage.bars`
+3. **A screen unhides the moment it works.** Each screen's public-build hide is removed in the same
+   commit that verifies its data layer on device. Nothing waits for M16 to finish as a whole.
+
+**Reasoning.**
+- A first public user who opens a settings screen that can't do anything reads the app as broken,
+  and those six sit in the management area people open first.
+- Testers are the opposite case: they need to see the whole surface to judge it.
+- A build flag keeps one codebase and one set of screens, and costs a test per flavour.
+- Hiding per screen, instead of waiting for all six, means the app never withholds a screen that
+  already works.
