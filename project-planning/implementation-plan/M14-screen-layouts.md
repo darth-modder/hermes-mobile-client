@@ -728,11 +728,56 @@ top, Deviation-noted above, is visible again in both theme composites).
 | Task | Evidence | Verdict | What's missing |
 |---|---|---|---|
 | Vendor `en.ts` via `sync-upstream.mjs`; `t.ts` reads it | `src/upstream/i18n/en.ts` exists, `UPSTREAM.json` present; `src/lib/t.ts` imports it (checked directly) | MET | — |
-| `src/components/ui/*` primitives + dev story screen | `ls src/components/ui/` — not attempted this round (out of scope for the device work this round covered) | NOT CHECKED | Verify `app/dev/primitives.tsx` exists and lists each primitive |
-| `Sheet`, `Menu`, `ListRow`, `ScreenHeader` overflow | Device-verified indirectly: the create-profile sheet (this round) and Registered gateways' rows (prior rounds) use these; not traced file-by-file this round | PARTLY | A direct check that `Sheet`/`Menu`/`ListRow` are the actual shared components every screen imports, not per-screen reimplementations |
+| `src/components/ui/*` primitives + dev story screen | Round 3 (task 2b): both exist — `app/dev/primitives.tsx` and 9 files in `src/components/ui/` (Badge, Button, Input, ListRow, Menu, SegmentedControl, Sheet, Switch, Tabs). Device-verified on `M14Close3`, both themes: `primitives-dark-1.png`/`-2.png`, `primitives-light-1.png`/`-2.png`, plus Sheet and Menu opened in each theme (`primitives-sheet-{dark,light}.png`, `primitives-menu-dark2.png`). See detail below. | MET | — |
+| `Sheet`, `Menu`, `ListRow`, `ScreenHeader` overflow | Round 3 (task 2c): traced every primitive to its real call sites (not per-screen reimplementations) — `Sheet`: `cron/index.tsx`, `projects/index.tsx`, `settings/profiles.tsx`; `Menu`: `cron/index.tsx`, `settings/profiles.tsx`, `ScreenHeader.tsx`; `ListRow`: `agents/index.tsx`, `command-center/index.tsx`, `cron/index.tsx`, `cron/[id].tsx`, `settings/{chat,index,memory,safety}.tsx`; `ScreenHeader` itself: `agents/index.tsx`, `artifacts/index.tsx`, `channels/index.tsx`, `command-center/index.tsx`, `cron/index.tsx`, `cron/[id].tsx`, `projects/index.tsx`, `webhooks/index.tsx` — all confirmed as real `import { X } from '../../../src/components/ui/...'` lines, spot-checked directly, not assumed from a grep hit. `ScreenHeader.tsx`'s own overflow logic (`MAX_INLINE_ACTIONS = 2`, `ScreenHeader.tsx:31,43-51,87-97`) collapses the 3rd+ action into a `Menu` opened by the "More" button, matching the M14 spec's "first two inline, rest behind a single More button" exactly. | MET | — |
 | Screens built, one commit each, in the stated order | `find app -name "*.tsx"` (this round) shows chat, session list+drawer, settings index + all listed sections, cron, profiles, webhooks, channels, artifacts, projects, agents, connect — all present as route files | MOSTLY MET | Command center exists but per `PARITY.md` is "real screen, inert" (client wraps no analytics endpoint) — built, not wired; toolsets exists (`settings/toolsets.tsx`) |
 | Every screen has a `Replicates:` comment | See criterion below (route-replicates.test.ts) | MET | — |
 | `PARITY.md` updated | See item 1f below | MET | — |
+
+**Task 2b detail — primitives checked against the desktop reference and against DESKTOP-DESIGN.md
+§8.** `docs/desktop-prototypes/g-elements/primitives.html` documents ~28 desktop primitives (Button,
+Badge, Control/Input/Textarea/Select, Switch/SegmentedControl/Checkbox, Tabs/TextTab/PaneTab, Kbd/
+SearchField/Tooltip, Popover/DropdownMenu, Dialog/Sheet, panel-row/list-row/nav-item, EmptyState/
+ErrorState/Skeleton/Loader/StatusDot/LogView, Progress/Slider/ThemeCard/Card/Widget/Avatar) — mobile's
+`src/components/ui/` only has 9. This is not a gap: the M14 mapping's own Section G line names exactly
+these 9 ("Button ... Badge, Input, Switch, SegmentedControl, Tabs, Sheet, Menu, ListRow"), and the
+mobile prototype's own `docs/mobile-prototypes/primitives.html` — the actual authority for "what M14
+asks `src/components/ui/*` to provide" per its own header comment — explicitly lists the rest (Tooltip,
+Popover, DropdownMenu, ContextMenu, Kbd, PaneTab) as "absent here on purpose: no hover, no keyboard."
+
+Checked each of the 9 against the mobile prototype's own stated measurements (its Measurements block)
+and DESKTOP-DESIGN.md §8 where the mapping calls it out by name (Button):
+
+- **Button** (`Button.tsx`): 5 variants (primary/secondary/outline/ghost/danger) + block + icon —
+  matches the mobile prototype's own Button section exactly (same 5, same block/icon treatment); the
+  desktop's `link`/`text`/`textStrong` variants have no button in the mobile prototype either, so
+  their absence isn't a mobile-only omission introduced here. `minHeight: 48`, icon 48×48
+  (`Button.tsx:90,97-98`) — matches "Button min 48 ... icon button 48×48."
+- **Badge** (`Badge.tsx`): 5 variants (default/muted/warn/danger/good), `paddingHorizontal: 8,
+  paddingVertical: 2` (`Badge.tsx:49-50`) — matches "Badge 20 tall (2×8 pad, 16 line)."
+- **Input** (`Input.tsx`): `minHeight: 48, paddingHorizontal: 14, paddingVertical: 12`
+  (`Input.tsx:66-68`) — matches "Input min 48 dp, pad 12×14" exactly.
+- **ListRow** (`ListRow.tsx`): `minHeight: 56` (`ListRow.tsx:70`) — matches "ListRow min 56 dp."
+- **Switch** (`Switch.tsx`): track 44×26, thumb 20×20 (`Switch.tsx:54-62`) — matches "Switch 44×26 dp,
+  thumb 20" exactly.
+- **SegmentedControl** (`SegmentedControl.tsx`): option `minHeight: 40`, track `padding: 3`
+  (`SegmentedControl.tsx:62,68`) → 40 + 2×3 = 46 total — matches "option 40 dp (track 46)" exactly.
+- **Sheet** (`Sheet.tsx`): `radius.sheet` corners, handle 32×4 (`Sheet.tsx:142-147`), `maxHeight: '88%'`
+  (`Sheet.tsx:127`) — matches "radius sheet(8), handle 32×4 ... max-height 88%" exactly.
+- **Menu** (`Menu.tsx`): item `minHeight: 48` (`Menu.tsx:71`) — matches "item min 48."
+- **Tabs** (`Tabs.tsx`): `minHeight: 40` (`Tabs.tsx:69`) — consistent with the segmented-control-
+  adjacent sizing; not separately itemized in the prototype's own Measurements line.
+
+**Device-verified**, `M14Close3`, deep-linked via `adb shell am start -a android.intent.action.VIEW -d
+"hermes-android://dev/primitives"` (the scheme is `hermes-android`, `app.config.ts:6`): every section
+(Button, Badge, Input, ListRow, SegmentedControl, Tabs, Sheet/Menu triggers) rendered correctly in both
+dark (`primitives-dark-1.png`, `primitives-dark-2.png`) and light (`primitives-light-1.png`,
+`primitives-light-2.png`) — switched via Settings > Appearance, not the dev screen's own
+SegmentedControl demo (that control's `mode` state is local to the story screen only, per
+`primitives.tsx`'s own `useState` — it doesn't drive `useTheme()`). Opened the Sheet
+(`primitives-sheet-dark.png`, `primitives-sheet-light.png`) and the Menu
+(`primitives-menu-dark2.png`) in both themes — handle, title, footer buttons, and the Low/Medium
+(active)/Forget-this-host (danger) items all rendered correctly. **Verdict: MET.**
 
 **Audit table — exit criteria (doc lines ~139-156):**
 
