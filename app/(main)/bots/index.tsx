@@ -158,7 +158,17 @@ export default function BotsScreen() {
         const storedSessionId = await resolveCanonicalChat(bot.name, bot.canonical_session?.id)
 
         router.push({
-          params: { botName: bot.display_name || bot.name, id: storedSessionId, title: CANONICAL_CHAT_TITLE },
+          // `botId` is the profile slug — the RPC identifier the settings
+          // sheet addresses `profiles.describe`/`configure` with — kept
+          // separate from `botName` (the header's display string) so a
+          // future `display_name` never gets used where an identifier is
+          // required.
+          params: {
+            botId: bot.name,
+            botName: bot.display_name || bot.name,
+            id: storedSessionId,
+            title: CANONICAL_CHAT_TITLE
+          },
           pathname: '/(main)/sessions/[id]'
         })
       } catch (err) {

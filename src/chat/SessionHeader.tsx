@@ -5,8 +5,12 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { BotAvatar } from '../components/BotAvatar'
 import { compressSession, renameSession } from '../gateway/session-connection'
-import { ChevronLeft } from '../lib/icons'
-import { SESSION_HEADER_COMPRESS_FAILED_TITLE, SESSION_HEADER_COMPRESS_LABEL } from '../lib/strings.mobile'
+import { ChevronLeft, Settings } from '../lib/icons'
+import {
+  BOTS_SETTINGS_TITLE,
+  SESSION_HEADER_COMPRESS_FAILED_TITLE,
+  SESSION_HEADER_COMPRESS_LABEL
+} from '../lib/strings.mobile'
 import { t } from '../lib/t'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
@@ -40,11 +44,20 @@ export interface SessionHeaderProps {
    *  is disabled in this mode for the same reason: renaming away from "Bot
    *  Chat" would break `resolveCanonicalChat`'s next lookup for this bot. */
   botName?: string
+  /** Bot mode only: opens `BotSettingsSheet`. The screen owns the sheet (it
+   *  needs the full roster for the messaging-protocol teammate list) —
+   *  this component only renders the entry point. Replaces the Compress
+   *  action in this slot rather than adding a second one (this header has
+   *  exactly one trailing action, per chat.html's own two-action cluster
+   *  already spent on back+one action for a bot chat) — Compress is not
+   *  reachable from a bot's canonical chat as of this round; noted here
+   *  rather than silently dropped. */
+  onSettingsPress?: () => void
 }
 
 /** Model/provider/effort + title edit + `session.compress` — the chat
  *  screen's top bar. */
-export function SessionHeader({ botName, storedSessionId }: SessionHeaderProps) {
+export function SessionHeader({ botName, onSettingsPress, storedSessionId }: SessionHeaderProps) {
   const tokens = useTheme()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
@@ -156,18 +169,30 @@ export function SessionHeader({ botName, storedSessionId }: SessionHeaderProps) 
           </TouchableOpacity>
         )}
       </View>
-      <TouchableOpacity
-        disabled={compressing}
-        hitSlop={10}
-        onPress={() => void compress()}
-        style={styles.compressButton}
-      >
-        {compressing ? (
-          <ActivityIndicator color={tokens.mutedForeground} size="small" />
-        ) : (
-          <Text style={[styles.compressText, { color: tokens.primary }]}>{SESSION_HEADER_COMPRESS_LABEL}</Text>
-        )}
-      </TouchableOpacity>
+      {onSettingsPress ? (
+        <TouchableOpacity
+          accessibilityLabel={BOTS_SETTINGS_TITLE}
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onSettingsPress}
+          style={styles.compressButton}
+        >
+          <Settings color={tokens.foreground} size={20} />
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          disabled={compressing}
+          hitSlop={10}
+          onPress={() => void compress()}
+          style={styles.compressButton}
+        >
+          {compressing ? (
+            <ActivityIndicator color={tokens.mutedForeground} size="small" />
+          ) : (
+            <Text style={[styles.compressText, { color: tokens.primary }]}>{SESSION_HEADER_COMPRESS_LABEL}</Text>
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   )
 }

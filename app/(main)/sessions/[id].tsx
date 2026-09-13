@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { type BotProfile, listBots } from '../../../src/api/bots'
 import { Composer } from '../../../src/chat/Composer'
 import { ConnectionBanner } from '../../../src/chat/ConnectionBanner'
 import { NotificationBanner } from '../../../src/chat/NotificationBanner'
 import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
+import { BotSettingsSheet } from '../../../src/components/BotSettingsSheet'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { t } from '../../../src/lib/t'
 import { $sessionStates } from '../../../src/store/session-states'
@@ -42,10 +44,31 @@ import { radius, type } from '../../../src/theme/type'
 export default function SessionScreen() {
   const router = useRouter()
   const tokens = useTheme()
-  const { botName, id, title } = useLocalSearchParams<{ botName?: string; id: string; title?: string }>()
+
+  const { botId, botName, id, title } = useLocalSearchParams<{
+    botId?: string
+    botName?: string
+    id: string
+    title?: string
+  }>()
+
   const [error, setError] = useState<null | string>(null)
   const [ready, setReady] = useState(false)
   const startedFor = useRef<string | null>(null)
+  const [botSettingsOpen, setBotSettingsOpen] = useState(false)
+  const [botRoster, setBotRoster] = useState<BotProfile[] | null>(null)
+
+  const openBotSettings = useCallback(() => {
+    setBotSettingsOpen(true)
+
+    if (botRoster === null) {
+      void listBots()
+        .then(result => setBotRoster(result.profiles))
+        .catch(() => setBotRoster([]))
+    }
+  }, [botRoster])
+
+  const botProfile = botId ? botRoster?.find(p => p.name === botId) : undefined
 
   const openSession = useCallback(() => {
     if (!id) {
@@ -133,11 +156,19 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <SessionHeader botName={botName} storedSessionId={id} />
+      <SessionHeader botName={botName} onSettingsPress={botId ? openBotSettings : undefined} storedSessionId={id} />
       <ConnectionBanner />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />
       <Composer storedSessionId={id} />
+      {botProfile ? (
+        <BotSettingsSheet
+          onClose={() => setBotSettingsOpen(false)}
+          profile={botProfile}
+          roster={botRoster ?? []}
+          visible={botSettingsOpen}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }

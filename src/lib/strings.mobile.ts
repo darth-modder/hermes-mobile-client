@@ -592,3 +592,29 @@ export const BOTS_AVATAR_SEED_HINT = "Leave as the bot's name for the default fa
 // phrase means "inherits the host's default model" anywhere (checked
 // t.settings.model and t.profiles).
 export const BOTS_MODEL_INHERIT_LABEL = 'Inherit host default'
+
+// src/components/BotSettingsSheet.tsx (M15 A round 2, task 2). "Bot
+// settings" is bots.html's own sheet title (docs/mobile-prototypes/
+// bots.html's `settings` view) — the desktop's equivalent dialog is titled
+// "Edit profile" (hermes-bots/i18n.ts:333, `bot.editTitle`), a different
+// word for the phone's own framing, so this isn't a retyped label so much
+// as an intentional mobile title choice already drawn in the prototype.
+export const BOTS_SETTINGS_TITLE = 'Bot settings'
+export const BOTS_CAPABILITIES_TITLE = 'Capabilities'
+export const BOTS_CAPABILITIES_SUBTITLE = 'Skills and toolsets for this bot'
+export const BOTS_MODEL_PIN_SUBTITLE = 'Pinned for this bot'
+// bots.html:313 — the SOUL.md field's own hint line, quoted verbatim (not a
+// `Field:` marker, just the prototype's field copy — no vendored source
+// exists for it, checked t.profiles' soul-related strings).
+export const BOTS_SOUL_HINT = 'Replaces the generated persona. Saves on blur; a change on the host asks first.'
+// bots.html:329 — `Field:` "host-authority framing in the settings copy".
+export const BOTS_HOST_AUTHORITY_NOTE =
+  'The host owns models, credentials, tools, memory, skills and approvals. This client is the control surface.'
+export const BOTS_SOUL_CHANGED_ON_HOST_TITLE = 'Soul changed on the host'
+export const BOTS_SOUL_CHANGED_ON_HOST_MESSAGE =
+  'This bot’s SOUL.md was edited somewhere else since you opened it. Overwrite it with your version?'
+export const BOTS_SOUL_SAVE_FAILED = 'Could not save SOUL.md'
+export const BOTS_CAPABILITIES_SEARCH_PLACEHOLDER = 'Search skills and toolsets…'
+export const BOTS_CAPABILITIES_SKILLS_SECTION = 'Skills'
+export const BOTS_CAPABILITIES_TOOLSETS_SECTION = 'Toolsets'
+export const BOTS_MODEL_CONFIRM_TITLE = 'Confirm model switch'
