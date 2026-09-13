@@ -561,12 +561,42 @@ function runtimeIdForStored(storedSessionId: string): string {
   return storedSessionId
 }
 
+/** `session.create`/`session.resume` only ever return settled history — a
+ *  tool call that hasn't finished yet has no `role: "tool"` row to convert in
+ *  the first place (a genuinely in-flight call is restored separately, as a
+ *  pending request, by resume-pending.ts). So any `tool-call` part still
+ *  missing `completedAt` after `toChatMessages` is a hydration artifact, not
+ *  a real running call: at least one gateway's resume projection omits the
+ *  stored tool row's `timestamp` entirely, and upstream's
+ *  `storedToolMessagePart` (tool-parts.ts, vendored — not patched here)
+ *  carries that missing value straight through to `completedAt`, which
+ *  `ToolCallCard.tsx:40` reads as `running`. Fixed at this seeding boundary
+ *  instead of in vendored code so `scripts/sync-upstream.mjs` keeps
+ *  reproducing tool-parts.ts byte-for-byte. `completedAt`'s only consumer is
+ *  that `undefined` check — the value itself is never displayed
+ *  (Transcript.tsx just forwards it) — so the fallback timestamp here can't
+ *  show a wrong time on screen. */
+function closeRestoredToolCallParts(message: ChatMessage): ChatMessage {
+  if (!message.parts.some(part => part.type === 'tool-call' && part.completedAt === undefined)) {
+    return message
+  }
+
+  return {
+    ...message,
+    parts: message.parts.map(part =>
+      part.type === 'tool-call' && part.completedAt === undefined
+        ? { ...part, completedAt: part.timestamp ?? message.timestamp ?? Date.now() / 1000 }
+        : part
+    )
+  }
+}
+
 function seedSessionMessages(storedSessionId: string, messages: SessionMessage[] | undefined): void {
   if (!messages?.length) {
     return
   }
 
-  const chatMessages = toChatMessages(messages)
+  const chatMessages = toChatMessages(messages).map(closeRestoredToolCallParts)
   reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
 }
 
