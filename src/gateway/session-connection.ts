@@ -550,8 +550,11 @@ export async function reconnectAndProbeGateway(): Promise<void> {
  *  "placeholder key" convention (session-keys.ts): a session this client just
  *  created has no runtime->stored mapping until its first `session.info`, so
  *  RPCs addressed by the caller's stored id fall through to it unchanged,
- *  which is exactly the runtime id `session.create` minted. */
-function runtimeIdForStored(storedSessionId: string): string {
+ *  which is exactly the runtime id `session.create` minted. Exported (M15 B)
+ *  for `src/api/models.ts`'s per-session `config.set` calls, which need the
+ *  same stored->runtime resolution every other session-addressed RPC in this
+ *  file gets for free. */
+export function runtimeIdForStored(storedSessionId: string): string {
   for (const [runtimeId, stored] of reducerState.runtimeToStored) {
     if (stored === storedSessionId) {
       return runtimeId
