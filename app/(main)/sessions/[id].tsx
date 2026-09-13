@@ -42,7 +42,7 @@ import { radius, type } from '../../../src/theme/type'
 export default function SessionScreen() {
   const router = useRouter()
   const tokens = useTheme()
-  const { id, title } = useLocalSearchParams<{ id: string; title?: string }>()
+  const { botName, id, title } = useLocalSearchParams<{ botName?: string; id: string; title?: string }>()
   const [error, setError] = useState<null | string>(null)
   const [ready, setReady] = useState(false)
   const startedFor = useRef<string | null>(null)
@@ -133,7 +133,7 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <SessionHeader storedSessionId={id} />
+      <SessionHeader botName={botName} storedSessionId={id} />
       <ConnectionBanner />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />

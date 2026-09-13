@@ -548,3 +548,47 @@ export const CLARIFY_CARD_ANSWER_PLACEHOLDER = 'Type an answer…'
 // "Sudo password requested" / "Secret requested" the labels-test sweep
 // found (task 4c) — see the fix in those files directly, not a whitelist
 // entry, since a real vendored string already existed for exactly this.
+
+// app/(main)/bots/index.tsx (M15 A round 2). Bot Mode's real copy lives in
+// `apps/desktop/src/plugins/hermes-bots/i18n.ts`, a PLUGIN-scoped i18n
+// bundle registered via `ctx.i18n.register` — never touching core `en.ts`
+// (that file's own header, line 3: "never touching core en.ts"). It isn't
+// on the sync allow-list either (it imports `@hermes/plugin-sdk`, not
+// pure), so these are hand-copied from its `en` object literal with the
+// exact line cited, not vendored through the sync script.
+export const BOTS_TAB_LABEL = 'Bots' // apps/desktop/src/plugins/hermes-bots/plugin.tsx:95 — hardcoded upstream too, not itself a translation key
+export const BOTS_NEW_TITLE = 'New bot' // hermes-bots/i18n.ts:332, `bot.newTitle`
+export const BOTS_EMPTY_TITLE = 'No bots yet' // hermes-bots/i18n.ts:275, `roster.emptyTitle`
+export const BOTS_EMPTY_DESC = 'Create your first bot.' // hermes-bots/i18n.ts:276, `roster.emptyDesc`
+export const BOTS_DESCRIPTION_PLACEHOLDER = 'What should this bot help with?' // hermes-bots/i18n.ts:335, `bot.helpPromptPlaceholder`
+export const BOTS_CREATE_FAILED = 'Could not create the profile yet' // hermes-bots/i18n.ts:344, `bot.createFailed`
+// create-dialog.tsx:1010 — literal in the desktop's own JSX, not an i18n
+// key there either ('Create Bot' / 'Creating…').
+export const BOTS_CREATE_ACTION = 'Create Bot'
+export const BOTS_CREATING_ACTION = 'Creating…'
+
+// The handle field's hint: `docs/mobile-prototypes/bots.html`'s own `Field:`
+// marker ("the name hint states the rule, not just the label") — this
+// exact copy has no vendored source anywhere (checked en.ts and
+// hermes-bots/i18n.ts: the desktop's own Name field, create-dialog.tsx:628,
+// carries no hint text at all, just a placeholder, "inbox-triage") — a
+// mobile-only addition, not a retyped label.
+export const BOTS_NAME_HINT = 'Lowercase profile handle, for example research-rabbit.'
+
+// "Avatar seed": a mobile-only simplification of the desktop's visual
+// AvatarPicker (color swatches + shape tiles, avatar-picker.tsx) into one
+// text field that locks `blobatar`'s seed (src/lib/bot-avatar.ts). The
+// desktop has no equivalent text field or copy to vendor — this UI concept
+// doesn't exist on the desktop at all.
+export const BOTS_AVATAR_SEED_LABEL = 'Avatar seed'
+export const BOTS_AVATAR_SEED_HINT = "Leave as the bot's name for the default face, or lock a different one."
+
+// New bot sheet's model picker: "no pick" means the profile inherits the
+// host's default model (`profiles.create` no-ops its model section unless
+// both model AND provider are given, `methods_profiles.py:482-501`'s
+// `_configure_model` guard — the same one this file's Deviation 3 note
+// documents for `profiles.configure`). `t.profiles.default` ('default') is
+// the profile-list DEFAULT-BADGE word, a different concept — no vendored
+// phrase means "inherits the host's default model" anywhere (checked
+// t.settings.model and t.profiles).
+export const BOTS_MODEL_INHERIT_LABEL = 'Inherit host default'

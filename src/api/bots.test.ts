@@ -27,6 +27,7 @@ const {
   clearBotAvatarAsset,
   clearBotModelPin,
   configureBot,
+  createBot,
   describeBot,
   getBotAvatarAsset,
   listBots,
@@ -119,6 +120,24 @@ const TINY_PNG =
 const GET_ASSET_FOUND_FIXTURE = { data: TINY_PNG, found: true, mime: 'image/png', size: 68 }
 const SET_ASSET_FIXTURE = { asset: 'avatar', ok: true, size: 68 }
 const CLEAR_ASSET_FIXTURE = { asset: 'avatar', ok: true, removed: 1, size: 0 }
+
+// Recorded live: profiles.create(writer-bot, description, model/provider).
+const CREATE_BOT_FIXTURE = {
+  mirrored: { auth: false, env: true, model_inherited: false, voice: true },
+  model_set: true,
+  name: 'writer-bot',
+  ok: true,
+  path: 'C:\\Users\\COMPUT~1\\AppData\\Local\\Temp\\hermes-m15-r2-home\\profiles\\writer-bot',
+  soul_written: false
+}
+
+// Recorded live: the follow-up profiles.configure(ui_meta) for a custom
+// avatar seed — round-tripped through profiles.list afterward too (the
+// roster row came back with ui_meta.hermes-bots.shape === the seed sent).
+const CONFIGURE_UI_META_FIXTURE = {
+  applied: { ui_meta: true, ui_meta_revisions: { 'hermes-bots': 1 } },
+  ok: true
+}
 
 describe('src/api/bots', () => {
   let fake: FakeGateway
@@ -310,6 +329,62 @@ describe('src/api/bots', () => {
       const result = await clearBotModelPin('coder')
 
       expect(result.ok).toBe(false)
+    })
+  })
+
+  describe('createBot', () => {
+    it('sends name, description and model/provider — recorded live against profiles.create', async () => {
+      fake.request.mockResolvedValueOnce(CREATE_BOT_FIXTURE)
+
+      const result = await createBot({
+        description: 'Drafts and edits copy',
+        model: { model: 'mimo-v2.5', provider: 'opencode-go' },
+        name: 'writer-bot'
+      })
+
+      expect(fake.request).toHaveBeenCalledWith(
+        'profiles.create',
+        { description: 'Drafts and edits copy', model: 'mimo-v2.5', name: 'writer-bot', provider: 'opencode-go' },
+        undefined
+      )
+      expect(result).toEqual(CREATE_BOT_FIXTURE)
+    })
+
+    it('sends no model/provider fields when no model is given', async () => {
+      fake.request.mockResolvedValueOnce(CREATE_BOT_FIXTURE)
+
+      await createBot({ name: 'writer-bot' })
+
+      expect(fake.request).toHaveBeenCalledWith('profiles.create', { name: 'writer-bot' }, undefined)
+    })
+
+    it('follows up with profiles.configure(ui_meta) only when the seed differs from the name', async () => {
+      fake.request.mockResolvedValueOnce(CREATE_BOT_FIXTURE).mockResolvedValueOnce(CONFIGURE_UI_META_FIXTURE)
+
+      await createBot({ avatarSeed: 'custom-seed-value', name: 'writer-bot' })
+
+      expect(fake.request).toHaveBeenNthCalledWith(
+        2,
+        'profiles.configure',
+        { name: 'writer-bot', ui_meta: { 'hermes-bots': { shape: 'blobatar:custom-seed-value' } } },
+        undefined
+      )
+    })
+
+    it('does not follow up when the seed equals the name (the default, unlocked face)', async () => {
+      fake.request.mockResolvedValueOnce(CREATE_BOT_FIXTURE)
+
+      await createBot({ avatarSeed: 'writer-bot', name: 'writer-bot' })
+
+      expect(fake.request).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not follow up when profiles.create itself failed', async () => {
+      fake.request.mockResolvedValueOnce({ ...CREATE_BOT_FIXTURE, ok: false })
+
+      await createBot({ avatarSeed: 'custom-seed-value', name: 'writer-bot' })
+
+      expect(fake.request).toHaveBeenCalledTimes(1)
     })
   })
 

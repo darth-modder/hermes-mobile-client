@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
+import { BotAvatar } from '../components/BotAvatar'
 import { compressSession, renameSession } from '../gateway/session-connection'
 import { ChevronLeft } from '../lib/icons'
 import { SESSION_HEADER_COMPRESS_FAILED_TITLE, SESSION_HEADER_COMPRESS_LABEL } from '../lib/strings.mobile'
@@ -30,11 +31,20 @@ import { UsageChip } from './parts/UsageChip'
 
 export interface SessionHeaderProps {
   storedSessionId: string
+  /** Set only when this chat is a bot's canonical chat (M15 A round 2): the
+   *  bot's profile name, shown with its `BotAvatar` in place of the plain
+   *  session title. `session.title` is always the literal "Bot Chat" for
+   *  this session (the exact-title identity contract, `src/api/bots.ts`'s
+   *  `CANONICAL_CHAT_TITLE`) — showing that instead of the bot's name would
+   *  make every bot's chat header say the same word. The rename tap target
+   *  is disabled in this mode for the same reason: renaming away from "Bot
+   *  Chat" would break `resolveCanonicalChat`'s next lookup for this bot. */
+  botName?: string
 }
 
 /** Model/provider/effort + title edit + `session.compress` — the chat
  *  screen's top bar. */
-export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
+export function SessionHeader({ botName, storedSessionId }: SessionHeaderProps) {
   const tokens = useTheme()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
@@ -109,6 +119,11 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
       >
         <ChevronLeft color={tokens.foreground} size={26} />
       </TouchableOpacity>
+      {botName ? (
+        <View style={styles.botAvatar}>
+          <BotAvatar name={botName} size={32} />
+        </View>
+      ) : null}
       <View style={styles.titleColumn}>
         {editingTitle !== null ? (
           <TextInput
@@ -122,13 +137,15 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
         ) : (
           // The whole column is one 56dp touchable that starts the rename —
           // see the file-header comment above for why the model/effort line
-          // it contains is plain text, not its own control.
+          // it contains is plain text, not its own control. Bot mode: not a
+          // touchable at all (see the `botName` prop doc above).
           <TouchableOpacity
+            disabled={Boolean(botName)}
             onPress={() => setEditingTitle(session.title || t.sidebar.row.untitledPlaceholder)}
             style={styles.titleTouchable}
           >
             <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
-              {session.title || t.sidebar.row.untitledPlaceholder}
+              {botName || session.title || t.sidebar.row.untitledPlaceholder}
             </Text>
             <View style={styles.subtitleRow}>
               <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
@@ -161,6 +178,9 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     width: 48
+  },
+  botAvatar: {
+    marginRight: 8
   },
   compressButton: {
     alignItems: 'center',

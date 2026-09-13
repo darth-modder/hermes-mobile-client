@@ -32,6 +32,7 @@
  */
 
 import { gatewayRequest } from '../gateway/session-connection'
+import { blobShapeString } from '../lib/bot-avatar'
 
 export interface BotSessionPreview {
   id: string
@@ -87,6 +88,65 @@ export interface BotRosterResponse {
 /** `profiles.list` — the Bots tab roster. */
 export function listBots(): Promise<BotRosterResponse> {
   return gatewayRequest<BotRosterResponse>('profiles.list', {})
+}
+
+export interface CreateBotParams {
+  name: string
+  description?: string
+  model?: { model: string; provider: string }
+  /** Locks the blobatar seed via `ui_meta['hermes-bots'].shape`
+   *  (`src/lib/bot-avatar.ts`'s `blobShapeString`) when it differs from
+   *  `name` — the default (no seed override) already renders from the name,
+   *  so nothing is written in that case. */
+  avatarSeed?: string
+}
+
+export interface CreateBotResult {
+  ok: boolean
+  name: string
+  path: string
+}
+
+/**
+ * `profiles.create` (`methods_profiles.py:337-374`) — the New bot sheet's
+ * submit action. This app's `src/api/profiles.ts` wraps the narrower REST
+ * `/api/profiles` body (`ProfileCreatePayload`, the desktop's own vendored
+ * type — checked directly, it has no `description`/`model`/`provider` at
+ * all, though the REST Pydantic model behind it does,
+ * `hermes_cli/web_models.py:400-408` — a gap in the desktop's own TS type,
+ * not something to route around here). The desktop's create dialog itself
+ * calls the RPC, not that REST route
+ * (`apps/desktop/src/plugins/hermes-bots/create-dialog.tsx`'s
+ * `requestForTarget`/`host.request` calls), so this does too.
+ *
+ * `profiles.create` has no `ui_meta` param (checked its own params list),
+ * so a custom avatar seed is a second `profiles.configure` call after a
+ * successful create — the same RPC `configureBot` uses, called directly here
+ * since `ui_meta` isn't part of `ConfigureBotPatch` (no settings-sheet caller
+ * needs it yet).
+ */
+export async function createBot(params: CreateBotParams): Promise<CreateBotResult> {
+  const rpcParams: Record<string, unknown> = { name: params.name }
+
+  if (params.description !== undefined) {
+    rpcParams.description = params.description
+  }
+
+  if (params.model) {
+    rpcParams.model = params.model.model
+    rpcParams.provider = params.model.provider
+  }
+
+  const result = await gatewayRequest<CreateBotResult>('profiles.create', rpcParams)
+
+  if (result.ok && params.avatarSeed && params.avatarSeed !== params.name) {
+    await gatewayRequest('profiles.configure', {
+      name: params.name,
+      ui_meta: { 'hermes-bots': { shape: blobShapeString(params.avatarSeed, '') } }
+    })
+  }
+
+  return result
 }
 
 export interface BotSkill {
