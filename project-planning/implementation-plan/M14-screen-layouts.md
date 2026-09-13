@@ -1042,6 +1042,38 @@ not as fixed — no code was changed for this item. All screenshots and dumps ar
 hypothesis above is carried forward for whoever picks this up next, but it is unconfirmed by any
 evidence gathered this round.
 
+**Round 3 (close-out, task 3): kept open, still not reproduced — a sixth attempt, plus a diagnosability
+fix instead of a guess-patch.** Decision for this round was explicit: leave it open, make the *next*
+occurrence diagnosable, and don't touch list virtualization. One more device attempt this round (dark,
+a fresh unique command — `rm -rf logdiag99.txt` — new session, no special scroll pattern) rendered the
+approval card correctly again — six attempts total across rounds 2 and 3, none reproducing it.
+
+Added `__DEV__`-only layout logging instead: `ApprovalCard.tsx` now logs its own `onLayout`
+(x/y/width/height) once per card mount, plus the `ListHeaderComponent` wrapper's own layout
+(`Transcript.tsx` captures it into a ref via its own `onLayout`, passed down as `parentLayoutRef`) —
+both under a `[approval-card-layout]` tag so a future `adb logcat` capture during a repro attempt has
+both halves of the picture at once, something none of the eleven attempts across both rounds ever had.
+Guarded by `onLayout = __DEV__ ? handler : undefined` at both call sites
+(`ApprovalCard.tsx:44-54`, `Transcript.tsx`'s `ListHeaderComponent` `onLayout` prop) — in a release
+build the prop itself is `undefined`, so React Native never attaches the native layout listener at
+all, not just "guarded on invocation." Device-verified working, `M14Close3`:
+
+```
+[approval-card-layout] card { x: 0, y: 6.095238208770752, width: 379.4285583496094, height: 202.6666717529297 }
+[approval-card-layout] parent row { x: 0, y: 0, width: 379.4285583496094, height: 214.47616577148438 }
+```
+
+(One real snag while verifying this, unrelated to the change itself: Metro under `CI=1` served a
+stale cached bundle across an app relaunch — the log above only appeared after restarting Metro with
+`-c` to clear its bundler cache. Noting this in case a future round hits the same "my edit isn't
+showing up on device" confusion under the same `CI=1` standing rule.)
+
+**This goes on the tester checklist**: whoever next reproduces the overlap glitch on a real device
+should capture `adb logcat -s ReactNativeJS:*` (or grep for `approval-card-layout`) at the moment it
+appears — the card's own layout compared against the parent row's should show whether the card is
+being positioned outside its header's bounds, or whether the header itself under-reports its height
+while a sibling (SecretCard/SudoCard/etc.) is present.
+
 **f. PARITY.md.** Read in full this round. It already reflects the M14-added settings sections and
 screens: "Settings: Chat, Safety, Memory & Context" and "Settings: Billing" are explicitly listed as
 thinner/read-only with the gateway-endpoint evidence for each (`docs/PARITY.md:45-46`), "Command
