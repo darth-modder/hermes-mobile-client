@@ -1016,3 +1016,38 @@ possibly-antialiased pixel):
 All six sampled exactly, both themes, from this round's own screenshots — not just re-quoting the
 round-1 table above. **M13 still holds**, and the border/destructive conflation in the round-1 table
 is corrected here rather than silently repeated.
+
+**f. `npm run check`, after the last commit of this round (task 6).** Two lint findings surfaced by
+this round's own new test file were fixed first (commit `3e0e7c0`: an unnecessary `\-` escape inside
+the SVG-path-data character class, and a missing blank line before a `const` per
+`padding-line-between-statements`) — both caught by this same `npm run check` run, not found by a
+separate lint pass. Full run (`npm run typecheck && npm run test && npm run test:plugin && npm run
+lint && prettier --check .`), tail:
+
+```
+> hermes-android@1.0.0 test
+> vitest run
+
+ Test Files  56 passed (56)
+      Tests  492 passed (492)
+
+> hermes-android@1.0.0 test:plugin
+> python -m unittest discover -s server-plugin/hermes-push/tests -t server-plugin/hermes-push -p "test_*.py"
+----------------------------------------------------------------------
+Ran 52 tests in 3.701s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+`typecheck` produced no output (clean). The two intentionally-mocked failures inside `test:plugin`'s
+own output ("Expo push send failed", a `RuntimeError: boom` traceback) are the plugin's own tests
+exercising its error-handling paths, not real failures — the suite still reports `OK`, 52/52. **Exit
+0, all green**, after this round's fixes (492 vitest tests, up from the prior round's count, since
+`labels.test.ts` alone grew from 32 to 63 assertions across the widened scan).
