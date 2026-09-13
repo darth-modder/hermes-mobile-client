@@ -21,9 +21,23 @@ import { TextPart } from './parts/TextPart'
 import { TodoPanel } from './parts/TodoPanel'
 import { ToolCallCard } from './parts/ToolCallCard'
 
-function MessagePart({ part }: { part: ChatMessagePart }) {
+function MessagePart({
+  index,
+  messageId,
+  messagePending,
+  part
+}: {
+  index: number
+  messageId: string
+  messagePending: boolean
+  part: ChatMessagePart
+}) {
   if (part.type === 'text' || part.type === 'reasoning') {
-    return part.type === 'reasoning' ? <ReasoningDisclosure text={part.text} /> : <TextPart text={part.text} />
+    return part.type === 'reasoning' ? (
+      <ReasoningDisclosure messagePending={messagePending} part={part} timerKey={`reasoning:${messageId}:${index}`} />
+    ) : (
+      <TextPart text={part.text} />
+    )
   }
 
   if (part.type === 'tool-call') {
@@ -102,7 +116,13 @@ const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: Messa
     <View style={[roleStyle.row, gap === 'turn' ? styles.turnGap : gap === 'block' ? styles.blockGap : null]}>
       <View style={[styles.bubble, roleStyle.bubble]}>
         {message.parts.map((part, index) => (
-          <MessagePart key={index} part={part} />
+          <MessagePart
+            index={index}
+            key={index}
+            messageId={message.id}
+            messagePending={message.pending ?? false}
+            part={part}
+          />
         ))}
         {message.attachmentRefs?.length ? (
           <Text style={[styles.attachments, { color: tokens.primary }]}>{message.attachmentRefs.join('  ')}</Text>
