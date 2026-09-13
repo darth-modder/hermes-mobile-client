@@ -201,6 +201,41 @@ and the gateway contract only.
    `tui_gateway/server.py:2041-2044,2063`). Recording as its own Deviation
    per round 2's instruction, rather than leaving it folded into task 2's
    commit message only.
+5. **A bot's canonical chat cannot actually be opened on-device the first
+   time — a gateway/session-layer gap, not a bug in this round's port.**
+   `resolveCanonicalChat`'s id resolution (`src/api/bots.ts:442-453`) is
+   correct — confirmed live, see Verification log — but the chat screen
+   cannot then open that id. Root cause, isolated directly against the
+   gateway (bypassing the app entirely):
+   `session.create({hidden: true, follow_profile_config: true, profile,
+   title: 'Bot Chat'})`'s own response carries `"info": {"lazy": true,
+   ...}`. A **lazy** session is not resumable: `session.resume` (JSON-RPC
+   error 4007, `"session not found"`) fails for it by either its runtime id
+   or its stored id, on the very connection that created it, immediately
+   after creation, and *still* fails after the session has real turns
+   (`message_count: 2`, confirmed via `profiles.list`) — so this isn't a
+   race or a zero-messages special case. The only RPC that succeeds against
+   a lazy session's runtime id is `prompt.submit`, and only on the same
+   connection that created it. `createCanonicalChat`
+   (`src/api/bots.ts:413-433`) creates exactly this kind of session and
+   returns only `stored_session_id` for navigation; the chat screen's only
+   open path is `resumeSession` (`src/gateway/session-connection.ts:655-
+   670`, `session.resume`), which structurally cannot succeed here. A plain
+   (non-hidden) `createSession()` (`session-connection.ts:631-648`) never
+   hits this: it binds the session locally straight from `session.create`'s
+   own response (`bindSession`/`seedSessionMessages`) and never calls
+   `session.resume` for it at all — confirmed live, a plain "New session"
+   opens and is fully usable immediately. Fixing this is an architecture
+   decision (thread `createCanonicalChat`'s create-response through the
+   same store-binding path `createSession` uses, rather than
+   `resolveCanonicalChat`/`resumeSession`'s current "resolve an id, then
+   resume it" shape) outside this round's scope — reported per the standing
+   instruction to stop rather than patch around a desktop/gateway
+   disagreement. Practically: **every bot whose canonical chat has never
+   been opened by a live client is unopenable on mobile**, which also blocks
+   the Bot Settings sheet (chat-header-only per task 2 — `app/(main)/
+   sessions/[id].tsx:159,164-171` never renders `SessionHeader`/
+   `BotSettingsSheet` while `error` is set, `[id].tsx:115-147`).
 
 ## Verification log
 
@@ -324,3 +359,136 @@ clean, 536/536 vitest, 52/52 Python, lint/format clean, exit code 0.
 Composer chips, Tasks tab screen, pairing flow, gestures) — out of scope per
 this round's brief ("the three data-layer tasks marked †, plus avatars. No
 new screens this round").
+
+### Round 2 — Deviation 3 correction, Bots screens, device verification (2026-09-14)
+
+**Scope.** Task 0a (`clearBotModelPin`), task 0b (Deviation 4), task 1 (Bots
+roster + New bot sheet), task 2 (Bot settings sheet, soul editor, model pin,
+Capabilities), task 3 (drawer order), plus device verification of all of the
+above against a fresh throwaway gateway (`hermes-m15-r2-home`, port 9131,
+`auth_required: true`, `tester`/scratch-password login, two `adb reverse`
+tunnels to the `hermes-test` hardware-accelerated AVD) and a physical build
+(WSL2 Gradle, D3). Code-level work (tasks 0-3) is committed; this section
+covers device verification (round 2's task 4) plus what it could and
+couldn't reach.
+
+**Build and emulator.** WSL2 Gradle build succeeded (`BUILD SUCCESSFUL` in
+21m 42s, second attempt — first hit an AAPT2 daemon timeout from resource
+contention with a since-crashed software emulator). Ran on the pre-existing
+hardware-accelerated `hermes-test` AVD (`D:\Software\Android-SDK\emulator`),
+not the WSL software emulator (unstable — repeated ANRs/SIGSEGVs under TCG).
+Metro served via `adb reverse tcp:8081 tcp:8081`; gateway via `adb reverse
+tcp:9131 tcp:9131`.
+
+**Task 4a (roster + 48dp audit).** Roster renders all four seeded bots
+(`default`, `coder`, `researcher`, `writer-bot`) with avatar, name/handle,
+description, model, and relative time. `uiautomator dump` bounds against the
+device's own density (`wm density` → 420, so 48dp = 126px): the "Open menu"
+and "New bot" header icon buttons are exactly 126×126px (`bounds="[21,139]
+[147,265]"` and `[933,139][1059,265]"`) — at the minimum, not under it; each
+bot row is a single full-width clickable region 189-217px tall (72-83dp) —
+well over. No sub-48dp targets found.
+
+**Task 4b (avatars).** Each bot renders a distinct `blobatar` SVG (shape +
+color + face) via `SvgXml`/`com.horcrux.svg`, matching round 1's fixture
+equality test — visually confirmed on-device (screenshot), no new test
+needed since round 1 already covers the SVG-generation correctness and this
+round only needed to confirm the ES-module package bundles and renders
+through Metro on a real device, which it does.
+
+**Task 4c (canonical chat resolution) — id resolution CONFIRMED, chat-open
+BLOCKED.** Tapped `researcher` on-device; `[app/(main)/bots/index.tsx]`'s
+`resolveCanonicalChat` result was captured via a temporary `__DEV__` log
+(reverted before this commit) via `adb logcat`:
+```
+'[m15-verify] canonical chat', 'researcher', '->', '20260914_023418_18659f'
+```
+`desktop-rule-canonical-chat.js` (written round 2, mirrors
+`canonical-chat.ts`'s `findExistingCanonicalChat` exactly), run standalone
+against the same gateway/profile:
+```
+desktop rule resolution for researcher: 20260914_023418_18659f
+raw session.list result: {"sessions":[{"id":"20260914_023418_18659f",
+"resolved_id":"20260914_023418_18659f","title":"Bot Chat","preview":"",
+"started_at":1789335259.9698472,"message_count":0,"source":"tui"}]}
+```
+Byte-for-byte match. But the chat screen itself then showed "Couldn't load
+this session" / `session not found` and stayed that way through a manual
+Retry — see Deviation 5 above for the isolated root cause (a gateway-side
+`session.resume` gap for "lazy" sessions, unrelated to this round's id-
+resolution code, which is correct). **Task 4c: id resolution done and
+device-verified; chat-open part-done — blocked by Deviation 5, reported
+rather than patched.**
+
+**Task 4d (soul editor) and 4e (model pin) — RPC-verified only, not
+click-through.** Since the Bot Settings sheet is reachable only from the
+chat header (`app/(main)/sessions/[id].tsx:159`) and no bot's canonical chat
+could be opened (Deviation 5), the sheet itself could not be exercised
+on-device this round. The RPC calls it makes were verified directly against
+the same live gateway instead:
+- Soul read/write/read-back (`describeBot`/`configureBot`, exactly
+  `BotSettingsSheet.tsx`'s `saveSoul`): wrote a new soul to `coder`,
+  `profiles.configure` → `{"ok":true,"applied":{"soul":true}}`,
+  `profiles.describe` read back an exact match.
+- Soul staleness guard (`BotSettingsSheet.tsx:109-124`'s exact re-read-
+  before-write condition): loaded soul, changed it independently from Node
+  (simulating `soul-staleness-inject.js` running mid-edit), re-read —
+  `fresh.soul !== detail.soul` correctly evaluated `true`, confirming the
+  guard fires on a real round-trip.
+- Model pin round-trip (`configureBot`/`clearBotModelPin`): pinned `coder`
+  to `deepseek-v4-flash` (`profiles.configure` → `{"applied":{"model":
+  true}}`), then cleared via `clearBotModelPin`'s exact call (`cli.exec`,
+  argv `['--profile','coder','config','unset','model']`) →
+  `{"blocked":false,"code":0}`, `profiles.describe` read back
+  `{"provider":"","default":""}` — genuinely cleared, not just unchanged.
+**Task 4d/4e: RPC-verified correct; the on-device tap-through of the sheet
+itself is not attempted, honestly, because of Deviation 5 — not because it
+was skipped.**
+
+**Task 1 (New bot sheet) — device-verified.** Opened via the roster's "+";
+renders Name/Description/Model ("Inherit host default")/Avatar Seed fields
+matching `bots.html`'s new-bot view and the desktop create dialog's labels.
+Created a real bot (`m15r2-testbot`) end-to-end through the sheet —
+appeared in the roster immediately after with its own generated avatar,
+confirmed via `profiles.list` (`"name": "m15r2-testbot", "model": "mimo-
+v2.5", "provider": "opencode-go"`).
+
+**Task 3 (drawer order) — device-verified.** Drawer shows `Bots`, `Sessions`,
+`Scheduled jobs` leading, in that order, matching the committed
+`drawer-rows.ts` and this doc's own Deviation about "Scheduled jobs" not
+being renamed "Tasks" (no Tasks screen exists yet).
+
+**Composites (task 4f) — partial.** `composite.py` (from the M14 field kit)
+against the already-captured prototype screenshots
+(`docs/mobile-prototypes` served with `?bare=1`): roster and New-bot sheet,
+light theme, both produced (`composite-bots-roster-light.png`,
+`composite-bots-new-light.png`). **Not captured this round:** dark-theme
+device screenshots (time), and the Bot Settings sheet composite in either
+theme (blocked entirely by Deviation 5 — nothing to screenshot).
+
+**Incidental finding, not chased further.** The Sessions tab's REST listing
+(`GET /api/sessions?limit=100&order=recent`) returned `HTTP 401` partway
+through this session, recovering on retry after a fresh sign-in; the WS-RPC
+side (`profiles.list`, `session.list`, etc.) kept working throughout. Likely
+the REST bearer token's own TTL expiring under this round's repeated
+external `curl`/Node logins as the same `tester` user (used to obtain
+WS tickets for the standalone verification scripts) rather than anything
+`app`-side — noted for awareness, not investigated further; out of scope
+for M15 Bots.
+
+**Task 5.** `npm run check` after the last commit: typecheck clean, 61 test
+files / 563 tests passed (vitest), 52/52 Python (`server-plugin/hermes-push`
+— the one visible traceback is an intentionally mocked failure the suite
+asserts on, not a real error), lint clean, `prettier --check .` clean.
+Exit code 0.
+
+**Honest summary of task 4 by sub-task:**
+- 4a: done, device-verified.
+- 4b: done, device-verified.
+- 4c: part-done — id resolution device-verified and cross-checked correct;
+  chat-open blocked by Deviation 5 (reported, not patched).
+- 4d: part-done — RPC-level verified against the live gateway; on-device
+  sheet interaction not reached (blocked by 4c's blocker).
+- 4e: part-done — same as 4d.
+- 4f: part-done — roster and New-bot sheet composites produced (light only);
+  Settings-sheet composite and dark-theme composites not produced.
