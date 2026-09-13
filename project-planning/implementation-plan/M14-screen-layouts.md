@@ -1196,3 +1196,39 @@ own output ("Expo push send failed", a `RuntimeError: boom` traceback) are the p
 exercising its error-handling paths, not real failures — the suite still reports `OK`, 52/52. **Exit
 0, all green**, after this round's fixes (492 vitest tests, up from the prior round's count, since
 `labels.test.ts` alone grew from 32 to 63 assertions across the widened scan).
+
+**Round 3 (close-out, task 4): one real finding of its own, fixed first.** The new reasoning-timer
+tests passed cleanly, but `labels.test.ts` itself failed — its own widened scan (round 2) caught
+`ApprovalCard.tsx`'s two new `[approval-card-layout]` debug tags (task 3's `__DEV__`-only logging) as
+"retyped labels," since a `console.log` argument is just another string literal in the file to a
+scanner that doesn't yet know the difference. Fixed at the source (commit `7063310`): excluded any
+string literal that's a direct `console.<method>(...)` argument, by AST position (walking up to the
+parent call expression), not by pattern-matching the tag's text — the same principle the file's
+existing literal-TYPE exclusion already uses. Full run after that fix (commit `7063310` is the last
+commit of the round), tail:
+
+```
+> hermes-android@1.0.0 test
+> vitest run
+
+ Test Files  57 passed (57)
+      Tests  498 passed (498)
+
+> hermes-android@1.0.0 test:plugin
+> python -m unittest discover -s server-plugin/hermes-push/tests -t server-plugin/hermes-push -p "test_*.py"
+----------------------------------------------------------------------
+Ran 52 tests in 3.737s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+`typecheck` produced no output (clean). Same two intentionally-mocked `test:plugin` failures as every
+round (not real). **Exit 0, all green** — 498 vitest tests, up 6 from round 2 (the two new
+`reasoning-timer.test.ts` cases plus `formatElapsed`'s edge cases).
