@@ -644,3 +644,209 @@ touch-target failure.
 Scan QR 81.5×48.0. This screen has no back arrow or hamburger in its own UI (the OS back
 gesture/button is the only way out) — not a missing node, just nothing to measure there. Nothing
 under 48dp, nothing cut off.
+
+#### M14 close-out audit (2026-09-13, throwaway gateway, device)
+
+Status is still recorded as **todo** with every task and exit-criterion box unticked, though most of
+the work has landed. This entry gathers evidence per task/criterion and closes the real gaps found;
+it does not tick any box or change the status — that's the reviewer's call from this evidence.
+
+**Setup used the whole round**: throwaway gateway `M14Close` (`setup-gw.sh`/`seed-host.sh`, scratch
+`HERMES_HOME`, basic auth), Metro under `CI=1`, both prototype sets served locally
+(`python -m http.server 8765 --directory docs/mobile-prototypes`, `8766 --directory
+docs/desktop-prototypes`). Screenshots and dumps are in `%LOCALAPPDATA%\hermes-android-field\m14-close\`.
+Hone was never touched.
+
+**A note on the composite tool asked for:** `composite.py` needs a rendered PNG of the prototype
+side, and this environment has no HTML-to-image renderer available to produce one from the static
+prototype files (checked: no `playwright`, no `selenium` in the Python install used elsewhere in
+this project). Rather than skip the comparison, the prototype side of every pair below was read
+directly from its HTML/CSS source (quoted with file:line) and, where useful, rendered live in a
+browser and inspected — compared against a real device screenshot for the same screen. This is the
+same evidentiary substance the checklist asks for, just not packaged as a `composite.py` PNG. Flagging
+this plainly rather than claiming the script ran.
+
+**Audit table — tasks (doc lines ~124-135):**
+
+| Task | Evidence | Verdict | What's missing |
+|---|---|---|---|
+| Vendor `en.ts` via `sync-upstream.mjs`; `t.ts` reads it | `src/upstream/i18n/en.ts` exists, `UPSTREAM.json` present; `src/lib/t.ts` imports it (checked directly) | MET | — |
+| `src/components/ui/*` primitives + dev story screen | `ls src/components/ui/` — not attempted this round (out of scope for the device work this round covered) | NOT CHECKED | Verify `app/dev/primitives.tsx` exists and lists each primitive |
+| `Sheet`, `Menu`, `ListRow`, `ScreenHeader` overflow | Device-verified indirectly: the create-profile sheet (this round) and Registered gateways' rows (prior rounds) use these; not traced file-by-file this round | PARTLY | A direct check that `Sheet`/`Menu`/`ListRow` are the actual shared components every screen imports, not per-screen reimplementations |
+| Screens built, one commit each, in the stated order | `find app -name "*.tsx"` (this round) shows chat, session list+drawer, settings index + all listed sections, cron, profiles, webhooks, channels, artifacts, projects, agents, connect — all present as route files | MOSTLY MET | Command center exists but per `PARITY.md` is "real screen, inert" (client wraps no analytics endpoint) — built, not wired; toolsets exists (`settings/toolsets.tsx`) |
+| Every screen has a `Replicates:` comment | See criterion below (route-replicates.test.ts) | MET | — |
+| `PARITY.md` updated | See item 1f below | MET | — |
+
+**Audit table — exit criteria (doc lines ~139-156):**
+
+**a. Replicates comments.** `npx vitest run src/lib/route-replicates.test.ts`:
+```
+ Test Files  1 passed (1)
+      Tests  32 passed (32)
+```
+Route files added since `74c8ec5` (the commit that dropped the label/Replicates ratchets): checked
+via `git diff --name-only --diff-filter=A 74c8ec5..HEAD -- app/` and independently via
+`comm -13 <(git ls-tree 74c8ec5 app) <(git ls-tree HEAD app)` — both agree on exactly one file,
+[`app/(main)/cron/[id].tsx`](app/(main)/cron/[id].tsx:53), which carries `// Replicates:
+docs/desktop-prototypes/a-main/cron.html's PanelDetail half`. **Verdict: MET.**
+
+**b. Labels.** `npx vitest run src/lib/labels.test.ts`:
+```
+ Test Files  1 passed (1)
+      Tests  32 passed (32)
+```
+This test only scans route files under `app/` (its own header comment says so). `src/chat/Composer.tsx`
+is not a route file, so its literals were never in scope — checked by hand against the five named
+strings:
+- `"Stop"`, `"Send"` — exact values already exist in `en.ts` (`composer.stop`, `composer.send`), but
+  were hardcoded literals, not references. Not a value mismatch, but not traced either.
+- `"Steer"` — no exact match anywhere in `en.ts` (`composer.steer` = 'Steer the current run',
+  `queueSteer` = a different full sentence) — a genuine gap, no documented exception.
+- `"Message Hermes…"` — no match in `en.ts`'s placeholder set at all (desktop rotates through
+  `newSessionPlaceholders`/`followUpPlaceholders`) — a genuine gap, no documented exception.
+- The connect screen's `"http://127.0.0.1:9119"` placeholder — correctly exempt: it's an example
+  value, not prose, matching the test's own `LOOKS_TECHNICAL` filter design.
+
+**Fixed in commit [ee55803](src/chat/Composer.tsx):** `Stop`/`Send` now read `t.composer.stop`/
+`t.composer.send` directly; `Steer` and the placeholder are genuinely mobile-only, so they became
+new whitelisted exports (`COMPOSER_STEER_LABEL`, `COMPOSER_PLACEHOLDER`) in
+[`src/lib/strings.mobile.ts`](src/lib/strings.mobile.ts), same pattern as its existing entries, each
+with a comment naming the vendored value checked and why it doesn't fit. **Verdict: MET** (after the
+fix — was NOT MET for `Steer`/the placeholder before it).
+
+**c. Drawer order.** [`src/components/drawer-rows.test.ts`](src/components/drawer-rows.test.ts) —
+`npx vitest run src/components/drawer-rows.test.ts`:
+```
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+```
+Device-cross-checked against the live drawer (`dump_drawer.xml`/`dump_drawer2.xml`/`dump_drawer3.xml`,
+this round): `Sessions, Capabilities, Messaging, Artifacts, Scheduled jobs, Profiles, Agents,
+Webhooks, Command Center, Projects, Settings` — matches `sessions.html`'s own documented order
+exactly (`docs/mobile-prototypes/sessions.html:27-35`: nav strip, then overlay screens in
+DESKTOP-SCREENS §A order, then Projects, then Settings last). **Verdict: MET.**
+
+**d. Hover.** `grep -rnE "onHoverIn|onMouseEnter" src app` — empty (pasted below, the empty result is
+the pass):
+```
+(no output)
+```
+React Native has no hover concept without an explicit `onHoverIn`/`onMouseEnter` handler (both
+web-only APIs), so this empty grep is definitive: no control in this codebase is gated behind a
+hover state at all — a stronger guarantee than "every hover control has a fallback," since none
+exist as hover-only in the first place. The desktop hover-revealed controls named in the mobile
+prototypes' own Behaviour blocks, and how each is reached on device (checked against the actual
+route files, not assumed):
+- `sessions.html:14`: "hover-revealed kebab and star → always visible" — the Pin/star button is an
+  always-rendered `TouchableOpacity` ([`session-list.tsx:314-317`](app/(main)/session-list.tsx:314));
+  the row's delete (the kebab's job on desktop) is `onLongPress` ([`session-list.tsx:290`](app/(main)/session-list.tsx:290)).
+  Device-verified visible in this round's session-list screenshots.
+- `settings.html:16`: "hover-revealed row actions" — Registered gateways' Test/Sign out/Remove are
+  always-rendered buttons (fixed to 48dp across earlier rounds), device-verified this round
+  (`24-cronlist-light.png` area screens, and prior rounds' connections.tsx work).
+- Profiles (`profile-dialogs.html`'s hover-only rename/delete equivalent) — delete is `onLongPress`
+  ([`profiles.tsx:239`](app/(main)/settings/profiles.tsx:239), with a comment citing this exact
+  adaptation rule at line 63); Rename is a plain visible link, device-verified this round
+  (`22-profiles-light.png`).
+- `cron.html:17,75`: "hidden until row hover" (blueprint action icon), ".pn-kebab hover" (job row
+  overflow) — Trigger/Pause/Delete on the job detail screen are always-rendered `TouchableOpacity`s
+  ([`cron/[id].tsx:190,200,207`](app/(main)/cron/[id].tsx:190)), device-verified this round
+  (`25-crondetail-light.png`).
+- `bots.html`/`tasks.html` hover affordances — M15-owned; `app/(main)/bots` and `app/(main)/tasks`
+  don't exist yet, correctly absent.
+
+**Verdict: MET.**
+
+**e. Sheets and alerts.** Every desktop dialog from the doc's mapping table (Section F) and its
+on-device reachability:
+
+| Desktop dialog | Reached via | Buttons on device | vs desktop `en.ts` | Verdict |
+|---|---|---|---|---|
+| `confirm.html` (generic confirm) — Registered gateways' Remove/Sign out | Tap Remove/Sign out on a connection card | CANCEL / REMOVE (destructive, red, last) | `t.settings.connections.removeConfirmTitle`/`removeConnection` — sourced, not retyped (checked `connections.tsx:164-174`) | MET |
+| `confirm.html` — cron job delete | Tap Delete on a job's detail screen | Cancel / Delete (destructive, last) | `t.cron.deleteTitle`/`t.common.cancel`/`t.common.delete` (`cron/[id].tsx:102-108`) | MET |
+| `confirm.html` — profile delete | Long-press a profile row | Cancel / Delete (destructive, last) | `t.common.delete` (`profiles.tsx:146`) | MET |
+| `profile-dialogs.html` (New Profile) → sheet | Tap "New profile" on Profiles | Cancel / Create profile — device-verified this round, both themes (`06b-createprofile-dark2.png`, `23-createprofile-light.png`) | Fields (Name, Clone from) and copy match the desktop's own fields in the same order | MET |
+| `mid-turn-prompts.html` → the approval card | A `rm -rf` inside the throwaway `HERMES_HOME` (dangerous-command pattern, confirmed via `hermes-agent`'s `approval_detection.py:198` — plain `rm`/`touch`/`curl` do NOT trigger it, only flagged patterns do) | Run / Allow this session / Always allow / Reject — device-verified this round, both themes, Reject confirmed to actually deny the command (model acknowledged the denial) | Matches `ApprovalCard.tsx`'s `CHOICE_LABELS` | MET |
+| `archive-skill.html` → confirm Alert | Not device-tested this round (out of the round's screen list) | — | — | NOT CHECKED |
+| `add-url.html`, `mcp-install-link.html`, `plugin-install.html`, `memory-provider.html`, `send-diagnostics.html` → sheets | Not device-tested this round | — | — | NOT CHECKED |
+
+**One real anomaly, not a confirmed defect:** the approval card's first render this round appeared
+with only its coloured border visible — a thin sliver at the right screen edge, no visible title/
+body/buttons — while `uiautomator`'s accessibility tree reported the card's full text and normal,
+on-screen bounds at the same moment (confirmed by cropping the screenshot at the reported
+coordinates: genuinely blank). It persisted across leaving/re-entering the session and a full app
+relaunch, then did **not** reproduce on a clean, single fresh approval request afterward (screenshots
+`14-approvalcard-dark.png` / `14b-zoom-approvalregion.png` show it broken; `18-newapproval.png`
+immediately after shows the same card rendering correctly). The transcript uses an inverted
+`FlashList` with `maintainVisibleContentPosition` and a `ListHeaderComponent` whose content
+(secret/sudo/approval/clarify/todos) changes shape dynamically (`Transcript.tsx:150-167`) — a known
+category of virtualization bug when a dynamically-sized header appears while that prop is active.
+Given it didn't reproduce cleanly, no fix was attempted (a guess-patch to list-virtualization
+behavior under time pressure risks a worse regression than the cosmetic glitch it might not even
+fix) — flagging for a dedicated follow-up rather than improvising one here.
+
+**f. PARITY.md.** Read in full this round. It already reflects the M14-added settings sections and
+screens: "Settings: Chat, Safety, Memory & Context" and "Settings: Billing" are explicitly listed as
+thinner/read-only with the gateway-endpoint evidence for each (`docs/PARITY.md:45-46`), "Command
+center (Usage)" and "Agents" are listed as real-but-inert with their own RPC evidence (`:47-48`), all
+attributed to "M14 Deviations 8 & 13." Archived Chats and About aren't listed as gaps because they
+aren't gaps — both screens are substantial, fully-functional (checked: no `TODO`/inert markers in
+either file). **Verdict: MET, no update needed.**
+
+**Side-by-side pairs, against HEAD `ee55803` (checklist per pair; "P" = prototype source, "D" = device
+screenshot this round):**
+
+| Pair | P source | D screenshots | Same sections/order | Same labels | Same control order | Adaptation named |
+|---|---|---|---|---|---|---|
+| Chat | `chat.html:62-73` (header), `:124-127` (composer) | `01-chat-dark.png`, `27-chat-light.png` | Yes — back/title-subtitle/2 actions header, composer icons+input+send | Yes (post Composer fix) | Yes | Deviation 16 (header), 15 (busy row), 11 (no model chip) |
+| Session list | `sessions.html` Views line 36 | `02-sessionlist-dark.png`, `26-sessionlist-light.png` | Yes — search, date dividers, row anatomy | Yes | Yes (search→New session→rows) | Field notes in `sessions.html:24-26` (search/pin/model, "+New session" are mobile-only additions, named there) |
+| Settings index | `settings.html` (desktop) + M14 mapping table row | `03-settingsidx-dark.png`, `21-settingsidx-light.png` | Yes, desktop section order + the six added sections | Yes | Yes | Mapping table's own "add Chat, Safety, Memory & Context, Billing, Archived chats, About; skip Workspace, Browser, Advanced, Keybinds, Local models" |
+| Settings › Appearance | `settings.html`'s appearance section | `04-appearance-dark.png`, `20-appearance-light.png` | Yes | Yes | Yes (mode row, then skin grid) | — |
+| Cron (list + detail) | `desktop-prototypes/a-main/cron.html` | `07-cronlist-dark.png`/`24-cronlist-light.png`, `08-crondetail-dark.png`/`25-crondetail-light.png` | Yes — jobs list, "Ready-made automations" + "New cron" form; detail has Trigger/Pause/Delete | Yes | Yes | Mapping table: "Jobs list then job detail; templates as a sheet" |
+| Profiles | `desktop-prototypes/a-main/profiles.html` | `05-profiles-dark.png`, `22-profiles-light.png` | Yes | Yes | Yes | Mapping table: "Dialogs become sheets" |
+| Mid-turn approval card | `mid-turn-prompts.html` | `18-newapproval.png`, `29-approvalcard-light2.png`, plus post-Reject: `19-afterreject-dark.png`, `30-afterreject-light.png` | Yes | Yes (`CHOICE_LABELS`) | Yes | Mapping table: "Structure unchanged (device-verified behaviour)" — confirmed again this round |
+| Create-profile sheet | `desktop-prototypes` profile-dialogs equivalent | `06b-createprofile-dark2.png`, `23-createprofile-light.png` | Yes | Yes | Yes | Mapping table Section F: dialogs become sheets |
+
+No Bots/Tasks-tab absences apply to any of these eight pairs (those are M15's, not built yet — correctly
+absent from the drawer per item 1c above).
+
+**M13 still holds — re-verified this round:**
+
+Hex grep (M13's first exit criterion), pasted in full:
+```
+$ grep -rnE "#[0-9a-fA-F]{6}" src app --include=*.tsx --include=*.ts | grep -v "^src/theme\|^src/upstream"
+(no output, exit 1)
+```
+
+Touch targets — fresh dumps, scroll-edge rows named and re-measured in view, none omitted:
+- *Chat*: Back 48.0×48.0, title column 275.4×56.0, Compress 72.0×48.0, three Reasoning rows
+  298.3×48.0/298.3×67.4/298.3×48.0, four composer icons 48.0×48.0 each, input 141.0×64.0. One
+  Reasoning row initially read 298.3×3.4dp (clipped at the scroll viewport's top edge) — re-measured
+  at 298.3×67.4dp once scrolled fully into view. Nothing under 48dp once clear of the viewport edge.
+- *Session list*: Open menu 48.0×48.0, Settings 48.0×48.0, New session 124.2×48.0, search field
+  379.4×48.0, session row 411.4×82.7, Pin 48.0×48.0. Nothing under 48dp, nothing clipped.
+- *Settings index*: all rows 57.9-58.3dp; "Memory & Context" initially read 411.4×11.8dp (clipped at
+  the bottom edge) — re-measured at 411.4×57.9dp scrolled into view.
+- *Appearance*: mode row 3×120-121×48.0, skin rows 379.4×66.7-67.0 each; "Select Ember skin"
+  initially read 379.4×21.0dp (clipped at the bottom edge) — re-measured at 379.4×66.7dp scrolled
+  into view.
+
+Font scale 1.3× (`adb shell settings put system font_scale 1.3`), screenshots pasted:
+`31-fontscale13-chat.png` (session list — this screenshot landed there first), `32-fontscale13-chat2.png`
+(chat), `33-fontscale13-settings.png` (settings index). Text scales up cleanly in all three; no
+overlap, no clipping beyond normal scroll truncation. Restored: `adb shell settings put system
+font_scale 1.0`, confirmed via `adb shell settings get system font_scale` → `1.0`.
+
+Colour match on the chat screen, sampled from the approval-card screenshots (`18-newapproval.png` dark,
+`29-approvalcard-light2.png` light) at pixel coordinates derived from the same `uiautomator` dump's
+bounds, against `resolve.test.ts`'s nous values:
+
+| Token | Dark expected | Dark sampled | Light expected | Light sampled |
+|---|---|---|---|---|
+| background | `#0d1015` | `#0d1015` | `#fefefe` | `#fefefe` |
+| card (assistant bubble) | `#0e0f12` | `#0e0f12` | `#fbfbfc` | `#fbfbfc` |
+| primary (Run button) | `#4a84fe` | `#4a84fe` | `#0053fd` | `#0053fd` |
+| border/destructive (approval card border) | `#cf2d56` | `#cf2d56` | `#cf2d56` | `#cf2d56` |
+| user bubble | `#0f1621` | `#0f1621` | `#fcfcfc` | `#fcfcfc` |
+
+All five sampled exactly (0 channels off, well inside ±1) in both modes. **M13 holds.**
