@@ -21,8 +21,28 @@ vi.mock('expo-secure-store', () => ({
 const { setActiveConnection } = await import('../connections/registry')
 const { setConnectionToken } = await import('../connections/secure')
 
-const { createCronJob, deleteCronJob, listCronJobs, pauseCronJob, resumeCronJob, triggerCronJob, updateCronJob } =
-  await import('./cron')
+const {
+  createCronJob,
+  deleteCronJob,
+  getCronDeliveryTargets,
+  listCronJobs,
+  pauseCronJob,
+  resumeCronJob,
+  triggerCronJob,
+  updateCronJob
+} = await import('./cron')
+
+// Recorded live (GET /api/cron/delivery-targets) from this milestone's
+// throwaway gateway — two seeded profiles (researcher, coder) each surface
+// their own bot-chat delivery target alongside the always-present "local".
+const DELIVERY_TARGETS_FIXTURE = {
+  targets: [
+    { home_env_var: null, home_target_set: true, id: 'local', name: 'Local (save only)' },
+    { home_env_var: null, home_target_set: true, id: 'bot-chat:default', name: 'Bot Chat (default)' },
+    { home_env_var: null, home_target_set: true, id: 'bot-chat:coder', name: 'Bot Chat (coder)' },
+    { home_env_var: null, home_target_set: true, id: 'bot-chat:researcher', name: 'Bot Chat (researcher)' }
+  ]
+}
 
 function jsonResponse(status: number, body: unknown) {
   return {
@@ -108,5 +128,23 @@ describe('src/api/cron', () => {
 
     expect(url).toContain('/api/cron/jobs/job-1')
     expect(init.method).toBe('DELETE')
+  })
+
+  it('getCronDeliveryTargets GETs the list, local always first', async () => {
+    global.fetch = vi.fn(async () => jsonResponse(200, DELIVERY_TARGETS_FIXTURE)) as unknown as typeof fetch
+
+    const result = await getCronDeliveryTargets()
+
+    const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+
+    expect(url).toContain('/api/cron/delivery-targets')
+    expect(init.method).toBe('GET')
+    expect(result).toEqual(DELIVERY_TARGETS_FIXTURE)
+    expect(result.targets[0]).toEqual({
+      home_env_var: null,
+      home_target_set: true,
+      id: 'local',
+      name: 'Local (save only)'
+    })
   })
 })
