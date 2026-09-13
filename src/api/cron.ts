@@ -17,17 +17,51 @@
  * below. The M10-era decision to leave these unwrapped stands corrected in
  * cause, not in effect until this milestone: `cron/[id].tsx` (M14) now
  * wraps and uses both.
+ *
+ * `CronBlueprint`/`CronBlueprintField` (M15 task 1): these two were briefly
+ * hand-added to the vendored `../upstream/types/hermes.ts` in M14
+ * (`e8156bf`) — a rule violation (upstream types are synced by
+ * `scripts/sync-upstream.mjs`, never hand-edited) that also happened to be
+ * wrong on the facts: `apps/desktop/src/types/hermes.ts` has never declared
+ * `CronBlueprint`/`CronBlueprintField` at any commit (checked the full
+ * history: only `AutomationBlueprint`/`AutomationBlueprintField` ever
+ * existed there). They describe `GET /api/cron/blueprints` /
+ * `POST /api/cron/blueprints/instantiate`'s JSON
+ * (`../hermes-agent/cron/blueprint_catalog.py`'s `blueprint_catalog_entry`,
+ * a superset of `blueprint_form_schema`) — a shape this app defined itself
+ * from the REST route, not a desktop type — so they live here, not in the
+ * vendored file. `type` is one of `'text' | 'enum' | 'time' | 'weekdays'` in
+ * practice (the catalog's own `BlueprintSlot.type`), kept as `string` since
+ * the server treats it as an open set.
  */
 
-import type {
-  CronBlueprint,
-  CronJob,
-  CronJobCreatePayload,
-  CronJobUpdates,
-  SessionInfo
-} from '../upstream/types/hermes'
+import type { CronJob, CronJobCreatePayload, CronJobUpdates, SessionInfo } from '../upstream/types/hermes'
 
 import { restRequest } from './rest'
+
+export interface CronBlueprintField {
+  default?: string
+  help?: string
+  label: string
+  name: string
+  optional?: boolean
+  options?: string[]
+  strict?: boolean
+  type: string
+}
+
+export interface CronBlueprint {
+  appUrl: string
+  category?: string
+  command: string
+  description?: string
+  fields: CronBlueprintField[]
+  key: string
+  schedule: string
+  scheduleHuman: string
+  tags?: string[]
+  title: string
+}
 
 function profileQuery(profile?: string): { profile?: string } {
   return profile ? { profile } : {}
