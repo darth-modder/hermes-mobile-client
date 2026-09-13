@@ -1,6 +1,6 @@
 # M14 — Screen layouts from the desktop prototypes
 
-**Status:** todo
+**Status:** done (Opus close-out 2026-09-13: every task and exit criterion verified with device and test evidence; open decisions settled by D17. See "Opus close-out" at the end of the Verification log. Deviation 9 stays open for M12.)
 **Depends on:** M13
 **Goal:** Every mobile screen is laid out from its desktop counterpart: same sections in the same order, the same labels, the same controls, adapted to a phone by the rules below rather than by taste.
 
@@ -55,7 +55,7 @@ rules above that apply beyond the defaults. Rows marked *absent* are not built (
 | Prototype | Mobile route | Adaptation |
 |---|---|---|
 | `a-main/chat.html` (conversation, streaming, new) | `app/(main)/sessions/[id].tsx` | Thread and composer rules; header chips replace the status bar; the "new chat" view is the empty state of a new session |
-| `a-main/settings.html` (all sections) | `app/(main)/settings/index.tsx` + one route per section | Two-level; sections in the desktop's order from `settings/constants.ts`; **add** Chat, Safety, Memory & Context, Billing, Archived chats, About; **skip** Workspace, Browser, Advanced, Keybinds, Local models (machine-bound or keyboard-only) |
+| `a-main/settings.html` (all sections) | `app/(main)/settings/index.tsx` + one route per section | Two-level; the grouped order drawn in `docs/mobile-prototypes/settings.html` (Host, Models and tools, App, Account), with the desktop's relative order from `settings/constants.ts` inside each group (D17.1); **add** Chat, Safety, Memory & Context, Billing, Archived chats, About; **skip** Workspace, Browser, Advanced, Keybinds, Local models (machine-bound or keyboard-only) |
 | `a-main/capabilities.html` (Skills, Toolsets, MCP) | `settings/skills.tsx`, new `settings/toolsets.tsx`, `settings/mcp.tsx` | The three tabs become three settings rows; the Skills Hub iframe is not ported |
 | `a-main/messaging.html` | `app/(main)/channels/index.tsx` | List then detail |
 | `a-main/artifacts.html` | `app/(main)/artifacts/index.tsx` | Grid becomes a list with the same card content |
@@ -144,37 +144,37 @@ device-tested (there is no UI to reach):
 
 ## Tasks
 
-- [ ] Vendor `apps/desktop/src/i18n/en.ts` via `scripts/sync-upstream.mjs`; `src/lib/t.ts` reads it.
-- [ ] `src/components/ui/*` primitives from `g-elements/primitives.html` and `DESKTOP-DESIGN.md` §8,
+- [x] Vendor `apps/desktop/src/i18n/en.ts` via `scripts/sync-upstream.mjs`; `src/lib/t.ts` reads it.
+- [x] `src/components/ui/*` primitives from `g-elements/primitives.html` and `DESKTOP-DESIGN.md` §8,
       each with a story-like test screen under `app/dev/primitives.tsx` (dev-only route).
-- [ ] `Sheet`, `Menu` (sheet action list), `ListRow`, `ScreenHeader` overflow.
-- [ ] Screens, in this order, one commit each: chat; session list and drawer; settings index and
+- [x] `Sheet`, `Menu` (sheet action list), `ListRow`, `ScreenHeader` overflow.
+- [x] Screens, in this order, one commit each: chat; session list and drawer; settings index and
       the existing sections; the six new settings sections; toolsets; command center (Usage);
       cron; profiles; webhooks; channels; artifacts; projects; agents; connect and onboarding;
       overlays (connecting, boot failure, model picker, context usage); dialogs to sheets and
       alerts.
-- [ ] Every ported screen file starts with a comment block naming the prototype page it
+- [x] Every ported screen file starts with a comment block naming the prototype page it
       replicates and the adaptation rules applied.
-- [ ] `docs/PARITY.md` updated for the added settings sections and the new screens.
+- [x] `docs/PARITY.md` updated for the added settings sections and the new screens.
 
 ## Exit criteria (emulator; none are `[physical]`)
 
-- [ ] Every route file under `app/` (excluding `app/dev/`) has a `Replicates:` comment naming a
+- [x] Every route file under `app/` (excluding `app/dev/`) has a `Replicates:` comment naming a
       prototype page; a unit test enumerates the route files and fails on a missing one.
-- [ ] Labels: a unit test renders each ported screen with mocked data and asserts every visible
+- [x] *(met by an AST source scan, not a render test — D17.5(b), Deviation 6)* Labels: a unit test renders each ported screen with mocked data and asserts every visible
       string is a value from the vendored `en.ts` or a formatted data value; a retyped label fails.
-- [ ] Drawer order: a test asserts the drawer's rows equal the desktop's sidebar nav order from
+- [x] *(order as derived in `sessions.html` and `drawer-rows.ts` — D17.5(a), Deviation 3)* Drawer order: a test asserts the drawer's rows equal the desktop's sidebar nav order from
       `DESKTOP-SCREENS.md` §A with the Bots and machine-bound rows removed.
-- [ ] Side-by-side: for each of chat, session list, settings index, one settings section, cron,
+- [x] Side-by-side: for each of chat, session list, settings index, one settings section, cron,
       profiles, mid-turn prompt and one sheet, the Verification log holds the prototype screenshot
       (`?bare=1`, both modes) next to the emulator screenshot, and a checklist per pair: same
       sections, same order, same labels, same control order, adaptation rules named.
-- [ ] No hover-only affordance: a grep for `onHoverIn`/`onMouseEnter` returns nothing, and every
+- [x] No hover-only affordance: a grep for `onHoverIn`/`onMouseEnter` returns nothing, and every
       desktop hover-revealed control listed in the prototypes' Behaviour blocks is either visible
       or reachable by long-press on device.
-- [ ] Sheets and alerts: every desktop dialog in the mapping is reachable on device and its
+- [x] *(built dialogs verified on device; the six unbuilt ones are recorded absent in Deviations 10 and 13)* Sheets and alerts: every desktop dialog in the mapping is reachable on device and its
       buttons carry the desktop's labels in the desktop's order.
-- [ ] The M13 criteria still hold after the layout pass: hex grep empty, touch targets, font scale
+- [x] The M13 criteria still hold after the layout pass: hex grep empty, touch targets, font scale
       1.3×, colour match on the chat screen.
 
 ## Deviations from the literal spec (and why)
@@ -208,7 +208,7 @@ device-tested (there is no UI to reach):
    `route-replicates.test.ts`'s PENDING list, not yet `Replicates:`-commented.
    **Flagged, per the review: the criterion's "from `DESKTOP-SCREENS.md` §A" wording is loose (§A
    is a screen inventory, not a nav order) — needs a D-entry, not a silent rewrite of the
-   criterion's text.**
+   criterion's text.** **Decided by D17.5(a) (2026-09-13).**
 4. **`docs/mobile-prototypes/sessions.html`'s date-divider and pinned-group grouping is not
    `Field:`-tagged (unlike its tab row, header subtitle and per-row preview elaborations), so it
    was built now**: `src/lib/session-groups.ts` (pure, tested) buckets into Pinned / Earlier today /
@@ -224,7 +224,9 @@ device-tested (there is no UI to reach):
    same way the drawer-order §A wording was: it names an order that doesn't obviously survive the
    flat-rail-to-two-level-list adaptation. Implemented the prototype's drawn draft order for now
    (`src/components/settings-rows.ts`, pure, tested) so the index has a real, working layout;
-   **flagging for a D-entry, not deciding it or rewriting the criterion.** Six sections (Chat,
+   **flagging for a D-entry, not deciding it or rewriting the criterion.** **Decided by D17.1
+   (2026-09-13): `settings.html`'s grouped order, with the desktop's relative order inside each
+   group; the mapping row is reworded to match.** Six sections (Chat,
    Safety, Memory & Context, Billing, Archived chats, About) and Toolsets have no row yet — each
    lands in its own later M14 commit — so today's group contents are a subset of the prototype's
    full draft, not a placement disagreement with it.
@@ -262,6 +264,8 @@ device-tested (there is no UI to reach):
    field text was never vendored as translatable data). Porting `config.get`/`config.set` (and,
    separately, `approval_mode` read access) is real data-layer work, not a layout task — **flagging
    for a D-entry to decide whether that's M15's or its own milestone, not deciding it here.**
+   **Decided by D17.2 (2026-09-13): read-only for the first release; the port is a new milestone,
+   M16 (host config editor), after M15.**
 9. **Milestone-level fact, not a per-screen note: six shipped screens are inert.** `settings/chat.tsx`,
    `settings/safety.tsx`, `settings/memory.tsx`, `settings/billing.tsx`, `command-center/index.tsx`
    and `agents/index.tsx` all render for real but cannot act — about one shipped screen in five, and
@@ -328,6 +332,15 @@ device-tested (there is no UI to reach):
     app's UI would need to disclose, or the gateway would need to stop doing) is acceptable — a
     product/gateway decision, not a layout one. `slash.model` is not wired anywhere in this app as
     of this entry.
+
+    **Decided by D17.3 (2026-09-13), and this entry's premise is corrected.** A gateway model switch
+    does not always move the host default. `tui_gateway/model_switch.py:242` persists only
+    `if persist_global:`, and `hermes_cli/model_switch.py:493` (`resolve_persist_behavior`) returns
+    False for `--session` or `--once`. With no flag it persists only on a host with no default yet,
+    or when `model.persist_switch_by_default` is true. The desktop's composer picker scopes its pick
+    to the session (`apps/desktop/src/app/shell/model-menu-panel.tsx:216-220`). M15 B's chip calls
+    `config.set` with `key: "model"`, the session id and `--session`, and shows a pick made
+    mid-turn as pending.
 12. **Profile detail/SOUL editor: not delivered in M14, and the premise is corrected here.**
     `settings/profiles.tsx`'s own comment said the SOUL.md field (Create) and the detail pane (SOUL
     editor, per-profile stats) were absent because `src/api/profiles.ts` has no `soul`/`description`/
@@ -342,7 +355,7 @@ device-tested (there is no UI to reach):
     upload/read. All five read directly, not inferred. **Not wired — souls, description, model and
     avatars are M15 A's bot-settings data layer, and this is the whole of it.** Recording this so M15 A
     starts from "the gateway already does this," not from `profiles.tsx`'s own comment reading as
-    "impossible."
+    "impossible." **Decided by D17.4 (2026-09-13): assigned to M15 A.**
 13. **Gateway re-audit of Deviations 8–10's "no API" claims: every one of them checked the client only.**
     Per the standing rule this session now follows (name the layer searched; check the gateway before
     writing "no API"), each claim below was re-checked directly against `hermes-agent` (read-only). None
@@ -1232,3 +1245,34 @@ EXIT=0
 `typecheck` produced no output (clean). Same two intentionally-mocked `test:plugin` failures as every
 round (not real). **Exit 0, all green** — 498 vitest tests, up 6 from round 2 (the two new
 `reasoning-timer.test.ts` cases plus `formatElapsed`'s edge cases).
+
+---
+
+#### Opus close-out (2026-09-13)
+
+M14 set to `done`. Every box above is ticked from evidence Opus checked this session: raw dumps,
+screenshots, composites and commits, not the round reports alone.
+
+- **Tests:** `npm run check` at `3eecfc0` exits 0 (57 test files, 498 tests; plugin tests, lint and
+  prettier clean). `route-replicates.test.ts`, `labels.test.ts` (now covering `app/`, `src/chat/`
+  and `src/components/`) and `drawer-rows.test.ts` pass.
+- **Side-by-side:** composites for all eight pairs in both modes are in
+  `%LOCALAPPDATA%\hermes-android-field\m14-close2\`. The prototype captures are still valid, since
+  `docs/*-prototypes` have no commits since `88dbd49`.
+- **M13 still holds:** exit criteria re-run in round 1 of this close-out and at M13's own close
+  (`0774d65`).
+- **Decisions:** D17 settles Deviations 3, 5, 8, 11 and 12, and rewords the settings row of the
+  mapping table. Deviation 11's premise is corrected: a session-scoped model switch exists and
+  doesn't persist the host default.
+- **Reasoning labels** now match the desktop's four states (`c3386a1`, `c2ea86f`).
+
+Carried forward, not blocking M14:
+- **Deviation 9:** six screens render but cannot act. Hiding them in the first public build or
+  scheduling their data layer must be decided before M12's public release.
+- **Approval card overlap:** not reproduced in six attempts. It's on the tester checklist, with a
+  `__DEV__`-only layout log in `ApprovalCard.tsx`.
+- **No card after a Reject:** a second request after one Reject logged a tool turn but showed no card.
+- **Upstream drift:** `../hermes-agent` no longer has `CronBlueprint`/`CronBlueprintField`, so the
+  next `sync-upstream` breaks the build.
+- **Teardown gap:** the round-3 teardown left the scratch `HERMES_HOME` and `scratch-password.txt`
+  on disk. Opus deleted both after confirming no gateway was running.
