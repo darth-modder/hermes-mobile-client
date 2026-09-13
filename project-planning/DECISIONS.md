@@ -486,3 +486,56 @@ All of those are cheap relative to what is done, and the bots framing is a thin 
 the app already fetches. The order (M13 close-out, M14 layouts, then M15) holds because M15's
 screens are built from M14's primitives and rules; starting M15's data layer early costs
 nothing and shortens the tail.
+
+## D17 — M14 close-out: settings order, read-only host config, per-chat model scope, profile editor, two criterion wordings (2026-09-13)
+
+**Decision.** Five parts.
+
+1. **Settings index order.** The phone's settings index uses the grouped order drawn in
+   `docs/mobile-prototypes/settings.html`: Host, Models and tools, App, Account. Inside each group,
+   sections keep the desktop's relative order from `settings/constants.ts`. M14's mapping row is
+   reworded to name `settings.html`. `src/components/settings-rows.ts` (tested) already implements
+   this order.
+2. **Chat, Safety and Memory & Context stay read-only for the first release.** Their screens list
+   the desktop's fields as inert rows, and the index shows them as `Host-managed`. Porting
+   `config.get`/`config.set` and `approval_mode` read access becomes a new milestone, **M16 (host
+   config editor)**, after M15. It is not an M15 slice. M16's file is written before M15 closes.
+3. **A per-chat model pick changes only that chat.** M15 B's composer model chip follows the
+   desktop's composer picker, which "never persists the profile default"
+   (`apps/desktop/src/app/shell/model-menu-panel.tsx:216-220`).
+   - It calls the gateway's `config.set` with `key: "model"` and the session's id
+     (`tui_gateway/methods_config_set.py:107-135`).
+   - It passes `--session` explicitly. Without a flag, `resolve_persist_behavior`
+     (`hermes_cli/model_switch.py:493`) writes the pick to `config.yaml` in two cases: when the host
+     has no `model.default` or `model.provider` yet, or when `model.persist_switch_by_default` is
+     true.
+   - A pick made mid-turn is held by the gateway until the turn ends
+     (`methods_config_set.py:116-117`); the chip shows it as pending.
+   - `/model` and Settings › Models remain the way to change the host default.
+
+   This corrects M14 Deviation 11, which said a gateway model switch always moves the host default.
+4. **The profile detail and SOUL editor belong to M15 A**, as the bot-settings data layer, built on
+   `profiles.describe`, `profiles.configure`, `profiles.set_asset` and `profiles.get_asset` (gateway
+   RPCs 5063–5066). M14 does not deliver them.
+5. **Two M14 exit-criterion wordings, as accepted in the 2026-09-12 review.**
+   (a) *Drawer order* is asserted against the order derived in
+   `docs/mobile-prototypes/sessions.html` and `src/components/drawer-rows.ts`. `DESKTOP-SCREENS.md` §A
+   is a screen inventory, not a nav order.
+   (b) *Labels* is met by an AST scan of the source (`src/lib/labels.test.ts`, covering `app/`,
+   `src/chat/` and `src/components/`), with `src/lib/strings.mobile.ts` as the only whitelist. This
+   project's vitest setup renders no `.tsx` components, so a render test isn't possible. The
+   substance is unchanged: a retyped label fails.
+
+**Reasoning.** All five were flagged in M14 as needing a decision; none is a layout question.
+- The desktop's flat settings rail doesn't survive becoming a two-level phone list.
+- A read-only screen that says what it can't do is honest. A config editor is data-layer work and
+  would delay M15.
+- Scoping the model pick to the session matches the desktop and avoids a silent side effect on the
+  host. The explicit `--session` guards the one case where the gateway persists by default.
+- Recording the two criterion wordings stops a later reader from treating a verified criterion as
+  unmet.
+
+**Not decided here:** M14 Deviation 9, the six screens that render but cannot act yet (Chat, Safety,
+Memory & Context, Billing, Command center, Agents). The options are to schedule their data-layer
+catch-up, or to hide them in the first public build. It must be decided before M12's public
+release. It does not block M14.
