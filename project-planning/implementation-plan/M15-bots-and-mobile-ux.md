@@ -139,8 +139,164 @@ and the gateway contract only.
 
 ## Deviations from the literal spec (and why)
 
-(none yet)
+1. **Task 1's premise was wrong, not just its symptom.** The task described
+   this as `../hermes-agent` having renamed/dropped `CronBlueprint`/
+   `CronBlueprintField` out from under `src/api/cron.ts`. Checked directly:
+   `../hermes-agent`'s checkout is at `b973068c60ae92c1928041cb6a8e53a80bcf9c4c`,
+   the exact commit `src/upstream/UPSTREAM.json` already records — not a
+   different branch, not a newer commit. `apps/desktop/src/types/hermes.ts`
+   has never declared `CronBlueprint`/`CronBlueprintField` at any commit in
+   its history (only `AutomationBlueprint`/`AutomationBlueprintField` ever
+   existed there). The actual defect: M14 commit `e8156bf` hand-added those
+   two interfaces directly into the vendored `src/upstream/types/hermes.ts`
+   — a rule violation (upstream files are synced by
+   `scripts/sync-upstream.mjs`, never hand-edited) that would have been
+   silently reverted by the next sync, breaking `cron.ts`'s imports with no
+   warning. Fixed by moving both interfaces into `src/api/cron.ts` itself
+   (they describe a REST route's JSON, not a desktop type, so they don't
+   belong in the vendored file either way) and re-running the sync clean.
+2. **Task 3's "gains templates" was already built.** M14 (`e8156bf`, the same
+   commit as #1) had already wired `listCronBlueprints`/
+   `instantiateCronBlueprint` against `/api/cron/blueprints` — the desktop's
+   own UI calls this same `AutomationBlueprint` feature "templates" in its
+   copy (`apps/desktop/src/app/cron/index.tsx:1216`, the blueprint picker
+   labelled "Start from..."), and `createCronJob`/`updateCronJob`'s `deliver`
+   field pre-existed too. The only genuinely missing piece was the delivery-
+   target list (`getCronDeliveryTargets` / `GET /api/cron/delivery-targets`),
+   which task 3 added.
+3. **`profiles.configure` cannot clear an existing model pin.** Checked
+   directly: `_configure_model` (`methods_profiles.py:482-501`) only ever
+   writes a pin — `if not (model and provider): return None` no-ops whenever
+   either is missing, with no sentinel value that clears one back to
+   "inherit the host default". `src/api/bots.ts`'s `ConfigureBotPatch.model:
+   null` therefore can only mean "leave the current pin alone," never
+   "unpin" — documented in that file's header and exercised by a test
+   (`configureBot` sends neither `model` nor `provider` for `model: null`).
+   Not fixed here: an unpin action needs either a gateway change or writing
+   the profile's `config.yaml` some other way neither `profiles.describe`
+   nor `profiles.configure` exposes. Flagging for a product/gateway decision
+   before a bot-settings screen ships a "reset to default" control, rather
+   than inventing a workaround.
 
 ## Verification log
 
-(none yet)
+### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
+
+**Scope.** The three †-marked data-layer tasks (`src/api/{cron,models,bots}.ts`)
+plus avatars, from `18c37f3` (M14 close-out) on branch `m15-bots-mobile-ux`,
+worktree `D:\Stuff\Code\git\hermes-android-m15`. No screens this round.
+
+**Throwaway gateway.** Fresh scratch `HERMES_HOME` under `%TEMP%\hermes-m15-home`
+(never the user's own `HERMES_HOME`), `config.yaml` pinning
+`model.default: mimo-v2.5` / `provider: opencode-go`, two seeded profiles
+(`researcher`, `coder`), `hermes serve --port 9130 --skip-build` on loopback
+(`auth_required: false`), the auto-generated dashboard session token used for
+both REST and the `/api/ws` query-string token-mode dial — never Tailscale,
+never `--host 0.0.0.0`, never the real `gateway.example.org` (Hone).
+
+**Task 1 (cron types drift).** `node scripts/sync-upstream.mjs` after the fix:
+`types/hermes.ts` reported `(unchanged)`. `git status --short` after the sync
+showed only the three files this task edited (`src/api/cron.ts`,
+`app/(main)/cron/index.tsx`, `src/upstream/types/hermes.ts`'s two-interface
+removal) — no unintended diff from the sync itself. `npm run check`: green
+(typecheck, 498/498 vitest at the time, 52 Python, lint/format).
+
+**Task 2 (`src/api/models.ts`, per-session model/effort).** Live against the
+throwaway gateway: created two sessions (profiles `researcher` and `coder`,
+`source: 'android'`), ran one trivial turn on each to build their agents
+(`config.set` only pushes a live `session.info` once a session has an agent —
+`_set_reasoning`'s own `if session and session.get("agent") is not None`
+gate), then:
+
+```
+model.default before anything: mimo-v2.5
+session A model before switch: mimo-v2.5
+session B model before switch: mimo-v2.5
+
+config.set(model) RAW RESPONSE:
+{ "key": "model", "value": "deepseek-v4-flash", "warning": "",
+  "confirm_required": false, "confirm_message": "", "scope": "session" }
+
+session A model AFTER switch (session.info): deepseek-v4-flash
+session A provider AFTER switch: opencode-go
+session B model AFTER switch (should be unchanged): mimo-v2.5
+model.default AFTER switch (should be unchanged): mimo-v2.5
+
+config.set(reasoning) RAW RESPONSE:
+{ "key": "reasoning", "value": "high" }
+
+session A reasoning_effort AFTER switch: high
+session B reasoning_effort AFTER switch (should be unchanged): (empty)
+model.default AFTER both switches (should be unchanged): mimo-v2.5
+```
+
+A separate run captured the mid-turn "stashed" response live (a turn in
+flight, switched mid-stream): `{"key":"model","value":"deepseek-v4-flash",
+"warning":"","confirm_required":false,"confirm_message":"","scope":"session",
+"deferred":true}` — matches the fixture used in `src/api/models.test.ts`
+exactly. `npm run check`: green (504/504 vitest, rest unchanged).
+
+**Task 3 (`getCronDeliveryTargets`).** Recorded live:
+`GET /api/cron/delivery-targets` → `{"targets":[{"id":"local","name":"Local
+(save only)","home_target_set":true,"home_env_var":null},{"id":"bot-chat:
+default",...},{"id":"bot-chat:coder",...},{"id":"bot-chat:researcher",...}]}`
+— `local` first, then each seeded profile's own bot-chat target. `npm run
+check`: green (505/505 vitest).
+
+**Task 4 (`src/api/bots.ts`).** Two live checks, both against the same
+throwaway gateway:
+
+*Soul/description round-trip.* `profiles.configure(researcher, {description:
+"Deep research bot v2", soul: "You are a meticulous researcher who cites
+sources."})` → `{"ok":true,"applied":{"soul":true,"description":true}}`, then
+`profiles.describe(researcher)` read back: `soul matches what we wrote: true`,
+`description matches: true`. Also round-tripped `profiles.set_asset`/
+`get_asset` with a tiny PNG (byte-for-byte `data` match) and `clear: true`
+(`removed: 1`).
+
+*Canonical chat resolution*, a Node script running `bots.ts`'s exact RPC
+sequence (`session.list` → `session.create` → `session.title`, same method
+names and params) against both seeded profiles:
+
+```
+=== first resolve (should CREATE) ===
+researcher canonical chat id: 20260913_230725_89d257
+coder canonical chat id: 20260913_230725_da6451
+distinct ids for distinct profiles: true
+
+=== second resolve (should ADOPT the same id, not mint a new one) ===
+researcher second call: 20260913_230725_89d257 same as first: true
+coder second call: 20260913_230725_da6451 same as first: true
+
+=== profiles.list roster now reports canonical_session for both ===
+coder -> canonical_session.id: 20260913_230725_da6451 resolved_id: 20260913_230725_da6451
+researcher -> canonical_session.id: 20260913_230725_89d257 resolved_id: 20260913_230725_89d257
+
+=== third resolve, passing the roster canonical_session.id hint (fail-closed path exercised) ===
+researcher third call: 20260913_230725_89d257 still consistent: true
+```
+
+Our resolution's id equals `profiles.list`'s own server-computed
+`canonical_session` for both profiles, and is idempotent (adopts, never
+re-mints). `npm run check`: green (536/536 vitest).
+
+**Task 5 (avatars).** `blobatar@2.0.0` installed (MIT, matches
+`apps/desktop/package.json:113`). `scripts/gen-bot-avatar-fixtures.mjs`
+imports `blobatar/blob` directly (the same import the desktop's
+`blobatarSvg` re-export resolves to) and generates
+`src/lib/__fixtures__/bot-avatar.json` independently of
+`src/lib/bot-avatar.ts`'s own seed-resolution port; `src/lib/bot-avatar.test.ts`
+asserts `botAvatarSvg` produces byte-identical SVG strings against that
+fixture for every `parseBlobShape` branch (plain name-seed, locked seed,
+locked seed + pinned silhouette, pinned silhouette with the seed still
+following the name), all passing. No render test of `BotAvatar.tsx` itself —
+this project's vitest setup renders no `.tsx` components (M14's own
+established limitation), and no screen mounts it yet regardless.
+
+**Task 6.** `npm run check` after the last commit (`e2b3bfd`): typecheck
+clean, 536/536 vitest, 52/52 Python, lint/format clean, exit code 0.
+
+**Not attempted this round:** any of M15's screen tasks (Bot settings sheet,
+Composer chips, Tasks tab screen, pairing flow, gestures) — out of scope per
+this round's brief ("the three data-layer tasks marked †, plus avatars. No
+new screens this round").
