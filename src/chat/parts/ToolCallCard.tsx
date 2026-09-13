@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
+import { ChevronDown, ChevronRight } from '../../lib/icons'
+import { useTheme } from '../../theme/provider'
+import { radius, type } from '../../theme/type'
+
 import { CodeBlock } from './CodeBlock'
 
 export interface ToolCallPart {
@@ -31,6 +35,7 @@ function stringField(record: unknown, key: string): string | undefined {
  * stamped alongside a result/completedAt/isError, never on its own).
  */
 export function ToolCallCard({ part }: { part: ToolCallPart }) {
+  const tokens = useTheme()
   const [expanded, setExpanded] = useState(false)
   const running = part.completedAt === undefined
   const preview = stringField(part.args, 'preview') ?? stringField(part.args, 'context')
@@ -38,19 +43,44 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
   const inlineDiff = stringField(part.result, 'inline_diff')
 
   return (
-    <View style={[styles.container, part.isError ? styles.containerError : null]}>
-      <TouchableOpacity onPress={() => setExpanded(current => !current)} style={styles.header}>
-        {running ? <ActivityIndicator color="#8a8a99" size="small" style={styles.spinner} /> : null}
-        <Text style={styles.name}>{part.toolName}</Text>
-        {part.isError ? <Text style={styles.errorBadge}>error</Text> : null}
-        <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: tokens.widgetSurface,
+          borderColor: part.isError ? tokens.destructive : tokens.border
+        }
+      ]}
+    >
+      <TouchableOpacity
+        accessibilityLabel={`${part.toolName} tool call`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        hitSlop={{ bottom: 14, top: 14 }}
+        onPress={() => setExpanded(current => !current)}
+        style={styles.header}
+      >
+        {running ? <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.spinner} /> : null}
+        <Text style={[styles.name, { color: tokens.foreground }]}>{part.toolName}</Text>
+        {part.isError ? (
+          <Text
+            style={[styles.errorBadge, { backgroundColor: tokens.destructive, color: tokens.destructiveForeground }]}
+          >
+            error
+          </Text>
+        ) : null}
+        {expanded ? (
+          <ChevronDown color={tokens.textTertiary} size={14} />
+        ) : (
+          <ChevronRight color={tokens.textTertiary} size={14} />
+        )}
       </TouchableOpacity>
       {preview ? (
-        <Text numberOfLines={expanded ? undefined : 2} style={styles.preview}>
+        <Text numberOfLines={expanded ? undefined : 2} style={[styles.preview, { color: tokens.mutedForeground }]}>
           {preview}
         </Text>
       ) : null}
-      {summary ? <Text style={styles.summary}>{summary}</Text> : null}
+      {summary ? <Text style={[styles.summary, { color: tokens.mutedForeground }]}>{summary}</Text> : null}
       {expanded ? (
         <View style={styles.body}>
           {part.args ? <CodeBlock code={JSON.stringify(part.args, null, 2)} language="json" /> : null}
@@ -65,26 +95,15 @@ const styles = StyleSheet.create({
   body: {
     marginTop: 6
   },
-  chevron: {
-    color: '#6a737d',
-    fontSize: 12
-  },
   container: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 4,
     padding: 10
   },
-  containerError: {
-    borderColor: '#e06c75'
-  },
   errorBadge: {
-    backgroundColor: '#e06c75',
-    borderRadius: 4,
-    color: '#0b0b0f',
-    fontSize: 11,
+    ...type.caption,
+    borderRadius: radius.icon,
     fontWeight: '700',
     paddingHorizontal: 6,
     paddingVertical: 1
@@ -92,26 +111,23 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8
+    gap: 8,
+    minHeight: 48
   },
   name: {
-    color: '#f2f2f5',
+    ...type.mono,
     flex: 1,
-    fontFamily: 'monospace',
-    fontSize: 13,
     fontWeight: '600'
   },
   preview: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   spinner: {
     marginRight: 2
   },
   summary: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   }
 })

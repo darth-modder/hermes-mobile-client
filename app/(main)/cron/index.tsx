@@ -1,36 +1,54 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import {
-  createCronJob,
-  deleteCronJob,
-  listCronJobs,
-  pauseCronJob,
-  resumeCronJob,
-  triggerCronJob
-} from '../../../src/api/cron'
+import { createCronJob, instantiateCronBlueprint, listCronBlueprints, listCronJobs } from '../../../src/api/cron'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { Button } from '../../../src/components/ui/Button'
+import { Input } from '../../../src/components/ui/Input'
+import { ListRow, ListRowSeparator } from '../../../src/components/ui/ListRow'
+import { Menu } from '../../../src/components/ui/Menu'
+import { Sheet } from '../../../src/components/ui/Sheet'
+import { t } from '../../../src/lib/t'
 import { $cronChangeTick } from '../../../src/store/live-sync'
 import { $activeProfile } from '../../../src/store/profile'
-import { createCronTriggerController } from '../../../src/upstream/shared/cron-trigger-controller'
-import type { CronJob } from '../../../src/upstream/types/hermes'
+import { useTheme } from '../../../src/theme/provider'
+import { radius, type } from '../../../src/theme/type'
+import type { CronBlueprintField, CronJob } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY_ROOT = 'cron-jobs'
 
+// Replicates: docs/desktop-prototypes/a-main/cron.html (PanelList + PanelDetail
+// anatomy) — this screen is now the list half; `cron/[id].tsx` (M14) is the
+// detail half, and this file's own manual create form plus the Blueprints
+// sheet below cover the mapping's third element, "templates as a sheet"
+// (t.cron.blueprints, t.cron.tabs — the desktop shows Jobs/Blueprints as
+// tabs on one screen; M14's own adaptation table calls for a sheet instead,
+// so the tab vocabulary is reused for the sheet's own copy, not for a
+// literal tab strip). Cron's own Deviation (M14-screen-layouts.md) records
+// why this was one scrolling list before this commit and what changed.
 /**
- * Cron screen (M10). `/api/cron/*` (src/api/cron.ts) for CRUD; the list
- * refetches on the `cron.changed` gateway broadcast (src/store/live-sync.ts)
- * — the exit criterion's "list updates live" — rather than polling. Trigger
- * presses go through the vendored `cron-trigger-controller.ts`
- * (src/upstream/shared) so a double-tap on the same job's Trigger button
- * can't fire it twice from this one mounted screen; the durable claim on the
- * backend is still the real cross-client guard (the controller's own doc
- * comment).
+ * Cron list screen (M10, M14 list/detail split). `/api/cron/*`
+ * (src/api/cron.ts) for CRUD; the list refetches on the `cron.changed`
+ * gateway broadcast (src/store/live-sync.ts) — the exit criterion's "list
+ * updates live" — rather than polling. Row actions (trigger/pause/delete)
+ * moved to the detail screen; this list is tap-through plus create.
  */
 export default function CronScreen() {
+  const tokens = useTheme()
+  const router = useRouter()
   const queryClient = useQueryClient()
   const activeProfile = useStore($activeProfile)
   const profile = activeProfile || undefined
@@ -39,24 +57,11 @@ export default function CronScreen() {
   const [prompt, setPrompt] = useState('')
   const [schedule, setSchedule] = useState('')
   const [name, setName] = useState('')
-  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
-  const [triggerMessages, setTriggerMessages] = useState<Record<string, string>>({})
 
-  const triggerController = useRef(
-    createCronTriggerController((key, running) => {
-      setRunningIds(current => {
-        const next = new Set(current)
-
-        if (running) {
-          next.add(key)
-        } else {
-          next.delete(key)
-        }
-
-        return next
-      })
-    })
-  ).current
+  const [blueprintsOpen, setBlueprintsOpen] = useState(false)
+  const [selectedBlueprintKey, setSelectedBlueprintKey] = useState<null | string>(null)
+  const [blueprintValues, setBlueprintValues] = useState<Record<string, string>>({})
+  const [openEnumField, setOpenEnumField] = useState<null | string>(null)
 
   const jobsQuery = useQuery({ queryFn: () => listCronJobs(profile), queryKey })
 
@@ -90,197 +95,283 @@ export default function CronScreen() {
     }
   })
 
-  const pauseMutation = useMutation({
-    mutationFn: (job: CronJob) => (job.enabled ? pauseCronJob(job.id, profile) : resumeCronJob(job.id, profile)),
-    onSuccess: invalidate
+  const blueprintsQuery = useQuery({
+    enabled: blueprintsOpen,
+    queryFn: () => listCronBlueprints(),
+    queryKey: ['cron-blueprints']
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteCronJob(id, profile),
-    onSuccess: invalidate
+  const instantiateMutation = useMutation({
+    mutationFn: (blueprintKey: string) => instantiateCronBlueprint(blueprintKey, blueprintValues, profile),
+    onSuccess: () => {
+      setBlueprintsOpen(false)
+      setSelectedBlueprintKey(null)
+      setBlueprintValues({})
+      invalidate()
+    }
   })
 
-  const onTrigger = (job: CronJob) => {
-    void triggerController
-      .run(job.id, () => triggerCronJob(job.id, profile))
-      .then(result => {
-        if (!result.started) {
-          return
-        }
+  const blueprints = blueprintsQuery.data?.blueprints ?? []
+  const selectedBlueprint = blueprints.find(b => b.key === selectedBlueprintKey) ?? null
 
-        setTriggerMessages(current => ({ ...current, [job.id]: `Ran — ${result.value?.state ?? 'ok'}` }))
-        invalidate()
-      })
-      .catch(err => {
-        setTriggerMessages(current => ({
-          ...current,
-          [job.id]: err instanceof Error ? err.message : String(err)
-        }))
-      })
+  const openBlueprint = (key: string, fields: CronBlueprintField[]) => {
+    setSelectedBlueprintKey(key)
+    setBlueprintValues(Object.fromEntries(fields.map(field => [field.name, field.default ?? ''])))
   }
 
-  const confirmDelete = (job: CronJob) => {
-    Alert.alert('Delete cron job?', job.name || job.id, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: () => deleteMutation.mutate(job.id), style: 'destructive', text: 'Delete' }
-    ])
+  const closeBlueprints = () => {
+    setBlueprintsOpen(false)
+    setSelectedBlueprintKey(null)
+    setBlueprintValues({})
   }
 
   const jobs = jobsQuery.data ?? []
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.container}>
-      <ScreenHeader title="Cron" />
-      <ScrollView contentContainerStyle={styles.content}>
-        {jobsQuery.isLoading ? <ActivityIndicator color="#8a8a99" style={styles.spinner} /> : null}
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <ScreenHeader title={t.cron.title} />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void jobsQuery.refetch()}
+            refreshing={jobsQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
+        {jobsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} style={styles.spinner} /> : null}
         {jobsQuery.isError ? (
-          <Text style={styles.errorText}>
-            {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
-          </Text>
-        ) : null}
-        {jobs.length === 0 && !jobsQuery.isLoading ? <Text style={styles.sectionHint}>No cron jobs yet.</Text> : null}
-
-        {jobs.map(job => (
-          <View key={job.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.rowTitle}>{job.name || job.id}</Text>
-              <Text style={job.enabled ? styles.statusEnabled : styles.statusDisabled}>
-                {job.state || (job.enabled ? 'enabled' : 'paused')}
-              </Text>
-            </View>
-            <Text numberOfLines={1} style={styles.rowSubtitle}>
-              {job.schedule_display || job.schedule?.display || job.schedule?.expr || '—'}
+          <View style={styles.errorBlock}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
             </Text>
-            {job.prompt ? (
-              <Text numberOfLines={2} style={styles.rowPrompt}>
-                {job.prompt}
-              </Text>
-            ) : null}
-            {job.last_error ? <Text style={styles.errorText}>{job.last_error}</Text> : null}
-            {triggerMessages[job.id] ? <Text style={styles.testMessage}>{triggerMessages[job.id]}</Text> : null}
-            <View style={styles.actions}>
-              <TouchableOpacity
-                disabled={runningIds.has(job.id)}
-                onPress={() => onTrigger(job)}
-                style={styles.actionButton}
-              >
-                <Text style={styles.actionText}>{runningIds.has(job.id) ? 'Running…' : 'Trigger'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => pauseMutation.mutate(job)} style={styles.actionButton}>
-                <Text style={styles.actionText}>{job.enabled ? 'Pause' : 'Resume'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => confirmDelete(job)} style={styles.actionButton}>
-                <Text style={styles.destructiveText}>Delete</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              hitSlop={8}
+              onPress={() => void jobsQuery.refetch()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {jobs.length === 0 && !jobsQuery.isLoading && !jobsQuery.isError ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.cron.emptyTitleNew}</Text>
+        ) : null}
+
+        {jobs.map((job: CronJob, index) => (
+          <View key={job.id}>
+            <ListRow
+              onPress={() => router.push({ params: { id: job.id }, pathname: '/(main)/cron/[id]' })}
+              subtitle={job.schedule_display || job.schedule?.display || job.schedule?.expr || '—'}
+              title={job.name || job.id}
+              value={job.state || (job.enabled ? t.cron.states.enabled : t.cron.states.paused)}
+            />
+            {index < jobs.length - 1 ? <ListRowSeparator /> : null}
           </View>
         ))}
 
-        <Text style={styles.sectionTitle}>New job</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.cron.blueprints.startFrom}</Text>
+        <TouchableOpacity
+          onPress={() => setBlueprintsOpen(true)}
+          style={[styles.addButton, styles.secondaryButton, { borderColor: tokens.border }]}
+        >
+          <Text style={[styles.addButtonText, { color: tokens.foreground }]}>{t.cron.blueprints.subtitle}</Text>
+        </TouchableOpacity>
+
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{t.cron.newCron}</Text>
         <TextInput
           onChangeText={setName}
-          placeholder="Name (optional)"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholder={t.cron.namePlaceholder}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={name}
         />
         <TextInput
           multiline
           numberOfLines={3}
           onChangeText={setPrompt}
-          placeholder="Prompt"
-          placeholderTextColor="#5a5a66"
-          style={[styles.input, styles.multilineInput]}
+          placeholder={t.cron.promptPlaceholder}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            styles.multilineInput,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={prompt}
         />
         <TextInput
           autoCapitalize="none"
           onChangeText={setSchedule}
-          placeholder="Schedule (cron expr, e.g. 0 9 * * *)"
-          placeholderTextColor="#5a5a66"
-          style={styles.input}
+          placeholder={t.cron.customPlaceholder}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={schedule}
         />
         <TouchableOpacity
           disabled={createMutation.isPending || !prompt.trim() || !schedule.trim()}
           onPress={() => createMutation.mutate()}
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
         >
-          <Text style={styles.addButtonText}>{createMutation.isPending ? 'Creating…' : 'Create job'}</Text>
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            {createMutation.isPending ? t.webhooks.creating : t.cron.createAction}
+          </Text>
         </TouchableOpacity>
         {createMutation.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {createMutation.error instanceof Error ? createMutation.error.message : String(createMutation.error)}
           </Text>
         ) : null}
       </ScrollView>
+
+      <Sheet
+        onClose={closeBlueprints}
+        title={selectedBlueprint ? selectedBlueprint.title : t.cron.blueprints.tab}
+        visible={blueprintsOpen && !selectedBlueprint}
+      >
+        {blueprintsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
+        {blueprintsQuery.isError ? (
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{t.cron.blueprints.failedLoad}</Text>
+        ) : null}
+        {!blueprintsQuery.isLoading && blueprints.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.cron.blueprints.emptyDesc}</Text>
+        ) : null}
+        {blueprints.map((blueprint, index) => (
+          <View key={blueprint.key}>
+            <ListRow
+              onPress={() => openBlueprint(blueprint.key, blueprint.fields)}
+              subtitle={blueprint.scheduleHuman}
+              title={blueprint.title}
+            />
+            {index < blueprints.length - 1 ? <ListRowSeparator /> : null}
+          </View>
+        ))}
+      </Sheet>
+
+      <Sheet
+        footer={
+          selectedBlueprint ? (
+            <>
+              <Button block onPress={() => setSelectedBlueprintKey(null)} variant="secondary">
+                {t.common.cancel}
+              </Button>
+              <Button
+                block
+                disabled={instantiateMutation.isPending}
+                loading={instantiateMutation.isPending}
+                onPress={() => instantiateMutation.mutate(selectedBlueprint.key)}
+              >
+                {t.cron.blueprints.scheduleIt}
+              </Button>
+            </>
+          ) : null
+        }
+        onClose={() => setSelectedBlueprintKey(null)}
+        title={selectedBlueprint?.title}
+        visible={selectedBlueprint !== null}
+      >
+        {selectedBlueprint ? (
+          <>
+            <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.cron.blueprints.dialogDesc}</Text>
+            {/* CronBlueprintField.type is 'text' | 'enum' | 'time' | 'weekdays' in the
+                catalog (checked cron/blueprint_catalog.py directly). Only 'enum' gets a
+                picker (Menu, from field.options); 'time'/'weekdays' fall through to a
+                plain text Input rather than a dedicated time-picker/weekday-toggle — a
+                deliberate scope call for this pass, not an oversight: both are rare next
+                to 'text'/'enum' across the catalog and a free-text value still reaches
+                the same server-side validation (BlueprintFillError surfaces inline). */}
+            {selectedBlueprint.fields.map(field =>
+              field.type === 'enum' ? (
+                <TouchableOpacity
+                  key={field.name}
+                  onPress={() => setOpenEnumField(field.name)}
+                  style={styles.enumField}
+                >
+                  <Input
+                    editable={false}
+                    label={field.label}
+                    pointerEvents="none"
+                    value={blueprintValues[field.name] ?? ''}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <Input
+                  key={field.name}
+                  label={field.label}
+                  onChangeText={value => setBlueprintValues(current => ({ ...current, [field.name]: value }))}
+                  value={blueprintValues[field.name] ?? ''}
+                />
+              )
+            )}
+            {selectedBlueprint.fields
+              .filter(field => field.type === 'enum')
+              .map(field => (
+                <Menu
+                  items={(field.options ?? []).map(option => ({
+                    active: blueprintValues[field.name] === option,
+                    key: option,
+                    label: option,
+                    onPress: () => setBlueprintValues(current => ({ ...current, [field.name]: option }))
+                  }))}
+                  key={field.name}
+                  onClose={() => setOpenEnumField(null)}
+                  title={field.label}
+                  visible={openEnumField === field.name}
+                />
+              ))}
+            {instantiateMutation.isError ? (
+              <Text style={[styles.errorText, { color: tokens.destructive }]}>
+                {instantiateMutation.error instanceof Error
+                  ? instantiateMutation.error.message
+                  : String(instantiateMutation.error)}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </Sheet>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  actionButton: {
-    marginRight: 16
-  },
-  actionText: {
-    color: '#1f6feb',
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  actions: {
-    flexDirection: 'row',
-    marginTop: 8
-  },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
-    borderRadius: 8,
+    borderRadius: radius.control,
     marginTop: 4,
+    minHeight: 48,
+    justifyContent: 'center',
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
-  card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 10,
-    padding: 12
-  },
-  cardHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
-  destructiveText: {
-    color: '#e06c75',
-    fontSize: 13,
-    fontWeight: '600'
+  enumField: {
+    marginBottom: 0
+  },
+  errorBlock: {
+    marginBottom: 6
   },
   errorText: {
-    color: '#e06c75',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
-    borderRadius: 8,
+    ...type.mono,
+    borderRadius: radius.control,
     borderWidth: 1,
-    color: '#f2f2f5',
-    fontFamily: 'monospace',
-    fontSize: 13,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 10
@@ -289,51 +380,31 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: 'top'
   },
-  rowPrompt: {
-    color: '#8a8a99',
-    fontSize: 12,
-    marginTop: 6
+  retryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.control,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8
   },
-  rowSubtitle: {
-    color: '#8a8a99',
-    fontSize: 12,
-    marginTop: 2
-  },
-  rowTitle: {
-    color: '#f2f2f5',
-    fontSize: 14,
+  retryText: {
+    ...type.label,
     fontWeight: '600'
   },
+  secondaryButton: {
+    borderWidth: 1
+  },
   sectionHint: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'
   },
   spinner: {
     marginBottom: 12
-  },
-  statusDisabled: {
-    color: '#8a8a99',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase'
-  },
-  statusEnabled: {
-    color: '#3fb950',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase'
-  },
-  testMessage: {
-    color: '#8a8a99',
-    fontSize: 12,
-    marginTop: 6
   }
 })

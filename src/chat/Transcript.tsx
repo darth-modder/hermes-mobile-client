@@ -1,14 +1,17 @@
 import { useStore } from '@nanostores/react'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { memo, useEffect, useMemo, useRef } from 'react'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, type LayoutRectangle, StyleSheet, Text, View } from 'react-native'
 
 import { $clarifyRequests } from '../store/clarify'
 import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
+import { type MobileTokens, useTheme } from '../theme/provider'
+import { radius, type } from '../theme/type'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
+import { type MessageGap, messageGap } from './message-gap'
 import { ApprovalCard } from './parts/ApprovalCard'
 import { ClarifyCard } from './parts/ClarifyCard'
 import { ReasoningDisclosure } from './parts/ReasoningDisclosure'
@@ -18,9 +21,23 @@ import { TextPart } from './parts/TextPart'
 import { TodoPanel } from './parts/TodoPanel'
 import { ToolCallCard } from './parts/ToolCallCard'
 
-function MessagePart({ part }: { part: ChatMessagePart }) {
+function MessagePart({
+  index,
+  messageId,
+  messagePending,
+  part
+}: {
+  index: number
+  messageId: string
+  messagePending: boolean
+  part: ChatMessagePart
+}) {
   if (part.type === 'text' || part.type === 'reasoning') {
-    return part.type === 'reasoning' ? <ReasoningDisclosure text={part.text} /> : <TextPart text={part.text} />
+    return part.type === 'reasoning' ? (
+      <ReasoningDisclosure messagePending={messagePending} part={part} timerKey={`reasoning:${messageId}:${index}`} />
+    ) : (
+      <TextPart text={part.text} />
+    )
   }
 
   if (part.type === 'tool-call') {
@@ -41,16 +58,16 @@ function MessagePart({ part }: { part: ChatMessagePart }) {
   return null
 }
 
-function roleStyleFor(role: ChatMessage['role']): { bubble: object; row: object } {
+function roleStyleFor(tokens: MobileTokens, role: ChatMessage['role']): { bubble: object; row: object } {
   if (role === 'user') {
-    return { bubble: styles.userBubble, row: styles.userRow }
+    return { bubble: { backgroundColor: tokens.userBubble }, row: styles.userRow }
   }
 
   if (role === 'system') {
     return { bubble: styles.systemBubble, row: styles.systemRow }
   }
 
-  return { bubble: styles.assistantBubble, row: styles.assistantRow }
+  return { bubble: { backgroundColor: tokens.card }, row: styles.assistantRow }
 }
 
 /**
@@ -80,8 +97,9 @@ export const messageRenderCounts: Record<string, number> = {}
  */
 let nextRecycleSlotId = 0
 
-const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessage }) {
-  const roleStyle = roleStyleFor(message.role)
+const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: MessageGap; message: ChatMessage }) {
+  const tokens = useTheme()
+  const roleStyle = roleStyleFor(tokens, message.role)
   const recycleSlotId = useRef<null | number>(null)
 
   if (__DEV__) {
@@ -95,16 +113,24 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
   }
 
   return (
-    <View style={roleStyle.row}>
+    <View style={[roleStyle.row, gap === 'turn' ? styles.turnGap : gap === 'block' ? styles.blockGap : null]}>
       <View style={[styles.bubble, roleStyle.bubble]}>
         {message.parts.map((part, index) => (
-          <MessagePart key={index} part={part} />
+          <MessagePart
+            index={index}
+            key={index}
+            messageId={message.id}
+            messagePending={message.pending ?? false}
+            part={part}
+          />
         ))}
         {message.attachmentRefs?.length ? (
-          <Text style={styles.attachments}>{message.attachmentRefs.join('  ')}</Text>
+          <Text style={[styles.attachments, { color: tokens.primary }]}>{message.attachmentRefs.join('  ')}</Text>
         ) : null}
-        {message.pending ? <ActivityIndicator color="#8a8a99" size="small" style={styles.pendingSpinner} /> : null}
-        {message.error ? <Text style={styles.error}>{message.error}</Text> : null}
+        {message.pending ? (
+          <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.pendingSpinner} />
+        ) : null}
+        {message.error ? <Text style={[styles.error, { color: tokens.destructive }]}>{message.error}</Text> : null}
       </View>
     </View>
   )
@@ -123,6 +149,10 @@ export interface TranscriptProps {
  */
 export function Transcript({ storedSessionId, messages }: TranscriptProps) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null)
+  // __DEV__-only, read by ApprovalCard to log the header row's own layout
+  // alongside the card's own (M14 close-out round 3, task 3) — never read
+  // in a release build, so it's fine for this to always exist.
+  const headerLayoutRef = useRef<LayoutRectangle | null>(null)
 
   const clarify = useStore($clarifyRequests)[storedSessionId]
   const approval = useStore($approvalRequests)[storedSessionId]
@@ -149,10 +179,12 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
       keyExtractor={message => message.id}
       ListHeaderComponent={
         secret || sudo || approval || clarify || todos.length > 0 ? (
-          <View>
+          <View onLayout={__DEV__ ? event => (headerLayoutRef.current = event.nativeEvent.layout) : undefined}>
             {secret ? <SecretCard request={secret} storedSessionId={storedSessionId} /> : null}
             {sudo ? <SudoCard request={sudo} storedSessionId={storedSessionId} /> : null}
-            {approval ? <ApprovalCard request={approval} storedSessionId={storedSessionId} /> : null}
+            {approval ? (
+              <ApprovalCard parentLayoutRef={headerLayoutRef} request={approval} storedSessionId={storedSessionId} />
+            ) : null}
             {clarify ? <ClarifyCard request={clarify} storedSessionId={storedSessionId} /> : null}
             <TodoPanel todos={todos} />
           </View>
@@ -160,35 +192,38 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
       }
       maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}
       ref={listRef}
-      renderItem={({ item }) => <MessageBubble message={item} />}
+      renderItem={({ index, item }) => (
+        // `data` is reversed (index 0 = newest), so `data[index + 1]` is the
+        // message chronologically BEFORE `item` — the boundary messageGap sizes.
+        <MessageBubble gap={messageGap(item, data[index + 1])} message={item} />
+      )}
     />
   )
 }
 
 const styles = StyleSheet.create({
-  assistantBubble: {
-    backgroundColor: '#17171d'
-  },
   assistantRow: {
     alignItems: 'flex-start'
   },
   attachments: {
-    color: '#58a6ff',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
+  blockGap: {
+    marginBottom: 12
+  },
   bubble: {
-    borderRadius: 10,
-    maxWidth: '92%',
-    padding: 10
+    borderRadius: radius.card,
+    maxWidth: '86%',
+    paddingHorizontal: 14,
+    paddingVertical: 10
   },
   content: {
-    paddingHorizontal: 10,
-    paddingVertical: 8
+    paddingHorizontal: 16,
+    paddingVertical: 12
   },
   error: {
-    color: '#e06c75',
-    fontSize: 13,
+    ...type.label,
     marginTop: 4
   },
   pendingSpinner: {
@@ -201,8 +236,8 @@ const styles = StyleSheet.create({
   systemRow: {
     alignItems: 'center'
   },
-  userBubble: {
-    backgroundColor: '#1f3a5f'
+  turnGap: {
+    marginBottom: 6
   },
   userRow: {
     alignItems: 'flex-end'

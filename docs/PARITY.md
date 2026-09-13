@@ -39,8 +39,13 @@ backend runs on and have no mobile equivalent:
 | Slash commands | Only `/stop`, `/compress`, `/title`, `/btw` have a mobile surface. About two dozen desktop commands answer "not available on mobile yet". Session, model, profile and skills commands have had screens since M07 and M09 but are still classified as unavailable | M13 (usability) |
 | Markdown | No KaTeX or mermaid rendering; math and diagrams render as code blocks. No shiki: `lowlight` highlighting instead (Hermes JS has no WebAssembly) | Accepted for v1 (README risks) |
 | `@` file completion | Completes only at the end of the text, not at the cursor | M06 Deviation #7, open |
+| In-chat find (`find-bar.html`) | Absent — no search-within-transcript UI exists on mobile. That prototype's own header already says "Absent in v1 (PARITY: thinner)," but no row backed the claim; added on the M14 task-7 audit that checked | M14 Deviation, this entry |
 | Haptics and sound | Reducer effects accepted and ignored | M13 (usability) |
 | PDF attachment | Client path exists; unverified pending poppler on the server host | Register (D8) |
+| Settings: Chat, Safety, Memory & Context | Read-only: each screen names its desktop fields (labels copied from the prototype, not vendored — see `src/lib/strings.mobile.ts`) but none can be read or changed here. Not a missing capability: the gateway has `config.get`/`config.set` (Personality, Show Reasoning, Approval Mode), `GET/PUT /api/config/raw` (the rest of config.yaml — the same endpoint `getHermesConfig`/`saveHermesConfig` wrapped before M09 dropped them), and a full Memory/Curator REST API (`/api/memory*`, `/api/curator*`). This app's client wraps none of it | M14 Deviations 8 &amp; 13; porting a client wrapper over an already-real gateway API is its own data-layer task, flagged for a D-entry |
+| Settings: Billing | Informational only. Not a missing capability: `billing.state`/`subscription.*`/`usage.bars`/`session.usage`/`billing.step_up` are a complete gateway RPC surface (the gateway's own comment calls it "complete") — this app's client wraps none of it | M14 Deviations 8 &amp; 13; same D-entry |
+| Command center (Usage) | Real screen, inert. Not a missing capability: `GET /api/analytics/usage` and `GET /api/analytics/models` are real, registered REST routes — this app's client wraps neither | M14 Deviations 8 &amp; 13; same D-entry |
+| Agents | Real screen, inert. Not a missing capability: `delegation.status` (host-wide, not per-connection) plus `delegation.pause`/`subagent.interrupt`/`subagent.steer`/`spawn_tree.*` are a real cross-session RPC surface — this app's client wraps none of it | M14 Deviations 8 &amp; 13; same D-entry |
 
 ## Mobile has that desktop does not
 

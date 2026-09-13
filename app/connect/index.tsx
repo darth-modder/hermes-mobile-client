@@ -1,13 +1,27 @@
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
 import type { MobileConnection } from '../../src/connections/types'
+import {
+  CONNECT_DETECT_LABEL,
+  CONNECT_NO_AUTH_PROVIDER,
+  CONNECT_SCAN_QR,
+  CONNECTION_AUTH_MODE_LABEL,
+  connectOauthStatus,
+  connectPasswordStatus,
+  connectSucceededStatus,
+  connectUngatedStatus
+} from '../../src/lib/strings.mobile'
+import { t } from '../../src/lib/t'
 import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
 import { HttpError } from '../../src/net/http'
+import { useTheme } from '../../src/theme/provider'
+import { radius, type } from '../../src/theme/type'
 
 type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } | { mode: 'oauth'; provider?: string }
 
@@ -15,16 +29,42 @@ function newConnectionId(): string {
   return `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/**
- * Add a connection: URL + label, auto-detects whether the backend is
- * ungated (token mode), gated with a password provider (M04), or gated with
- * an OAuth provider such as Nous Portal (M08, via nativeLogin() and a
- * Custom Tab).
- */
+// Replicates: docs/desktop-prototypes/e-overlays/onboarding.html's
+// `#onboarding=remote`/`remote-token` views (the "Connect to existing
+// Hermes" form: `install.remoteSetupTitle`/`remoteSetupDesc`, Gateway URL,
+// Authentication box, Session token, Test connection / Apply and
+// reconnect), plus docs/desktop-prototypes/d-windows/login-window.html for
+// the OAuth hand-off itself. NOT the same prototype's provider picker /
+// API-key grid — that view chooses a *model provider* for an
+// already-connected gateway and its mobile parity is Settings → Providers
+// (settings/providers.tsx, already ported); this screen only ever
+// establishes the gateway connection. The M14 doc's own overlay-mapping
+// table row ("the provider picker and API-key form are the desktop's,
+// minus local providers") reads as if it applied here, but onboarding.
+// html's own header comment draws the line explicitly ("Provider sign-in is
+// at parity [...] the remote form maps to mobile's connection setup") —
+// followed that more specific, more authoritative source per the M14 doc's
+// own "read the comment block" instruction, flagging the mapping-table
+// wording as loose rather than silently rewriting it.
+//
+// Kept this screen's existing single-screen shape (URL + explicit "Detect"
+// button, then inline auth fields) rather than splitting into desktop's
+// separate Test-connection/Apply-and-reconnect steps — a compliance sweep,
+// not a rebuild; only labels, field order and vendoring changed here. The
+// desktop probes as you type and never shows an explicit "detect" action;
+// this app needs one, so `CONNECT_DETECT_LABEL` (strings.mobile.ts) has no
+// vendored source.
+//
+// Add a connection: URL + label, auto-detects whether the backend is
+// ungated (token mode), gated with a password provider (M04), or gated with
+// an OAuth provider such as Nous Portal (M08, via nativeLogin() and a
+// Custom Tab).
+
 export default function ConnectScreen() {
   const router = useRouter()
+  const tokens = useTheme()
   const [label, setLabel] = useState('')
-  const [url, setUrl] = useState('http://127.0.0.1:9119')
+  const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [detecting, setDetecting] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -43,7 +83,7 @@ export default function ConnectScreen() {
 
       if (!health.auth_required) {
         setDetected({ mode: 'token' })
-        setStatus(`Ungated backend (version ${health.version ?? '?'}) — token mode.`)
+        setStatus(connectUngatedStatus(health.version ?? '?'))
 
         return
       }
@@ -53,7 +93,7 @@ export default function ConnectScreen() {
 
       if (passwordProvider) {
         setDetected({ mode: 'password', provider: passwordProvider.name })
-        setStatus(`Gated backend — password sign-in via "${passwordProvider.display_name ?? passwordProvider.name}".`)
+        setStatus(connectPasswordStatus(passwordProvider.display_name ?? passwordProvider.name))
 
         return
       }
@@ -62,12 +102,10 @@ export default function ConnectScreen() {
 
       setDetected({ mode: 'oauth', provider: oauthProvider?.name })
       setStatus(
-        oauthProvider
-          ? `Gated backend — sign in with ${oauthProvider.display_name ?? oauthProvider.name}.`
-          : 'Gated backend with no registered auth provider — cannot sign in yet.'
+        oauthProvider ? connectOauthStatus(oauthProvider.display_name ?? oauthProvider.name) : CONNECT_NO_AUTH_PROVIDER
       )
     } catch (error) {
-      setStatus(`Could not reach ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`)
+      setStatus(`${t.install.probeError} ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setDetecting(false)
     }
@@ -100,7 +138,7 @@ export default function ConnectScreen() {
         lastUsedAt: Date.now()
       })
 
-      setStatus(`Connected — install_id=${statusBody.install_id ?? '(none)'}`)
+      setStatus(connectSucceededStatus(statusBody.install_id))
       router.replace({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' })
     } catch (error) {
       const message =
@@ -110,7 +148,7 @@ export default function ConnectScreen() {
             ? error.message
             : String(error)
 
-      setStatus(`Connect failed: ${message}`)
+      setStatus(`${t.settings.connections.saveFailed}: ${message}`)
     } finally {
       setConnecting(false)
     }
@@ -131,7 +169,7 @@ export default function ConnectScreen() {
     }
 
     setConnecting(true)
-    setStatus('Opening sign-in…')
+    setStatus(t.onboarding.startingSignIn(CONNECTION_AUTH_MODE_LABEL.oauth))
 
     const id = newConnectionId()
 
@@ -155,7 +193,7 @@ export default function ConnectScreen() {
         lastUsedAt: Date.now()
       })
 
-      setStatus(`Connected — install_id=${statusBody.install_id ?? '(none)'}`)
+      setStatus(connectSucceededStatus(statusBody.install_id))
       router.replace({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' })
     } catch (error) {
       // NativeLoginError's own message already distinguishes cancelled/timed-out/
@@ -163,7 +201,7 @@ export default function ConnectScreen() {
       // to remap it here, same as how PasswordLoginError is handled below.
       const message = error instanceof NativeLoginError || error instanceof Error ? error.message : String(error)
 
-      setStatus(`Sign-in failed: ${message}`)
+      setStatus(`${t.onboarding.signInFailed} ${message}`)
     } finally {
       setConnecting(false)
     }
@@ -183,90 +221,136 @@ export default function ConnectScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Add a connection</Text>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: tokens.background }]}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{t.install.remoteSetupTitle}</Text>
+        <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>{t.install.remoteSetupDesc}</Text>
 
-      <Text style={styles.label}>Label (optional)</Text>
-      <TextInput
-        onChangeText={setLabel}
-        placeholder="My server"
-        placeholderTextColor="#5a5a66"
-        style={styles.input}
-        value={label}
-      />
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>{t.settings.connections.labelTitle}</Text>
+        <TextInput
+          onChangeText={setLabel}
+          placeholder={t.settings.connections.labelPlaceholder}
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={label}
+        />
 
-      <Text style={styles.label}>Backend URL</Text>
-      <TextInput autoCapitalize="none" onChangeText={setUrl} style={styles.input} value={url} />
+        <Text style={[styles.label, { color: tokens.mutedForeground }]}>{t.install.remoteUrlTitle}</Text>
+        <TextInput
+          autoCapitalize="none"
+          onChangeText={setUrl}
+          placeholder="http://127.0.0.1:9119"
+          placeholderTextColor={tokens.mutedForeground}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
+          value={url}
+        />
 
-      <View style={styles.row}>
-        <TouchableOpacity disabled={detecting} onPress={detect} style={styles.button}>
-          <Text style={styles.buttonText}>{detecting ? 'Checking…' : 'Detect auth mode'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/connect/scan')} style={styles.button}>
-          <Text style={styles.buttonText}>Scan QR</Text>
-        </TouchableOpacity>
-      </View>
-
-      {status ? <Text style={styles.status}>{status}</Text> : null}
-
-      {detected?.mode === 'token' ? (
-        <>
-          <Text style={styles.label}>Session token</Text>
-          <TextInput autoCapitalize="none" onChangeText={setToken} secureTextEntry style={styles.input} value={token} />
-          <TouchableOpacity disabled={connecting || !token} onPress={connectToken} style={styles.button}>
-            <Text style={styles.buttonText}>{connecting ? 'Connecting…' : 'Connect'}</Text>
+        <View style={styles.row}>
+          <TouchableOpacity
+            disabled={detecting}
+            onPress={detect}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+              {detecting ? t.install.probing : CONNECT_DETECT_LABEL}
+            </Text>
           </TouchableOpacity>
-        </>
-      ) : null}
+          <TouchableOpacity
+            onPress={() => router.push('/connect/scan')}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{CONNECT_SCAN_QR}</Text>
+          </TouchableOpacity>
+        </View>
 
-      {detected?.mode === 'password' ? (
-        <TouchableOpacity onPress={goToPasswordLogin} style={styles.button}>
-          <Text style={styles.buttonText}>Sign in</Text>
-        </TouchableOpacity>
-      ) : null}
+        {status ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{status}</Text> : null}
 
-      {detected?.mode === 'oauth' ? (
-        <TouchableOpacity disabled={connecting} onPress={connectOAuth} style={styles.button}>
-          <Text style={styles.buttonText}>{connecting ? 'Signing in…' : 'Sign in with Portal'}</Text>
-        </TouchableOpacity>
-      ) : null}
-    </ScrollView>
+        {detected?.mode === 'token' ? (
+          <>
+            <Text style={[styles.label, { color: tokens.mutedForeground }]}>{t.install.tokenTitle}</Text>
+            <TextInput
+              autoCapitalize="none"
+              onChangeText={setToken}
+              secureTextEntry
+              style={[
+                styles.input,
+                { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+              ]}
+              value={token}
+            />
+            <TouchableOpacity
+              disabled={connecting || !token}
+              onPress={connectToken}
+              style={[styles.button, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+                {connecting ? t.settings.gateway.cloudConnecting : t.settings.gateway.cloudConnect}
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+
+        {detected?.mode === 'password' ? (
+          <TouchableOpacity onPress={goToPasswordLogin} style={[styles.button, { backgroundColor: tokens.primary }]}>
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {detected?.mode === 'oauth' ? (
+          <TouchableOpacity
+            disabled={connecting}
+            onPress={connectOAuth}
+            style={[styles.button, { backgroundColor: tokens.primary }]}
+          >
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+              {connecting ? t.settings.gateway.cloudConnecting : t.install.signInWith(CONNECTION_AUTH_MODE_LABEL.oauth)}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 6,
+    alignItems: 'center',
+    borderRadius: radius.control,
+    justifyContent: 'center',
     marginBottom: 12,
     marginRight: 8,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 10
   },
   buttonText: {
-    color: '#f2f2f5',
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flexGrow: 1,
     padding: 16
   },
+  safeArea: {
+    flex: 1
+  },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
-    borderRadius: 6,
+    borderRadius: radius.control,
     borderWidth: 1,
-    color: '#f2f2f5',
-    fontFamily: 'monospace',
+    ...type.mono,
     marginBottom: 12,
+    minHeight: 48,
     paddingHorizontal: 10,
     paddingVertical: 8
   },
   label: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 4,
     marginTop: 4,
     textTransform: 'uppercase'
@@ -276,15 +360,16 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   status: {
-    color: '#3dd68c',
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginBottom: 12
   },
-  title: {
-    color: '#f2f2f5',
-    fontSize: 20,
-    fontWeight: '600',
+  subtitle: {
+    ...type.bodySmall,
     marginBottom: 16
+  },
+  title: {
+    ...type.title,
+    fontWeight: '600',
+    marginBottom: 4
   }
 })

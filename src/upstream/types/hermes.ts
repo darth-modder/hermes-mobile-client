@@ -906,6 +906,36 @@ export interface CronJobSchedule {
   kind?: string
 }
 
+// `GET /api/cron/blueprints` / `POST /api/cron/blueprints/instantiate`
+// (hermes-agent `cron/blueprint_catalog.py`'s `blueprint_form_schema`/
+// `blueprint_catalog_entry`) — a small generic field-schema, not a
+// desktop-specific shape: `type` is one of `'text' | 'enum' | 'time' |
+// 'weekdays'` in practice (the catalog's own `BlueprintSlot.type`), kept as
+// `string` here since the server treats it as an open set.
+export interface CronBlueprintField {
+  default?: string
+  help?: string
+  label: string
+  name: string
+  optional?: boolean
+  options?: string[]
+  strict?: boolean
+  type: string
+}
+
+export interface CronBlueprint {
+  appUrl: string
+  category?: string
+  command: string
+  description?: string
+  fields: CronBlueprintField[]
+  key: string
+  schedule: string
+  scheduleHuman: string
+  tags?: string[]
+  title: string
+}
+
 export interface CronJobUpdates {
   deliver?: string
   enabled?: boolean

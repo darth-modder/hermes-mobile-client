@@ -3,11 +3,22 @@ import { useEffect } from 'react'
 import { StyleSheet, Text, TouchableOpacity } from 'react-native'
 
 import { $notifications, dismissNotification, type NotifyEffect } from '../store/notifications'
+import { type MobileTokens, useTheme } from '../theme/provider'
+import { radius, type } from '../theme/type'
 
-const KIND_STYLE: Record<NotifyEffect['kind'], { background: string; border: string }> = {
-  error: { background: '#2a1418', border: '#e06c75' },
-  info: { background: '#14181c', border: '#1f6feb' },
-  warning: { background: '#241c10', border: '#d19a66' }
+function borderForKind(tokens: MobileTokens, kind: NotifyEffect['kind']): string {
+  switch (kind) {
+    case 'error':
+      return tokens.destructive
+
+    case 'warning':
+      return tokens.semantic.orange
+
+    case 'info':
+
+    default:
+      return tokens.primary
+  }
 }
 
 const DEFAULT_DURATION_MS = 5000
@@ -22,6 +33,7 @@ const DEFAULT_DURATION_MS = 5000
  * feedback — the exact class of bug this component closes.
  */
 export function NotificationBanner() {
+  const tokens = useTheme()
   const notifications = useStore($notifications)
   const latest = notifications[notifications.length - 1]
 
@@ -39,15 +51,16 @@ export function NotificationBanner() {
     return null
   }
 
-  const style = KIND_STYLE[latest.kind]
-
   return (
     <TouchableOpacity
       onPress={() => dismissNotification(latest.id)}
-      style={[styles.container, { backgroundColor: style.background, borderColor: style.border }]}
+      style={[
+        styles.container,
+        { backgroundColor: tokens.widgetSurface, borderColor: borderForKind(tokens, latest.kind) }
+      ]}
     >
-      <Text style={styles.title}>{latest.title}</Text>
-      <Text numberOfLines={3} style={styles.message}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{latest.title}</Text>
+      <Text numberOfLines={3} style={[styles.message, { color: tokens.mutedForeground }]}>
         {latest.message}
       </Text>
     </TouchableOpacity>
@@ -56,7 +69,7 @@ export function NotificationBanner() {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 4,
     marginHorizontal: 10,
@@ -65,13 +78,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   message: {
-    color: '#c9d1d9',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   title: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700'
   }
 })

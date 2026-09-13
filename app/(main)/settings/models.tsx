@@ -1,15 +1,44 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getGlobalModelInfo, getGlobalModelOptions, setGlobalModel } from '../../../src/api/models'
-import { getToolsets, setToolsetEnabled } from '../../../src/api/toolsets'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  MODELS_CHOOSE_HINT,
+  MODELS_CHOOSE_SECTION_TITLE,
+  MODELS_CURRENT_SECTION_TITLE,
+  MODELS_NOT_CONFIGURED_SUFFIX,
+  MODELS_SWITCHING
+} from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
 import { $activeProfile } from '../../../src/store/profile'
-import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/types/hermes'
+import { useTheme } from '../../../src/theme/provider'
+import { radius, type } from '../../../src/theme/type'
+import type { ModelOptionProvider } from '../../../src/upstream/types/hermes'
 
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="models"`
+// (current/default model list with a checkmark lead icon, provider-grouped
+// options). Screen title moves to t.settings.sections.model ("Model",
+// singular) per D15.4, matching the settings index row (979bbcc) — the
+// prototype's own header types "Models" (plural), but the vendored copy
+// wins. Two of that view's sections have no home here yet: "Fallback
+// providers" (reorderable fallback list) and "Visible in the model picker"
+// (docs/desktop-prototypes/e-overlays/model-visibility.html, per the M14
+// mapping) both need API surface `src/api/models.ts` doesn't expose today
+// (no list/reorder-fallbacks or get/set-visibility endpoint) — adding it
+// is data-fetching/mutation work, out of scope for a layout pass, so
+// they're left out rather than faked with local-only state. The search
+// field above the list is likewise not implemented (needs live filtering
+// logic, not just relabelling).
+//
+// The "Toolsets" section that used to live below (pre-existing, M09) is
+// removed here, not just relabelled: it was never part of this prototype
+// view's own content, and per the M14 mapping it belongs on the new
+// settings/toolsets.tsx (from capabilities.html) — its own later M14 commit
+// (2026-09-12 review decision). It comes back there, not here.
 /**
  * Models settings screen (M09). Exit criterion: "a model switch is
  * reflected in the next `session.info`" — this screen only owns the switch
@@ -18,6 +47,7 @@ import type { ModelOptionProvider, ToolsetInfo } from '../../../src/upstream/typ
  * surfaces whatever the backend reports, unchanged by this milestone.
  */
 export default function ModelsSettings() {
+  const tokens = useTheme()
   const queryClient = useQueryClient()
   const profile = useStore($activeProfile) || undefined
 
@@ -31,11 +61,6 @@ export default function ModelsSettings() {
     queryKey: ['model-options', profile]
   })
 
-  const toolsetsQuery = useQuery({
-    queryFn: () => getToolsets(profile),
-    queryKey: ['toolsets', profile]
-  })
-
   const setModelMutation = useMutation({
     mutationFn: (args: { model: string; provider: string }) => setGlobalModel(args.provider, args.model, profile),
     onSuccess: () => {
@@ -43,44 +68,45 @@ export default function ModelsSettings() {
     }
   })
 
-  const toggleToolsetMutation = useMutation({
-    mutationFn: (args: { enabled: boolean; name: string }) => setToolsetEnabled(args.name, args.enabled, profile),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['toolsets', profile] })
-    }
-  })
-
   const current = infoQuery.data
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Models' }} />
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.model }} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionTitle}>Current model</Text>
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{MODELS_CURRENT_SECTION_TITLE}</Text>
         {infoQuery.isLoading ? (
-          <ActivityIndicator color="#8a8a99" />
+          <ActivityIndicator color={tokens.mutedForeground} />
         ) : current ? (
-          <Text style={styles.currentModel}>
+          <Text style={[styles.currentModel, { color: tokens.foreground }]}>
             {current.provider} · {current.model}
           </Text>
         ) : (
-          <Text style={styles.errorText}>{String(infoQuery.error)}</Text>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(infoQuery.error)}</Text>
         )}
-        {setModelMutation.isPending ? <Text style={styles.pendingText}>Switching…</Text> : null}
-        {setModelMutation.isError ? <Text style={styles.errorText}>{String(setModelMutation.error)}</Text> : null}
+        {setModelMutation.isPending ? (
+          <Text style={[styles.pendingText, { color: tokens.mutedForeground }]}>{MODELS_SWITCHING}</Text>
+        ) : null}
+        {setModelMutation.isError ? (
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>{String(setModelMutation.error)}</Text>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>Choose a model</Text>
-        {optionsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+        <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{MODELS_CHOOSE_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{MODELS_CHOOSE_HINT}</Text>
+        {optionsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {optionsQuery.isError ? (
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: tokens.destructive }]}>
             {optionsQuery.error instanceof Error ? optionsQuery.error.message : String(optionsQuery.error)}
           </Text>
         ) : null}
         {(optionsQuery.data?.providers ?? []).map((provider: ModelOptionProvider) => (
-          <View key={provider.slug} style={styles.providerBlock}>
-            <Text style={styles.providerName}>
+          <View
+            key={provider.slug}
+            style={[styles.providerBlock, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+          >
+            <Text style={[styles.providerName, { color: tokens.mutedForeground }]}>
               {provider.name}
-              {provider.authenticated === false ? ' (not configured)' : ''}
+              {provider.authenticated === false ? ` ${MODELS_NOT_CONFIGURED_SUFFIX}` : ''}
             </Text>
             {(provider.featured_models?.length ? provider.featured_models : (provider.models ?? []).slice(0, 6)).map(
               model => {
@@ -93,37 +119,12 @@ export default function ModelsSettings() {
                     onPress={() => setModelMutation.mutate({ model, provider: provider.slug })}
                     style={[styles.modelRow, isCurrent ? styles.modelRowActive : null]}
                   >
-                    <Text style={styles.modelName}>{model}</Text>
-                    {isCurrent ? <Text style={styles.checkmark}>✓</Text> : null}
+                    <Text style={[styles.modelName, { color: tokens.foreground }]}>{model}</Text>
+                    {isCurrent ? <Text style={[styles.checkmark, { color: tokens.semantic.green }]}>✓</Text> : null}
                   </TouchableOpacity>
                 )
               }
             )}
-          </View>
-        ))}
-
-        <Text style={styles.sectionTitle}>Toolsets</Text>
-        <Text style={styles.sectionHint}>
-          Enable or disable a whole tool group. Per-tool provider setup is not on mobile yet.
-        </Text>
-        {toolsetsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
-        {toolsetsQuery.isError ? (
-          <Text style={styles.errorText}>
-            {toolsetsQuery.error instanceof Error ? toolsetsQuery.error.message : String(toolsetsQuery.error)}
-          </Text>
-        ) : null}
-        {(toolsetsQuery.data ?? []).map((toolset: ToolsetInfo) => (
-          <View key={toolset.name} style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{toolset.label}</Text>
-              <Text numberOfLines={1} style={styles.rowSubtitle}>
-                {toolset.description}
-              </Text>
-            </View>
-            <Switch
-              onValueChange={value => toggleToolsetMutation.mutate({ enabled: value, name: toolset.name })}
-              value={toolset.enabled}
-            />
           </View>
         ))}
       </ScrollView>
@@ -133,91 +134,59 @@ export default function ModelsSettings() {
 
 const styles = StyleSheet.create({
   checkmark: {
-    color: '#3fb950',
-    fontSize: 15,
+    ...type.bodySmall,
     fontWeight: '700'
   },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   currentModel: {
-    color: '#f2f2f5',
-    fontSize: 16,
+    ...type.body,
     fontWeight: '700'
   },
   errorText: {
-    color: '#e06c75',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   modelName: {
-    color: '#f2f2f5',
-    fontSize: 13
+    ...type.label
   },
   modelRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    minHeight: 48,
     paddingVertical: 8
   },
   modelRowActive: {
     opacity: 1
   },
   pendingText: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   providerBlock: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   providerName: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '700',
     marginBottom: 4,
     textTransform: 'uppercase'
   },
-  row: {
-    alignItems: 'center',
-    borderBottomColor: '#17171d',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 10
-  },
-  rowSubtitle: {
-    color: '#8a8a99',
-    fontSize: 12,
-    marginTop: 2
-  },
-  rowText: {
-    flex: 1,
-    paddingRight: 12
-  },
-  rowTitle: {
-    color: '#f2f2f5',
-    fontSize: 14,
-    fontWeight: '600'
-  },
   sectionHint: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 6
   },
   sectionTitle: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginTop: 20,
     textTransform: 'uppercase'

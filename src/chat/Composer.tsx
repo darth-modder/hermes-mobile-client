@@ -1,7 +1,9 @@
 import { useStore } from '@nanostores/react'
+import { useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { KeyboardStickyView } from 'react-native-keyboard-controller'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import {
   askBtw,
@@ -17,10 +19,32 @@ import {
   submitPrompt
 } from '../gateway/session-connection'
 import { pickAndAttachDocument, pickAndAttachImage } from '../lib/attachments'
+import { hapticSubmit } from '../lib/haptics'
+import { FileText, ImageIcon, Mic, MicOff, Volume2, X } from '../lib/icons'
 import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mobile-slash-commands'
+import {
+  COMPOSER_ATTACH_DOCUMENT_LABEL,
+  COMPOSER_ATTACH_IMAGE_LABEL,
+  COMPOSER_ATTACHMENT_FAILED_TITLE,
+  COMPOSER_COULD_NOT_START_RECORDING_TITLE,
+  COMPOSER_DICTATION_FAILED_TITLE,
+  COMPOSER_NO_REPLY_TO_READ_MESSAGE,
+  COMPOSER_NOT_AVAILABLE_TITLE,
+  COMPOSER_NOTHING_TO_SPEAK_TITLE,
+  COMPOSER_PLACEHOLDER,
+  COMPOSER_READ_LAST_REPLY_LABEL,
+  COMPOSER_RECORD_VOICE_LABEL,
+  COMPOSER_SEND_FAILED_TITLE,
+  COMPOSER_SPEECH_FAILED_TITLE,
+  COMPOSER_STEER_LABEL,
+  COMPOSER_STOP_RECORDING_LABEL
+} from '../lib/strings.mobile'
+import { t } from '../lib/t'
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
+import { useTheme } from '../theme/provider'
+import { radius, type } from '../theme/type'
 import { cancelRecording, isRecording, startRecording, stopRecordingAndTranscribe } from '../voice/recorder'
 import { speakUnspokenReply } from '../voice/speech-progress'
 import { speak } from '../voice/tts'
@@ -52,7 +76,22 @@ function activeAtWord(text: string): null | string {
   return match ? match[2] : null
 }
 
+// M14 task 5: docs/desktop-prototypes/f-dialogs/add-url.html ("Attach a
+// URL" — fetches a page and adds it as context for the turn, opened from
+// the composer's "Add context" menu) is confirmed absent, not built.
+// Checked src/gateway/session-connection.ts directly: `attachImageBytes`/
+// `attachFile`/`attachPdf` all take bytes already on the device (via
+// pickAndAttachImage/pickAndAttachDocument below) — there is no
+// fetch-a-URL-and-attach-as-context call, gateway RPC or otherwise, for
+// this app to send. That prototype's own header already hedges this ("URL
+// attach is not listed [in PARITY.md], so treat it as unverified"); having
+// now checked, it isn't there. This composer also has no "Add context"
+// menu at all yet (only the two attach buttons below) — a URL-attach sheet
+// would need both that menu and a backend call neither exists.
 export function Composer({ storedSessionId }: ComposerProps) {
+  const tokens = useTheme()
+  const insets = useSafeAreaInsets()
+  const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const busy = session?.busy ?? false
 
@@ -165,9 +204,16 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `slash-unavailable-${storedSessionId}`,
         kind: 'info',
         message: mobileCommandUnavailableMessage(surface.reason),
-        title: 'Not available',
+        title: COMPOSER_NOT_AVAILABLE_TITLE,
         type: 'notify'
       })
+
+      return
+    }
+
+    if (surface.kind === 'navigate') {
+      clearComposer()
+      router.push(surface.route)
 
       return
     }
@@ -211,6 +257,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
       return
     }
 
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -234,7 +281,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `send-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Send failed',
+        title: COMPOSER_SEND_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -260,7 +307,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `attach-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Attachment failed',
+        title: COMPOSER_ATTACHMENT_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -282,7 +329,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `attach-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Attachment failed',
+        title: COMPOSER_ATTACHMENT_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -318,7 +365,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             id: `dictate-failed-${recordedForSessionId}`,
             kind: 'error',
             message: error instanceof Error ? error.message : String(error),
-            title: 'Dictation failed',
+            title: COMPOSER_DICTATION_FAILED_TITLE,
             type: 'notify'
           })
         }
@@ -337,7 +384,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `record-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Could not start recording',
+        title: COMPOSER_COULD_NOT_START_RECORDING_TITLE,
         type: 'notify'
       })
     }
@@ -354,8 +401,8 @@ export function Composer({ storedSessionId }: ComposerProps) {
           durationMs: 3000,
           id: `speak-nothing-${storedSessionId}`,
           kind: 'info',
-          message: 'No new reply to read out.',
-          title: 'Nothing to speak',
+          message: COMPOSER_NO_REPLY_TO_READ_MESSAGE,
+          title: COMPOSER_NOTHING_TO_SPEAK_TITLE,
           type: 'notify'
         })
       }
@@ -364,7 +411,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `speak-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Speech failed',
+        title: COMPOSER_SPEECH_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -373,8 +420,8 @@ export function Composer({ storedSessionId }: ComposerProps) {
   }
 
   return (
-    <KeyboardStickyView>
-      <View style={styles.container}>
+    <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
+      <View style={[styles.container, { backgroundColor: tokens.background, borderTopColor: tokens.border }]}>
         {atItems.length > 0 ? (
           <CompletionList onSelect={selectAtCompletion} rows={atItems} />
         ) : slashItems.length > 0 ? (
@@ -383,65 +430,133 @@ export function Composer({ storedSessionId }: ComposerProps) {
         {attachments.length > 0 ? (
           <View style={styles.attachmentRow}>
             {attachments.map((attachment, index) => (
-              <TouchableOpacity key={index} onPress={() => removeAttachment(index)} style={styles.attachmentChip}>
-                <Text style={styles.attachmentText}>{attachment.label} ✕</Text>
+              <TouchableOpacity
+                accessibilityLabel={`Remove ${attachment.label}`}
+                accessibilityRole="button"
+                hitSlop={12}
+                key={index}
+                onPress={() => removeAttachment(index)}
+                style={[styles.attachmentChip, { backgroundColor: tokens.muted, borderColor: tokens.border }]}
+              >
+                <Text style={[styles.attachmentText, { color: tokens.mutedForeground }]}>{attachment.label}</Text>
+                <X color={tokens.mutedForeground} size={12} />
               </TouchableOpacity>
             ))}
           </View>
         ) : null}
         <View style={styles.row}>
-          <TouchableOpacity disabled={attaching} onPress={() => void attachImage()} style={styles.iconButton}>
-            <Text style={styles.iconText}>🖼️</Text>
+          <TouchableOpacity
+            accessibilityLabel={COMPOSER_ATTACH_IMAGE_LABEL}
+            accessibilityRole="button"
+            disabled={attaching}
+            onPress={() => void attachImage()}
+            style={styles.iconButton}
+          >
+            <ImageIcon color={tokens.foreground} size={20} />
           </TouchableOpacity>
-          <TouchableOpacity disabled={attaching} onPress={() => void attachDocument()} style={styles.iconButton}>
-            <Text style={styles.iconText}>📄</Text>
+          <TouchableOpacity
+            accessibilityLabel={COMPOSER_ATTACH_DOCUMENT_LABEL}
+            accessibilityRole="button"
+            disabled={attaching}
+            onPress={() => void attachDocument()}
+            style={styles.iconButton}
+          >
+            <FileText color={tokens.foreground} size={20} />
           </TouchableOpacity>
-          <TouchableOpacity disabled={transcribing} onPress={() => void toggleRecording()} style={styles.iconButton}>
+          <TouchableOpacity
+            accessibilityLabel={recording ? COMPOSER_STOP_RECORDING_LABEL : COMPOSER_RECORD_VOICE_LABEL}
+            accessibilityRole="button"
+            disabled={transcribing}
+            onPress={() => void toggleRecording()}
+            style={styles.iconButton}
+          >
             {transcribing ? (
-              <ActivityIndicator color="#f2f2f5" size="small" />
+              <ActivityIndicator color={tokens.foreground} size="small" />
+            ) : recording ? (
+              <MicOff color={tokens.destructive} size={20} />
             ) : (
-              <Text style={[styles.iconText, recording ? styles.iconTextActive : null]}>🎤</Text>
+              <Mic color={tokens.foreground} size={20} />
             )}
           </TouchableOpacity>
-          <TouchableOpacity disabled={speaking} onPress={() => void speakLastReply()} style={styles.iconButton}>
-            {speaking ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.iconText}>🔊</Text>}
+          <TouchableOpacity
+            accessibilityLabel={COMPOSER_READ_LAST_REPLY_LABEL}
+            accessibilityRole="button"
+            disabled={speaking}
+            onPress={() => void speakLastReply()}
+            style={styles.iconButton}
+          >
+            {speaking ? (
+              <ActivityIndicator color={tokens.foreground} size="small" />
+            ) : (
+              <Volume2 color={tokens.foreground} size={20} />
+            )}
           </TouchableOpacity>
           <TextInput
             multiline
             onChangeText={setText}
-            placeholder="Message Hermes…"
-            placeholderTextColor="#5a5a66"
-            style={styles.input}
+            placeholder={COMPOSER_PLACEHOLDER}
+            placeholderTextColor={tokens.mutedForeground}
+            style={[styles.input, { color: tokens.foreground }]}
             value={text}
           />
-          {busy ? (
-            <TouchableOpacity onPress={() => void stop()} style={[styles.sendButton, styles.stopButton]}>
-              <Text style={styles.sendButtonText}>Stop</Text>
+          {busy ? null : (
+            <TouchableOpacity
+              disabled={sending || (!text.trim() && attachments.length === 0)}
+              onPress={() => void send()}
+              style={[styles.sendButton, { backgroundColor: tokens.primary }]}
+            >
+              {sending ? (
+                <ActivityIndicator color={tokens.primaryForeground} size="small" />
+              ) : (
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>{t.composer.send}</Text>
+              )}
             </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            disabled={sending || (!text.trim() && attachments.length === 0)}
-            onPress={() => void send()}
-            style={styles.sendButton}
-          >
-            {sending ? (
-              <ActivityIndicator color="#f2f2f5" size="small" />
-            ) : (
-              <Text style={styles.sendButtonText}>{busy ? 'Steer' : 'Send'}</Text>
-            )}
-          </TouchableOpacity>
+          )}
         </View>
+        {busy ? (
+          // Stop and Steer alongside the four utility icons would squeeze the
+          // input below its placeholder's width, wrapping it mid-word (see
+          // M14-screen-layouts.md's verification log). Its own row keeps the
+          // input's line free instead.
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              onPress={() => void stop()}
+              style={[styles.sendButton, { backgroundColor: tokens.diffRemoveBackground }]}
+            >
+              <Text style={[styles.sendButtonText, { color: tokens.destructive }]}>{t.composer.stop}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={sending || (!text.trim() && attachments.length === 0)}
+              onPress={() => void send()}
+              style={[styles.sendButton, { backgroundColor: tokens.primary }]}
+            >
+              {sending ? (
+                <ActivityIndicator color={tokens.primaryForeground} size="small" />
+              ) : (
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>{COMPOSER_STEER_LABEL}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </KeyboardStickyView>
   )
 }
 
 const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+    paddingBottom: 8,
+    paddingHorizontal: 8
+  },
   attachmentChip: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
-    borderRadius: 14,
+    alignItems: 'center',
+    borderRadius: radius.control,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
     marginBottom: 6,
     marginRight: 6,
     paddingHorizontal: 10,
@@ -454,29 +569,24 @@ const styles = StyleSheet.create({
     paddingTop: 6
   },
   attachmentText: {
-    color: '#8a8a99',
-    fontSize: 12
+    ...type.caption
   },
   container: {
-    backgroundColor: '#0b0b0f',
-    borderTopColor: '#2a2a33',
     borderTopWidth: StyleSheet.hairlineWidth
   },
   iconButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 6,
     paddingVertical: 8
   },
-  iconText: {
-    fontSize: 18
-  },
-  iconTextActive: {
-    opacity: 0.5
-  },
   input: {
-    color: '#f2f2f5',
+    ...type.body,
     flex: 1,
-    fontSize: 15,
     maxHeight: 120,
+    minHeight: 48,
     paddingHorizontal: 8,
     paddingVertical: 8
   },
@@ -487,18 +597,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   sendButton: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 18,
+    alignItems: 'center',
+    borderRadius: radius.full,
+    justifyContent: 'center',
     marginLeft: 4,
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 14,
     paddingVertical: 9
   },
   sendButtonText: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
-  },
-  stopButton: {
-    backgroundColor: '#3a1f24'
   }
 })

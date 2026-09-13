@@ -1,6 +1,16 @@
 import { Stack, useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import {
@@ -13,10 +23,20 @@ import {
 } from '../../../src/connections/registry'
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
 import type { MobileConnection } from '../../../src/connections/types'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import {
+  CONNECTION_AUTH_MODE_LABEL,
+  CONNECTION_NEEDS_SIGN_IN_SUFFIX,
+  CONNECTION_NEVER_USED_SUFFIX,
+  CONNECTION_SIGN_OUT_CONFIRM_TITLE,
+  CONNECTION_SIGNING_OUT
+} from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
 import { signOutConnection } from '../../../src/net/auth/logout'
 import { type ConnectionTestResult, testConnection } from '../../../src/net/connection-test'
 import { setActiveProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
+import { radius, type } from '../../../src/theme/type'
 
 function relativeTime(epochMs: number): string {
   const minutes = Math.floor((Date.now() - epochMs) / 60_000)
@@ -38,33 +58,51 @@ function relativeTime(epochMs: number): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = {
-  oauth: 'Nous Portal',
-  password: 'Password',
-  token: 'Token'
-}
+const AUTH_MODE_LABEL: Record<MobileConnection['authMode'], string> = CONNECTION_AUTH_MODE_LABEL
 
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="connections"`
+// (card anatomy: name + primary/current pills, base URL, meta line, Test /
+// Sign out / Remove actions, "Add connection" at the bottom). The pill and
+// action labels below come from the vendored `t.settings.connections` block
+// (D15.4) — that same registry, so "Delete" is renamed to "Remove" and the
+// confirm copy to the desktop's own removeConfirmTitle/removeConfirmDesc.
+//
 /**
- * Connections settings screen (M09): add / edit / test / delete, primary and
+ * Connections settings screen (M09): add / edit / test / remove, primary and
  * last-used. "Add" reuses the existing `/connect` flow (M04/M08) rather than
  * a second add form — that screen already handles auth-mode detection.
  */
 export default function ConnectionsSettings() {
+  const tokens = useTheme()
   const router = useRouter()
-  const [connections, setConnections] = useState<MobileConnection[]>([])
+  const [connections, setConnections] = useState<MobileConnection[] | null>(null)
   const [activeId, setActiveId] = useState<null | string>(null)
   const [editingId, setEditingId] = useState<null | string>(null)
   const [editingLabel, setEditingLabel] = useState('')
   const [testing, setTesting] = useState<null | string>(null)
   const [results, setResults] = useState<Record<string, ConnectionTestResult>>({})
   const [signingOut, setSigningOut] = useState<null | string>(null)
+  const [error, setError] = useState<null | string>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const refresh = useCallback(() => {
-    setConnections(listConnections())
-    setActiveId(getActiveConnection()?.id ?? null)
+    try {
+      setConnections(listConnections())
+      setActiveId(getActiveConnection()?.id ?? null)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
   useFocusEffect(refresh)
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true)
+    refresh()
+  }, [refresh])
 
   const startEditing = (connection: MobileConnection) => {
     setEditingId(connection.id)
@@ -106,7 +144,7 @@ export default function ConnectionsSettings() {
   }
 
   const signOut = (connection: MobileConnection) => {
-    Alert.alert('Sign out?', connection.label, [
+    Alert.alert(CONNECTION_SIGN_OUT_CONFIRM_TITLE, connection.label, [
       { style: 'cancel', text: 'Cancel' },
       {
         onPress: () => {
@@ -123,7 +161,7 @@ export default function ConnectionsSettings() {
   }
 
   const remove = (connection: MobileConnection) => {
-    Alert.alert('Delete connection?', connection.label, [
+    Alert.alert(t.settings.connections.removeConfirmTitle, t.settings.connections.removeConfirmDesc(connection.label), [
       { style: 'cancel', text: 'Cancel' },
       {
         onPress: () => {
@@ -132,88 +170,143 @@ export default function ConnectionsSettings() {
           refresh()
         },
         style: 'destructive',
-        text: 'Delete'
+        text: t.settings.connections.removeConnection
       }
     ])
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Connections' }} />
-      <ScrollView contentContainerStyle={styles.content}>
-        {connections.length === 0 ? (
-          <Text style={styles.emptyText}>No saved connections yet.</Text>
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.connections.title }} />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
+        }
+      >
+        {error ? (
+          <View style={styles.center}>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
+            <TouchableOpacity
+              hitSlop={8}
+              onPress={() => refresh()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : connections === null ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={tokens.mutedForeground} size="large" />
+          </View>
+        ) : connections.length === 0 ? (
+          <Text style={[styles.emptyText, { color: tokens.mutedForeground }]}>{t.settings.connections.empty}</Text>
         ) : (
           connections.map(connection => {
             const result = results[connection.id]
             const isActive = connection.id === activeId
 
             return (
-              <View key={connection.id} style={styles.card}>
+              <View
+                key={connection.id}
+                style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+              >
                 <View style={styles.cardHeader}>
                   {editingId === connection.id ? (
                     <TextInput
                       autoFocus
                       onChangeText={setEditingLabel}
                       onSubmitEditing={() => saveLabel(connection)}
-                      style={styles.labelInput}
+                      style={[styles.labelInput, { borderBottomColor: tokens.primary, color: tokens.foreground }]}
                       value={editingLabel}
                     />
                   ) : (
-                    <TouchableOpacity onPress={() => startEditing(connection)} style={styles.labelRow}>
-                      <Text numberOfLines={1} style={styles.label}>
+                    <TouchableOpacity hitSlop={10} onPress={() => startEditing(connection)} style={styles.labelRow}>
+                      <Text numberOfLines={1} style={[styles.label, { color: tokens.foreground }]}>
                         {connection.label}
                       </Text>
-                      {connection.primary ? <Text style={styles.primaryBadge}>★ primary</Text> : null}
-                      {isActive ? <Text style={styles.activeBadge}>active</Text> : null}
+                      {connection.primary ? (
+                        <Text style={[styles.primaryBadge, { color: tokens.semantic.yellow }]}>
+                          {t.settings.connections.primaryPill}
+                        </Text>
+                      ) : null}
+                      {isActive ? (
+                        <Text style={[styles.activeBadge, { color: tokens.semantic.green }]}>
+                          {t.settings.connections.currentPill}
+                        </Text>
+                      ) : null}
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <Text numberOfLines={1} style={styles.baseUrl}>
+                <Text numberOfLines={1} style={[styles.baseUrl, { color: tokens.mutedForeground }]}>
                   {connection.baseUrl}
                 </Text>
-                <Text style={styles.meta}>
+                <Text style={[styles.meta, { color: tokens.mutedForeground }]}>
                   {AUTH_MODE_LABEL[connection.authMode]}
-                  {connection.lastUsedAt ? ` · used ${relativeTime(connection.lastUsedAt)}` : ' · never used'}
-                  {connection.needsLogin ? ' · needs sign-in' : ''}
+                  {connection.lastUsedAt
+                    ? ` · used ${relativeTime(connection.lastUsedAt)}`
+                    : ` ${CONNECTION_NEVER_USED_SUFFIX}`}
+                  {connection.needsLogin ? ` ${CONNECTION_NEEDS_SIGN_IN_SUFFIX}` : ''}
                 </Text>
 
                 {result ? (
-                  <Text style={[styles.resultText, result.ok ? styles.resultOk : styles.resultFail]}>
+                  <Text style={[styles.resultText, { color: result.ok ? tokens.semantic.green : tokens.destructive }]}>
                     {result.message}
                   </Text>
                 ) : null}
 
                 <View style={styles.actions}>
                   {!isActive ? (
-                    <TouchableOpacity onPress={() => use(connection)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>Use</Text>
+                    <TouchableOpacity
+                      hitSlop={8}
+                      onPress={() => use(connection)}
+                      style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                    >
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                        {t.profiles.switchToConnection(connection.label)}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={testing === connection.id}
+                    hitSlop={8}
                     onPress={() => void test(connection)}
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
-                    <Text style={styles.actionText}>{testing === connection.id ? 'Testing…' : 'Test'}</Text>
+                    <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                      {testing === connection.id ? t.settings.mcp.testing : t.settings.connections.testConnection}
+                    </Text>
                   </TouchableOpacity>
                   {!connection.primary ? (
-                    <TouchableOpacity onPress={() => makePrimary(connection)} style={styles.actionButton}>
-                      <Text style={styles.actionText}>Set primary</Text>
+                    <TouchableOpacity
+                      hitSlop={8}
+                      onPress={() => makePrimary(connection)}
+                      style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                    >
+                      <Text style={[styles.actionText, { color: tokens.secondaryForeground }]}>
+                        {t.settings.connections.makePrimary}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
                     disabled={signingOut === connection.id}
+                    hitSlop={8}
                     onPress={() => signOut(connection)}
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
                   >
-                    <Text style={styles.destructiveText}>
-                      {signingOut === connection.id ? 'Signing out…' : 'Sign out'}
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
+                      {signingOut === connection.id ? CONNECTION_SIGNING_OUT : t.settings.gateway.signOut}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => remove(connection)} style={styles.actionButton}>
-                    <Text style={styles.destructiveText}>Delete</Text>
+                  <TouchableOpacity
+                    hitSlop={8}
+                    onPress={() => remove(connection)}
+                    style={[styles.actionButton, { backgroundColor: tokens.secondary }]}
+                  >
+                    <Text style={[styles.destructiveText, { color: tokens.destructive }]}>
+                      {t.settings.connections.removeConnection}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -221,8 +314,15 @@ export default function ConnectionsSettings() {
           })
         )}
 
-        <TouchableOpacity onPress={() => router.push('/connect')} style={styles.addButton}>
-          <Text style={styles.addButtonText}>+ Add connection</Text>
+        <TouchableOpacity
+          accessibilityLabel={t.settings.connections.addConnection}
+          accessibilityRole="button"
+          onPress={() => router.push('/connect')}
+          style={[styles.addButton, { backgroundColor: tokens.primary }]}
+        >
+          <Text style={[styles.addButtonText, { color: tokens.primaryForeground }]}>
+            + {t.settings.connections.addConnection}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -231,16 +331,17 @@ export default function ConnectionsSettings() {
 
 const styles = StyleSheet.create({
   actionButton: {
-    backgroundColor: '#17171d',
-    borderRadius: 6,
+    alignItems: 'center',
+    borderRadius: radius.control,
+    justifyContent: 'center',
     marginRight: 8,
     marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6
+    minHeight: 48,
+    minWidth: 48,
+    paddingHorizontal: 10
   },
   actionText: {
-    color: '#f2f2f5',
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   },
   actions: {
@@ -248,33 +349,28 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap'
   },
   activeBadge: {
-    color: '#3fb950',
-    fontSize: 11,
+    ...type.caption,
     fontWeight: '700',
     marginLeft: 8
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#1f6feb',
-    borderRadius: 8,
+    borderRadius: radius.control,
+    justifyContent: 'center',
     marginTop: 4,
+    minHeight: 48,
     paddingVertical: 12
   },
   addButtonText: {
-    color: '#f2f2f5',
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   baseUrl: {
-    color: '#8a8a99',
-    fontFamily: 'monospace',
-    fontSize: 12,
+    ...type.mono,
     marginTop: 4
   },
   card: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 12,
     padding: 12
@@ -282,61 +378,66 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row'
   },
+  center: {
+    alignItems: 'center',
+    padding: 24
+  },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   destructiveText: {
-    color: '#e06c75',
-    fontSize: 12,
+    ...type.caption,
     fontWeight: '600'
   },
   emptyText: {
-    color: '#5a5a66',
-    fontSize: 14,
+    ...type.bodySmall,
     marginBottom: 16
   },
+  errorText: {
+    ...type.bodySmall,
+    marginBottom: 16,
+    textAlign: 'center'
+  },
   label: {
-    color: '#f2f2f5',
+    ...type.body,
     flexShrink: 1,
-    fontSize: 15,
     fontWeight: '600'
   },
   labelInput: {
-    borderBottomColor: '#1f6feb',
+    ...type.body,
     borderBottomWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
-    fontSize: 15,
     paddingVertical: 2
   },
   labelRow: {
     alignItems: 'center',
     flex: 1,
-    flexDirection: 'row'
+    flexDirection: 'row',
+    minHeight: 48
   },
   meta: {
-    color: '#5a5a66',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 4
   },
   primaryBadge: {
-    color: '#d19a66',
-    fontSize: 11,
+    ...type.caption,
     fontWeight: '700',
     marginLeft: 8
   },
-  resultFail: {
-    color: '#e06c75'
-  },
-  resultOk: {
-    color: '#3fb950'
-  },
   resultText: {
-    fontSize: 12,
+    ...type.caption,
     marginTop: 6
+  },
+  retryButton: {
+    borderRadius: radius.control,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  retryText: {
+    ...type.bodySmall,
+    fontWeight: '600'
   }
 })

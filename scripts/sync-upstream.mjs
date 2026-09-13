@@ -77,7 +77,21 @@ const ALLOW_LIST = [
   { dest: 'lib/todos.ts', src: 'apps/desktop/src/lib/todos.ts' },
   { dest: 'lib/error-surface.ts', src: 'apps/desktop/src/lib/error-surface.ts' },
   { dest: 'lib/embedded-images.ts', src: 'apps/desktop/src/lib/embedded-images.ts' },
-  { dest: 'lib/generated-images.ts', src: 'apps/desktop/src/lib/generated-images.ts' }
+  { dest: 'lib/generated-images.ts', src: 'apps/desktop/src/lib/generated-images.ts' },
+  // M13: the desktop's theme model — pure TypeScript, no imports outside the
+  // directory (D14). resolveMobileTheme (src/theme/resolve.ts) is ported
+  // against these, not re-authored from a screenshot.
+  { dest: 'themes/types.ts', src: 'apps/desktop/src/themes/types.ts' },
+  { dest: 'themes/color.ts', src: 'apps/desktop/src/themes/color.ts' },
+  { dest: 'themes/retint.ts', src: 'apps/desktop/src/themes/retint.ts' },
+  { dest: 'themes/presets.ts', src: 'apps/desktop/src/themes/presets.ts' },
+  // M14 (D15.4): every visible label on a ported screen comes from here, so a
+  // retyped string is a test failure, not a review comment. `en.ts` pulls in
+  // `TipId` transitively (types.ts); tips/catalog.ts is data-only with no
+  // imports of its own, so it's vendored whole rather than patched around.
+  { dest: 'i18n/en.ts', src: 'apps/desktop/src/i18n/en.ts' },
+  { dest: 'i18n/types.ts', src: 'apps/desktop/src/i18n/types.ts' },
+  { dest: 'lib/tips/catalog.ts', src: 'apps/desktop/src/lib/tips/catalog.ts' }
 ]
 
 function fail(message) {
@@ -106,6 +120,21 @@ function patch(content, { count = 1, description, file, find, replace }) {
  * browser global this project doesn't vendor.
  */
 const PATCHES = {
+  'i18n/en.ts': [
+    {
+      description:
+        "fieldLabels/fieldDescriptions come from '@/app/settings/constants', a generic schema-driven " +
+        'settings-field renderer this project has no equivalent of (M09/M10 settings screens are hand-built ' +
+        'per section) -> drop the import, keep the two keys (Translations requires them) as empty Records',
+      find: "import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'\n\n",
+      replace: ''
+    },
+    {
+      description: 'fieldLabels/fieldDescriptions values -> empty Record<string, string>, see the import removal above',
+      find: '    fieldLabels: FIELD_LABELS,\n    fieldDescriptions: FIELD_DESCRIPTIONS,',
+      replace: '    fieldLabels: {},\n    fieldDescriptions: {},'
+    }
+  ],
   'lib/chat-messages/hydration.ts': [
     {
       description: "skillInvocationText import from the '@hermes/shared' workspace package -> vendored copy",
@@ -484,12 +513,24 @@ function stageAndSwap(contents, commit) {
  * import's depth). Auto-fixing here — deterministic for unchanged input, so it
  * doesn't break idempotency — keeps `src/upstream/**` lint-clean without a
  * bespoke reorder patch per file.
+ *
+ * The two repo-specific style rules (no hard-coded hex, no numeric
+ * borderRadius) are turned off for this pass, not just left to the main
+ * config's `src/upstream/**` ignore: that ignore is matched against the
+ * final path, but this staging directory is a temp sibling of `src/` (see
+ * `stageAndSwap`'s docstring for why it can't be created under
+ * `src/upstream/` itself), so the glob never matches it here. Vendored
+ * content — e.g. `themes/presets.ts`'s skin hex values, `i18n/en.ts`'s
+ * copy — is exempt from both rules at its real destination; this only
+ * makes the staging pass agree.
  */
 function lintFixDest(targetRoot) {
   const eslintBin = path.join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
   const prettierBin = path.join(REPO_ROOT, 'node_modules', 'prettier', 'bin', 'prettier.cjs')
+  const disabledRules = ['local/no-hardcoded-hex-color', 'local/no-numeric-border-radius']
+  const ruleArgs = disabledRules.flatMap(rule => ['--rule', `${rule}: off`])
 
-  execFileSync(process.execPath, [eslintBin, '--fix', targetRoot], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync(process.execPath, [eslintBin, '--fix', ...ruleArgs, targetRoot], { cwd: REPO_ROOT, stdio: 'inherit' })
   execFileSync(process.execPath, [prettierBin, '--write', targetRoot], { cwd: REPO_ROOT, stdio: 'inherit' })
 }
 

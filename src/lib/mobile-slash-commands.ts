@@ -9,21 +9,26 @@
  * Scope trim vs. the desktop file (documented as a Deviation in
  * M06-chat-screen.md): the desktop has local UI for a couple dozen commands
  * — pickers (`/model`, `/resume`), a skin switcher, a pet screen, a memory
- * graph. None of those screens exist in this milestone (`/model`/`/resume`
- * are M07's session list + M09's settings), so they classify as
- * `no-mobile-ui` here rather than getting a mobile action of their own.
- * Terminal-only, messaging-only and advanced-power-user commands are
- * unavailable for the same reasons they are on desktop — this app is not a
- * TUI either, and `/approve` `/deny` are the approval CARD's job, not typed
- * text (see ApprovalCard).
+ * graph. M13 Step 8 (task D) closes the gap for the ones that now have a
+ * mobile screen to route to (M07's session list, M09's settings, M13's own
+ * appearance screen); the rest stay `no-mobile-ui`. Terminal-only,
+ * messaging-only and advanced-power-user commands are unavailable for the
+ * same reasons they are on desktop — this app is not a TUI either, and
+ * `/approve` `/deny` are the approval CARD's job, not typed text (see
+ * ApprovalCard).
  */
 
-export type MobileUnavailableReason = 'advanced' | 'messaging' | 'no-mobile-ui' | 'terminal' | 'voice'
+import type { Href } from 'expo-router'
+
+export type MobileUnavailableReason = 'advanced' | 'machine-bound' | 'messaging' | 'no-mobile-ui' | 'terminal' | 'voice'
 
 export type MobileCommandRpc = 'prompt.btw' | 'session.compress' | 'session.interrupt' | 'session.title'
 
 export type MobileCommandSurface =
-  { kind: 'rpc'; rpc: MobileCommandRpc } | { kind: 'exec' } | { kind: 'unavailable'; reason: MobileUnavailableReason }
+  | { kind: 'rpc'; rpc: MobileCommandRpc }
+  | { kind: 'exec' }
+  | { kind: 'navigate'; route: Href }
+  | { kind: 'unavailable'; reason: MobileUnavailableReason }
 
 export interface MobileCommandSpec {
   name: string
@@ -34,6 +39,8 @@ export interface MobileCommandSpec {
 
 const rpc = (name: MobileCommandRpc): MobileCommandSurface => ({ kind: 'rpc', rpc: name })
 
+const navigate = (route: Href): MobileCommandSurface => ({ kind: 'navigate', route })
+
 const unavailable = (reason: MobileUnavailableReason): MobileCommandSurface => ({ kind: 'unavailable', reason })
 
 // Commands this milestone's chat screen fulfils directly (session header /
@@ -42,13 +49,36 @@ const MOBILE_COMMAND_SPECS: readonly MobileCommandSpec[] = [
   { name: '/stop', surface: rpc('session.interrupt') },
   { name: '/compress', aliases: ['/compact'], surface: rpc('session.compress'), argumentMode: 'text' },
   { name: '/title', surface: rpc('session.title'), argumentMode: 'text' },
-  { name: '/btw', surface: rpc('prompt.btw'), argumentMode: 'text' }
+  { name: '/btw', surface: rpc('prompt.btw'), argumentMode: 'text' },
+
+  // M13 Step 8 (task D): routed to the screens that now exist. `/new` and
+  // `/reset` are the same backend command (`/reset` is a literal alias, not
+  // "clear current context" — hermes_cli/commands.py), and `/resume`,
+  // `/sessions`, `/switch` all alias to the same session-picker surface on
+  // desktop (apps/desktop/src/lib/desktop-slash-commands.ts) — bare
+  // invocation always opens a list, never auto-resumes the most recent
+  // session, so all three route to the session list, same as the picker.
+  {
+    name: '/new',
+    aliases: ['/reset'],
+    surface: navigate({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' } as Href)
+  },
+  { name: '/resume', aliases: ['/sessions', '/switch'], surface: navigate('/(main)/session-list' as Href) },
+  { name: '/model', surface: navigate('/(main)/settings/models' as Href) },
+  { name: '/profile', surface: navigate('/(main)/settings/profiles' as Href) },
+  { name: '/skills', surface: navigate('/(main)/settings/skills' as Href) },
+  // Not in the task's literal 8-command list, but M13's own appearance
+  // screen (Step 3) is exactly what desktop's `/skin` picker does — leaving
+  // it `no-mobile-ui` after building that screen in this same milestone
+  // would be an avoidable gap (M13 plan Deviations).
+  { name: '/skin', surface: navigate('/(main)/settings/appearance' as Href) }
 ]
 
 // Same rationale as desktop's NO_DESKTOP_SURFACE, reason-for-reason, plus
 // `no-mobile-ui` for desktop actions/pickers this milestone has nowhere to
-// put (no session list, model picker, skin picker, pet screen, memory graph,
-// or CDP-browser control on a phone).
+// put, and `machine-bound` for the ones AGENTS.md rules out entirely (pet
+// overlay, embedded browser, the server's own mic/speaker) rather than
+// "no UI built yet".
 const NO_MOBILE_SURFACE: Record<MobileUnavailableReason, readonly string[]> = {
   terminal: [
     '/busy',
@@ -96,30 +126,10 @@ const NO_MOBILE_SURFACE: Record<MobileUnavailableReason, readonly string[]> = {
     '/reload_skills'
   ],
   voice: ['/voice'],
-  'no-mobile-ui': [
-    '/new',
-    '/reset',
-    '/branch',
-    '/fork',
-    '/resume',
-    '/sessions',
-    '/switch',
-    '/model',
-    '/skin',
-    '/pet',
-    '/pets',
-    '/hatch',
-    '/generate-pet',
-    '/profile',
-    '/skills',
-    '/handoff',
-    '/wake',
-    '/browser',
-    '/journey',
-    '/learning',
-    '/memory-graph',
-    '/yolo'
-  ]
+  // AGENTS.md "Machine features don't exist here": the pet overlay, the
+  // embedded browser/preview, and `wake.*` (the server's own mic).
+  'machine-bound': ['/pet', '/pets', '/hatch', '/generate-pet', '/browser', '/wake'],
+  'no-mobile-ui': ['/branch', '/fork', '/handoff', '/journey', '/learning', '/memory-graph', '/yolo']
 }
 
 const ALL_SPECS: readonly MobileCommandSpec[] = [
@@ -169,6 +179,7 @@ const UNAVAILABLE_MESSAGES: Record<MobileUnavailableReason, string> = {
   messaging: 'Use the approval card instead of typing this.',
   advanced: 'Not available on mobile yet.',
   voice: 'Use the mic button instead.',
+  'machine-bound': "This drives the server's own machine, not your phone.",
   'no-mobile-ui': 'Not available on mobile yet.'
 }
 

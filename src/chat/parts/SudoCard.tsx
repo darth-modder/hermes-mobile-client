@@ -4,6 +4,10 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { respondSudo } from '../../gateway/session-connection'
 import type { SudoRequest } from '../../gateway/session-stream-reducer'
+import { hapticSubmit } from '../../lib/haptics'
+import { t } from '../../lib/t'
+import { useTheme } from '../../theme/provider'
+import { radius, type } from '../../theme/type'
 
 export interface SudoCardProps {
   storedSessionId: string
@@ -15,10 +19,12 @@ export interface SudoCardProps {
 export function SudoCard({ storedSessionId, request }: SudoCardProps) {
   usePreventScreenCapture('sudo-card')
 
+  const tokens = useTheme()
   const [password, setPassword] = useState('')
   const [sending, setSending] = useState(false)
 
   const submit = async () => {
+    hapticSubmit()
     setSending(true)
 
     try {
@@ -30,8 +36,8 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Sudo password requested</Text>
+    <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{t.prompts.sudoTitle}</Text>
       <View style={styles.row}>
         <TextInput
           autoCapitalize="none"
@@ -39,14 +45,25 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
           editable={!sending}
           onChangeText={setPassword}
           onSubmitEditing={() => void submit()}
-          placeholder="Password"
-          placeholderTextColor="#5a5a66"
+          placeholder={t.prompts.sudoPlaceholder}
+          placeholderTextColor={tokens.mutedForeground}
           secureTextEntry
-          style={styles.input}
+          style={[
+            styles.input,
+            { backgroundColor: tokens.input, borderColor: tokens.border, color: tokens.foreground }
+          ]}
           value={password}
         />
-        <TouchableOpacity disabled={sending || !password} onPress={() => void submit()} style={styles.button}>
-          {sending ? <ActivityIndicator color="#f2f2f5" size="small" /> : <Text style={styles.buttonText}>Send</Text>}
+        <TouchableOpacity
+          disabled={sending || !password}
+          onPress={() => void submit()}
+          style={[styles.button, { backgroundColor: tokens.primary }]}
+        >
+          {sending ? (
+            <ActivityIndicator color={tokens.primaryForeground} size="small" />
+          ) : (
+            <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Send</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -55,30 +72,27 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 6,
+    alignItems: 'center',
+    borderRadius: radius.control,
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   buttonText: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '600'
   },
   container: {
-    backgroundColor: '#14181c',
-    borderColor: '#2a2a33',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 6,
     padding: 12
   },
   input: {
-    backgroundColor: '#17171d',
-    borderColor: '#2a2a33',
-    borderRadius: 6,
+    borderRadius: radius.control,
     borderWidth: 1,
-    color: '#f2f2f5',
     flex: 1,
     paddingHorizontal: 10,
     paddingVertical: 8
@@ -89,8 +103,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   title: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     fontWeight: '700',
     marginBottom: 8
   }

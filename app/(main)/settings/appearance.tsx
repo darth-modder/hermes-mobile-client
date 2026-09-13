@@ -1,0 +1,196 @@
+import { useStore } from '@nanostores/react'
+import { Stack } from 'expo-router'
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { APPEARANCE_SKIN_SECTION_TITLE, appearanceSkinSyncHint } from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
+import { $backendSkinName, $backendSkins } from '../../../src/theme/backend-skin'
+import { useTheme } from '../../../src/theme/provider'
+import {
+  $modeOverride,
+  $skinName,
+  listAllSkins,
+  type ModeOverride,
+  resolveSkinTheme,
+  setModeOverride,
+  setSkinName
+} from '../../../src/theme/skin-selection'
+import { radius, type } from '../../../src/theme/type'
+import { DEFAULT_SKIN_NAME } from '../../../src/upstream/themes/presets'
+import type { DesktopTheme } from '../../../src/upstream/themes/types'
+
+// Order matches docs/mobile-prototypes/settings.html's `data-view="appearance"`
+// segmented control (Light, Dark, System), not this file's pre-M14 order.
+const MODE_OPTIONS: { label: string; value: ModeOverride }[] = [
+  { label: t.settings.modeOptions.light.label, value: 'light' },
+  { label: t.settings.modeOptions.dark.label, value: 'dark' },
+  { label: t.settings.modeOptions.system.label, value: 'system' }
+]
+
+function Swatch({ color }: { color: string }) {
+  return <View style={[styles.swatch, { backgroundColor: color }]} />
+}
+
+function SkinRow({ active, theme }: { active: boolean; theme: DesktopTheme }) {
+  const tokens = useTheme()
+  const preview = theme.colors
+
+  return (
+    <TouchableOpacity
+      accessibilityLabel={`Select ${theme.label} skin`}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+      onPress={() => setSkinName(theme.name)}
+      style={[styles.skinRow, { borderColor: tokens.border }]}
+    >
+      <View style={styles.swatches}>
+        <Swatch color={preview.background} />
+        <Swatch color={preview.card} />
+        <Swatch color={preview.primary} />
+        <Swatch color={preview.userBubble ?? preview.secondary} />
+      </View>
+      <View style={styles.skinLabels}>
+        <Text style={[styles.skinLabel, { color: tokens.foreground }]}>{theme.label}</Text>
+        <Text style={[styles.skinDescription, { color: tokens.mutedForeground }]}>{theme.description}</Text>
+      </View>
+      {active ? <Text style={[styles.checkmark, { color: tokens.primary }]}>✓</Text> : null}
+    </TouchableOpacity>
+  )
+}
+
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="appearance"`
+// (Colour mode segment, Skin list). That view's own "Chat" toggle preview at
+// the bottom (Collapse thinking by default, Message reactions) is content
+// for the new Chat settings section (M14's add-list), not this screen — it
+// only appears here because the prototype is a single static mockup file.
+export default function AppearanceSettings() {
+  const tokens = useTheme()
+  const skinName = useStore($skinName)
+  const modeOverride = useStore($modeOverride)
+  const backendSkins = useStore($backendSkins)
+  const backendSkinName = useStore($backendSkinName)
+
+  const skins = listAllSkins(backendSkins)
+  // D15.2: name the backend's synced skin here, not `skinName` (the device's
+  // current pick) — those diverge as soon as the row below is tapped, and
+  // "applies automatically" would then describe the wrong skin.
+  const syncedTheme = resolveSkinTheme(backendSkinName ?? DEFAULT_SKIN_NAME, backendSkins)
+
+  return (
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.sections.appearance }} />
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>{t.settings.appearance.colorMode}</Text>
+        <View style={[styles.modeRow, { borderColor: tokens.border }]}>
+          {MODE_OPTIONS.map(option => {
+            const selected = option.value === modeOverride
+
+            return (
+              <TouchableOpacity
+                accessibilityLabel={`${option.label} appearance mode`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                key={option.value}
+                onPress={() => setModeOverride(option.value)}
+                style={[styles.modeOption, { backgroundColor: selected ? tokens.primary : 'transparent' }]}
+              >
+                <Text
+                  style={[styles.modeOptionLabel, { color: selected ? tokens.primaryForeground : tokens.foreground }]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>{APPEARANCE_SKIN_SECTION_TITLE}</Text>
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>
+          {appearanceSkinSyncHint(syncedTheme.label)}
+        </Text>
+        {skins.map(theme => (
+          <SkinRow active={theme.name === skinName} key={theme.name} theme={theme} />
+        ))}
+      </ScrollView>
+    </SafeAreaView>
+  )
+}
+
+const styles = StyleSheet.create({
+  checkmark: {
+    ...type.title,
+    fontWeight: '700',
+    marginLeft: 8
+  },
+  container: {
+    flex: 1
+  },
+  content: {
+    paddingBottom: 32,
+    paddingHorizontal: 16,
+    paddingTop: 12
+  },
+  modeOption: {
+    alignItems: 'center',
+    borderRadius: radius.control,
+    flex: 1,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingVertical: 10
+  },
+  modeOptionLabel: {
+    ...type.bodySmall,
+    fontWeight: '600'
+  },
+  modeRow: {
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 20,
+    padding: 4
+  },
+  sectionHint: {
+    ...type.caption,
+    marginBottom: 12
+  },
+  sectionTitle: {
+    ...type.label,
+    fontWeight: '700',
+    marginBottom: 8,
+    marginTop: 20,
+    textTransform: 'uppercase'
+  },
+  skinDescription: {
+    ...type.caption,
+    marginTop: 2
+  },
+  skinLabel: {
+    ...type.body,
+    fontWeight: '600'
+  },
+  skinLabels: {
+    flex: 1
+  },
+  skinRow: {
+    alignItems: 'center',
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+    minHeight: 48,
+    padding: 12
+  },
+  swatch: {
+    borderRadius: radius.icon,
+    height: 16,
+    width: 16
+  },
+  swatches: {
+    flexDirection: 'row',
+    gap: 4
+  }
+})

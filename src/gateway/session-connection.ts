@@ -37,6 +37,7 @@
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
 import type { MobileConnection } from '../connections/types'
+import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
@@ -49,10 +50,18 @@ import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
 import { requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
+import { ingestBackendSkin } from '../theme/backend-skin'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
 import { reconnectBackoffDelayMs } from '../upstream/lib/reconnect-backoff'
 import { type ConnectionState, JsonRpcGatewayError } from '../upstream/shared/json-rpc-gateway'
-import type { RpcEvent, SessionCreateResponse, SessionMessage, SessionResumeResponse } from '../upstream/types/hermes'
+import type { HermesSkin } from '../upstream/shared/skin'
+import type {
+  GatewayReadyPayload,
+  RpcEvent,
+  SessionCreateResponse,
+  SessionMessage,
+  SessionResumeResponse
+} from '../upstream/types/hermes'
 
 import { DeltaFlushScheduler } from './delta-flush-scheduler'
 import { buildGatewayWsUrl, createGatewaySocketFactory, type DialAuth, type DialTarget } from './dial'
@@ -83,6 +92,14 @@ export function onGatewayConnectionState(listener: (state: ConnectionState) => v
   stateListeners.add(listener)
 
   return () => stateListeners.delete(listener)
+}
+
+/** The gateway's connection state right now — for a component mounting
+ *  after the gateway already connected (`onGatewayConnectionState` only
+ *  reports future transitions, not the value at subscribe time). M14:
+ *  `src/chat/ConnectionBanner.tsx`'s initial render. */
+export function getGatewayConnectionState(): ConnectionState {
+  return gateway?.connectionState ?? 'idle'
 }
 
 function publishAll(): void {
@@ -212,9 +229,16 @@ function dispatchEffects(effects: Effect[]): void {
 
         break
 
-      // Not in M06's task list (no haptics/sound dependency pulled in yet) — revisit later if wanted.
       case 'haptic':
+        if (effect.kind === 'streamStart') {
+          hapticStreamStart()
+        } else {
+          hapticSubmit()
+        }
 
+        break
+
+      // No sound asset this app ships (M13 Step 6/D) — stays a no-op, documented in docs/PARITY.md.
       case 'sound':
         break
     }
@@ -415,10 +439,25 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   const offPlatforms = instance.on('platforms.changed', () => notifyPlatformsChanged())
   const offPairing = instance.on('pairing.changed', () => notifyPairingChanged())
 
+  // M13: skin sync (D14). `gateway.ready`'s embedded skin seeds the registry
+  // without repainting (a fresh connect must never override a persisted user
+  // pick); `skin.changed` is the live broadcast that does repaint. Mirrors
+  // apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/
+  // lifecycle.ts's two `ingestBackendSkin` calls.
+  const offReady = instance.on<GatewayReadyPayload>('gateway.ready', event => {
+    ingestBackendSkin(event.payload?.skin as HermesSkin | undefined, { apply: false })
+  })
+
+  const offSkinChanged = instance.on<HermesSkin>('skin.changed', event => {
+    ingestBackendSkin(event.payload, { apply: true })
+  })
+
   disposeLiveSyncEvents = () => {
     offCron()
     offPlatforms()
     offPairing()
+    offReady()
+    offSkinChanged()
   }
 
   instance.onState(state => {
@@ -522,13 +561,58 @@ function runtimeIdForStored(storedSessionId: string): string {
   return storedSessionId
 }
 
+/** `session.create`/`session.resume` only ever return settled history — a
+ *  tool call that hasn't finished yet has no `role: "tool"` row to convert in
+ *  the first place (a genuinely in-flight call is restored separately, as a
+ *  pending request, by resume-pending.ts). So any `tool-call` part still
+ *  missing `completedAt` after `toChatMessages` is a hydration artifact, not
+ *  a real running call: at least one gateway's resume projection omits the
+ *  stored tool row's `timestamp` entirely, and upstream's
+ *  `storedToolMessagePart` (tool-parts.ts, vendored — not patched here)
+ *  carries that missing value straight through to `completedAt`, which
+ *  `ToolCallCard.tsx:40` reads as `running`. Fixed at this seeding boundary
+ *  instead of in vendored code so `scripts/sync-upstream.mjs` keeps
+ *  reproducing tool-parts.ts byte-for-byte. `completedAt`'s only consumer is
+ *  that `undefined` check — the value itself is never displayed
+ *  (Transcript.tsx just forwards it) — so the fallback timestamp here can't
+ *  show a wrong time on screen. */
+function closeRestoredToolCallParts(message: ChatMessage): ChatMessage {
+  if (!message.parts.some(part => part.type === 'tool-call' && part.completedAt === undefined)) {
+    return message
+  }
+
+  return {
+    ...message,
+    parts: message.parts.map(part =>
+      part.type === 'tool-call' && part.completedAt === undefined
+        ? { ...part, completedAt: part.timestamp ?? message.timestamp ?? Date.now() / 1000 }
+        : part
+    )
+  }
+}
+
 function seedSessionMessages(storedSessionId: string, messages: SessionMessage[] | undefined): void {
   if (!messages?.length) {
     return
   }
 
-  const chatMessages = toChatMessages(messages)
+  const chatMessages = toChatMessages(messages).map(closeRestoredToolCallParts)
   reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
+}
+
+/** Seed a session's title from a caller who already knows it (e.g. the REST
+ *  list this resume was opened from) — the reducer only ever learns a title
+ *  from a `session.title` event, which can lag well behind the screen
+ *  mounting and show "Untitled" in the meantime. Never overwrites a title
+ *  the reducer already has. */
+function seedSessionTitle(storedSessionId: string, title: string | undefined): void {
+  if (!title) {
+    return
+  }
+
+  reducerState = updateSession(reducerState, storedSessionId, session =>
+    session.title ? session : { ...session, title }
+  ).state
 }
 
 /** Start a brand-new session (no session-list screen exists yet — M07 — so
@@ -565,12 +649,13 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
  *  Both reconnect branches (inside the server's orphan grace, and after a
  *  `session.reclaimed`) call this the same way, so pending-request restore
  *  (D10.2) runs identically on either. */
-export async function resumeSession(storedSessionId: string): Promise<string> {
+export async function resumeSession(storedSessionId: string, knownTitle?: string): Promise<string> {
   const client = await ensureGatewayConnection()
   const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
+  seedSessionTitle(storedSessionId, knownTitle)
 
   const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
 

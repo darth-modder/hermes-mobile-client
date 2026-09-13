@@ -8,6 +8,8 @@ web-build
 .claude
 .zcode
 project-planning
+docs/desktop-prototypes
+docs/mobile-prototypes
 *.md
 package-lock.json
 skills-lock.json

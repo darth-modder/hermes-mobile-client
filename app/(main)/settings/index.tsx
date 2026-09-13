@@ -1,57 +1,67 @@
 import { useStore } from '@nanostores/react'
 import { type Href, Stack, useRouter } from 'expo-router'
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Fragment } from 'react'
+import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { SETTINGS_GROUPS } from '../../../src/components/settings-rows'
+import { ListRow, ListRowSeparator } from '../../../src/components/ui/ListRow'
 import { getActiveConnection } from '../../../src/connections/registry'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { CONNECTED_TO_LABEL, NO_ACTIVE_CONNECTION, PROFILE_LABEL_PREFIX } from '../../../src/lib/strings.mobile'
 import { $activeProfile } from '../../../src/store/profile'
+import { useTheme } from '../../../src/theme/provider'
+import { type } from '../../../src/theme/type'
 
-interface SettingsRow {
-  route: Href
-  title: string
-  subtitle: string
-}
-
+// Replicates: docs/mobile-prototypes/settings.html's `data-view="index"`
+// (list rows, group labels), with the group order/row set as
+// settings-rows.ts describes; row labels also draw on
+// docs/desktop-prototypes/a-main/settings.html's nav rail via the vendored
+// en.ts (src/lib/t.ts).
+//
 // Machine-bound settings (local models, terminal backend, pool limits,
 // updates) are not rows here at all — AGENTS.md "Machine features don't
 // exist here" — rather than a row that opens to an empty/disabled screen.
-const ROWS: SettingsRow[] = [
-  { route: '/(main)/settings/connections', subtitle: 'Add, edit, test, switch, delete', title: 'Connections' },
-  { route: '/(main)/settings/profiles', subtitle: 'Switch or create a profile', title: 'Profiles' },
-  { route: '/(main)/settings/providers', subtitle: 'API keys, custom endpoints', title: 'Providers' },
-  { route: '/(main)/settings/models', subtitle: 'Main model, auxiliary tasks, toolsets', title: 'Models' },
-  { route: '/(main)/settings/mcp', subtitle: 'Add, test, enable MCP servers', title: 'MCP' },
-  { route: '/(main)/settings/skills', subtitle: 'Enable, install, uninstall', title: 'Skills' },
-  { route: '/(main)/settings/plugins', subtitle: 'Installed plugin dashboards', title: 'Plugins' },
-  { route: '/(main)/settings/notifications', subtitle: 'Push and in-app alerts', title: 'Notifications' },
-  { route: '/(main)/settings/voice', subtitle: 'Dictation and spoken replies', title: 'Voice' }
-]
-
+//
+// Group/route/title data lives in ../../../src/components/settings-rows.ts
+// (pure, no react-native import — see that file's header for the grouping
+// rationale and the open D-entry question on group order).
 export default function SettingsIndex() {
+  const tokens = useTheme()
   const router = useRouter()
   const connection = getActiveConnection()
   const activeProfile = useStore($activeProfile)
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Settings' }} />
-      <View style={styles.summary}>
-        <Text style={styles.summaryLabel}>Connected to</Text>
-        <Text numberOfLines={1} style={styles.summaryValue}>
-          {connection ? connection.label || connection.baseUrl : 'No active connection'}
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: 'Settings' }} />
+      <View style={[styles.summary, { borderBottomColor: tokens.border }]}>
+        <Text style={[styles.summaryLabel, { color: tokens.textTertiary }]}>{CONNECTED_TO_LABEL}</Text>
+        <Text numberOfLines={1} style={[styles.summaryValue, { color: tokens.foreground }]}>
+          {connection ? connection.label || connection.baseUrl : NO_ACTIVE_CONNECTION}
         </Text>
-        {activeProfile ? <Text style={styles.summaryProfile}>Profile: {activeProfile}</Text> : null}
+        {activeProfile ? (
+          <Text style={[styles.summaryProfile, { color: tokens.mutedForeground }]}>
+            {PROFILE_LABEL_PREFIX} {activeProfile}
+          </Text>
+        ) : null}
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        {ROWS.map(row => (
-          <TouchableOpacity key={row.title} onPress={() => router.push(row.route)} style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{row.title}</Text>
-              <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
+        {SETTINGS_GROUPS.map(group => (
+          <Fragment key={group.label}>
+            <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{group.label}</Text>
+            {group.rows.map((row, index) => (
+              <Fragment key={row.route}>
+                <ListRow
+                  onPress={() => router.push(row.route as Href)}
+                  subtitle={row.subtitle}
+                  title={row.title}
+                  value={row.value}
+                />
+                {index < group.rows.length - 1 ? <ListRowSeparator /> : null}
+              </Fragment>
+            ))}
+          </Fragment>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -59,59 +69,37 @@ export default function SettingsIndex() {
 }
 
 const styles = StyleSheet.create({
-  chevron: {
-    color: '#5a5a66',
-    fontSize: 20
-  },
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     paddingBottom: 32
   },
-  row: {
-    alignItems: 'center',
-    borderBottomColor: '#17171d',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  sectionLabel: {
+    ...type.caption,
+    fontWeight: '600',
+    letterSpacing: 0.6,
     paddingHorizontal: 16,
-    paddingVertical: 14
-  },
-  rowSubtitle: {
-    color: '#8a8a99',
-    fontSize: 12,
-    marginTop: 2
-  },
-  rowText: {
-    flex: 1
-  },
-  rowTitle: {
-    color: '#f2f2f5',
-    fontSize: 15,
-    fontWeight: '600'
+    paddingTop: 20,
+    paddingBottom: 8,
+    textTransform: 'uppercase'
   },
   summary: {
-    borderBottomColor: '#17171d',
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: 12,
     paddingHorizontal: 16,
     paddingTop: 8
   },
   summaryLabel: {
-    color: '#5a5a66',
-    fontSize: 11,
+    ...type.caption,
     textTransform: 'uppercase'
   },
   summaryProfile: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   summaryValue: {
-    color: '#f2f2f5',
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600',
     marginTop: 2
   }

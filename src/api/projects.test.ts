@@ -90,10 +90,14 @@ describe('src/api/projects', () => {
   it('projects.update patches the given fields under the project id', async () => {
     fake.request.mockResolvedValue({ project: {} })
 
+    // Not a UI colour (M13's no-hardcoded-hex-color rule targets those): a
+    // user-picked rail colour on the project record itself, sent verbatim.
+    // eslint-disable-next-line local/no-hardcoded-hex-color
     await updateProject('p_1', { color: '#fff', name: 'Renamed' })
 
     expect(fake.request).toHaveBeenCalledWith(
       'projects.update',
+      // eslint-disable-next-line local/no-hardcoded-hex-color
       { color: '#fff', id: 'p_1', name: 'Renamed' },
       undefined
     )

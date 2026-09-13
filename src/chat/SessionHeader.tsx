@@ -4,10 +4,29 @@ import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
 import { compressSession, renameSession } from '../gateway/session-connection'
+import { ChevronLeft } from '../lib/icons'
+import { SESSION_HEADER_COMPRESS_FAILED_TITLE, SESSION_HEADER_COMPRESS_LABEL } from '../lib/strings.mobile'
+import { t } from '../lib/t'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
+import { useTheme } from '../theme/provider'
+import { type } from '../theme/type'
 
 import { UsageChip } from './parts/UsageChip'
+
+// Replicates: docs/mobile-prototypes/chat.html's own header (line 62-73:
+// back · title/subtitle · 2 actions, subtitle a plain `.header__sub`
+// text node) and composer (line 124-127: the model/effort chips live in
+// `.composer__controls`, not the header). Model/effort are not composer
+// chips here (Deviation 11: mobile has no session-scoped switch API to wire
+// a chip to — `/model` and Settings routes to the same place `slash.model`
+// would need); this component's own scope is narrower still, per
+// docs/desktop-prototypes/e-overlays/model-picker.html's header comment
+// ("Mobile: At parity: providers and models live in Settings on mobile,
+// M09, docs/PARITY.md") — no sheet is built here for that reason. Following
+// the prototype's own subtitle shape (plain text) rather than the M13
+// closing-fixes round's first attempt, which made the subtitle its own
+// 48dp touchable and grew the header to 96dp to fit it — see Deviation 16.
 
 export interface SessionHeaderProps {
   storedSessionId: string
@@ -16,6 +35,7 @@ export interface SessionHeaderProps {
 /** Model/provider/effort + title edit + `session.compress` — the chat
  *  screen's top bar. */
 export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
+  const tokens = useTheme()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const [editingTitle, setEditingTitle] = useState<null | string>(null)
@@ -23,11 +43,17 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
 
   if (!session) {
     return (
-      <View style={styles.container}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Text style={styles.backText}>‹</Text>
+      <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
+        <TouchableOpacity
+          accessibilityLabel="Back"
+          accessibilityRole="button"
+          hitSlop={12}
+          onPress={() => router.back()}
+          style={styles.back}
+        >
+          <ChevronLeft color={tokens.foreground} size={26} />
         </TouchableOpacity>
-        <ActivityIndicator color="#8a8a99" size="small" />
+        <ActivityIndicator color={tokens.mutedForeground} size="small" />
       </View>
     )
   }
@@ -64,7 +90,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
         id: `compress-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Compress failed',
+        title: SESSION_HEADER_COMPRESS_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -73,9 +99,15 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
   }
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>‹</Text>
+    <View style={[styles.container, { backgroundColor: tokens.background, borderBottomColor: tokens.border }]}>
+      <TouchableOpacity
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        hitSlop={12}
+        onPress={() => router.back()}
+        style={styles.back}
+      >
+        <ChevronLeft color={tokens.foreground} size={26} />
       </TouchableOpacity>
       <View style={styles.titleColumn}>
         {editingTitle !== null ? (
@@ -84,28 +116,39 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
             onBlur={() => void commitTitle()}
             onChangeText={setEditingTitle}
             onSubmitEditing={() => void commitTitle()}
-            style={styles.titleInput}
+            style={[styles.titleInput, { borderBottomColor: tokens.primary, color: tokens.foreground }]}
             value={editingTitle}
           />
         ) : (
-          <TouchableOpacity onPress={() => setEditingTitle(session.title || 'Untitled')}>
-            <Text numberOfLines={1} style={styles.title}>
-              {session.title || 'Untitled'}
+          // The whole column is one 56dp touchable that starts the rename —
+          // see the file-header comment above for why the model/effort line
+          // it contains is plain text, not its own control.
+          <TouchableOpacity
+            onPress={() => setEditingTitle(session.title || t.sidebar.row.untitledPlaceholder)}
+            style={styles.titleTouchable}
+          >
+            <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
+              {session.title || t.sidebar.row.untitledPlaceholder}
             </Text>
+            <View style={styles.subtitleRow}>
+              <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
+                {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
+              </Text>
+              <UsageChip usage={session.usage} />
+            </View>
           </TouchableOpacity>
         )}
-        <View style={styles.subtitleRow}>
-          <Text numberOfLines={1} style={styles.subtitle}>
-            {[session.provider, session.model, session.reasoningEffort].filter(Boolean).join(' · ') || '—'}
-          </Text>
-          <UsageChip usage={session.usage} />
-        </View>
       </View>
-      <TouchableOpacity disabled={compressing} onPress={() => void compress()} style={styles.compressButton}>
+      <TouchableOpacity
+        disabled={compressing}
+        hitSlop={10}
+        onPress={() => void compress()}
+        style={styles.compressButton}
+      >
         {compressing ? (
-          <ActivityIndicator color="#8a8a99" size="small" />
+          <ActivityIndicator color={tokens.mutedForeground} size="small" />
         ) : (
-          <Text style={styles.compressText}>Compress</Text>
+          <Text style={[styles.compressText, { color: tokens.primary }]}>{SESSION_HEADER_COMPRESS_LABEL}</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -114,33 +157,29 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
 
 const styles = StyleSheet.create({
   back: {
-    paddingRight: 8
-  },
-  backText: {
-    color: '#f2f2f5',
-    fontSize: 26,
-    fontWeight: '300'
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    width: 48
   },
   compressButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6
+    alignItems: 'center',
+    height: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 8
   },
   compressText: {
-    color: '#58a6ff',
-    fontSize: 12
+    ...type.caption
   },
   container: {
     alignItems: 'center',
-    backgroundColor: '#0b0b0f',
-    borderBottomColor: '#2a2a33',
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    paddingHorizontal: 10,
-    paddingVertical: 10
+    minHeight: 56,
+    paddingHorizontal: 8
   },
   subtitle: {
-    color: '#6a737d',
-    fontSize: 12,
+    ...type.caption,
     marginRight: 6
   },
   subtitleRow: {
@@ -148,18 +187,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row'
   },
   title: {
-    color: '#f2f2f5',
-    fontSize: 16,
+    ...type.body,
     fontWeight: '600'
   },
   titleColumn: {
     flex: 1
   },
+  titleTouchable: {
+    justifyContent: 'center',
+    minHeight: 56
+  },
   titleInput: {
-    borderBottomColor: '#1f6feb',
+    ...type.body,
     borderBottomWidth: 1,
-    color: '#f2f2f5',
-    fontSize: 16,
     fontWeight: '600',
     paddingVertical: 2
   }

@@ -1,11 +1,37 @@
 import { useQuery } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { listInstalledPlugins } from '../../../src/api/plugins'
-import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
+import { settingsHeaderOptions } from '../../../src/lib/settings-header'
+import { PLUGINS_MOBILE_CAVEAT } from '../../../src/lib/strings.mobile'
+import { t } from '../../../src/lib/t'
+import { useTheme } from '../../../src/theme/provider'
+import { radius, type } from '../../../src/theme/type'
 
+// Replicates: docs/desktop-prototypes/a-main/settings.html's
+// `data-view="plugins"` panel, "Agent plugins" section only (its "Desktop
+// plugins" section — a folder on that machine, Open folder / Rescan — is
+// machine-bound, absent per the M14 mapping's own carve-out for Local
+// models and similar). This screen's `listInstalledPlugins` already lists
+// backend-installed plugins (tools/skills/MCP servers/hooks/slash
+// commands), the same "Agent plugins" concept, so the empty state uses
+// t.settings.plugins.agent.empty (D15.4). The intro line keeps its
+// mobile-specific caveat (no per-plugin dashboards here) rather than
+// swapping in the vendored blurb, which describes what agent plugins are
+// but doesn't cover that gap.
+// M14 task 5: docs/desktop-prototypes/f-dialogs/plugin-install.html (the
+// review/install dialog for a plugin from a git repository — probe, pick
+// agent-plugin vs. desktop-UI components, install) is confirmed absent, not
+// built. Checked src/api/plugins.ts directly: it exposes `listInstalledPlugins`
+// (read-only discovery of what's already on the backend) and `pluginRest`
+// (a scoped REST door into an ALREADY-installed plugin's own namespace) —
+// nothing that clones a repository or installs a new one. That prototype's
+// own header notes the agent side is otherwise "at parity" and only "the
+// Desktop UI half is absent by design"; the install-from-a-git-URL
+// capability itself, for either half, has no mobile API surface to build
+// a real sheet on top of.
 /**
  * Plugins settings screen (M09): list-only, per `src/api/plugins.ts`'s
  * header — a plugin's own dashboard page (desktop: an embedded web view) has
@@ -14,34 +40,50 @@ import { SETTINGS_HEADER_OPTIONS } from '../../../src/lib/settings-header'
  * plugin.
  */
 export default function PluginsSettings() {
+  const tokens = useTheme()
   const pluginsQuery = useQuery({ queryFn: () => listInstalledPlugins(), queryKey: ['installed-plugins'] })
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.container}>
-      <Stack.Screen options={{ ...SETTINGS_HEADER_OPTIONS, title: 'Plugins' }} />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionHint}>
-          Plugins installed on the backend. Per-plugin dashboards (a plugin's own web UI) aren&apos;t available on
-          mobile yet — install and configure a plugin from the desktop app or CLI.
-        </Text>
-        {pluginsQuery.isLoading ? <ActivityIndicator color="#8a8a99" /> : null}
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
+      <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.plugins }} />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void pluginsQuery.refetch()}
+            refreshing={pluginsQuery.isRefetching}
+            tintColor={tokens.mutedForeground}
+          />
+        }
+      >
+        <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{PLUGINS_MOBILE_CAVEAT}</Text>
+        {pluginsQuery.isLoading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
         {pluginsQuery.isError ? (
-          <Text style={styles.errorText}>
-            {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
-          </Text>
+          <View>
+            <Text style={[styles.errorText, { color: tokens.destructive }]}>
+              {pluginsQuery.error instanceof Error ? pluginsQuery.error.message : String(pluginsQuery.error)}
+            </Text>
+            <TouchableOpacity hitSlop={10} onPress={() => void pluginsQuery.refetch()} style={styles.retryButton}>
+              <Text style={[styles.retryText, { color: tokens.primary }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {(pluginsQuery.data ?? []).map(plugin => (
-          <View key={plugin.name} style={styles.row}>
-            <Text style={styles.rowTitle}>{plugin.label || plugin.name}</Text>
-            {plugin.description ? <Text style={styles.rowSubtitle}>{plugin.description}</Text> : null}
-            <Text style={styles.rowMeta}>
+          <View key={plugin.name} style={[styles.row, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            <Text style={[styles.rowTitle, { color: tokens.foreground }]}>{plugin.label || plugin.name}</Text>
+            {plugin.description ? (
+              <Text style={[styles.rowSubtitle, { color: tokens.mutedForeground }]}>{plugin.description}</Text>
+            ) : null}
+            <Text style={[styles.rowMeta, { color: tokens.textTertiary }]}>
               {plugin.name}
               {plugin.version ? ` · v${plugin.version}` : ''}
               {plugin.source ? ` · ${plugin.source}` : ''}
             </Text>
           </View>
         ))}
-        {pluginsQuery.data?.length === 0 ? <Text style={styles.sectionHint}>No plugins installed.</Text> : null}
+        {pluginsQuery.data?.length === 0 ? (
+          <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{t.settings.plugins.agent.empty}</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   )
@@ -49,43 +91,43 @@ export default function PluginsSettings() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0b0b0f',
     flex: 1
   },
   content: {
     padding: 16
   },
   errorText: {
-    color: '#e06c75',
-    fontSize: 13,
+    ...type.label,
     marginTop: 8
   },
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6
+  },
+  retryText: {
+    ...type.label,
+    fontWeight: '600'
+  },
   row: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 10,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12
   },
   rowMeta: {
-    color: '#5a5a66',
-    fontSize: 11,
+    ...type.caption,
     marginTop: 4
   },
   rowSubtitle: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginTop: 2
   },
   rowTitle: {
-    color: '#f2f2f5',
-    fontSize: 14,
+    ...type.bodySmall,
     fontWeight: '600'
   },
   sectionHint: {
-    color: '#8a8a99',
-    fontSize: 12,
+    ...type.caption,
     marginBottom: 12
   }
 })

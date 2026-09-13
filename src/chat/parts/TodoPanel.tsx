@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 
+import { useTheme } from '../../theme/provider'
+import { radius, type } from '../../theme/type'
 import type { TodoItem } from '../../upstream/lib/todos'
 
 const STATUS_GLYPH: Record<TodoItem['status'], string> = {
@@ -15,20 +17,25 @@ export interface TodoPanelProps {
 
 /** The live todo list from the `todo` tool (`todo.updated` / `tool.*`). */
 export function TodoPanel({ todos }: TodoPanelProps) {
+  const tokens = useTheme()
+
   if (todos.length === 0) {
     return null
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
       {todos.map(todo => (
         <Text
           key={todo.id}
           numberOfLines={2}
           style={[
             styles.item,
+            { color: tokens.cardForeground },
             todo.parent ? styles.nested : null,
-            todo.status === 'completed' || todo.status === 'cancelled' ? styles.completed : null
+            todo.status === 'completed' || todo.status === 'cancelled'
+              ? [styles.completed, { color: tokens.mutedForeground }]
+              : null
           ]}
         >
           {STATUS_GLYPH[todo.status] ?? '☐'} {todo.content}
@@ -40,20 +47,16 @@ export function TodoPanel({ todos }: TodoPanelProps) {
 
 const styles = StyleSheet.create({
   completed: {
-    color: '#6a737d',
     textDecorationLine: 'line-through'
   },
   container: {
-    backgroundColor: '#111116',
-    borderColor: '#2a2a33',
-    borderRadius: 8,
+    borderRadius: radius.card,
     borderWidth: 1,
     marginVertical: 6,
     padding: 10
   },
   item: {
-    color: '#f2f2f5',
-    fontSize: 13,
+    ...type.label,
     paddingVertical: 2
   },
   nested: {
