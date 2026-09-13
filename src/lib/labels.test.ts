@@ -66,7 +66,7 @@ const LOOKS_TECHNICAL = /^[./]|^[a-z0-9@][a-z0-9\-_/.:]*$/
 // letters and numbers). Neither is prose a user reads; both are data a
 // StyleSheet or an <Path> consumes.
 const LOOKS_LIKE_COLOR_VALUE = /^rgba?\([\d\s.,%]+\)$/i
-const LOOKS_LIKE_SVG_PATH_DATA = /^[MLHVCSQTAZ][MLHVCSQTAZ0-9\s,.\-]+$/i
+const LOOKS_LIKE_SVG_PATH_DATA = /^[MLHVCSQTAZ][MLHVCSQTAZ0-9\s,.-]+$/i
 
 // Parsed with the real TypeScript AST, not a regex scan: JSX text content
 // can contain a raw apostrophe ("a plugin's own web UI") that isn't a
@@ -185,6 +185,7 @@ describe('every ported screen or component uses only vendored or whitelisted lab
     ...listTsxFiles(join(SRC_ROOT, 'chat')),
     ...listTsxFiles(join(SRC_ROOT, 'components'))
   ]
+
   const vendoredStrings = new Set<string>()
 
   flattenStrings(t, vendoredStrings)
