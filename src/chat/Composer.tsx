@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     ...type.body,
     flex: 1,
     maxHeight: 120,
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: 8,
     paddingVertical: 8
   },
