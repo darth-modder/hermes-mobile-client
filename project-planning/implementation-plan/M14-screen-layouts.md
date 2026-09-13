@@ -807,6 +807,74 @@ files with retyped or unwhitelisted literals:
   thinking-duration state machine on mobile — is a real product decision (implement it, or keep the
   simpler static label deliberately) that this labels sweep shouldn't make unasked.
 
+**Round 3 (close-out, task 1): implemented, matching the desktop exactly.** Decision: implement the
+desktop's reasoning labels. Source read (read-only): the desktop's `ThinkingDisclosure`
+(`apps/desktop/src/components/assistant-ui/thread/message-parts.tsx:159-174`) computes `pending`
+from `s.thread.isRunning && s.message.status?.type === 'running' && ` the reasoning part's own
+`status.type !== 'complete'` (`message-parts.tsx:267-274`), and derives `thoughtFor` from
+`useMeasuredDuration` (`apps/desktop/src/components/chat/activity-timer.ts:92-110`) — `null` until a
+component has watched `active` (its own `pending`) transition from `true` to `false` at least once;
+a component that mounts already-settled (restored history, or reasoning that arrived complete) never
+sees that transition, so `thoughtFor` stays `null` and the label reads "Thought", never a duration
+computed after the fact from persisted timestamps. Ported nearly verbatim to
+[`src/chat/reasoning-timer.ts`](src/chat/reasoning-timer.ts) (`formatElapsed`/`useElapsedSeconds`/
+`useMeasuredDuration`, same module-level registry), omitting only `useViewedInterval`'s focus/
+visibility gating (DOM APIs React Native doesn't have — unnecessary anyway, since a backgrounded RN
+app's JS timers stop firing on their own and every value is re-derived from `Date.now()` rather than
+accumulated).
+
+Mobile's data: a reasoning part gets its `timestamp` from `reasoningPart(text, occurredAt)`
+(`src/upstream/lib/chat-messages/parts.ts:9-11`) the moment its first delta arrives; `completedAt` is
+stamped by whichever boundary closes it first — `completeOpenStreamParts`
+(`src/upstream/lib/chat-messages/tool-parts.ts:281-287`, checked at `tool-parts.ts:283`) when a tool
+call starts or completes next, or `completeOpenTimelineParts`
+(`src/upstream/lib/chat-messages/parts.ts:232-238`) when the whole turn ends, whichever comes first.
+[`ReasoningDisclosure.tsx`](src/chat/parts/ReasoningDisclosure.tsx) now takes the message's own
+`pending` flag plus the part itself, computes `pending = messagePending && part.completedAt ===
+undefined` (gating on the MESSAGE still running, not just this part missing `completedAt` — a part
+left open by a dropped connection is stale, not live), and
+[`Transcript.tsx`](src/chat/Transcript.tsx) builds the same `reasoning:${messageId}:${index}` timer
+key shape the desktop uses. `REASONING_DISCLOSURE_LABEL` removed from `strings.mobile.ts` — no longer
+whitelisting a static word now that the real state machine backs it.
+
+Unit-tested (`src/chat/reasoning-timer.test.ts`): `thoughtLabel`'s four branches and `formatElapsed`,
+as pure functions — NOT `useElapsedSeconds`/`useMeasuredDuration`'s hook mechanics, since this
+project's vitest config only stubs `react-native` (`Platform`/`NativeModules`/`AppState`, no
+`StyleSheet`/`Text`/etc.) and has no React test renderer, the same limitation `labels.test.ts`'s own
+header already documents for `.tsx` component tests generally.
+
+**Device-verified, all four states** (throwaway gateway `M14Close3`, `%LOCALAPPDATA%\
+hermes-android-field\m14-close3\`, `uiautomator` bounds ÷ 2.625 at 420dpi):
+
+| State | Label observed | Screenshot | Header bounds (native px → dp) |
+|---|---|---|---|
+| Still streaming | `▸ Thinking` | `catch-1s.png` | not re-measured live (dump failed mid-animation — "could not get idle state") |
+| Finished, under 1s | `▸ Thought briefly` | `catch-3s.png`, `poll-check.png` | — |
+| Finished, ≥1s | `▸ Thought for 6s` / `▸ Thought for 14s` | `riddle-settled.png` (6s), `balls-settled.png` (14s) | `[79,759][862,885]` → 126×48.0dp |
+| Restored (cold relaunch, never watched) | `▸ Thought` (no duration) | `relaunch-thought-label.png` | `[79,759][862,885]` → 126×48.0dp |
+
+Getting a live "Thinking" screenshot took five attempts — this test model (mimo-v2.5) usually reasons
+for well under a second, occasionally several seconds on a harder prompt (the 12-balls weighing
+puzzle finally produced a catchable ~1s window; the wolf/goat/cabbage riddle reasoned for 6s, the
+switches puzzle briefly, the balls puzzle 14s — all genuinely device-measured, not fixed values).
+
+**Leave-and-re-enter**, same session (12-balls puzzle, mid-14s-measurement): left via Back, re-opened
+from the session list — label still read `▸ Thought for 14s` (`reenter-label.png`, bounds
+`[79,759][862,885]` → 48.0dp again). The measured duration survives in-session navigation because
+`durationByKey` is a module-level registry that outlives the unmounted component, exactly like the
+desktop's own "component that mounts after the fact" case.
+
+**Cold relaunch**, same session: `adb shell am force-stop` + relaunch, reconnected automatically,
+reopened the session, scrolled up to the reasoning block — label read `▸ Thought` (no duration),
+confirmed via `dump-relaunch4.xml` and `relaunch-thought-label.png`. This is the required case: a
+fresh process has an empty `durationByKey` (it's in-memory JS state, not persisted), the component
+mounts already-settled (`messagePending` false from the first render), so it never watches a
+pending→settled transition and correctly reports no duration rather than reconstructing one from the
+persisted `timestamp`/`completedAt`.
+
+Commits: `c3386a1` (code — reasoning-timer.ts, ReasoningDisclosure.tsx, Transcript.tsx,
+strings.mobile.ts), `c2ea86f` (test — reasoning-timer.test.ts).
+
 Each genuine fix and each whitelist addition landed as its own reviewable change (commits
 `fcbae15` test widening, `5dad3cf` the fixes and whitelist entries together — grouped rather than
 one-commit-per-string given the count, ~25 individual literals across 10 files).
