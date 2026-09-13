@@ -18,9 +18,19 @@
 // center) → Projects (mobile-only: the desktop keeps projects inside its
 // session tree, not the nav) → Settings last. Bots/Sessions/Tasks are the
 // M14 tab row (inside the session list screen itself), prepended to this
-// drawer by M15 A — the drawer-order test asserts from Capabilities down,
-// agnostic to whatever precedes it.
-import { DRAWER_ON_DESKTOP_VALUE } from '../lib/strings.mobile'
+// drawer by M15 A (M15 round 2) — the drawer-order test asserts from
+// Capabilities down, agnostic to whatever precedes it.
+//
+// M15 round 2: Bots (`/(main)/bots`, this round's new screen) leads, then
+// Sessions (unchanged route), then the existing `/(main)/cron` row moved up
+// to third and left titled "Scheduled jobs" — NOT renamed "Tasks" yet. M15
+// C's Tasks-tab rebuild (`app/(main)/tasks/index.tsx` replacing the cron
+// screen's framing) hasn't landed; relabeling this row "Tasks" now, ahead of
+// that screen actually existing, would promise a redesign that isn't there
+// — the row still opens the real, working cron list/detail screen, so it's
+// not a dead link, just not yet the Tasks tab bots.html draws. Recorded as
+// a Deviation in the M15 doc.
+import { BOTS_TAB_LABEL, DRAWER_ON_DESKTOP_VALUE } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
 export interface DrawerRowMeta {
@@ -40,11 +50,12 @@ export interface DrawerRowMeta {
 }
 
 export const DRAWER_ROW_META: readonly DrawerRowMeta[] = [
+  { route: '/(main)/bots', title: BOTS_TAB_LABEL },
   { route: '/(main)/session-list', title: t.commandCenter.sections.sessions },
+  { route: '/(main)/cron', title: t.sidebar.nav.cron },
   { route: '/(main)/settings/skills', title: t.sidebar.nav.skills },
   { route: '/(main)/channels', title: t.sidebar.nav.messaging },
   { route: '/(main)/artifacts', title: t.sidebar.nav.artifacts },
-  { route: '/(main)/cron', title: t.sidebar.nav.cron },
   { route: '/(main)/settings/profiles', title: t.profiles.title },
   { route: '/(main)/agents', title: t.shell.statusbar.agents, value: DRAWER_ON_DESKTOP_VALUE },
   { route: '/(main)/webhooks', title: t.shell.statusbar.webhooks },

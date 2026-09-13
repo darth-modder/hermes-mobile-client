@@ -4,20 +4,33 @@
 // (docs/mobile-prototypes/sessions.html's "Drawer order" note): the order is
 // derived from the desktop's nav strip (`sidebar.nav` in the vendored
 // en.ts) followed by DESKTOP-SCREENS §A's ported overlay screens, then the
-// two mobile-only additions (Projects, Settings last). Bots/Sessions/Tasks
-// are the M14 tab row, prepended to the drawer by M15 A — so this only
-// asserts the list from Capabilities down, per that same decision.
+// two mobile-only additions (Projects, Settings last).
+//
+// M15 round 2: Bots now leads for real (`/(main)/bots` exists), Sessions is
+// second (unchanged route), and the existing `/(main)/cron` row moved up to
+// third, still titled "Scheduled jobs" — M15 C's Tasks-tab rebuild hasn't
+// landed, so this is not yet renamed "Tasks" (drawer-rows.ts's own header;
+// M15 Deviations). The "prepended by M15 A, not a row yet" framing this
+// test used in M14 is retired: Bots is a row now, and the assertion below
+// checks it explicitly instead of asserting its absence.
 //
 // Tests drawer-rows.ts (the pure order/route/title data), not AppDrawer.tsx
 // itself — see drawer-rows.ts's header for why importing the .tsx component
 // doesn't work under vitest here.
 import { describe, expect, it } from 'vitest'
 
+import { BOTS_TAB_LABEL } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
 import { DRAWER_ROW_META } from './drawer-rows'
 
 describe('drawer order', () => {
+  it('leads with Bots, then Sessions, then Scheduled jobs (M15 round 2)', () => {
+    const leadingTitles = DRAWER_ROW_META.slice(0, 3).map(row => row.title)
+
+    expect(leadingTitles).toEqual([BOTS_TAB_LABEL, t.commandCenter.sections.sessions, t.sidebar.nav.cron])
+  })
+
   it('matches the desktop nav strip, then §A overlay screens, then Projects, then Settings', () => {
     const titlesFromCapabilities = DRAWER_ROW_META.map(row => row.title).slice(
       DRAWER_ROW_META.findIndex(row => row.title === t.sidebar.nav.skills)
@@ -27,7 +40,6 @@ describe('drawer order', () => {
       t.sidebar.nav.skills,
       t.sidebar.nav.messaging,
       t.sidebar.nav.artifacts,
-      t.sidebar.nav.cron,
       t.profiles.title,
       t.shell.statusbar.agents,
       t.shell.statusbar.webhooks,
@@ -37,14 +49,13 @@ describe('drawer order', () => {
     ])
   })
 
-  it('has no row for Bots or Tasks (M15 A prepends them)', () => {
+  it('has no row for Tasks (M15 C has not rebuilt the cron screen as Tasks yet)', () => {
     const titles = DRAWER_ROW_META.map(row => row.title)
 
-    expect(titles).not.toContain('Bots')
     expect(titles).not.toContain('Tasks')
   })
 
-  it('every row title comes from the vendored en.ts, not a retyped string', () => {
+  it('every row title comes from the vendored en.ts or the documented BOTS_TAB_LABEL exception', () => {
     const flatten = (value: unknown, out: Set<string>): void => {
       if (typeof value === 'string') {
         out.add(value)
@@ -58,6 +69,7 @@ describe('drawer order', () => {
     const allStrings = new Set<string>()
 
     flatten(t, allStrings)
+    allStrings.add(BOTS_TAB_LABEL)
 
     for (const row of DRAWER_ROW_META) {
       expect(allStrings.has(row.title), `"${row.title}" is not a value from the vendored en.ts`).toBe(true)
