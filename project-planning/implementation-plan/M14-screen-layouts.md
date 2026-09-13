@@ -771,6 +771,46 @@ new whitelisted exports (`COMPOSER_STEER_LABEL`, `COMPOSER_PLACEHOLDER`) in
 with a comment naming the vendored value checked and why it doesn't fit. **Verdict: MET** (after the
 fix — was NOT MET for `Steer`/the placeholder before it).
 
+**Round 2 (close-out task 4c): the "only scans `app/`" gap itself, closed.** `labels.test.ts` now
+also walks every `.tsx` file under `src/chat/` and `src/components/` (`npx vitest run
+src/lib/labels.test.ts`: 63/63 passed after the fixes below, up from 32). The wider scan found 12
+files with retyped or unwhitelisted literals:
+
+- **Genuine content bugs, not just missing references** — a vendored string existed for the exact
+  concept and the app had retyped it differently: `SecretCard.tsx`'s fallback title read "Secret
+  requested" (should be, and now is, `t.prompts.secretTitle` = 'Secret required'); `SudoCard.tsx`'s
+  title read "Sudo password requested" (now `t.prompts.sudoTitle` = 'Administrator password') and its
+  field placeholder read "Password" (now `t.prompts.sudoPlaceholder` = 'sudo password');
+  `SessionHeader.tsx`'s untitled-session fallback was a bare "Untitled" in two places, while
+  `session-list.tsx` already correctly used `t.sidebar.row.untitledPlaceholder` ('Untitled session')
+  for the same fallback — SessionHeader now matches it.
+- **Genuinely mobile-only, whitelisted in `strings.mobile.ts`** with the vendored string checked and
+  named in each comment: `ApprovalCard.tsx` (title, smart-denied notice), `ClarifyCard.tsx` (batch/
+  single titles, answer placeholder), `UsageChip.tsx` ("% ctx"), `SessionHeader.tsx` ("Compress"/
+  "Compress failed" — `session.compress` has no vendored word, distinct from `settings.model`'s
+  unrelated "Compression" context-compaction description), `ScreenHeader.tsx` (the overflow button's
+  "More"), and `Composer.tsx`'s voice/attachment row (4 accessibility labels + 8 toast titles/
+  messages for dictation, TTS, and attach errors).
+- **False positives in the scanner itself, not labels at all** — `AppDrawer.tsx` and `ui/Sheet.tsx`
+  each had an `rgba(...)` style value, and `ToolIcon.tsx` had 13 SVG path `d` attributes (the phosphor
+  icon set), none of which the existing `LOOKS_TECHNICAL` filter caught since both shapes can start
+  with an uppercase character. Extended the filter with two more patterns
+  (`LOOKS_LIKE_COLOR_VALUE`/`LOOKS_LIKE_SVG_PATH_DATA`) rather than whitelisting non-text data as if
+  it were product copy.
+- **Flagged for a design decision, not silently fixed or wrongly whitelisted:**
+  `ReasoningDisclosure.tsx`'s "Reasoning" header. A closely related vendored string set exists
+  (`assistant.thread.thinking`/`thought`/`thoughtBriefly`/`thoughtFor(duration)`), but it's a live
+  state machine — "Thinking" while streaming, then "Thought"/"Thought briefly"/"Thought for {duration}"
+  once settled, depending on how long reasoning ran — and this component always shows the same word
+  regardless of state, only toggling the disclosure triangle on expand/collapse. Whitelisted the bare
+  word (`REASONING_DISCLOSURE_LABEL`) so the test passes honestly, but the underlying gap — no
+  thinking-duration state machine on mobile — is a real product decision (implement it, or keep the
+  simpler static label deliberately) that this labels sweep shouldn't make unasked.
+
+Each genuine fix and each whitelist addition landed as its own reviewable change (commits
+`fcbae15` test widening, `5dad3cf` the fixes and whitelist entries together — grouped rather than
+one-commit-per-string given the count, ~25 individual literals across 10 files).
+
 **c. Drawer order.** [`src/components/drawer-rows.test.ts`](src/components/drawer-rows.test.ts) —
 `npx vitest run src/components/drawer-rows.test.ts`:
 ```
