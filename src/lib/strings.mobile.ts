@@ -465,3 +465,18 @@ export const VOICE_GRANT_MIC_ACCESS = 'Grant microphone access'
 export const VOICE_SPOKEN_REPLIES_SECTION_TITLE = 'Spoken replies'
 export const VOICE_SPOKEN_REPLIES_HINT =
   "Tap the speaker in the composer to hear the assistant's latest reply, synthesized by the backend and played back on this device."
+
+// src/chat/Composer.tsx — the Steer button's label. Desktop's own strings for
+// this action (`composer.steer`: 'Steer the current run', `composer.
+// queueSteer`: 'Steer — redirect the live turn now') are full sentences for a
+// tooltip/aria-label, not a short button word — the same brevity Stop
+// already gets from `composer.stopShort` ('Stop') has no equivalent short
+// form for Steer anywhere in en.ts.
+export const COMPOSER_STEER_LABEL = 'Steer'
+
+// src/chat/Composer.tsx — the composer's placeholder. The desktop rotates
+// through `composer.newSessionPlaceholders`/`followUpPlaceholders` per
+// session; this app shows one fixed placeholder regardless of new-vs-
+// follow-up state (a deliberate simplification), and none of the rotating
+// options name the gateway the way this one does.
+export const COMPOSER_PLACEHOLDER = 'Message Hermes…'

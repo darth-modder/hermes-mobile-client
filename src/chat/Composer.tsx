@@ -22,6 +22,8 @@ import { pickAndAttachDocument, pickAndAttachImage } from '../lib/attachments'
 import { hapticSubmit } from '../lib/haptics'
 import { FileText, ImageIcon, Mic, MicOff, Volume2, X } from '../lib/icons'
 import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mobile-slash-commands'
+import { COMPOSER_PLACEHOLDER, COMPOSER_STEER_LABEL } from '../lib/strings.mobile'
+import { t } from '../lib/t'
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
@@ -476,7 +478,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
           <TextInput
             multiline
             onChangeText={setText}
-            placeholder="Message Hermes…"
+            placeholder={COMPOSER_PLACEHOLDER}
             placeholderTextColor={tokens.mutedForeground}
             style={[styles.input, { color: tokens.foreground }]}
             value={text}
@@ -490,7 +492,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
               {sending ? (
                 <ActivityIndicator color={tokens.primaryForeground} size="small" />
               ) : (
-                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>Send</Text>
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>{t.composer.send}</Text>
               )}
             </TouchableOpacity>
           )}
@@ -505,7 +507,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
               onPress={() => void stop()}
               style={[styles.sendButton, { backgroundColor: tokens.diffRemoveBackground }]}
             >
-              <Text style={[styles.sendButtonText, { color: tokens.destructive }]}>Stop</Text>
+              <Text style={[styles.sendButtonText, { color: tokens.destructive }]}>{t.composer.stop}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               disabled={sending || (!text.trim() && attachments.length === 0)}
@@ -515,7 +517,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
               {sending ? (
                 <ActivityIndicator color={tokens.primaryForeground} size="small" />
               ) : (
-                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>Steer</Text>
+                <Text style={[styles.sendButtonText, { color: tokens.primaryForeground }]}>{COMPOSER_STEER_LABEL}</Text>
               )}
             </TouchableOpacity>
           </View>
