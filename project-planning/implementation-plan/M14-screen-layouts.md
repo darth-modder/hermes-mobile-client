@@ -994,3 +994,25 @@ bounds, against `resolve.test.ts`'s nous values:
 | user bubble | `#0f1621` | `#0f1621` | `#fcfcfc` | `#fcfcfc` |
 
 All five sampled exactly (0 channels off, well inside ±1) in both modes. **M13 holds.**
+
+**Round 2 (close-out, task 5): the six named surfaces, sampled and reported separately.** The table
+above conflates "border" and "destructive" into one row — they're different tokens (`ApprovalCard`'s
+outline uses `tokens.destructive`; the generic `tokens.border` shows up elsewhere, e.g. a tool-call
+card's own outline, `ToolCallCard.tsx:51`) that happen to share a sample source. Re-sampled this round
+from fresh `M14Close2` screenshots (`%LOCALAPPDATA%\hermes-android-field\m14-close2\`), each surface
+independently, via exact-pixel search against `src/theme/resolve.test.ts`'s nous light/dark values
+(a histogram of the sampled region confirmed the dominant color at each location, not a single
+possibly-antialiased pixel):
+
+| Surface | Expected (light) | Sampled (light) | Location | Expected (dark) | Sampled (dark) | Location |
+|---|---|---|---|---|---|---|
+| background | `#fefefe` | `#fefefe` | `dev-sessions-light.png` @ (450,1600), empty area below the session list | `#0d1015` | `#0d1015` | `dev-sessions-dark.png` @ (450,1600) |
+| card (assistant bubble) | `#fbfbfc` | `#fbfbfc` | `dev-chat-light.png` @ (720,1296), inside the "terminal" tool-call card | `#0e0f12` | `#0e0f12` | `dev-approval-dark.png` @ (80,600), inside an assistant "Done2." bubble — confirmed by histogram (32,093 of ~35,000 sampled px in that region) |
+| primary | `#0053fd` | `#0053fd` | `dev-chat-light.png` @ (969,2196), the Send button fill | `#4a84fe` | `#4a84fe` | `dev-approval-dark.png` @ (138,1728), the Run button fill |
+| border | `#d0d7de` | `#d0d7de` | `dev-chat-light.png`, histogram of (74-86,1194-1416), the "terminal" tool-call card's own outline | `#30363d` | `#30363d` | `dev-chat-dark.png`, histogram of (74-86,1566-1734), same card's outline |
+| user bubble | `#fcfcfc` | `#fcfcfc` | `dev-chat-light.png` @ (840,828) | `#0f1621` | `#0f1621` | `dev-chat-dark.png` @ (840,1344) |
+| destructive | `#cf2d56` | `#cf2d56` | `dev-approval-light.png` @ (55,1348), the approval card's red outline | `#cf2d56` | `#cf2d56` | `dev-approval-dark.png` @ (42,1500), same outline |
+
+All six sampled exactly, both themes, from this round's own screenshots — not just re-quoting the
+round-1 table above. **M13 still holds**, and the border/destructive conflation in the round-1 table
+is corrected here rather than silently repeated.
