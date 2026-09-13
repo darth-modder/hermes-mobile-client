@@ -657,14 +657,37 @@ it does not tick any box or change the status — that's the reviewer's call fro
 docs/desktop-prototypes`). Screenshots and dumps are in `%LOCALAPPDATA%\hermes-android-field\m14-close\`.
 Hone was never touched.
 
-**A note on the composite tool asked for:** `composite.py` needs a rendered PNG of the prototype
-side, and this environment has no HTML-to-image renderer available to produce one from the static
-prototype files (checked: no `playwright`, no `selenium` in the Python install used elsewhere in
-this project). Rather than skip the comparison, the prototype side of every pair below was read
-directly from its HTML/CSS source (quoted with file:line) and, where useful, rendered live in a
-browser and inspected — compared against a real device screenshot for the same screen. This is the
-same evidentiary substance the checklist asks for, just not packaged as a `composite.py` PNG. Flagging
-this plainly rather than claiming the script ran.
+**Correction (2026-09-13, close-out round 2): the "no renderer available" note above was wrong.**
+A headless-Chromium renderer was available the whole time via the system's own Edge/Chrome install
+(`msedge.exe`/`chrome.exe --headless=new --screenshot=OUT.png --window-size=412,915`), it just wasn't
+tried in the prior round — `playwright`/`selenium` were checked in the Python install, but the OS
+browsers themselves were not. This round used it (via the user's own pre-existing
+`proto-*-{light,dark}.png` captures at `%LOCALAPPDATA%\hermes-android-field\m14-device\`, confirmed
+unchanged since `88dbd49` — `git log 88dbd49..HEAD -- docs/mobile-prototypes docs/desktop-prototypes`
+in the main repo is empty, and the main repo's `HEAD` is itself `88dbd49`) to run the actual
+`composite.py` script and produce real side-by-side PNGs for all eight required pairs. See the table
+below for each composite's path.
+
+**Side-by-side composites, round 2 (2026-09-13, throwaway gateway `M14Close2`, device, both modes):**
+prototype side reused from the user's own `proto-*-{light,dark}.png` captures (unchanged since
+`88dbd49`, confirmed above); device side is a fresh screenshot from this round. All 18 files
+(9 screens × 2 themes — one more than the 8 required, since cron's list and detail states were both
+captured) are in `%LOCALAPPDATA%\hermes-android-field\m14-close2\`.
+
+| Pair | Light | Dark |
+|---|---|---|
+| Chat | `composite-chat-light.png` | `composite-chat-dark.png` |
+| Session list | `composite-sessions-light.png` | `composite-sessions-dark.png` |
+| Settings index | `composite-settings-index-light.png` | `composite-settings-index-dark.png` |
+| Settings section (Appearance) | `composite-settings-appear-light.png` | `composite-settings-appear-dark.png` |
+| Cron (list) | `composite-cron-list-light.png` | `composite-cron-list-dark.png` |
+| Cron (detail) | `composite-cron-detail-light.png` | `composite-cron-detail-dark.png` |
+| Profiles | `composite-profiles-light.png` | `composite-profiles-dark.png` |
+| Mid-turn prompt (Stop/Steer busy row) | `composite-midturn-light.png` | `composite-midturn-dark.png` |
+| Sheet (create profile) | `composite-sheet-create-light.png` | `composite-sheet-create-dark.png` |
+
+No new visual mismatches found beyond what's already tracked (the create-profile sheet's translucent
+top, Deviation-noted above, is visible again in both theme composites).
 
 **Audit table — tasks (doc lines ~124-135):**
 
@@ -784,6 +807,45 @@ category of virtualization bug when a dynamically-sized header appears while tha
 Given it didn't reproduce cleanly, no fix was attempted (a guess-patch to list-virtualization
 behavior under time pressure risks a worse regression than the cosmetic glitch it might not even
 fix) — flagging for a dedicated follow-up rather than improvising one here.
+
+**Round 2 (2026-09-13, `M14Close2`): five reproduction attempts, none reproduced the glitch.** Per
+the user's own zoomed capture from the round above (`14b-zoom-approvalregion.png`: the card's red
+border starts around x=900 of 1080, the rest covered by a dark panel matching the assistant bubble's
+`tokens.card` colour), the working hypothesis going in was a `@shopify/flash-list` v2
+recycling/positioning interaction: `Transcript.tsx`'s inverted list combines
+`maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}` with a `ListHeaderComponent`
+(`Transcript.tsx:1-40`, the `secret`/`sudo`/`approval`/`clarify`/`todos` `<View>` block) whose size
+jumps from 0 to real height the moment a card arrives — a possible recycled `MessageBubble` cell
+(assistant role: `tokens.card` background, `maxWidth: '86%'` ≈ 929px of 1080px, `styles.bubble` in
+`Transcript.tsx`, no explicit `zIndex`/`elevation`/`position` anywhere in the file) could paint at a
+stale y-position overlapping the header slot. This remains a hypothesis, not a confirmed cause —
+every attempt below rendered the card correctly, so no overlapping-sibling dump was ever captured to
+verify it. Five attempts, deliberately varied:
+
+1. Dark, minimal session history, `rm -rf` as the very first message, scrolled immediately after
+   sending (`01-attempt1.png`) — rendered correctly.
+2. Dark, longer built-up history, second `rm -rf`, erratic manual scrolling, navigated out of the
+   session and back in (`03-attempt2.png`, `04-attempt2-reenter.png`) — rendered correctly.
+3. Dark, the exact original 4-command sequence replicated (touch → rm → curl with a large HTML
+   response → `rm -rf`) with no manual scrolling this time, to isolate the "large curl response"
+   variable; an unrelated system emoji-keyboard toolbar briefly appeared and forced a navigate-out,
+   re-entered (`05-attempt3.png`, `06-attempt3-reenter.png`) — rendered correctly.
+4. Dark, force-stopped the app with Attempt 3's approval genuinely still pending, relaunched cold,
+   reconnected to Metro, re-entered the session (`07-relaunch-pending.png`,
+   `08-attempt4-cold-resume.png`) — the pending approval survived the cold relaunch and rendered
+   correctly (this directly tests the round-1 observation of a pending approval seeming to vanish
+   after a relaunch; it did not recur here).
+5. Light mode (the one theme/interaction combination not yet tried), fresh session, `rm -rf` as the
+   first message, three aggressive scroll swipes immediately after sending, waited 7s
+   (`09-attempt5-light.png`) — rendered correctly, full and visible with all four buttons.
+
+Variables deliberately varied across the five: session history length, scroll timing relative to the
+card's arrival, cold-relaunch-with-pending-approval state, and theme. **The glitch did not reproduce
+in any of the five attempts.** Per the round's own instruction, this is reported as not-reproduced,
+not as fixed — no code was changed for this item. All screenshots and dumps are kept in
+`%LOCALAPPDATA%\hermes-android-field\m14-close2\`. The FlashList/`maintainVisibleContentPosition`
+hypothesis above is carried forward for whoever picks this up next, but it is unconfirmed by any
+evidence gathered this round.
 
 **f. PARITY.md.** Read in full this round. It already reflects the M14-added settings sections and
 screens: "Settings: Chat, Safety, Memory & Context" and "Settings: Billing" are explicitly listed as
