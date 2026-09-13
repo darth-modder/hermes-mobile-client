@@ -450,6 +450,25 @@ sheets with the desktop's fields and labels. `worktree.html`, `real-browser-cons
     row is unchanged and still matches the prototype. A restyle, not a rebuild, per this document's
     own adaptation rule — but a real layout departure from the prototype's row structure, named here
     since M14's mapping table otherwise treats the composer as struct-unchanged.
+16. **SessionHeader's model/effort line: corrected back to the prototype's plain-text subtitle,
+    after one round briefly made it its own 48dp control.** `docs/mobile-prototypes/chat.html:62-73`
+    puts only back / title+subtitle / two actions in the header, with the subtitle a plain
+    `.header__sub` text node (`@researcher · mimo-v2.5`) — never its own button. Model/effort as
+    *tappable chips* live in the composer instead (`chat.html:124-127`, `.composer__controls`),
+    which this app doesn't build (Deviation 11: no session-scoped model-switch API to wire a chip
+    to without silently moving the host's default). The M13 closing-fixes round's first attempt at
+    SessionHeader's touch-target fix (commit `5623bdc`) missed this and gave the subtitle its own
+    `TouchableOpacity` routing to Settings > Models, growing the header from 56dp to 96dp to fit
+    two stacked 48dp targets — device-verified afterward as a regression: the two-line 56dp header
+    look broke (back chevron and Compress floating mid-header over a band of empty space).
+    Reworked (commit `e5e9682`) to match the prototype: the whole title column (title line +
+    plain-text subtitle line) is now ONE `TouchableOpacity`, 56dp tall, that starts the rename — the
+    same action the title
+    alone used to trigger, just with the touch target that clears 48dp now being the full column
+    instead of two competing sub-targets. The model line is plain text, not a control. Changing the
+    model is still reachable exactly as before this fix existed: `/model` (routes to Settings >
+    Models per `mobile-slash-commands.ts`, unchanged) and Settings > Models directly — nothing that
+    worked before is gone, only the header's own extra tap target on the subtitle line.
 
 ## Verification log
 
@@ -510,11 +529,15 @@ M13 exit criterion 6 taken literally — no clickable `uiautomator` node under 4
 counted — still failed in three more places, found and fixed this round:
 
 - **SessionHeader** (`src/chat/SessionHeader.tsx`): the title touchable measured 24.0dp and the
-  Model control 16.0dp. Two independent 48dp targets stacked in one column need at least 96dp
-  regardless of hitbox arrangement, so rather than an overlapping-hitbox trick to hold the header at
-  its old 56dp (which would recreate the exact adjacent-control ambiguity just fixed above for
-  Reasoning/tool-call), both got `minHeight: 48` directly and the header's `minHeight` grew to 96.
-  Still a two-line title-over-subtitle layout, just no longer artificially short. Commit `5623bdc`.
+  Model control 16.0dp. The first attempt at a fix (commit `5623bdc`, since reworked — see below)
+  gave both their own `minHeight: 48` and grew the header's `minHeight` from 56 to 96 to fit two
+  stacked 48dp targets. Device-verified as a regression: the two-line 56dp header look broke (back
+  chevron and Compress floating mid-header over a band of empty space). Reworked (commit `e5e9682`)
+  to match `docs/mobile-prototypes/chat.html:62-73` (back/title-subtitle/two actions in a 56dp
+  header, subtitle a plain text node — never its own control): the whole title column (title +
+  subtitle) is now one `TouchableOpacity`, 56dp tall, that starts the rename; the subtitle is plain
+  text. `/model` and Settings > Models remain the only ways to change the model, unchanged. See
+  Deviation 16.
 - **Registered gateways** (`app/(main)/settings/connections.tsx`): Test/Sign out/Remove/Switch
   to…/Make primary measured ~28dp tall, and the connection title row (label + primary/current pills)
   measured 24dp. Both given `minHeight: 48`. Commit `521f9c0`.
@@ -523,28 +546,55 @@ counted — still failed in three more places, found and fixed this round:
   `minHeight` on the shared mono-text input style). All five given `minHeight: 48`. Commit
   `262840a`.
 
-**New, unfixed finding from this pass:** on Registered gateways, the `Test` button's *width* — not
-height, already fixed above — measures 43.8-44.2dp, under 48dp, on both connection cards. Its
-siblings (Sign out 65.5dp, Remove 64.4dp, Switch to… 102.9dp, Make primary 95.2dp) all clear 48dp
-because their labels are longer; `Test`'s four characters don't fill the button even with
-`paddingHorizontal: 10`. Not fixed here — this round's instructions were to measure and report, not
-to chase new findings — flagging for a follow-up: `connections.tsx`'s `actionButton` style needs a
-`minWidth: 48` alongside its `minHeight: 48`.
+**Registered gateways' `Test` button width, found in this pass and fixed in the follow-up round:**
+its *width* — not height, already fixed above — measured 43.8-44.2dp, under 48dp, on both
+connection cards. Its siblings (Sign out 65.5dp, Remove 64.4dp, Switch to… 102.9dp, Make primary
+95.2dp) all clear 48dp because their labels are longer; `Test`'s four characters don't fill the
+button even with `paddingHorizontal: 10`. Fixed with `minWidth: 48` (plus `alignItems: 'center'` to
+keep the label centered in the wider box). Commit `4c7443b`. Re-measured: both cards' `Test` buttons
+now read 48.0×48.0dp.
 
-**Tool-call spinner after resume, reproduced and fixed:** a finished tool call showed a running
-spinner immediately upon leaving and re-entering its session — before any app reload. Root cause
-confirmed via the raw `session.resume` payload: this gateway's resume projection drops the
-assistant's `tool_calls` message entirely and represents the call as a standalone `role: "tool"`
-message with no `timestamp` field. `storedToolMessagePart` (`tool-parts.ts:754`) unconditionally set
-`completedAt: toolMessage.timestamp`, so `completedAt` came out `undefined` — indistinguishable from
-`ToolCallCard.tsx:40`'s `running` check. Fixed by falling back to `Date.now()` when the source row
-has no timestamp; `completedAt`'s only consumer is that `undefined` check; the value itself is
-never displayed. Commit `bb045b1`.
+**Tool-call spinner after resume, reproduced and fixed; the fix itself then moved out of vendored
+code.** A finished tool call showed a running spinner immediately upon leaving and re-entering its
+session — before any app reload. Root cause confirmed via the raw `session.resume` payload: this
+gateway's resume projection drops the assistant's `tool_calls` message entirely and represents the
+call as a standalone `role: "tool"` message with no `timestamp` field. `storedToolMessagePart`
+(vendored `tool-parts.ts:754`) unconditionally set `completedAt: toolMessage.timestamp`, so
+`completedAt` came out `undefined` — indistinguishable from `ToolCallCard.tsx:40`'s `running` check.
+The first fix (commit `bb045b1`) hand-edited that vendored line directly, which
+`scripts/sync-upstream.mjs` only ever regenerates from its own `PATCHES` table — a sync would have
+silently reverted the hand-edit on the next run, since `src/upstream/` is only ever a byte-for-byte
+reproduction of that generation. Moved (commit `1593c33`) to `session-connection.ts`'s
+`seedSessionMessages`, the one call site that feeds a `session.create`/`session.resume` payload's
+static `SessionMessage[]` through `toChatMessages` — always settled history (a genuinely in-flight
+tool call is restored separately, as a pending request, by `resume-pending.ts`, never as a static
+message row) — so any `tool-call` part still missing `completedAt` there is a hydration artifact,
+never a real running call. `closeRestoredToolCallParts` backfills it without touching the vendored
+conversion. Verified via `node scripts/sync-upstream.mjs` against `../hermes-agent`: `tool-parts.ts`
+now reproduces byte-for-byte (`git status` shows no diff on that file after a sync). That same sync
+run surfaced an unrelated, pre-existing drift — the current `../hermes-agent` checkout's
+`apps/desktop/src/types/hermes.ts` no longer has `CronBlueprint`/`CronBlueprintField`, which
+`src/api/cron.ts` still imports — reverted before committing, out of scope for this fix, flagged for
+separate follow-up.
+
+**The desktop shares the same latent data bug, but never surfaces it as a spinner (read-only check
+against `../hermes-agent`, nothing changed there).** `storedToolMessagePart`
+(`apps/desktop/src/lib/chat-messages/tool-parts.ts:754`) is the same function this project vendors —
+`completedAt` can come out `undefined` there too, for the identical reason. But the desktop's
+tool-call card (`ToolEntry`, `apps/desktop/src/components/assistant-ui/tool/fallback.tsx:371`) never
+reads `completedAt` to decide "running": `isPending = messageRunning && result === undefined`, where
+`messageRunning` (`fallback-model/index.ts:225-226`) comes from assistant-ui's own live thread/message
+run status — `false` for anything hydrated from history, regardless of `completedAt`. The only place
+desktop reads `completedAt` at all is `TimelineTimestamp.tsx`, purely to display a completion time,
+never to derive status. So this project's mobile port introduced the bug itself, by choosing
+`completedAt === undefined` as its own running signal (`ToolCallCard.tsx:40`) instead of anything
+tied to a live stream state — not a bug inherited from the desktop.
 
 **Full device verification, all five screens (`uiautomator` bounds ÷ 2.625 at 420dpi):**
 
-*Chat* (a turn with reasoning + a tool call): Back 48.0×48.0, title 275.4×48.0, Model 143.6×48.0,
-Compress 72.0×48.0, tool-call row 198.9×48.0, Reasoning 221.0×48.0, the four composer icons
+*Chat* (a turn with reasoning + a tool call), re-measured after the SessionHeader rework: Back
+48.0×48.0, the title column (title + model/effort subtitle, now one touchable) 275.4×56.0, Compress
+72.0×48.0, tool-call row 276.2×48.0, Reasoning rows 298.3×48.0 each, the four composer icons
 48.0×48.0 each, input 141.0×64.0, Send 58.3×48.0 (measured with the field non-empty — Send is
 `disabled` and drops out of the accessibility tree when the composer is blank, which is expected,
 not a defect). Nothing under 48dp, nothing cut off.
@@ -564,10 +614,10 @@ every one of them measured a normal 57.9-58.3dp once scrolled to a position wher
 inside the viewport. Named here so a future pass doesn't mistake a scroll-clip artifact for a
 touch-target failure.
 
-*Registered gateways*: Navigate up 56.0×56.0, Open menu 48.0×48.0, each connection's title row
-353.5×48.0, Switch to Hone 102.9×48.0, Make primary 95.2×48.0, Sign out 65.5×48.0, Remove 64.4×48.0,
-Add connection 379.4×48.0. `Test` is the one exception, noted above (43.8-44.2dp wide). Nothing cut
-off.
+*Registered gateways*, re-measured after the `Test` width fix: Navigate up 56.0×56.0, Open menu
+48.0×48.0, each connection's title row 353.5×48.0, Switch to Hone 102.9×48.0, Make primary
+95.6×48.0, Sign out 65.1×48.0, Remove 64.8×48.0, `Test` 48.0×48.0 (both cards), Add connection
+379.4×48.0. Nothing under 48dp, nothing cut off.
 
 *Add connection*: Name field 379.4×48.0, Gateway URL field 379.4×48.0, Detect auth mode 140.2×48.0,
 Scan QR 81.5×48.0. This screen has no back arrow or hamburger in its own UI (the OS back
