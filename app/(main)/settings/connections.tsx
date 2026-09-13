@@ -331,11 +331,13 @@ export default function ConnectionsSettings() {
 
 const styles = StyleSheet.create({
   actionButton: {
+    alignItems: 'center',
     borderRadius: radius.control,
     justifyContent: 'center',
     marginRight: 8,
     marginTop: 8,
     minHeight: 48,
+    minWidth: 48,
     paddingHorizontal: 10
   },
   actionText: {
