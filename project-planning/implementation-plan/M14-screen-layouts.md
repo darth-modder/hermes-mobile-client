@@ -107,11 +107,34 @@ All other windows are *absent*.
 
 ### F. Dialogs
 
-`confirm.html` → native `Alert`. `profile-dialogs.html`, `project.html`, `add-url.html`,
-`mcp-install-link.html`, `plugin-install.html`, `memory-provider.html`, `send-diagnostics.html` →
-sheets with the desktop's fields and labels. `worktree.html`, `real-browser-consent.html`,
-`remote-folder-picker.html`, `archive-skill.html`, `profile-remote-override.html` → *absent*
-(machine-bound) except `archive-skill`, which becomes a confirm `Alert` on the Skills screen.
+`confirm.html` → native `Alert`. `profile-dialogs.html`, `project.html` → sheets with the desktop's
+fields and labels. `worktree.html`, `real-browser-consent.html`, `remote-folder-picker.html`,
+`profile-remote-override.html` → *absent* (machine-bound).
+
+**Correction (close-out round 2, task 3):** this row originally also listed `add-url.html`,
+`mcp-install-link.html`, `plugin-install.html`, `memory-provider.html`, and `send-diagnostics.html` as
+sheets, and `archive-skill.html` as a confirm `Alert` on the Skills screen — none of the six were
+ever built that way, and the spec line was stale against the app's own code the whole time. All six
+are absent, each confirmed and cited in the route/component file that would have hosted them, not
+device-tested (there is no UI to reach):
+
+- `archive-skill.html` — absent from `settings/skills.tsx` (`skills.tsx:45-58`): the endpoint that
+  exists (`uninstallSkillFromHub`) targets a different, permanent action on hub skills; the
+  prototype's own "restorable" archive is for curator-*learned* skills, which this app has no memory-
+  graph screen for at all. Left unbuilt rather than mislabeled. See Deviation 14 (§406-419).
+- `add-url.html` — absent from `Composer.tsx` (`Composer.tsx:63-73`): no URL-fetch-and-attach RPC
+  exists in `src/gateway/session-connection.ts`, and the composer has no "Add context" menu yet to
+  host it. See Deviation 13 (§398-403).
+- `mcp-install-link.html` — absent from `settings/mcp.tsx` (`mcp.tsx:41-49`): this app registers no
+  `hermes://mcp/install` deep link. See Deviation 13 (§398-403).
+- `plugin-install.html` — absent from `settings/plugins.tsx` (`plugins.tsx:24-32`): `src/api/
+  plugins.ts` has no install-from-a-git-identifier call, only `listInstalledPlugins`. See Deviation
+  13 (§393-397).
+- `memory-provider.html`'s fields — absent as an interactive dialog; present only as one of
+  `settings/memory.tsx`'s inert read-only rows (`memory.tsx:13-29`), part of the same config.yaml-not-
+  ported gap as the rest of that screen. See Deviation 8 (§226-241).
+- `send-diagnostics.html` — absent from `settings/about.tsx` (`about.tsx:40-55`): `t.sendDiagnostics`
+  is vendored but nothing in `src/api/` calls a diagnostics-upload endpoint.
 
 ### G. Elements
 
@@ -788,10 +811,18 @@ on-device reachability:
 | `confirm.html` (generic confirm) — Registered gateways' Remove/Sign out | Tap Remove/Sign out on a connection card | CANCEL / REMOVE (destructive, red, last) | `t.settings.connections.removeConfirmTitle`/`removeConnection` — sourced, not retyped (checked `connections.tsx:164-174`) | MET |
 | `confirm.html` — cron job delete | Tap Delete on a job's detail screen | Cancel / Delete (destructive, last) | `t.cron.deleteTitle`/`t.common.cancel`/`t.common.delete` (`cron/[id].tsx:102-108`) | MET |
 | `confirm.html` — profile delete | Long-press a profile row | Cancel / Delete (destructive, last) | `t.common.delete` (`profiles.tsx:146`) | MET |
-| `profile-dialogs.html` (New Profile) → sheet | Tap "New profile" on Profiles | Cancel / Create profile — device-verified this round, both themes (`06b-createprofile-dark2.png`, `23-createprofile-light.png`) | Fields (Name, Clone from) and copy match the desktop's own fields in the same order | MET |
+| `profile-dialogs.html` (New Profile) → sheet | Tap "New profile" on Profiles | Cancel / Create profile — device-verified round 1 (`06b-createprofile-dark2.png`, `23-createprofile-light.png`) and re-verified round 2, both themes (`composite-sheet-create-{light,dark}.png`) | Fields (Name, Clone from) and copy match the desktop's own fields in the same order | MET |
 | `mid-turn-prompts.html` → the approval card | A `rm -rf` inside the throwaway `HERMES_HOME` (dangerous-command pattern, confirmed via `hermes-agent`'s `approval_detection.py:198` — plain `rm`/`touch`/`curl` do NOT trigger it, only flagged patterns do) | Run / Allow this session / Always allow / Reject — device-verified this round, both themes, Reject confirmed to actually deny the command (model acknowledged the denial) | Matches `ApprovalCard.tsx`'s `CHOICE_LABELS` | MET |
-| `archive-skill.html` → confirm Alert | Not device-tested this round (out of the round's screen list) | — | — | NOT CHECKED |
-| `add-url.html`, `mcp-install-link.html`, `plugin-install.html`, `memory-provider.html`, `send-diagnostics.html` → sheets | Not device-tested this round | — | — | NOT CHECKED |
+| `archive-skill.html` → confirm Alert | Not reachable — genuinely absent, not a testing gap (`skills.tsx:45-58`; Deviation 14 §406-419) | — (no UI exists) | — | MET-AS-ABSENT |
+| `add-url.html` → sheet | Not reachable — genuinely absent (`Composer.tsx:63-73`; Deviation 13 §398-403) | — (no UI exists) | — | MET-AS-ABSENT |
+| `mcp-install-link.html` → sheet | Not reachable — genuinely absent (`mcp.tsx:41-49`; Deviation 13 §398-403) | — (no UI exists) | — | MET-AS-ABSENT |
+| `plugin-install.html` → sheet | Not reachable — genuinely absent (`plugins.tsx:24-32`; Deviation 13 §393-397) | — (no UI exists) | — | MET-AS-ABSENT |
+| `memory-provider.html` → sheet | Not reachable as a dialog — its fields ship as one of `memory.tsx`'s inert read-only rows instead (`memory.tsx:13-29`; Deviation 8 §226-241), device-verified as such in a prior round | — (read-only row, not a sheet) | — | MET-AS-ABSENT |
+| `send-diagnostics.html` → sheet | Not reachable — genuinely absent (`about.tsx:40-55`: `t.sendDiagnostics` vendored but no upload endpoint wired) | — (no UI exists) | — | MET-AS-ABSENT |
+
+The doc's own Section F mapping table listed these six as present (sheets, or a confirm `Alert` for
+`archive-skill`) — that line was stale against the app's own code the whole time and is corrected
+above (§108-135 area) with the same citations.
 
 **One real anomaly, not a confirmed defect:** the approval card's first render this round appeared
 with only its coloured border visible — a thin sliver at the right screen edge, no visible title/
