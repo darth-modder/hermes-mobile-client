@@ -467,7 +467,7 @@ export const VOICE_SPOKEN_REPLIES_HINT =
   "Tap the speaker in the composer to hear the assistant's latest reply, synthesized by the backend and played back on this device."
 
 // src/chat/Composer.tsx — the Steer button's label. Desktop's own strings for
-// this action (`composer.steer`: 'Steer the current run', `composer.
+// this action (`composer.steer`: 'Steer the running turn', `composer.
 // queueSteer`: 'Steer — redirect the live turn now') are full sentences for a
 // tooltip/aria-label, not a short button word — the same brevity Stop
 // already gets from `composer.stopShort` ('Stop') has no equivalent short

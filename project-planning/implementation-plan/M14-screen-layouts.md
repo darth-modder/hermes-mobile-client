@@ -493,6 +493,17 @@ device-tested (there is no UI to reach):
     Models per `mobile-slash-commands.ts`, unchanged) and Settings > Models directly — nothing that
     worked before is gone, only the header's own extra tap target on the subtitle line.
 
+17. **Composer placeholder: one fixed string, not the desktop's rotating set.** `chat.html`'s own
+    composer keeps a single static placeholder, but the vendored desktop client this app ports from
+    rotates through `composer.newSessionPlaceholders`/`followUpPlaceholders` in `en.ts` depending on
+    whether the session is new or has prior turns. Commit `ee55803` (see the Labels exit-criterion
+    entry above) gave this app its own fixed `COMPOSER_PLACEHOLDER = 'Message Hermes…'`
+    (`src/lib/strings.mobile.ts:482`) instead, deliberately not wiring up the new-vs-follow-up
+    rotation: none of the desktop's rotating options name the gateway the way this one does, and
+    picking one turn's worth of copy to rotate through per session is product behavior, not a layout
+    decision this milestone's pass should make unasked. A simplification, not a defect — flagging it
+    here as a Deviation rather than leaving it undocumented.
+
 ## Verification log
 
 #### Reviewer device session (2026-09-13, M14/M13 device pass)
@@ -746,7 +757,7 @@ is not a route file, so its literals were never in scope — checked by hand aga
 strings:
 - `"Stop"`, `"Send"` — exact values already exist in `en.ts` (`composer.stop`, `composer.send`), but
   were hardcoded literals, not references. Not a value mismatch, but not traced either.
-- `"Steer"` — no exact match anywhere in `en.ts` (`composer.steer` = 'Steer the current run',
+- `"Steer"` — no exact match anywhere in `en.ts` (`composer.steer` = 'Steer the running turn',
   `queueSteer` = a different full sentence) — a genuine gap, no documented exception.
 - `"Message Hermes…"` — no match in `en.ts`'s placeholder set at all (desktop rotates through
   `newSessionPlaceholders`/`followUpPlaceholders`) — a genuine gap, no documented exception.
