@@ -1,6 +1,6 @@
 # M13 — Design parity + usability
 
-**Status:** in-progress (Opus re-verification 2026-09-10: six of eight exit criteria closed with device evidence; `done` blocked by a typecheck failure in `src/components/ToolIcon.tsx` — see Step 10 in the Verification log. Criteria 5 and 6 remain open and are named there.)
+**Status:** done (Opus close-out 2026-09-13: all eight exit criteria closed with device evidence; the `ToolIcon` typecheck blocker is fixed and `npm run check` is green. See "Opus close-out" at the end of the Verification log.)
 **Depends on:** M09, M10
 **Goal:** The phone looks like the desktop app (same skins, same icon set, same type roles) and is comfortable to use one-handed.
 
@@ -134,7 +134,7 @@ Read these before designing anything; they are the source of truth, not a screen
 - [x] Icons: `grep -rn "accessibilityLabel" src app | wc -l` is at least the number of
       icon-only `Pressable`s, and a uiautomator dump of chat, session list and settings shows no
       clickable node without `content-desc` or text.
-- [ ] **Type: `src/lib/fonts.ts` logs `Font.isLoaded('JetBrainsMono')` once at boot in `__DEV__`,
+- [x] **Type: `src/lib/fonts.ts` logs `Font.isLoaded('JetBrainsMono')` once at boot in `__DEV__`,
       and it reads true in logcat**; at font scale 1.3× (`adb shell settings put system
       font_scale 1.3`) no text is clipped on the three main screens.
       *Decision D15.2:* the original wording was "code blocks render in JetBrains Mono
@@ -144,7 +144,7 @@ Read these before designing anything; they are the source of truth, not a screen
       JetBrains Mono apart from the system mono fallback at code-block sizes. A boot-time
       `__DEV__` log of the same boolean is a direct, reliable read of the fact the criterion
       actually cares about.
-- [ ] Touch targets: a uiautomator dump of the three main screens shows no clickable node
+- [x] Touch targets: a uiautomator dump of the three main screens shows no clickable node
       smaller than 48×48 dp at the emulator's density.
 - [x] Slash palette: `/model` opens Settings > Models, `/sessions` opens the session list,
       `/profile` opens Profiles, from the composer.
@@ -886,3 +886,39 @@ already had saved (a personal/daily-use backend, not a throwaway one — same on
 above ran against, PID verified alive both times). Nothing was typed, sent, deleted, or changed;
 the only actions were navigation taps and `uiautomator dump`/`screencap`. Metro and the emulator
 were left as found (see the M14 report for the M14-round teardown).
+
+---
+
+#### Opus close-out (2026-09-13)
+
+Criteria 5 and 6 closed, M13 set to `done`. Evidence was gathered on `emulator-5554` against
+throwaway gateways only, and checked by Opus from the raw dumps and screenshots, not from the reports.
+The M14 branch's Verification log has the per-fix history.
+
+- **Criterion 5 (type):** Opus's own device session read `fonts: Font.isLoaded('JetBrainsMono') = true`
+  in logcat. At `font_scale 1.3`, screenshots of chat, the session list and the settings index showed
+  no clipped text: titles truncate with an ellipsis by design, and rows grow. Scale restored to 1.0
+  afterwards.
+- **Criterion 6 (touch targets), taken literally.** The Sonnet tail-closure entry above counted `hitSlop`.
+  The criterion measures native nodes, and device testing showed `hitSlop` gets clipped by parent
+  bounds (a tool-call row's 14 dp slop reached about 3 dp). So every control was given a real 48 dp
+  native size instead, in these `m14-screen-layouts` commits:
+  - session-list header: `b4d1130`
+  - Reasoning toggle and tool-call header: `582c02d`
+  - SessionHeader as one 56 dp title-column target: `e5e9682`
+  - composer input floor 44 → 48: `e7a5eb1`
+
+  Final dumps (`%LOCALAPPDATA%\hermes-android-field\m13-close3\`, ÷ 2.625 at 420 dpi):
+  - **Chat:** no clickable node under 48 dp. The composer input is 141×48 with one word,
+    141×64 when wrapping, and 203.4×48 when busy with Stop/Steer showing.
+  - **Session list and settings index:** no clickable node under 48 dp. The only small readings
+    are rows cut off at a scroll viewport's edge (e.g. "Memory & Context" at 11.8 dp); scrolled
+    fully into view, they measure about 58 dp.
+- Beyond the three main screens, the "nothing tappable under 48×48 dp" task was also brought into line
+  on Registered gateways (`521f9c0`, `4c7443b`) and Add connection (`262840a`).
+- `npm run check` at `cae3b93`: exit 0 (56 test files, 461 tests; plugin tests, lint and prettier clean).
+
+Carried out of M13, not blocking it:
+- `../hermes-agent` no longer exports `CronBlueprint`/`CronBlueprintField`, which `src/api/cron.ts`
+  imports, so the next `sync-upstream` will break the build.
+- The no-approval-card-after-Reject case is recorded as open in M14's Verification log.
