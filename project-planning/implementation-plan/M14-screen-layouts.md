@@ -597,7 +597,28 @@ tied to a live stream state — not a bug inherited from the desktop.
 72.0×48.0, tool-call row 276.2×48.0, Reasoning rows 298.3×48.0 each, the four composer icons
 48.0×48.0 each, input 141.0×64.0, Send 58.3×48.0 (measured with the field non-empty — Send is
 `disabled` and drops out of the accessibility tree when the composer is blank, which is expected,
-not a defect). Nothing under 48dp, nothing cut off.
+not a defect). **Correction: the `input 141.0×64.0` figure above was measured in the empty-placeholder
+state only** ("Message Hermes…" wraps to two lines at this width, which is what produced 64dp) — it
+did not cover the input's single-line height, which was a real failure. See below.
+
+**Composer input's real floor, found and fixed in the round-3 follow-up.** The single-line case
+measured 44.6dp (`Composer.tsx:571`, `minHeight: 44`), under 48dp — masked in the sweep above because
+only the empty (two-line) placeholder was measured. Fixed: `minHeight` raised from 44 to 48. Doesn't
+touch the busy-row layout (Deviation 15) or placeholder wrapping, both independent of this floor.
+Commit `e7a5eb1`. Device-verified across all four composer states (`uiautomator` bounds ÷ 2.625 at
+420dpi; none of these are inside a scroll viewport — the composer is docked, so clipping doesn't
+apply to any of them):
+
+- **(a) empty (placeholder):** `bounds=[525,2153][895,2321]` → 141.0×64.0dp. Two-line wrap, unchanged
+  by this fix (already well above 48dp).
+- **(b) one short word ("hi"):** `bounds=[525,1375][895,1501]` → 141.0×48.0dp. This is the case that
+  failed before the fix (44.6dp) and now clears 48dp exactly.
+- **(c) text wrapping to two lines:** `bounds=[525,1333][895,1501]` → 141.0×64.0dp, matching (a).
+- **(d) busy (Stop/Steer showing) with one short word ("hi") typed:** `bounds=[525,1228][1059,1354]`
+  → 203.4×48.0dp. Wider than (a)-(c) because the busy row layout (Deviation 15) hides the four
+  composer icons, freeing that width for the input — unchanged by this fix, as instructed.
+
+Nothing under 48dp, nothing cut off, in any of the four states.
 
 *Session list*: Open menu 48.0×48.0, Settings 48.0×48.0, New session 124.2×48.0, search field
 379.4×48.0, the session row 411.4×82.7, Pin 48.0×48.0. Nothing under 48dp, nothing cut off.
