@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native'
 
+import { USAGE_CHIP_CONTEXT_SUFFIX } from '../../lib/strings.mobile'
 import { useTheme } from '../../theme/provider'
 import { type } from '../../theme/type'
 import type { UsageStats } from '../../upstream/types/hermes'
@@ -34,7 +35,11 @@ export function UsageChip({ usage }: UsageChipProps) {
     <View style={styles.container}>
       <Text style={[styles.text, { color: tokens.mutedForeground }]}>{formatTokens(usage.total)} tok</Text>
       {typeof contextPercent === 'number' ? (
-        <Text style={[styles.text, { color: tokens.mutedForeground }]}> · {Math.round(contextPercent)}% ctx</Text>
+        <Text style={[styles.text, { color: tokens.mutedForeground }]}>
+          {' '}
+          · {Math.round(contextPercent)}
+          {USAGE_CHIP_CONTEXT_SUFFIX}
+        </Text>
       ) : null}
       {typeof usage.cost_usd === 'number' && usage.cost_usd > 0 ? (
         <Text style={[styles.text, { color: tokens.mutedForeground }]}> · ${usage.cost_usd.toFixed(3)}</Text>

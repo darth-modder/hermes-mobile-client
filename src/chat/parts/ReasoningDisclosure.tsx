@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
+import { REASONING_DISCLOSURE_LABEL } from '../../lib/strings.mobile'
 import { useTheme } from '../../theme/provider'
 import { type } from '../../theme/type'
 
@@ -28,7 +29,7 @@ export function ReasoningDisclosure({ text }: ReasoningDisclosureProps) {
         style={styles.header}
       >
         <Text style={[styles.headerText, { color: tokens.scaffoldText }]}>
-          {expanded ? '▾ Reasoning' : '▸ Reasoning'}
+          {expanded ? '▾' : '▸'} {REASONING_DISCLOSURE_LABEL}
         </Text>
       </TouchableOpacity>
       {expanded ? <Text style={[styles.body, { color: tokens.mutedForeground }]}>{text}</Text> : null}

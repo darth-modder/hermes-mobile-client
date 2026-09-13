@@ -5,6 +5,8 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 
 import { compressSession, renameSession } from '../gateway/session-connection'
 import { ChevronLeft } from '../lib/icons'
+import { SESSION_HEADER_COMPRESS_FAILED_TITLE, SESSION_HEADER_COMPRESS_LABEL } from '../lib/strings.mobile'
+import { t } from '../lib/t'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
 import { useTheme } from '../theme/provider'
@@ -88,7 +90,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
         id: `compress-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Compress failed',
+        title: SESSION_HEADER_COMPRESS_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -121,9 +123,12 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
           // The whole column is one 56dp touchable that starts the rename —
           // see the file-header comment above for why the model/effort line
           // it contains is plain text, not its own control.
-          <TouchableOpacity onPress={() => setEditingTitle(session.title || 'Untitled')} style={styles.titleTouchable}>
+          <TouchableOpacity
+            onPress={() => setEditingTitle(session.title || t.sidebar.row.untitledPlaceholder)}
+            style={styles.titleTouchable}
+          >
             <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
-              {session.title || 'Untitled'}
+              {session.title || t.sidebar.row.untitledPlaceholder}
             </Text>
             <View style={styles.subtitleRow}>
               <Text numberOfLines={1} style={[styles.subtitle, { color: tokens.mutedForeground }]}>
@@ -143,7 +148,7 @@ export function SessionHeader({ storedSessionId }: SessionHeaderProps) {
         {compressing ? (
           <ActivityIndicator color={tokens.mutedForeground} size="small" />
         ) : (
-          <Text style={[styles.compressText, { color: tokens.primary }]}>Compress</Text>
+          <Text style={[styles.compressText, { color: tokens.primary }]}>{SESSION_HEADER_COMPRESS_LABEL}</Text>
         )}
       </TouchableOpacity>
     </View>

@@ -22,7 +22,23 @@ import { pickAndAttachDocument, pickAndAttachImage } from '../lib/attachments'
 import { hapticSubmit } from '../lib/haptics'
 import { FileText, ImageIcon, Mic, MicOff, Volume2, X } from '../lib/icons'
 import { mobileCommandSurface, mobileCommandUnavailableMessage } from '../lib/mobile-slash-commands'
-import { COMPOSER_PLACEHOLDER, COMPOSER_STEER_LABEL } from '../lib/strings.mobile'
+import {
+  COMPOSER_ATTACH_DOCUMENT_LABEL,
+  COMPOSER_ATTACH_IMAGE_LABEL,
+  COMPOSER_ATTACHMENT_FAILED_TITLE,
+  COMPOSER_COULD_NOT_START_RECORDING_TITLE,
+  COMPOSER_DICTATION_FAILED_TITLE,
+  COMPOSER_NO_REPLY_TO_READ_MESSAGE,
+  COMPOSER_NOT_AVAILABLE_TITLE,
+  COMPOSER_NOTHING_TO_SPEAK_TITLE,
+  COMPOSER_PLACEHOLDER,
+  COMPOSER_READ_LAST_REPLY_LABEL,
+  COMPOSER_RECORD_VOICE_LABEL,
+  COMPOSER_SEND_FAILED_TITLE,
+  COMPOSER_SPEECH_FAILED_TITLE,
+  COMPOSER_STEER_LABEL,
+  COMPOSER_STOP_RECORDING_LABEL
+} from '../lib/strings.mobile'
 import { t } from '../lib/t'
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
@@ -188,7 +204,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `slash-unavailable-${storedSessionId}`,
         kind: 'info',
         message: mobileCommandUnavailableMessage(surface.reason),
-        title: 'Not available',
+        title: COMPOSER_NOT_AVAILABLE_TITLE,
         type: 'notify'
       })
 
@@ -265,7 +281,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `send-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Send failed',
+        title: COMPOSER_SEND_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -291,7 +307,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `attach-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Attachment failed',
+        title: COMPOSER_ATTACHMENT_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -313,7 +329,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `attach-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Attachment failed',
+        title: COMPOSER_ATTACHMENT_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -349,7 +365,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             id: `dictate-failed-${recordedForSessionId}`,
             kind: 'error',
             message: error instanceof Error ? error.message : String(error),
-            title: 'Dictation failed',
+            title: COMPOSER_DICTATION_FAILED_TITLE,
             type: 'notify'
           })
         }
@@ -368,7 +384,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `record-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Could not start recording',
+        title: COMPOSER_COULD_NOT_START_RECORDING_TITLE,
         type: 'notify'
       })
     }
@@ -385,8 +401,8 @@ export function Composer({ storedSessionId }: ComposerProps) {
           durationMs: 3000,
           id: `speak-nothing-${storedSessionId}`,
           kind: 'info',
-          message: 'No new reply to read out.',
-          title: 'Nothing to speak',
+          message: COMPOSER_NO_REPLY_TO_READ_MESSAGE,
+          title: COMPOSER_NOTHING_TO_SPEAK_TITLE,
           type: 'notify'
         })
       }
@@ -395,7 +411,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         id: `speak-failed-${storedSessionId}`,
         kind: 'error',
         message: error instanceof Error ? error.message : String(error),
-        title: 'Speech failed',
+        title: COMPOSER_SPEECH_FAILED_TITLE,
         type: 'notify'
       })
     } finally {
@@ -430,7 +446,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
         ) : null}
         <View style={styles.row}>
           <TouchableOpacity
-            accessibilityLabel="Attach image"
+            accessibilityLabel={COMPOSER_ATTACH_IMAGE_LABEL}
             accessibilityRole="button"
             disabled={attaching}
             onPress={() => void attachImage()}
@@ -439,7 +455,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             <ImageIcon color={tokens.foreground} size={20} />
           </TouchableOpacity>
           <TouchableOpacity
-            accessibilityLabel="Attach document"
+            accessibilityLabel={COMPOSER_ATTACH_DOCUMENT_LABEL}
             accessibilityRole="button"
             disabled={attaching}
             onPress={() => void attachDocument()}
@@ -448,7 +464,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             <FileText color={tokens.foreground} size={20} />
           </TouchableOpacity>
           <TouchableOpacity
-            accessibilityLabel={recording ? 'Stop recording' : 'Record voice message'}
+            accessibilityLabel={recording ? COMPOSER_STOP_RECORDING_LABEL : COMPOSER_RECORD_VOICE_LABEL}
             accessibilityRole="button"
             disabled={transcribing}
             onPress={() => void toggleRecording()}
@@ -463,7 +479,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             )}
           </TouchableOpacity>
           <TouchableOpacity
-            accessibilityLabel="Read last reply aloud"
+            accessibilityLabel={COMPOSER_READ_LAST_REPLY_LABEL}
             accessibilityRole="button"
             disabled={speaking}
             onPress={() => void speakLastReply()}

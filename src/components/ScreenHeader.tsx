@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { ChevronLeft, MoreVertical } from '../lib/icons'
-import { OPEN_MENU_ACCESSIBILITY_LABEL } from '../lib/strings.mobile'
+import { OPEN_MENU_ACCESSIBILITY_LABEL, SCREEN_HEADER_MORE_ACCESSIBILITY_LABEL } from '../lib/strings.mobile'
 import { openDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
@@ -86,7 +86,7 @@ export function ScreenHeader({ actions = [], onBack, right, title }: ScreenHeade
         ))}
         {overflowActions.length > 0 ? (
           <TouchableOpacity
-            accessibilityLabel="More"
+            accessibilityLabel={SCREEN_HEADER_MORE_ACCESSIBILITY_LABEL}
             accessibilityRole="button"
             hitSlop={12}
             onPress={() => setOverflowOpen(true)}

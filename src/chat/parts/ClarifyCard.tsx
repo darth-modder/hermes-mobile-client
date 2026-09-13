@@ -4,6 +4,11 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { respondClarify } from '../../gateway/session-connection'
 import type { ClarifyQuestion, ClarifyRequest } from '../../gateway/session-stream-reducer'
 import { hapticSubmit } from '../../lib/haptics'
+import {
+  CLARIFY_CARD_ANSWER_PLACEHOLDER,
+  CLARIFY_CARD_BATCH_TITLE,
+  CLARIFY_CARD_SINGLE_TITLE
+} from '../../lib/strings.mobile'
 import { useTheme } from '../../theme/provider'
 import { radius, type } from '../../theme/type'
 
@@ -55,7 +60,7 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
             editable={!sending}
             onChangeText={setText}
             onSubmitEditing={() => text.trim() && void respond(text.trim())}
-            placeholder="Type an answer…"
+            placeholder={CLARIFY_CARD_ANSWER_PLACEHOLDER}
             placeholderTextColor={tokens.mutedForeground}
             style={[
               styles.input,
@@ -93,7 +98,9 @@ export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
-      <Text style={[styles.title, { color: tokens.foreground }]}>{isBatch ? 'A few questions' : 'Question'}</Text>
+      <Text style={[styles.title, { color: tokens.foreground }]}>
+        {isBatch ? CLARIFY_CARD_BATCH_TITLE : CLARIFY_CARD_SINGLE_TITLE}
+      </Text>
       {isBatch ? (
         request.questions.map(question => (
           <OneClarifyQuestion

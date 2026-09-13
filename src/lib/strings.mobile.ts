@@ -480,3 +480,85 @@ export const COMPOSER_STEER_LABEL = 'Steer'
 // follow-up state (a deliberate simplification), and none of the rotating
 // options name the gateway the way this one does.
 export const COMPOSER_PLACEHOLDER = 'Message Hermes…'
+
+// M14 close-out round 2, task 4c: src/chat/Composer.tsx's voice/attachment
+// row. Dictation, TTS playback, and image/document attachment are mobile
+// composer gestures with no desktop settings-panel counterpart (see
+// VOICE_DICTATION_HINT/VOICE_SPOKEN_REPLIES_HINT above) — checked en.ts
+// directly for each of these and found no matching accessibilityLabel or
+// toast copy anywhere (attachImages/imageAttachFailed exist but describe the
+// desktop's own plural drag-drop/clipboard flow, a different feature from
+// this single persistent icon button, so reusing that wording would misname
+// what the control does).
+export const COMPOSER_ATTACH_IMAGE_LABEL = 'Attach image'
+export const COMPOSER_ATTACH_DOCUMENT_LABEL = 'Attach document'
+export const COMPOSER_RECORD_VOICE_LABEL = 'Record voice message'
+export const COMPOSER_STOP_RECORDING_LABEL = 'Stop recording'
+export const COMPOSER_READ_LAST_REPLY_LABEL = 'Read last reply aloud'
+export const COMPOSER_NOT_AVAILABLE_TITLE = 'Not available'
+export const COMPOSER_SEND_FAILED_TITLE = 'Send failed'
+export const COMPOSER_ATTACHMENT_FAILED_TITLE = 'Attachment failed'
+export const COMPOSER_DICTATION_FAILED_TITLE = 'Dictation failed'
+export const COMPOSER_COULD_NOT_START_RECORDING_TITLE = 'Could not start recording'
+export const COMPOSER_NOTHING_TO_SPEAK_TITLE = 'Nothing to speak'
+export const COMPOSER_NO_REPLY_TO_READ_MESSAGE = 'No new reply to read out.'
+export const COMPOSER_SPEECH_FAILED_TITLE = 'Speech failed'
+
+// src/chat/SessionHeader.tsx — the manual `session.compress` action
+// (compressSession, src/gateway/session-connection.ts). No vendored word
+// exists for it anywhere in en.ts (checked case-insensitively); the closest
+// hit, settings.model.compression ("Compression" / "Context compaction"), is
+// a different screen's description of automatic threshold-based compaction,
+// not this header button's own manual trigger.
+export const SESSION_HEADER_COMPRESS_LABEL = 'Compress'
+export const SESSION_HEADER_COMPRESS_FAILED_TITLE = 'Compress failed'
+
+// src/components/ScreenHeader.tsx — the overflow-menu button's
+// accessibilityLabel. No bare "More" string exists in en.ts (the closest,
+// assistant.thread.moreActions, is "More actions" — a different control, the
+// per-message action row, not this screen-level header button).
+export const SCREEN_HEADER_MORE_ACCESSIBILITY_LABEL = 'More'
+
+// src/chat/parts/UsageChip.tsx — the context-window-pressure suffix next to
+// the token count (session.usage's context_percent). No vendored format
+// string exists for this anywhere in en.ts (checked for context_percent/
+// contextPercent/ctx-shaped keys — none).
+export const USAGE_CHIP_CONTEXT_SUFFIX = '% ctx'
+
+// src/chat/parts/ApprovalCard.tsx — this M06 card's own chrome. The mid-
+// turn-prompts.html pairing (M14 mapping, Section E) restyles this card's
+// structure to the prototype but its copy was never vendored text to begin
+// with (checked en.ts: no "Approval required"/guardian-related string
+// exists anywhere).
+export const APPROVAL_CARD_TITLE = 'Approval required'
+export const APPROVAL_CARD_SMART_DENIED_NOTICE = 'Flagged by the guardian — reduced to once/deny.'
+
+// src/chat/parts/ClarifyCard.tsx — same M06-card-copy situation as
+// ApprovalCard above. No vendored equivalent (t.chat.parts.clarify only has
+// the tool-call-row done/pending/pendingAction words — "Asked a question" —
+// not this card's own title or its free-text answer placeholder).
+export const CLARIFY_CARD_BATCH_TITLE = 'A few questions'
+export const CLARIFY_CARD_SINGLE_TITLE = 'Question'
+export const CLARIFY_CARD_ANSWER_PLACEHOLDER = 'Type an answer…'
+
+// src/chat/parts/ReasoningDisclosure.tsx — NOT "no vendored word exists".
+// assistant.thread.thinking/thought/thoughtBriefly/thoughtFor(duration) is a
+// real, closely-related vendored string set (checked en.ts directly) — but
+// it's a live state machine (in-progress "Thinking" while streaming, then
+// "Thought"/"Thought briefly"/"Thought for {duration}" once settled,
+// depending on how long it ran), and this component always shows the same
+// word regardless of state or duration (only expanded/collapsed toggles the
+// disclosure triangle). Reusing "Thinking" here for what is actually a
+// static, undifferentiated disclosure header would silently overclaim parity
+// with behavior this component doesn't have. Flagged in the M14 doc's
+// close-out round 2 notes for a design decision (implement the duration
+// state, or keep this deliberately simpler word) rather than decided here.
+export const REASONING_DISCLOSURE_LABEL = 'Reasoning'
+
+// src/chat/parts/SudoCard.tsx, src/chat/parts/SecretCard.tsx — NOT new
+// mobile-only strings. Both cards' titles are fixed here to read from the
+// vendored t.prompts.sudoTitle ('Administrator password') and
+// t.prompts.secretTitle ('Secret required') instead of the retyped
+// "Sudo password requested" / "Secret requested" the labels-test sweep
+// found (task 4c) — see the fix in those files directly, not a whitelist
+// entry, since a real vendored string already existed for exactly this.

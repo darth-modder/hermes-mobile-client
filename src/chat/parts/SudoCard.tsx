@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { respondSudo } from '../../gateway/session-connection'
 import type { SudoRequest } from '../../gateway/session-stream-reducer'
 import { hapticSubmit } from '../../lib/haptics'
+import { t } from '../../lib/t'
 import { useTheme } from '../../theme/provider'
 import { radius, type } from '../../theme/type'
 
@@ -36,7 +37,7 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
-      <Text style={[styles.title, { color: tokens.foreground }]}>Sudo password requested</Text>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{t.prompts.sudoTitle}</Text>
       <View style={styles.row}>
         <TextInput
           autoCapitalize="none"
@@ -44,7 +45,7 @@ export function SudoCard({ storedSessionId, request }: SudoCardProps) {
           editable={!sending}
           onChangeText={setPassword}
           onSubmitEditing={() => void submit()}
-          placeholder="Password"
+          placeholder={t.prompts.sudoPlaceholder}
           placeholderTextColor={tokens.mutedForeground}
           secureTextEntry
           style={[

@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { respondSecret } from '../../gateway/session-connection'
 import type { SecretRequest } from '../../gateway/session-stream-reducer'
 import { hapticSubmit } from '../../lib/haptics'
+import { t } from '../../lib/t'
 import { useTheme } from '../../theme/provider'
 import { radius, type } from '../../theme/type'
 
@@ -41,7 +42,7 @@ export function SecretCard({ storedSessionId, request }: SecretCardProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.border }]}>
-      <Text style={[styles.title, { color: tokens.foreground }]}>{request.envVar || 'Secret requested'}</Text>
+      <Text style={[styles.title, { color: tokens.foreground }]}>{request.envVar || t.prompts.secretTitle}</Text>
       {request.prompt ? <Text style={[styles.prompt, { color: tokens.mutedForeground }]}>{request.prompt}</Text> : null}
       <View style={styles.row}>
         <TextInput

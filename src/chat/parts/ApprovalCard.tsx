@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { respondApproval } from '../../gateway/session-connection'
 import type { ApprovalRequest } from '../../gateway/session-stream-reducer'
 import { hapticApprove, hapticReject } from '../../lib/haptics'
+import { APPROVAL_CARD_SMART_DENIED_NOTICE, APPROVAL_CARD_TITLE } from '../../lib/strings.mobile'
 import { useTheme } from '../../theme/provider'
 import { radius, type } from '../../theme/type'
 
@@ -44,7 +45,7 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.destructive }]}>
-      <Text style={[styles.title, { color: tokens.destructive }]}>Approval required</Text>
+      <Text style={[styles.title, { color: tokens.destructive }]}>{APPROVAL_CARD_TITLE}</Text>
       <Text selectable style={[styles.command, { color: tokens.foreground }]}>
         {request.command}
       </Text>
@@ -52,9 +53,7 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
         <Text style={[styles.description, { color: tokens.mutedForeground }]}>{request.description}</Text>
       ) : null}
       {request.smartDenied ? (
-        <Text style={[styles.smartDenied, { color: tokens.destructive }]}>
-          Flagged by the guardian — reduced to once/deny.
-        </Text>
+        <Text style={[styles.smartDenied, { color: tokens.destructive }]}>{APPROVAL_CARD_SMART_DENIED_NOTICE}</Text>
       ) : null}
       <View style={styles.row}>
         {choices.map(choice => (
