@@ -19,12 +19,18 @@
 // importing a value from there makes it an identifier reference, not a
 // literal, so it naturally stops tripping the scan below.
 //
-// Scope note: this walks app/ (route files) only, matching the exit
-// criterion's own "each ported screen" wording. src/components/AppDrawer.tsx
-// is not a route file and isn't scanned here — its row TITLES are covered
-// separately by drawer-rows.test.ts (which checks the pure DRAWER_ROW_META
-// data AppDrawer.tsx renders), but any other literal inside AppDrawer.tsx
-// itself (its "Hermes" heading, for instance) is outside both tests.
+// Scope note: originally walked app/ (route files) only, matching the exit
+// criterion's own "each ported screen" wording — which is how Composer.tsx's
+// retyped "Stop"/"Send"/"Steer"/placeholder labels went unnoticed (M14
+// close-out round 2, task 4c): it's a component under src/chat/, not a route
+// file. Widened to also walk every .tsx file under src/chat/ (screens'
+// actual rendered content: Composer, Transcript, SessionHeader, the card/
+// part components, etc.) and src/components/ (AppDrawer and the shared `ui/`
+// primitives — both render user-visible text: AppDrawer's row labels/section
+// heading, and e.g. Button/Sheet/Menu's own default copy where they have
+// any). AppDrawer.tsx's row TITLES are still also covered separately by
+// drawer-rows.test.ts (which checks the pure DRAWER_ROW_META data AppDrawer
+// renders) — the two tests overlap there by design, not a gap.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -35,6 +41,7 @@ import { t } from './t'
 
 const REPO_ROOT = join(__dirname, '..', '..')
 const APP_ROOT = join(REPO_ROOT, 'app')
+const SRC_ROOT = join(REPO_ROOT, 'src')
 
 // Same exclusions as route-replicates.test.ts: `_layout.tsx` is never a
 // screen by itself, and these two are pure `<Redirect>` shims with no
@@ -49,6 +56,17 @@ const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
 // and never a real vendored label in practice — genuine prose in this
 // codebase is always capitalized or multi-word with mixed case.
 const LOOKS_TECHNICAL = /^[./]|^[a-z0-9@][a-z0-9\-_/.:]*$/
+
+// Two more technical shapes the widened src/chat + src/components scan
+// (task 4c) surfaced that the pattern above doesn't cover, because both can
+// start with an uppercase letter: an rgba()/rgb() color literal used as a
+// style value (src/components/AppDrawer.tsx's scrim, ui/Sheet.tsx's
+// backdrop), and an SVG path's `d` attribute data (src/components/
+// ToolIcon.tsx's phosphor icon set, each a single long string of path-command
+// letters and numbers). Neither is prose a user reads; both are data a
+// StyleSheet or an <Path> consumes.
+const LOOKS_LIKE_COLOR_VALUE = /^rgba?\([\d\s.,%]+\)$/i
+const LOOKS_LIKE_SVG_PATH_DATA = /^[MLHVCSQTAZ][MLHVCSQTAZ0-9\s,.\-]+$/i
 
 // Parsed with the real TypeScript AST, not a regex scan: JSX text content
 // can contain a raw apostrophe ("a plugin's own web UI") that isn't a
@@ -85,7 +103,14 @@ function extractLiteralCandidates(source: string, fileName: string): string[] {
 
   visit(sourceFile)
 
-  return values.filter(value => value.length >= 3 && /[A-Za-z]/.test(value) && !LOOKS_TECHNICAL.test(value))
+  return values.filter(
+    value =>
+      value.length >= 3 &&
+      /[A-Za-z]/.test(value) &&
+      !LOOKS_TECHNICAL.test(value) &&
+      !LOOKS_LIKE_COLOR_VALUE.test(value) &&
+      !LOOKS_LIKE_SVG_PATH_DATA.test(value)
+  )
 }
 
 function flattenStrings(value: unknown, out: Set<string>): void {
@@ -126,17 +151,49 @@ function listRouteFiles(dir: string): string[] {
   return out
 }
 
-describe('every ported screen uses only vendored or whitelisted labels', () => {
-  const routeFiles = listRouteFiles(APP_ROOT)
+// Generic recursive .tsx walker for the two non-route source trees. Unlike
+// listRouteFiles there's no "not a screen by itself" concept here — every
+// .tsx file under these roots is a component that can render text — but
+// `.test.tsx` is excluded on the same principle as `_layout.tsx` above: it's
+// not itself rendered UI. (Neither tree has any `.test.tsx` file today; the
+// guard is defensive.)
+function listTsxFiles(dir: string): string[] {
+  const out: string[] = []
+
+  for (const entry of readdirSync(dir)) {
+    const abs = join(dir, entry)
+
+    if (statSync(abs).isDirectory()) {
+      out.push(...listTsxFiles(abs))
+
+      continue
+    }
+
+    if (!entry.endsWith('.tsx') || entry.endsWith('.test.tsx')) {
+      continue
+    }
+
+    out.push(abs)
+  }
+
+  return out
+}
+
+describe('every ported screen or component uses only vendored or whitelisted labels', () => {
+  const files = [
+    ...listRouteFiles(APP_ROOT),
+    ...listTsxFiles(join(SRC_ROOT, 'chat')),
+    ...listTsxFiles(join(SRC_ROOT, 'components'))
+  ]
   const vendoredStrings = new Set<string>()
 
   flattenStrings(t, vendoredStrings)
 
-  it('found at least one route file to check (the walk itself works)', () => {
-    expect(routeFiles.length).toBeGreaterThan(0)
+  it('found at least one file to check (the walk itself works)', () => {
+    expect(files.length).toBeGreaterThan(0)
   })
 
-  it.each(routeFiles.map(file => [relative(APP_ROOT, file).split('\\').join('/'), file] as const))(
+  it.each(files.map(file => [relative(REPO_ROOT, file).split('\\').join('/'), file] as const))(
     '%s has no retyped label',
     (_rel, file) => {
       const source = readFileSync(file, 'utf8')
