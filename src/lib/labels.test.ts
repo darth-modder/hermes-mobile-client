@@ -68,6 +68,28 @@ const LOOKS_TECHNICAL = /^[./]|^[a-z0-9@][a-z0-9\-_/.:]*$/
 const LOOKS_LIKE_COLOR_VALUE = /^rgba?\([\d\s.,%]+\)$/i
 const LOOKS_LIKE_SVG_PATH_DATA = /^[MLHVCSQTAZ][MLHVCSQTAZ0-9\s,.-]+$/i
 
+// A string literal passed directly to `console.<method>(...)` — a debug tag
+// like `'[approval-card-layout] card'` (ApprovalCard.tsx's __DEV__-only
+// layout log, M14 close-out round 3, task 3) is developer-facing diagnostic
+// output, never rendered to a user, so it can never be a "retyped label" by
+// the exit criterion's own definition ("every VISIBLE string"). Checked by
+// walking up from the literal rather than pattern-matching its text, the
+// same principle as the literal-TYPE check below — this is about where the
+// string lives in the syntax tree, not what it looks like.
+function isConsoleCallArgument(node: ts.Node): boolean {
+  const call = node.parent
+
+  if (!call || !ts.isCallExpression(call)) {
+    return false
+  }
+
+  const callee = call.expression
+
+  return (
+    ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === 'console'
+  )
+}
+
 // Parsed with the real TypeScript AST, not a regex scan: JSX text content
 // can contain a raw apostrophe ("a plugin's own web UI") that isn't a
 // string-literal delimiter at all, which a character-by-character scanner
@@ -83,8 +105,9 @@ function extractLiteralCandidates(source: string, fileName: string): string[] {
     if (ts.isStringLiteral(node)) {
       // A string literal TYPE ('a' in `Record<Foo['a'], ...>` or a union
       // like `'a' | 'b'`) is never rendered — it's a type-checker-only
-      // discriminant, not user-facing text.
-      if (!ts.isLiteralTypeNode(node.parent)) {
+      // discriminant, not user-facing text. Same for a console.* call
+      // argument — a debug tag, never shown to a user.
+      if (!ts.isLiteralTypeNode(node.parent) && !isConsoleCallArgument(node)) {
         values.push(node.text.trim())
       }
     } else if (ts.isJsxText(node)) {
