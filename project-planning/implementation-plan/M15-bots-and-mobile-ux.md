@@ -164,19 +164,43 @@ and the gateway contract only.
    field pre-existed too. The only genuinely missing piece was the delivery-
    target list (`getCronDeliveryTargets` / `GET /api/cron/delivery-targets`),
    which task 3 added.
-3. **`profiles.configure` cannot clear an existing model pin.** Checked
-   directly: `_configure_model` (`methods_profiles.py:482-501`) only ever
-   writes a pin — `if not (model and provider): return None` no-ops whenever
-   either is missing, with no sentinel value that clears one back to
-   "inherit the host default". `src/api/bots.ts`'s `ConfigureBotPatch.model:
-   null` therefore can only mean "leave the current pin alone," never
-   "unpin" — documented in that file's header and exercised by a test
-   (`configureBot` sends neither `model` nor `provider` for `model: null`).
-   Not fixed here: an unpin action needs either a gateway change or writing
-   the profile's `config.yaml` some other way neither `profiles.describe`
-   nor `profiles.configure` exposes. Flagging for a product/gateway decision
-   before a bot-settings screen ships a "reset to default" control, rather
-   than inventing a workaround.
+3. **~~`profiles.configure` cannot clear an existing model pin.~~ Corrected
+   round 2: it cannot, but the gateway offers a different, working path round
+   1 didn't check.** `_configure_model` (`methods_profiles.py:482-501`)
+   genuinely only ever writes a pin — `if not (model and provider): return
+   None` no-ops whenever either is missing, no sentinel clears one — that
+   half of round 1's claim stands. What was wrong: round 1 stopped at
+   `profiles.configure` and reported "no RPC-level way to unpin at all,"
+   without checking whether some OTHER RPC could. The layer it missed: the
+   desktop clears a bot's model pin through `cli.exec` running `hermes
+   --profile <name> config unset model`
+   (`apps/desktop/src/plugins/hermes-bots/profile-config.tsx:566-575`).
+   Checked directly, both gates `cli.exec` passes through: its registration
+   (`tui_gateway/methods_tools.py:434`, `@method("cli.exec")`) carries no
+   source restriction, and the headless-argv blocklist
+   (`tui_gateway/server.py:3163-3168`, `_CLI_EXEC_BLOCKED` — `setup`,
+   `gateway`, `sessions browse`, `config edit`) doesn't name `config unset`.
+   `src/api/bots.ts`'s `clearBotModelPin` (round 2) is that same call, ported
+   verbatim, argv built as a fixed array (never an interpolated string) and
+   the profile name checked against the roster first. Live-verified: pinned
+   `coder` to `deepseek-v4-flash`, cleared it, `profiles.describe` read back
+   `{"provider":"","default":""}` — genuinely empty, not just the
+   inherited-at-creation value it started from (see the Verification log).
+   `ConfigureBotPatch.model: null` (round 1's workaround) is superseded by
+   this for the unpin case; it still means "leave the pin alone" for every
+   other caller of `configureBot`, since `profiles.configure` itself hasn't
+   changed.
+4. **M15 task B's doc text names `reasoning_effort` as the `config.set` key;
+   the real key is `reasoning`.** Established and cited in round 1
+   (`src/api/models.ts`'s header: the desktop's own effort control sends
+   `key: 'reasoning'`, `apps/desktop/src/store/model-presets.ts:89`; the
+   gateway's dispatch table has no `reasoning_effort` entry at all,
+   `tui_gateway/methods_config_set.py:451`). `reasoning_effort` is only the
+   `session.info` *read-back* field name
+   (`src/gateway/session-stream/session-info.ts:71-72`,
+   `tui_gateway/server.py:2041-2044,2063`). Recording as its own Deviation
+   per round 2's instruction, rather than leaving it folded into task 2's
+   commit message only.
 
 ## Verification log
 

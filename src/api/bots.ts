@@ -16,16 +16,19 @@
  * `apps/desktop/src/plugins/hermes-bots/canonical-chat.ts`'s identity
  * lookup: the profile's session titled exactly "Bot Chat".
  *
- * Known gap, not fixed here: `profiles.configure`'s model section
- * (`methods_profiles.py:482-501`, `_configure_model`) only ever WRITES a pin
- * — `if not (model and provider): return None` no-ops whenever either is
- * missing, so there is no RPC-level way to clear an existing pin back to
- * "inherit the host default". `null = inherit` in this module's
- * `ConfigureBotPatch.model` therefore means "send neither field, pin
- * unchanged" — it can express "leave whatever pin exists alone" but not
- * "remove an existing pin". Surfacing an unpin action needs either a gateway
- * change or writing the profile's config.yaml some other way; flagged here
- * rather than inventing a workaround.
+ * Round-1 correction (M15 Deviation 3): `profiles.configure`'s model section
+ * (`methods_profiles.py:482-501`, `_configure_model`) genuinely cannot clear
+ * a pin — `if not (model and provider): return None` no-ops whenever either
+ * is missing — but round 1 stopped one layer too early and reported that as
+ * "no RPC-level way to unpin at all". The desktop clears a pin through a
+ * DIFFERENT RPC: `cli.exec` running `hermes --profile <name> config unset
+ * model` (`apps/desktop/src/plugins/hermes-bots/profile-config.tsx:566-575`).
+ * Checked both gates directly: `cli.exec`'s own registration
+ * (`tui_gateway/methods_tools.py:434`, `@method("cli.exec")`) carries no
+ * source restriction, and the headless-argv blocklist
+ * (`tui_gateway/server.py:3163-3168`, `_CLI_EXEC_BLOCKED`) only names
+ * `setup`, `gateway`, `sessions browse` and `config edit` — `config unset`
+ * isn't in it. `clearBotModelPin` below is that same call, ported.
  */
 
 import { gatewayRequest } from '../gateway/session-connection'
@@ -184,6 +187,46 @@ export function configureBot(name: string, patch: ConfigureBotPatch): Promise<Co
   }
 
   return gatewayRequest<ConfigureBotResult>('profiles.configure', params)
+}
+
+export interface ClearBotModelPinResult {
+  ok: boolean
+  code: number
+  output: string
+}
+
+/**
+ * Clears a bot's model pin back to "inherit the host default" — the one
+ * thing `profiles.configure` cannot do (this file's header). Ports
+ * `apps/desktop/src/plugins/hermes-bots/profile-config.tsx:566-575`
+ * verbatim: `cli.exec` running `hermes --profile <name> config unset model`.
+ * argv is a fixed array, never an interpolated string, so `name` cannot
+ * inject an extra flag or subcommand; `name` is additionally checked against
+ * the current roster first (`listBots()`) so a stale or mistyped name fails
+ * before it ever reaches the gateway, rather than running `config unset`
+ * against whatever `get_profile_dir` happens to resolve it to.
+ *
+ * Result treated the way the desktop does
+ * (`profile-config.tsx:572`): `applied.model = result?.blocked !== true &&
+ * result?.code === 0`.
+ */
+export async function clearBotModelPin(name: string): Promise<ClearBotModelPinResult> {
+  const roster = await listBots()
+
+  if (!roster.profiles.some(p => p.name === name)) {
+    throw new Error(`Unknown bot profile: ${name}`)
+  }
+
+  const result = await gatewayRequest<{ blocked?: boolean; code?: number; hint?: string; output?: string }>(
+    'cli.exec',
+    { argv: ['--profile', name, 'config', 'unset', 'model'] }
+  )
+
+  return {
+    code: result?.code ?? -1,
+    ok: result?.blocked !== true && result?.code === 0,
+    output: result?.output ?? ''
+  }
 }
 
 export type BotAvatarAsset = { found: false } | { found: true; mime: string; size: number; data: string }

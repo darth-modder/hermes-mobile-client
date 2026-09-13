@@ -25,6 +25,7 @@ const { resetSessionConnectionForTests, setGatewayForTests } = await import('../
 
 const {
   clearBotAvatarAsset,
+  clearBotModelPin,
   configureBot,
   describeBot,
   getBotAvatarAsset,
@@ -238,6 +239,78 @@ describe('src/api/bots', () => {
       undefined
     )
     expect(result).toEqual(CLEAR_ASSET_FIXTURE)
+  })
+
+  describe('clearBotModelPin', () => {
+    it('validates the name against the roster before calling cli.exec', async () => {
+      fake.request.mockResolvedValueOnce(ROSTER_FIXTURE)
+
+      await expect(clearBotModelPin('not-a-real-bot')).rejects.toThrow(/Unknown bot profile: not-a-real-bot/)
+      // Only the roster check ran — cli.exec was never reached.
+      expect(fake.request).toHaveBeenCalledTimes(1)
+      expect(fake.request).toHaveBeenCalledWith('profiles.list', {}, undefined)
+    })
+
+    it('sends the exact argv the desktop sends, as a fixed array', async () => {
+      fake.request.mockResolvedValueOnce(ROSTER_FIXTURE).mockResolvedValueOnce({ blocked: false, code: 0, output: '' })
+
+      await clearBotModelPin('coder')
+
+      expect(fake.request).toHaveBeenNthCalledWith(
+        2,
+        'cli.exec',
+        { argv: ['--profile', 'coder', 'config', 'unset', 'model'] },
+        undefined
+      )
+    })
+
+    it('a bot name is never concatenated into a shell string, only placed as one argv element', async () => {
+      const trickyName = 'coder'
+
+      fake.request.mockResolvedValueOnce({
+        bot_mode_protocol: true,
+        profiles: [{ ...ROSTER_FIXTURE.profiles[1], name: trickyName }]
+      })
+      fake.request.mockResolvedValueOnce({ blocked: false, code: 0, output: '' })
+
+      await clearBotModelPin(trickyName)
+
+      const [, params] = fake.request.mock.calls[1]
+
+      expect(Array.isArray(params.argv)).toBe(true)
+      expect(params.argv).toHaveLength(5)
+      expect(params.argv[1]).toBe(trickyName)
+    })
+
+    it('ok follows the desktop rule: blocked !== true && code === 0', async () => {
+      fake.request
+        .mockResolvedValueOnce(ROSTER_FIXTURE)
+        .mockResolvedValueOnce({ blocked: false, code: 0, output: 'ok' })
+
+      const result = await clearBotModelPin('coder')
+
+      expect(result).toEqual({ code: 0, ok: true, output: 'ok' })
+    })
+
+    it('a nonzero exit code is not ok, even when not blocked', async () => {
+      fake.request
+        .mockResolvedValueOnce(ROSTER_FIXTURE)
+        .mockResolvedValueOnce({ blocked: false, code: 1, output: 'error: no such key' })
+
+      const result = await clearBotModelPin('coder')
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('a blocked argv is not ok, even with code 0', async () => {
+      fake.request
+        .mockResolvedValueOnce(ROSTER_FIXTURE)
+        .mockResolvedValueOnce({ blocked: true, code: 0, hint: 'blocked', output: '' })
+
+      const result = await clearBotModelPin('coder')
+
+      expect(result.ok).toBe(false)
+    })
   })
 
   describe('resolveCanonicalChat', () => {
