@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { memo, useEffect, useMemo, useRef } from 'react'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, type LayoutRectangle, StyleSheet, Text, View } from 'react-native'
 
 import { $clarifyRequests } from '../store/clarify'
 import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
@@ -149,6 +149,10 @@ export interface TranscriptProps {
  */
 export function Transcript({ storedSessionId, messages }: TranscriptProps) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null)
+  // __DEV__-only, read by ApprovalCard to log the header row's own layout
+  // alongside the card's own (M14 close-out round 3, task 3) — never read
+  // in a release build, so it's fine for this to always exist.
+  const headerLayoutRef = useRef<LayoutRectangle | null>(null)
 
   const clarify = useStore($clarifyRequests)[storedSessionId]
   const approval = useStore($approvalRequests)[storedSessionId]
@@ -175,10 +179,12 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
       keyExtractor={message => message.id}
       ListHeaderComponent={
         secret || sudo || approval || clarify || todos.length > 0 ? (
-          <View>
+          <View onLayout={__DEV__ ? event => (headerLayoutRef.current = event.nativeEvent.layout) : undefined}>
             {secret ? <SecretCard request={secret} storedSessionId={storedSessionId} /> : null}
             {sudo ? <SudoCard request={sudo} storedSessionId={storedSessionId} /> : null}
-            {approval ? <ApprovalCard request={approval} storedSessionId={storedSessionId} /> : null}
+            {approval ? (
+              <ApprovalCard parentLayoutRef={headerLayoutRef} request={approval} storedSessionId={storedSessionId} />
+            ) : null}
             {clarify ? <ClarifyCard request={clarify} storedSessionId={storedSessionId} /> : null}
             <TodoPanel todos={todos} />
           </View>

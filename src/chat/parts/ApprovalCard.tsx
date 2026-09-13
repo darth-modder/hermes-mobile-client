@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useRef, useState } from 'react'
+import { ActivityIndicator, type LayoutRectangle, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { respondApproval } from '../../gateway/session-connection'
 import type { ApprovalRequest } from '../../gateway/session-stream-reducer'
@@ -16,16 +16,42 @@ const CHOICE_LABELS: Record<string, string> = {
 }
 
 export interface ApprovalCardProps {
+  /** Set by Transcript.tsx's `ListHeaderComponent` wrapper — __DEV__ only,
+   *  read once here to log the header row's own layout alongside the
+   *  card's, for diagnosing a future recurrence of the round-2/3 overlap
+   *  glitch (M14 close-out round 3, task 3). Never read in a release build. */
+  parentLayoutRef?: { current: LayoutRectangle | null }
   storedSessionId: string
   request: ApprovalRequest
 }
 
 /** A dangerous-command / execute_code approval blocking the agent thread —
  *  the Python side is parked on `approval.respond` until one of these fires. */
-export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
+export function ApprovalCard({ parentLayoutRef, storedSessionId, request }: ApprovalCardProps) {
   const tokens = useTheme()
   const [pending, setPending] = useState<null | string>(null)
   const choices = request.choices?.length ? request.choices : ['once', 'deny']
+  const loggedLayout = useRef(false)
+
+  // __DEV__-only diagnostic, logged once per card mount (not on every
+  // relayout — a resize/rotation isn't the case this is watching for). The
+  // bug this exists for (round 2: card rendered with a dark overlay covering
+  // most of it; round 3: not reproduced in 5 attempts, see the M14 doc's
+  // task 3 entry) was never caught with an overlapping-sibling dump — this
+  // gives the next occurrence one. `View.props.onLayout` always exists on
+  // every platform build; the guard below is what keeps this out of
+  // release, not the prop itself.
+  const onLayout = __DEV__
+    ? (event: { nativeEvent: { layout: LayoutRectangle } }) => {
+        if (loggedLayout.current) {
+          return
+        }
+
+        loggedLayout.current = true
+        console.log('[approval-card-layout] card', event.nativeEvent.layout)
+        console.log('[approval-card-layout] parent row', parentLayoutRef?.current ?? 'unavailable')
+      }
+    : undefined
 
   const respond = async (choice: string) => {
     if (choice === 'deny') {
@@ -44,7 +70,10 @@ export function ApprovalCard({ storedSessionId, request }: ApprovalCardProps) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.destructive }]}>
+    <View
+      onLayout={onLayout}
+      style={[styles.container, { backgroundColor: tokens.widgetSurface, borderColor: tokens.destructive }]}
+    >
       <Text style={[styles.title, { color: tokens.destructive }]}>{APPROVAL_CARD_TITLE}</Text>
       <Text selectable style={[styles.command, { color: tokens.foreground }]}>
         {request.command}
