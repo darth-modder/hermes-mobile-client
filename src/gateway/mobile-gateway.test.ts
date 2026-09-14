@@ -29,6 +29,7 @@ class FakeWebSocket extends EventTarget {
 describe('MobileGateway.connect() error classification', () => {
   it('names a connection-refused failure instead of the generic message', async () => {
     let socket: FakeWebSocket | undefined
+
     const gateway = new MobileGateway({
       socketFactory: url => {
         socket = new FakeWebSocket(url)
@@ -46,6 +47,7 @@ describe('MobileGateway.connect() error classification', () => {
 
   it('names a 401 handshake rejection instead of the generic message', async () => {
     let socket: FakeWebSocket | undefined
+
     const gateway = new MobileGateway({
       socketFactory: url => {
         socket = new FakeWebSocket(url)
@@ -63,6 +65,7 @@ describe('MobileGateway.connect() error classification', () => {
 
   it('preserves the original error as .cause', async () => {
     let socket: FakeWebSocket | undefined
+
     const gateway = new MobileGateway({
       socketFactory: url => {
         socket = new FakeWebSocket(url)

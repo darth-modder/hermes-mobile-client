@@ -1,5 +1,9 @@
-import { type GatewayClientOptions, JsonRpcGatewayClient, type WebSocketLike } from '../upstream/shared/json-rpc-gateway'
 import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
+import {
+  type GatewayClientOptions,
+  JsonRpcGatewayClient,
+  type WebSocketLike
+} from '../upstream/shared/json-rpc-gateway'
 
 const REQUEST_TIMEOUT_MS = 30_000
 

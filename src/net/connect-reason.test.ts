@@ -16,9 +16,9 @@ describe('classifyConnectReason', () => {
   })
 
   it('classifies a raw connection-refused message', () => {
-    expect(classifyConnectReason({ rawMessage: 'java.net.ConnectException: Failed to connect to /127.0.0.1:9999' })).toBe(
-      'refused'
-    )
+    expect(
+      classifyConnectReason({ rawMessage: 'java.net.ConnectException: Failed to connect to /127.0.0.1:9999' })
+    ).toBe('refused')
   })
 
   it('classifies a raw timeout message', () => {
