@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 
+import { logRegistryState } from '../src/connections/registry'
 import { useAppLifecycle } from '../src/gateway/useAppLifecycle'
 import { useAppFonts } from '../src/lib/fonts'
 import { useNotifications } from '../src/push/useNotifications'
@@ -14,6 +15,13 @@ export default function RootLayout() {
   useAppLifecycle()
   useNotifications()
   usePushRegistration()
+
+  // M15 round 5 task 0: a trustworthy storage readback, logged once at
+  // startup — see registry.ts's `logRegistryState` header for why this
+  // replaced raw MMKV byte-scanning as the way to check this state.
+  useEffect(() => {
+    logRegistryState()
+  }, [])
 
   const fontsLoaded = useAppFonts()
 

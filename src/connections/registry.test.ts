@@ -22,6 +22,8 @@ const {
   getConnection,
   getPrimaryConnection,
   listConnections,
+  logRegistryState,
+  registryLogLines,
   setActiveConnection,
   setPrimaryConnection,
   switchActiveConnection,
@@ -177,6 +179,41 @@ describe('connections/registry', () => {
       deleteConnection('conn-2')
       expect(listConnections()).toEqual([])
       expect(getActiveConnection()).toBeNull()
+    })
+  })
+
+  // M15 round 5 task 0: this is now the trusted storage readback (never a
+  // raw MMKV byte scan — round 4 found that returns stale bytes). Asserts
+  // the log text itself never carries anything secret-shaped.
+  describe('the registry readback log', () => {
+    it('registryLogLines carries only id/label/primary/needsLogin, never baseUrl, authMode or header names', () => {
+      setActiveConnection({
+        ...CONNECTION,
+        headerNames: ['CF-Access-Client-Id'],
+        needsLogin: true
+      })
+      setActiveConnection(CONNECTION_2)
+
+      const text = registryLogLines().join('\n')
+
+      expect(text).toContain('conn-1')
+      expect(text).toContain('Test')
+      expect(text).toContain('needsLogin=true')
+      expect(text).not.toContain(CONNECTION.baseUrl)
+      expect(text).not.toContain('token')
+      expect(text).not.toContain('CF-Access-Client-Id')
+      expect(text).not.toContain('headerNames')
+      expect(text).not.toContain('secret')
+    })
+
+    it('logRegistryState prints nothing without __DEV__ (as under vitest/Node, where the global is absent)', () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+      setActiveConnection(CONNECTION)
+      logRegistryState()
+
+      expect(logSpy).not.toHaveBeenCalled()
+      logSpy.mockRestore()
     })
   })
 })
