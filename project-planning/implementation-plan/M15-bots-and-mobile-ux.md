@@ -687,3 +687,188 @@ Python, lint clean, `prettier --check .` clean. Exit code 0.
   reproduce in three controlled variants; a related, better-understood
   finding was root-caused instead (see above) and reported, not patched.
 - 4: done, green.
+
+### Round 4 — connect-error masking fixed, environment instability limited group A closure (2026-09-15)
+
+**Scope.** Task 0 (stale-connection cleanup), task 1 (fix connect-error
+masking — `src/net/connect-reason.ts` new, `src/gateway/mobile-gateway.ts`,
+`src/gateway/session-connection.ts`, `src/net/http.ts`, committed `7a38bdb` +
+lint fixup `17f083c`), task 2 (group A device closure — soul staleness
+confirm, Capabilities, expensive-model, 48dp audit, composites), task 3
+(`npm run check`), task 4 (this entry), task 5 (teardown).
+
+**Task 0.** Done, device-verified, with a self-correction worth recording.
+The task's own instruction to read MMKV via a raw `run-as ... cat` byte scan
+turned out to be unreliable in this environment: react-native-mmkv's on-disk
+header didn't match a naive `actualSize`-at-offset-0 parse, and — more
+importantly — a byte-level substring scan for `connections.list`/
+`connections.active` kept finding **stale trailing bytes** left behind by
+earlier, larger writes that a shorter overwrite never zeroes. Concretely: the
+raw scan reported `M15R3` as present in both the list and as active, even
+immediately *after* removing it through the app and confirming via a fresh
+Registered Gateways screenshot that only `Hone`/`M14Close3` remained. The
+first message this round pasted that wrong raw-scan output and had to be
+corrected in the next message. From then on the app's own UI (Settings →
+Registered Gateways, which reads `getActiveConnection()`/`listConnections()`
+through the real native MMKV binding, not a byte scan) was treated as ground
+truth. `M14Close3` was present as the task anticipated (round 3's teardown
+correctly removed `M15R3`); it was removed via the destructive-tap rule
+(fresh dump, card confirmed, dialog text confirmed it named `M14Close3` not
+Hone), leaving only Hone, Primary + Current — device-verified via the UI, not
+the unreliable raw scan.
+
+**Task 1.** Done, device-verified against the throwaway gateway (port 9133,
+scratch `HERMES_HOME`, basic auth, `researcher`/`coder` profiles per
+setup-gw.sh's pattern).
+
+`src/upstream/shared/json-rpc-gateway.ts:252` and `:280` (unchanged, per
+AGENTS.md — never hand-edited) always reject `connect()` with the same fixed
+`connectErrorMessage`, discarding the real WebSocket `error` event. The fix
+adds `src/net/connect-reason.ts`: `classifyConnectReason` maps a failure to
+`dns | refused | timeout | tls | unauthorized | forbidden | unreachable`,
+reusing M04's reason ladder (`src/net/auth/ladder.ts`'s `classifyFailure`)
+for the 401/403 case and pattern-matching the raw transport message for the
+rest. `MobileGateway.connect()` (`src/gateway/mobile-gateway.ts`) captures
+the raw error via its own `socketFactory`-installed listener and rethrows a
+classified message instead of the vendored generic one. `src/net/http.ts`
+classifies network-level `fetch()` failures the same way, so every REST
+caller benefits (this mattered in practice — round 3's own field notes,
+task 3, record that RN's `fetch()` on this Android build passes the
+underlying OkHttp exception through in `.message`, e.g. `"fetch failed:
+java.net.ConnectException: Failed to connect to /127.0.0.1:9132"`, exactly
+like the WS leg; the original plan to leave `fetch()` "opaquely generic" was
+wrong and corrected before writing the fix). `session-connection.ts`'s
+`resolveAuth` catch only needed to add classification for its one remaining
+special case (`HttpError`/401, via the ladder), since `http.ts` already
+covers the network-level branch.
+
+Device-verified, three cases, exact on-screen text pasted at the time:
+- **Host stopped** (gateway process killed, `adb reverse` still up): the
+  session detail screen's retry card showed *"Couldn't load this session ...
+  **Could not reach the host.**"* — replacing the old generic "Could not
+  connect to Hermes gateway".
+- **Wrong port** (`http://127.0.0.1:9134`, nothing listening): the connect
+  screen's "Detect auth mode" probe showed *"Could not reach that Hermes
+  gateway. **Connection refused — is the host running?**"*.
+- **Wrong password**: two distinct paths both confirmed. The initial
+  sign-in screen (a pre-existing, independent code path —
+  `src/net/auth/password-login.ts`'s `PasswordLoginError`, unrelated to this
+  fix) showed *"Incorrect username or password."*, unchanged and correct
+  already. Separately, a genuine 401 on **reconnect** (the gateway process
+  was restarted between sessions, invalidating the in-memory-only session
+  cookie RN's `fetch()` cookie jar held — a real, reproducible-by-accident
+  case, not manufactured) went through this round's fix and showed
+  *"Authentication failed — check the password."* on the same retry card as
+  the host-stopped case above — confirming the fix's own code path, not just
+  the pre-existing login screen.
+- **Bonus, unplanned:** a transient DNS hiccup against Hone mid-round (the
+  emulator's network was briefly flaky) showed *"Couldn't find that host —
+  check the address."* on the boot-failure (Sessions) screen — the fourth
+  reason bucket, confirmed for free.
+
+Tests: `src/net/connect-reason.test.ts` (10 cases) and
+`src/gateway/mobile-gateway.test.ts` (3 cases, including `.cause`
+preservation) added; 580 tests total (567 + 13), all passing.
+
+**Known gap, not fixed this round:** `src/api/sessions.ts`'s `sessionsRequest`
+(the boot-failure screen's actual data call) goes through `http.ts` too, but
+a **stale-session 401** there still surfaced as a raw `"HTTP 401
+/api/sessions?limit=100&order=recent"` on the Sessions screen — `http.ts`
+deliberately leaves `HttpError` (any parsed status) alone, only classifying
+network-level failures, and `sessionsRequest` has no per-call classification
+step the way `resolveAuth` does. Observed on-device, not patched — reported
+per the standing instruction rather than expanding scope under time
+pressure.
+
+**Task 2.** Environment instability — not the app — consumed the rest of
+this round's time budget. In order:
+- The throwaway gateway's session cookie (RN `fetch()`'s in-memory-only
+  cookie jar) expired repeatedly within single-digit minutes, forcing
+  several unplanned re-sign-ins mid-task.
+- `adb` itself wedged twice (commands hanging past 60s), requiring a
+  force-kill of the `adb` server process and, once, a full `adb reboot` of
+  the emulator guest to recover.
+- Metro crashed once with `EMFILE` after being restarted without `CI=1` (to
+  pick up watch-mode for a new file `metro` hadn't indexed since it started)
+  — exactly the failure mode the round's own standing instruction warns
+  about; recovered by restarting with `CI=1` again, which meant every
+  subsequent code edit needed a manual Metro restart rather than picking up
+  live.
+- The bot settings sheet's SOUL.md field repeatedly failed to receive taps
+  aimed at it — taps intended for the multiline Soul `TextInput` landed on
+  the adjacent Description field instead (the same mis-tap round 3's own log
+  independently reports for this exact sheet), twice corrupting the
+  Description field's text via IME autocomplete before being caught and
+  reverted. This is the same fragility round 3 flagged, not a new one.
+- Removing the throwaway connection while it, not Hone, held the "active"
+  slot (confirmed via `app/index.tsx`'s `getActiveConnection()`-gated root
+  redirect: a cold relaunch after removal opened `/connect`, not
+  `/session-list`) needed a deep link (`adb shell am start -a
+  android.intent.action.VIEW -d "hermes-android://settings/connections"`) to
+  reach Settings at all, since the root route has no connection to redirect
+  through. Re-doing "Switch to Hone" from there and confirming via a second
+  genuine cold relaunch (force-stop + launch, not just backgrounding) fixed
+  it — recorded in detail under Task 5 below since it doubled as part of
+  teardown.
+
+Given this, task 2's sub-items are honestly: **2a (soul staleness confirm)
+not conclusively device-verified this round either** — same as round 3's own
+report for the same reason (mis-taps on this sheet), plus this round's
+additional cookie/adb/Metro interruptions. The load-path half of the
+mechanism (`saveSoul()`'s re-read-before-write against `detail.soul`,
+`src/components/BotSettingsSheet.tsx:100-138`) was incidentally reconfirmed
+working: the sheet, once opened, showed the exact soul text a Node script
+(`soul-staleness-inject-r4.js`, new this round, uses node 24's native
+`fetch`/`WebSocket`, no `ws` dependency) had written moments earlier via
+`profiles.configure` — proving the sheet's load path reads the live host
+value — but the save-time staleness *confirm* itself was not exercised.
+**2b-2e: not attempted** this round (time, consumed by the above). Not
+claimed as done.
+
+**Task 3.** `npm run check` after the last commit (`17f083c`): typecheck
+clean, 63 test files / 580 tests passed (13 new for task 1), 52/52 Python,
+lint clean, `prettier --check .` clean (a lint fixup commit was needed after
+the first pass — import order and Prettier formatting on the new files, both
+mechanical, no behavior change). Exit code 0.
+
+**Task 5 (teardown).** Done, device-verified at each step:
+- Switched to Hone (`Switch to Hone`, confirmed "Primary Current"), removed
+  the throwaway connection (destructive-tap rule: fresh dump, card and
+  dialog text both confirmed `"M15R4"`, not Hone, before confirming). A cold
+  relaunch immediately after still opened `/connect`, revealing the
+  active-slot issue described above; reached Settings via the
+  `hermes-android://settings/connections` deep link, re-did `Switch to
+  Hone`, then verified with a *second*, genuine cold relaunch (force-stop +
+  `am start`) that landed on `/session-list` with Hone's real sessions
+  loading — the durable fix, not just an in-session UI state.
+- Metro and the throwaway gateway (and its `hermes-agent` venv/runtime child
+  processes) stopped; `curl` to both `:8081/status` and `:9133/api/health`
+  confirmed connection-refused (`000`) afterward.
+- Deleted: the scratch `HERMES_HOME` (`%TEMP%\hermes-m15-r4-home`),
+  `scratch-password.txt`, and two `.bat` shims `hermes profile create` had
+  written to `~/.local/bin` (`coder.bat`, `researcher.bat`) — all confirmed
+  gone. No cookie files were created this round (the Node injection script
+  used node 24's native `fetch`, not `curl -c`).
+- `adb reverse --list` empty (after a second `adb` server restart — it
+  wedged again during teardown); `font_scale` confirmed `1.0` (never
+  touched this round).
+- Emulator shut down via `adb emu kill`; `adb devices` empty afterward;
+  `emulator -list-avds` still lists `hermes-test`.
+- `git push`: below, working tree clean.
+
+**Honest summary of round 4 by task:**
+- 0: done, device-verified — with a documented self-correction (raw MMKV
+  byte-scanning proved unreliable; the app's own UI was used as ground
+  truth instead, see above).
+- 1: done, device-verified — all three required cases plus a fourth
+  (DNS) confirmed unplanned. One known, unfixed gap reported (sessionsRequest
+  401 stays raw).
+- 2a: not conclusively device-verified (same root cause round 3 hit, plus
+  this round's cookie/adb/Metro interruptions) — the load-path half was
+  incidentally reconfirmed; the save-time confirm was not exercised.
+- 2b: not attempted (time).
+- 2c: not attempted (time).
+- 2d: not attempted (time).
+- 2e: not attempted (time).
+- 3: done, green (after one lint fixup commit).
+- 5: done, device-verified at every step (see above).
