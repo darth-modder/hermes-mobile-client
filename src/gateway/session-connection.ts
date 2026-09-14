@@ -39,6 +39,7 @@ import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '..
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
+import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
@@ -374,6 +375,19 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
     return { mode: 'ticket', ticket }
   } catch (error) {
     await flagOauthSessionExpiredIfConfirmed(connection, error)
+
+    // httpRequest (src/net/http.ts) already turns a network-level failure
+    // (host stopped, wrong port, DNS, TLS) into a classified, friendly
+    // message — nothing to add for those here. An HttpError is the one
+    // case it deliberately leaves alone (its `.status` matters to callers
+    // like flagOauthSessionExpiredIfConfirmed above), so only that case
+    // needs classifying here, via the same M04 reason ladder
+    // (src/net/auth/ladder.ts, through src/net/connect-reason.ts).
+    if (error instanceof HttpError) {
+      const reason = classifyConnectReason({ httpStatus: error.status })
+
+      throw new Error(describeConnectReason(reason), { cause: error })
+    }
 
     throw error
   }
