@@ -872,3 +872,255 @@ mechanical, no behavior change). Exit code 0.
 - 2e: not attempted (time).
 - 3: done, green (after one lint fixup commit).
 - 5: done, device-verified at every step (see above).
+
+### Round 5 — trustworthy registry log, connect-reason repro ruled out, soul staleness fixed on device, sessionsRequest 401 fixed; Capabilities skill-toggle bug reconfirmed (2026-09-15)
+
+**Scope.** Task 0 (`__DEV__` registry readback log, replacing raw MMKV
+byte-scanning — `src/connections/registry.ts`, `app/_layout.tsx`, committed
+`c474eab`), task 1 (reproduce-or-rule-out the "switched to Hone, relaunch
+opened /connect" report), task 2 (soul staleness confirm, both directions),
+task 3a (Capabilities toggle read-back), task 4a (`sessionsRequest`'s raw
+401 fix — `src/api/sessions.ts`, committed `4abba2d`), task 4b (cookie
+lifetime read-only diagnosis), task 5 (`npm run check`). Against a fresh
+throwaway gateway (port 9134, `HERMES_HOME` at `%TEMP%\hermes-m15-r5-home`,
+`researcher`/`coder` profiles, basic auth), the same `hermes-test`
+hardware-accelerated AVD every prior round used (never destroyed).
+
+**Task 0.** Done, device-verified. `registry.ts` gained `registryLogLines()`
+(pure, the exact text) and `logRegistryState()` (the `__DEV__` guard around
+it, a no-op under plain Node/vitest where the global is absent — the file is
+imported directly by `registry.test.ts`, so a bare `__DEV__` reference would
+throw there). Called after every write in `setActiveConnection`,
+`switchActiveConnection`, `deleteConnection`, `setPrimaryConnection`, and
+once at startup from `app/_layout.tsx`'s `RootLayout` (a `useEffect`,
+matching `fonts.ts`'s existing `__DEV__`-log pattern). Two new unit tests
+(`registry.test.ts`) assert the log text carries only id/label/primary/
+needsLogin and never `baseUrl`, `authMode` or header names, and that
+`logRegistryState()` itself prints nothing without `__DEV__`. Live proof,
+`adb logcat` throughout task 1 below, e.g.:
+```
+[registry] active: conn-1789426055940-vtv767 (M15R5)
+[registry] list: conn-1789205984475-cpgcec (Hone) primary=true needsLogin=false
+[registry] list: conn-1789426055940-vtv767 (M15R5) primary=false needsLogin=false
+```
+This is now the storage readback trusted for the rest of this round and
+should be for future rounds too — never a byte scan.
+
+**Task 1.** Ruled out, not reproduced — three full cycles, each with a fresh
+`adb logcat` registry readback at every step (add throwaway → make active →
+switch to Hone → confirm Current via both the log and a UI screenshot →
+remove the throwaway via the destructive-tap rule, confirmed by a fresh
+`uiautomator dump` naming the card being removed → force-stop → cold
+launch). All three cycles: the registry log after cold launch showed
+`active: ... (Hone)` / `list: ... (Hone) primary=true needsLogin=false` with
+nothing else in the list, and the app landed on `/session-list` with Hone's
+real sessions loading — never `/connect`. Matches the code-level analysis
+in the task brief exactly (`registry.ts`'s `deleteConnection` only clears
+the active slot when the removed connection IS active; `switchActiveConnection`
+writes synchronously; nothing in this branch calls `clearActiveConnection`
+— confirmed by `grep`, its only caller is its own test). Round 4's
+observation stands as unexplained, most likely exactly what round 4 itself
+guessed: a tap that didn't register, or state lost to that round's emulator
+reboot — not a reproducible bug.
+
+**Task 2.** Done, device-verified — both the "is this a real overlap"
+question and the staleness confirm itself, in both directions (keep host's
+version / keep mine).
+- *Overlap check.* `uiautomator dump` with the Soul field's keyboard closed
+  showed Description ending at y=1291 and Soul starting at y=1345 (54px
+  gap, no overlap). With the keyboard open, Soul's own bounds are unchanged
+  and it visually never overlaps Description — but the sheet's full
+  accessibility-tree bounds for Soul extend *behind* the on-screen keyboard,
+  and the underlying chat screen's composer `EditText` (not part of the
+  modal sheet, and never actually reachable by touch while the sheet is up)
+  sits at a numerically overlapping position in the same dump. A targeted
+  test — typing a marker string at a tap coordinate inside that
+  numerically-overlapping zone — landed correctly inside the Soul field, not
+  the hidden composer, confirming touch dispatch is correct and this is not
+  a real, user-facing layout defect. The actual lesson (and most likely
+  explanation for rounds 3/4's mis-taps): a tap computed from a *stale*
+  `uiautomator` dump — taken before the sheet's content reflowed after a
+  prior edit or dialog — can land on the wrong field, because the sheet's
+  field bounds visibly shift by tens of pixels between interactions (e.g.
+  Description moved from `[42,1123][1038,1291]` to `[42,1162][1038,1330]`
+  after one round-trip through the staleness dialog). Always re-dump
+  immediately before tapping; never reuse a coordinate across a dialog or
+  keyboard-visibility change. No code fix needed — nothing here is a defect,
+  it's a testing discipline requirement, now recorded as such.
+- *Staleness confirm, "keep theirs" (CANCEL).* Focused Soul via a fresh
+  dump's node center, typed a marker, ran `soul-staleness-inject-r5.js`
+  (adapted from round 4's script, port 9134) to change `coder`'s soul from
+  Node via `profiles.configure` while the sheet was open, then blurred by
+  tapping the Description field (also freshly dumped). The confirm dialog
+  appeared: *"Soul changed on the host — This bot's SOUL.md was edited
+  somewhere else since you opened it. Overwrite it with your version?"*.
+  Tapped CANCEL; `profiles.describe` read back the Node-injected text
+  verbatim — the host's version won, confirming the reload-on-cancel path.
+- *Staleness confirm, "keep mine" (SAVE).* Repeated with a second marker and
+  a second Node injection; tapped SAVE this time. `profiles.describe` read
+  back the on-device edit (with the marker text) verbatim, including the
+  `ensureMessagingProtocol`-appended "Messaging other agents" section —
+  confirming the overwrite-with-mine path.
+
+**Task 3a.** Done, device-verified — with a real, reconfirmed bug.
+Toggled `hermes-agent` (a skill) off and `stt`/Speech-to-Text (a toolset) on
+in `coder`'s Capabilities screen, tapped Save (found via a fresh dump each
+time — the Save button's touch target overlaps the last list row's switch
+by several dozen px, another stale-coordinate trap). `profiles.describe`
+read back: **toolset side correct** — `stt.enabled` went `false → true`,
+matching the UI. **Skill side wrong** — `hermes-agent.enabled` still read
+`true` after Save, even though the sheet's own summary badge updated to
+"0 · 17" (0 skills, matching the toggle-off). This is the exact discrepancy
+round 3 first reported and left unresolved ("the sheet's own summary badge
+updated correctly... but `profiles.describe` still reported `hermes-agent`'s
+`enabled: true` afterward") — now reproduced a second time, two rounds
+apart, confirming it is a real, standing bug in the skill-toggle save path
+(not a fluke of round 3's environment). Not diagnosed or fixed this round
+(out of this round's brief); flagging it as a confirmed defect worth its
+own task. The "enable all clears the toolset pin" check
+(`profile-config.tsx:585-590`'s desktop logic, ported at
+`src/components/CapabilitiesSheet.tsx`/`src/api/bots.ts`'s
+`toolsets_pinned`) was code-confirmed only — `toolsets_pinned: true` was
+read back correctly before this test, but the on-device "toggle the one
+remaining disabled toolset, save, and confirm `toolsets_pinned` flips to
+false" sequence was not completed: the nested Capabilities screen inside
+the Bot settings sheet proved too fragile to drive reliably via blind
+coordinates (row bounds shift after almost every interaction, and the
+bottom-docked Save bar overlaps the last couple of switches' touch targets)
+and repeated attempts cost more time than this round could spend on one
+sub-check. Not claimed as device-verified.
+
+**Task 3b (expensive-model confirm).** Not attempted, same as round 3: the
+throwaway host's `config.yaml` only lists `mimo-v2.5`/`deepseek-v4-flash`
+under `opencode-go`, neither flagged as an expensive-model trigger, and
+seeding one was out of this round's time budget. Code path unchanged since
+round 1/2's code-level verification.
+
+**Task 3c (48dp audits) and 3d (composites).** Not attempted this round —
+time was spent on tasks 0-2 and 4 instead, which this round's brief called
+out as needing device closure most urgently (a trustworthy readback and
+resolving the connect-reason repro report). Honestly not done, not
+partially claimed.
+
+**Task 4a.** Done, both live-RPC-proven and device-verified. See the commit
+above. `src/api/sessions.ts`'s `sessionsRequest` now classifies any
+`HttpError` through `classifyConnectReason`/`describeConnectReason` (the
+same M04 reason ladder `session-connection.ts`'s `resolveAuth` already used
+for its own `HttpError` case), so a REST-level 401 gets the same friendly
+message instead of a raw `HTTP 401 ...` line. Two new tests
+(`sessions.test.ts`): a 401 classifies to "Authentication failed — check the
+password." (and explicitly does *not* still contain "HTTP 401"), and a
+non-auth 5xx classifies to "Could not reach the host." rather than being
+left raw. Device-verified live: killed the throwaway gateway's process,
+restarted it against the same `HERMES_HOME`/port/credentials (invalidating
+the in-memory session cookie without changing the password), cold-relaunched
+the app — the Sessions screen showed *"Authentication failed — check the
+password."* where round 4 saw a raw `HTTP 401 /api/sessions?limit=100&order=recent`.
+
+**Task 4b (cookie-lifetime diagnosis, read-only).** Done, code-level only —
+read-only as instructed, not fixed regardless of the finding. The basic-auth
+provider's access-token cookie TTL is 12 hours by default
+(`plugins/dashboard_auth/basic/__init__.py:32`,
+`_DEFAULT_TTL_SECONDS = 12 * 60 * 60`), with a 30-day refresh token (`:33`)
+and `Max-Age` set to `exp - now` (`hermes_cli/dashboard_auth/
+request_utils.py:43-45`, `access_token_max_age`, floored at 60s). The
+gateway's own middleware transparently rotates both cookies on any request
+that arrives with an expired access-token cookie but a still-valid
+refresh-token cookie (`hermes_cli/dashboard_auth/middleware.py:179-196`,
+`_attempt_refresh`/`_serve_refreshed`) — the top-of-file comment states
+outright "the middleware transparently refreshes via the 30-day refresh
+token when the access token lapses, so the TTL controls refresh frequency,
+not login length." **This does not match round 4's "expired within
+single-digit minutes" symptom** — a 12-hour/30-day contract, with
+server-side auto-refresh, should not force a re-login within minutes at
+all. The mobile app's own client code (`src/net/http.ts`,
+`src/net/auth/password-login.ts`, `src/gateway/session-connection.ts`) never
+reads, inspects or persists Set-Cookie headers itself: every password-mode
+call passes `credentials: 'include'` and relies entirely on the RN/OkHttp
+networking layer's own (default, unconfigured) cookie handling —
+`package.json` has no cookie-management dependency at all (`grep -i cookie
+package.json` is empty). **Conclusion:** a user on a password connection is
+not expected to be logged out every few minutes by the server's own
+contract; round 4's symptom is more likely a client-side cookie-persistence
+gap in RN's default fetch/cookie jar than a short server session, but
+confirming that specific root cause needs an isolated on-device timing test
+(two authenticated REST calls several minutes apart, checking whether the
+second one still carries the first's Set-Cookie) that this round did not
+have time to run. Reported as a diagnosis, not fixed — this is outside this
+branch's own code either way (the server's TTL is generous; if RN's cookie
+jar really is the gap, the fix is either an explicit cookie-management
+dependency or moving password mode onto the same ticket-based pattern
+token/oauth already use, both larger changes than a read-only round should
+decide).
+
+**Environment note, not a finding.** Mid-round, an unrelated Android system
+prompt (`com.google.android.gms`'s "Sign in with ease" / Google account
+setup wizard) surfaced over the app for no action this round took
+deliberately — dismissed via SKIP and the system Back button without
+entering any account information, then the emulator was returned to the
+home screen and the app cleanly relaunched. Not the app's own UI, not
+interacted with beyond backing out; noted here only so the screenshot
+sequence around task 3a's later attempts is not mistaken for an app screen.
+
+**Task 5.** `npm run check` after the last commit (`4abba2d`): typecheck
+clean, 63 test files / 584 tests passed (4 new: 2 for task 0, 2 for task
+4a), 52/52 Python (the one visible traceback is the same intentionally
+mocked failure prior rounds' logs also note, not a real error), lint clean,
+`prettier --check .` clean. Exit code 0.
+
+**Honest summary of round 5 by task:**
+- 0: done, device-verified.
+- 1: done — ruled out, not reproduced, across three full cycles with fresh
+  evidence at every step.
+- 2: done, device-verified — both the overlap question (not a real defect,
+  root-caused to stale-coordinate testing instead) and both directions of
+  the staleness confirm.
+- 3a: part-done — toggle-and-readback device-verified for both a skill and
+  a toolset, surfacing a real, reconfirmed bug (skill toggle doesn't
+  persist server-side despite the UI/summary badge updating); the
+  toolset-pin-clears-on-enable-all sub-check was not completed on device
+  (fragile nested-sheet automation, time), only code-confirmed.
+- 3b: not attempted (no expensive-model trigger available, time) — same as
+  round 3.
+- 3c: not attempted (time).
+- 3d: not attempted (time).
+- 4a: done, both live-RPC and device-verified.
+- 4b: done as a read-only diagnosis (not fixed, as instructed) — the
+  server's own contract doesn't explain round 4's symptom; the likely cause
+  is named but not conclusively proven this round.
+- 5: done, green.
+- 6 (this log entry) and 7 (teardown): done, see below.
+
+**Task 7 (teardown).** Done, device-verified at each step:
+- Switched to Hone (registry log: `active: ... (Hone)`, list now
+  `[Hone primary=true]` only, confirmed before AND after the remove),
+  removed `M15R5` via the destructive-tap rule — a fresh `uiautomator dump`
+  immediately before the tap, the confirm dialog's own text checked
+  ("M15R5" will be removed..."), only then REMOVE tapped. A cold relaunch
+  (force-stop + `am start`, new PID each time — `6068` → `6638` → `6876`
+  across this round's launches, confirming each one was genuine) landed
+  cleanly on `/session-list` with Hone's real sessions, registry log
+  showing only Hone, `primary=true`, `needsLogin=false`.
+- Metro (both node PIDs from this round's two starts) and the throwaway
+  gateway (`hermes.exe`, restarted once mid-round for task 4a's live check)
+  stopped; `curl` to both `127.0.0.1:8081/status` and
+  `127.0.0.1:9134/api/health` returned `000` (connection refused)
+  afterward. Left this round's own `node`/`hermes` processes only — five
+  unrelated `node` processes already running before this round started
+  (timestamps `2026-09-14 23:49:xx`, the previous evening) were not
+  touched.
+- Deleted: the scratch `HERMES_HOME` (`%TEMP%\hermes-m15-r5-home`),
+  `scratch-password.txt`, and the two `.bat` shims `hermes profile create`
+  wrote to `~/.local/bin` (`coder.bat`, `researcher.bat`) — all confirmed
+  gone by a follow-up `ls` failing on each path.
+- `adb reverse --list` empty after `--remove-all` (one `adb` wedge hit
+  mid-teardown — `adb reverse --remove-all` hung past its timeout; per the
+  standing rule, killed only the `adb` server process, `adb start-server`,
+  device reconnected cleanly, no emulator reboot needed); `font_scale`
+  confirmed `1.0` (never touched this round).
+- Emulator shut down via `adb emu kill`; `adb devices` empty immediately
+  after, and a follow-up process check confirmed no lingering `emulator.exe`
+  processes a few seconds later; `emulator -list-avds` still lists
+  `hermes-test`. Only the local `adb` server daemon process remains (no
+  device attached to it) — not a stray client.
+- `git push`: below, working tree clean after this commit.
