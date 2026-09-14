@@ -147,6 +147,40 @@ describe('src/api/sessions', () => {
     expect(JSON.parse(init.body as string)).toEqual({ pinned: true })
   })
 
+  it('a stale-session 401 is classified through the M04 reason ladder, not left as a raw HTTP error (round 4 known gap)', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-2',
+      kind: 'remote',
+      label: 'test'
+    })
+
+    const fetchMock = vi.fn(async () => jsonResponse(401, { error: 'unauthorized' }))
+
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(listSessions()).rejects.toThrow('Authentication failed — check the password.')
+    await expect(listSessions()).rejects.not.toThrow(/HTTP 401/)
+  })
+
+  it('a non-auth HTTP error (e.g. 500) is still classified rather than left raw', async () => {
+    setActiveConnection({
+      authMode: 'token',
+      baseUrl: 'http://host',
+      id: 'conn-1',
+      kind: 'remote',
+      label: 'test'
+    })
+    await setConnectionToken('conn-1', 'tok-abc')
+
+    const fetchMock = vi.fn(async () => jsonResponse(500, { error: 'boom' }))
+
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(listSessions()).rejects.toThrow('Could not reach the host.')
+  })
+
   it('deleteSession DELETEs the session', async () => {
     setActiveConnection({
       authMode: 'token',
