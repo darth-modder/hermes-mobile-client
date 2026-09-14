@@ -526,3 +526,164 @@ Exit code 0.
 - 4e: part-done — same as 4d.
 - 4f: part-done — roster and New-bot sheet composites produced (light only);
   Settings-sheet composite and dark-theme composites not produced.
+
+### Round 3 — Deviation 5 fixed, chat opens on device, model/capabilities device-verified (2026-09-15)
+
+**Scope.** Task 0 (dev-client native-dependency check), task 1 (Deviation 5
+fix — `profile` on `session.resume`, `src/gateway/session-connection.ts`,
+committed `0a118bd`), task 2 (device re-verification of everything Deviation
+5 blocked in round 2), task 3 ("Hermes couldn't start" repro attempt),
+task 4 (`npm run check`). Against a fresh throwaway gateway
+(`hermes-m15-r3-home`, port 9132, two seeded profiles `researcher`/`coder`,
+`auth_required: true`), same `hermes-test` hardware-accelerated AVD round 2
+used (never destroyed — `emulator -list-avds` still lists it, confirmed
+before this round started).
+
+**Task 0 (dev client vs. this branch's native deps).** Code-verified, not
+rebuilt. `git diff 18c37f3 337db04 -- package.json` (M15's own merge-base
+vs. the M13/M14 merge that just landed on `main`) is empty — M14's native
+additions (`react-native-svg`, `expo-haptics`, `expo-font`) were already
+present at `18c37f3` (M15's own branch point), so today's merge changed
+none of them; `git diff 18c37f3 337db04 --stat -- app.json android/
+package-lock.json` is also empty. The round-2-built APK (installed
+`2026-09-14 01:44:57` per `adb shell dumpsys package`, inferred from the
+build timestamp falling between round 2's task 2 commit and its
+verification-log commit — not read from an explicit build-log line) was
+built from this same unchanged native-dependency set. Confirmed live
+anyway: relaunched the existing install with Metro serving fresh JS
+(no rebuild), SVGs render correctly (bot avatars, task 2 below) and haptics
+fire on submit (inherited from round 1/2, unchanged this round) — no
+native-module-mismatch symptom (a red-box "requireNativeComponent" /
+"NativeModule doesn't exist" error) appeared at any point this round.
+
+**Task 1.** See the commit and Deviation 5 above. Live proof (4 resume
+attempts, fresh connection each time): before any turn, `session.resume`
+without `profile` -> 4007; with `profile` -> success. After a real turn
+(24 messages, mid-stream), without `profile` -> 4007 again; with `profile`
+-> success, live turn state returned. Full transcript:
+`%LOCALAPPDATA%\hermes-android-field\m15-r3\task1a-evidence.txt`. Unit
+tests added (`src/gateway/session-connection.test.ts`, 4 new cases) —
+567/567 vitest.
+
+**Task 2a (open/message/reopen/relaunch).** Done, device-verified. Opened
+`coder` (never used this round) — chat opened with no error. Sent "Say
+hello in exactly five words.", got a live streamed reply ("Hello there, how
+are you today?"), turn completed (`12.1k tok · 1% ctx`). Left to the roster
+and back in: history intact. Force-stopped and cold-relaunched the app,
+reconnected through the dev-client launcher, reopened `coder`: full history
+still there. This is the exact flow Deviation 5 blocked in round 2 —
+confirmed working now.
+
+**Task 2b (Bot settings sheet).**
+- Soul edit + readback: done, device-verified. Typed an edit into the SOUL.md
+  field on-device, blurred (tapping the sheet's own title reliably triggers
+  the save; tapping the adjacent DESCRIPTION field did not — see note below),
+  read back via `profiles.describe`: the edit landed verbatim inside the
+  existing text plus the `ensureMessagingProtocol`-appended "Messaging other
+  agents" section, confirming `saveSoul()`'s exact behavior
+  (`src/components/BotSettingsSheet.tsx`).
+- Staleness confirm: attempted, not conclusively triggered on device. Typed
+  a second edit, ran `soul-staleness-inject-r3.js` against the live gateway
+  to change the soul from Node mid-edit (confirmed via its own
+  `profiles.configure` response), then blurred — but the blur landed on the
+  DESCRIPTION field by mistake (a repeat of the same mis-tap noted above)
+  rather than the SOUL field, so `saveSoul()`'s re-read-before-write branch
+  was never exercised this round. The mechanism itself was already proven
+  correct at the RPC level in round 2's verification log (load → external
+  change → re-read mismatch → confirm fires) and is unchanged this round;
+  not re-proven on-device here for lack of time, reported honestly rather
+  than claimed.
+- Model pin/inherit: done, device-verified, read back at each step. Picked
+  `mimo-v2.5` explicitly from the Model picker →`profiles.describe` showed
+  `{"provider":"opencode-go","default":"mimo-v2.5"}` (a real pin, not an
+  inherited echo). Picked "Inherit host default" → `profiles.describe`
+  showed `{"provider":"","default":""}` (genuinely cleared, via
+  `clearBotModelPin`'s `cli.exec` path, Deviation 3). The roster's own row
+  for `coder` also dropped its "· mimo-v2.5" suffix after the clear,
+  confirming the roster reads the same cleared state.
+- Capabilities toggle: part-done. Toggled the `hermes-agent` skill off and
+  the `stt` (Speech-to-Text) toolset on, tapped Save. Fresh
+  `profiles.describe` confirms the toolset side: `stt` `enabled: false ->
+  true`. The skill side did not confirm the same way: the sheet's own
+  summary badge updated correctly (`1·16` -> `0·17`), but `profiles.describe`
+  still reported `hermes-agent`'s `enabled: true` afterward. Not diagnosed
+  further under time pressure — recorded as observed, not explained. Toolset
+  toggle: device-verified. Skill toggle: UI-observed only, RPC readback
+  disagreed, unresolved.
+
+**Task 2c (expensive-model confirm).** Not attempted. The throwaway host's
+`config.yaml` only lists `mimo-v2.5`/`deepseek-v4-flash` under
+`opencode-go`, neither flagged as an expensive-model trigger in this setup,
+and there was no time left this round to seed one. Code path
+(`confirmExpensiveModel`/`confirm_required`, `src/api/bots.ts`'s
+`ConfigureBotResult`) is unchanged from round 1/2 and was code-verified
+there; not re-attempted here.
+
+**Task 2d (48dp audit of settings sheet + Capabilities).** Not attempted —
+no `uiautomator dump` taken specifically of these two screens this round
+(dumps were pulled opportunistically per-tap for coordinates, not archived
+as a formal audit pass). Given time constraints, skipped rather than done
+partially and reported as complete.
+
+**Task 2e (composites).** Not attempted this round — no new prototype or
+device captures taken for the settings sheet; round 2's roster/new-bot
+composites (light only) still stand as the most recent evidence.
+
+**Task 3 ("Hermes couldn't start" reproduction).** Did not reproduce the
+exact round-2 screen/text in three controlled cold-relaunch variants. What
+each variant actually showed:
+- **(a) Metro running, everything reachable:** cold relaunch boots straight
+  to the Sessions/Bots screens, no error at all.
+- **(b) Metro's `adb reverse` tunnel removed** (JS bundle unreachable): the
+  native Expo Dev Launcher shows its own dialog, `"Error loading app /
+  Failed to connect to /127.0.0.1:8081"` — specific, not "Hermes couldn't
+  start" (this fires before the app's own JS ever runs).
+- **(c) Gateway's `adb reverse` tunnel removed** (JS loads fine, backend
+  unreachable): both Sessions and Bots show `"fetch failed:
+  java.net.ConnectException: Failed to connect to /127.0.0.1:9132"` —
+  again specific, not generic.
+
+  Root-caused instead a **related, more informative** finding: opening a
+  bot chat intermittently failed with the *generic* `"Could not connect to
+  Hermes gateway"` even while the transport was provably fine — a raw
+  WebSocket handshake sent from the device shell straight through the same
+  `adb reverse` tunnel (`nc` with a hand-built `Sec-WebSocket-Protocol:
+  hermes-gateway-v1, hermes-gateway-ticket.<ticket>` header, matching
+  `src/gateway/dial.ts:56`'s exact protocol list) got `HTTP/1.1 101
+  Switching Protocols` and a real `gateway.ready` event back immediately.
+  The generic message is `src/gateway/mobile-gateway.ts:17-26`'s
+  `connectErrorMessage` option, which `src/upstream/shared/json-rpc-
+  gateway.ts:244-252,258-281`'s `connect()` substitutes for *any* socket
+  `error` or connect-timeout, discarding the real reason — a pre-existing,
+  vendored-client design (unchanged by Deviation 5's fix, which never
+  touches `connect()`/`ensureGatewayConnection()`), not something
+  introduced this round. Each time it happened, a full app restart (not
+  just a "Retry" tap) reliably cleared it, which points at some client-side
+  connection state that outlives a single dial rather than a genuinely
+  down backend — but with the specific reason thrown away by design, this
+  round could not pin down which state. Reported per the standing
+  instruction to stop rather than patch a pre-existing, unrelated masking
+  behavior under time pressure; not fixed.
+
+**Task 4.** `npm run check` after the last commit (`0a118bd`): typecheck
+clean, 61 test files / 567 tests passed (4 new for Deviation 5), 52/52
+Python, lint clean, `prettier --check .` clean. Exit code 0.
+
+**Honest summary of round 3 by task:**
+- 0: done, code-verified (diff-proven no native dependency change) plus
+  live confirmation of no mismatch symptom; not rebuilt (none needed).
+- 1: done, both live-proven against the gateway and device-verified (task
+  2a's chat-open is the on-device proof this fix actually works).
+- 2a: done, device-verified.
+- 2b: part-done — soul edit and model pin/inherit fully device-verified
+  with RPC readback; staleness confirm and the skill-toggle half of
+  Capabilities not conclusively verified (see above, both honestly
+  reported rather than claimed).
+- 2c: not attempted (no expensive-model trigger available on the throwaway
+  host, time).
+- 2d: not attempted (time).
+- 2e: not attempted (time).
+- 3: done as a reproduction exercise — the exact round-2 screen did not
+  reproduce in three controlled variants; a related, better-understood
+  finding was root-caused instead (see above) and reported, not patched.
+- 4: done, green.
