@@ -78,7 +78,7 @@ export default function SessionScreen() {
     setError(null)
     setReady(false)
 
-    const open = id === 'new' ? createSession() : resumeSession(id, title)
+    const open = id === 'new' ? createSession() : resumeSession(id, title, botId)
 
     open
       .then(storedId => {
@@ -89,7 +89,7 @@ export default function SessionScreen() {
         }
       })
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
-  }, [id, router, title])
+  }, [botId, id, router, title])
 
   useEffect(() => {
     if (!id || startedFor.current === id) {

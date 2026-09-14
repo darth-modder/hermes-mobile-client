@@ -201,41 +201,75 @@ and the gateway contract only.
    `tui_gateway/server.py:2041-2044,2063`). Recording as its own Deviation
    per round 2's instruction, rather than leaving it folded into task 2's
    commit message only.
-5. **A bot's canonical chat cannot actually be opened on-device the first
-   time — a gateway/session-layer gap, not a bug in this round's port.**
-   `resolveCanonicalChat`'s id resolution (`src/api/bots.ts:442-453`) is
-   correct — confirmed live, see Verification log — but the chat screen
-   cannot then open that id. Root cause, isolated directly against the
-   gateway (bypassing the app entirely):
-   `session.create({hidden: true, follow_profile_config: true, profile,
-   title: 'Bot Chat'})`'s own response carries `"info": {"lazy": true,
-   ...}`. A **lazy** session is not resumable: `session.resume` (JSON-RPC
-   error 4007, `"session not found"`) fails for it by either its runtime id
-   or its stored id, on the very connection that created it, immediately
-   after creation, and *still* fails after the session has real turns
-   (`message_count: 2`, confirmed via `profiles.list`) — so this isn't a
-   race or a zero-messages special case. The only RPC that succeeds against
-   a lazy session's runtime id is `prompt.submit`, and only on the same
-   connection that created it. `createCanonicalChat`
-   (`src/api/bots.ts:413-433`) creates exactly this kind of session and
-   returns only `stored_session_id` for navigation; the chat screen's only
-   open path is `resumeSession` (`src/gateway/session-connection.ts:655-
-   670`, `session.resume`), which structurally cannot succeed here. A plain
-   (non-hidden) `createSession()` (`session-connection.ts:631-648`) never
-   hits this: it binds the session locally straight from `session.create`'s
-   own response (`bindSession`/`seedSessionMessages`) and never calls
-   `session.resume` for it at all — confirmed live, a plain "New session"
-   opens and is fully usable immediately. Fixing this is an architecture
-   decision (thread `createCanonicalChat`'s create-response through the
-   same store-binding path `createSession` uses, rather than
-   `resolveCanonicalChat`/`resumeSession`'s current "resolve an id, then
-   resume it" shape) outside this round's scope — reported per the standing
-   instruction to stop rather than patch around a desktop/gateway
-   disagreement. Practically: **every bot whose canonical chat has never
-   been opened by a live client is unopenable on mobile**, which also blocks
-   the Bot Settings sheet (chat-header-only per task 2 — `app/(main)/
-   sessions/[id].tsx:159,164-171` never renders `SessionHeader`/
-   `BotSettingsSheet` while `error` is set, `[id].tsx:115-147`).
+5. **~~A bot's canonical chat cannot actually be opened on-device the first
+   time.~~ Resolved round 3: `session.resume` was missing one param —
+   `profile` — not missing an architecture.** Round 2 stopped at
+   `session.resume`'s call shape (`{ session_id: storedSessionId }`,
+   `src/gateway/session-connection.ts`'s old `resumeSession`) and concluded
+   the lazy-session 4007 was structural — the same class of mistake as round
+   1's Deviation 3: stopping at one RPC's current params instead of checking
+   a NEIGHBORING one the server already reads. The layer that check missed:
+   `tui_gateway/methods_session.py:453-454`'s `_Resume.__init__` —
+   ```
+   # ``profile`` (app-global remote mode): resume from another local profile's state.db.
+   self.profile = (params.get("profile") or "").strip() or None
+   ```
+   — a param `session.resume` already accepts and round 2's own citations
+   never passed. `_find_live_unpersisted` (:511-517) matches a live,
+   not-yet-persisted Bot Chat only when its `profile_home` equals that
+   param's; `_resume_live_unpersisted`'s docstring (:520-521) says outright
+   this path exists "for every fresh Bot Chat." Without `profile`, resume
+   falls back to the default store and 4007s (:571-590) — proven live this
+   round, four ways, each a fresh WebSocket connection (never "same
+   connection" as the fix): a hidden Bot Chat resumed without `profile`
+   4007s both before any turn and after one has 24 messages in it (so this
+   was never a zero-message special case); resumed WITH `profile` it
+   succeeds both times. Full transcript: `%LOCALAPPDATA%\hermes-android-
+   field\m15-r3\task1a-evidence.txt`.
+
+   **Is this a real desktop/mobile difference?** Yes. The desktop never
+   passes `profile` to `session.resume` either
+   (`apps/desktop/src/store/gateway-profile-request.test.ts:253-259`: `await
+   requestGatewayForAgent('remote-primary', 'research', 'session.resume', {
+   session_id: 'research-session' })` — no `profile` key in the RPC params)
+   — it dials a SEPARATE, profile-scoped connection first
+   (`getConnectionFor({ connectionId, profile: 'research' })`, asserted at
+   :257) and issues `session.resume` on that connection, so the profile
+   scoping happens at DIAL time, once per connection. Mobile holds exactly
+   one shared gateway connection for the whole app (this file's own header:
+   "M04: one active connection in v1") — with no per-profile connection to
+   scope the lookup, `profile` has to travel as an RPC param instead, once
+   per call. Same server-side requirement, two different places to satisfy
+   it — not a bug on either side.
+
+   **The fix** (`src/gateway/session-connection.ts`): `resumeSession` gained
+   an optional third `profile` argument, sent as `session.resume`'s
+   `profile` param when given. The chat screen (`app/(main)/sessions/
+   [id].tsx`) passes its `botId` route param straight through. A
+   module-level `storedSessionProfile` map remembers which profile a stored
+   id belongs to once given, so `rehydrateSession` — the reducer's own
+   internal reconnect path (`session.reclaimed`, a dropped socket), which
+   never sees a route param — still supplies it on every later resume
+   without threading a profile field through the pure wire-protocol reducer
+   (`session-stream-reducer.ts` / `session-stream/*`), which owns none of
+   this identity plumbing.
+
+   **Every other session-addressed RPC in this file was checked and needs no
+   change.** `submitPrompt`, `stopTurn`, `steerTurn`, `askBtw`,
+   `compressSession`, `renameSession`, `execSlashCommand`,
+   `respondApproval`, `respondClarify`, `respondSudo`, `respondSecret`,
+   `attachImageBytes`, `attachFile`, `attachPdf` (lines 792-960) all address
+   the session via `runtimeIdForStored()` — the RUNTIME id, once
+   `resumeSession` has bound one. Server-side, every one of those methods
+   resolves through `_sess`/`_sess_nowait` (`tui_gateway/server.py:1045-
+   1047`): `s = _sessions.get(sid)` — a direct lookup in the live, in-memory,
+   profile-agnostic `_sessions` dict, never a profile-scoped `state.db`
+   lookup. Only a STORED-id-addressed call reaches the profile-scoped path
+   `_resume_locate` guards, and `session.resume` is the only one of those in
+   this app.
+   `createCanonicalChat` (`src/api/bots.ts:413-433`) and
+   `findExistingCanonicalChat`'s `session.list` (`src/api/bots.ts`) already
+   passed `profile` (round 1) and needed no change.
 
 ## Verification log
 

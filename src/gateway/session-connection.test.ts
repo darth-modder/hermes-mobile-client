@@ -66,6 +66,7 @@ const {
   handleSocketClose,
   reconnectAndProbeGateway,
   resetSessionConnectionForTests,
+  resumeSession,
   setGatewayForTests,
   setReducerStateForTests,
   submitPrompt
@@ -192,6 +193,52 @@ describe('submitPrompt: optimistic user-message insert', () => {
     fake.request.mockRejectedValue(new Error('boom'))
 
     await expect(submitPrompt('stored-1', 'hello')).rejects.toThrow('boom')
+  })
+})
+
+describe('resumeSession: M15 Deviation 5 — a Bot Chat needs `profile` to be found', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+  })
+
+  it("sends no `profile` for a plain session — matches session.resume's existing behavior", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1' })
+  })
+
+  it("sends `profile` when the caller passes one (the chat screen's botId route param)", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'researcher' })
+  })
+
+  it("remembers a Bot Chat's profile so a later call with none supplied still sends it — this is what lets rehydrateSession recover one without ever seeing a route param", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+    fake.request.mockClear()
+    await resumeSession('stored-1')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'researcher' })
+  })
+
+  it('an explicit profile on a later call overrides the remembered one', async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+    fake.request.mockClear()
+    await resumeSession('stored-1', undefined, 'coder')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'coder' })
   })
 })
 

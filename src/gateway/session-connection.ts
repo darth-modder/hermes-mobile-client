@@ -85,6 +85,32 @@ let scheduler: DeltaFlushScheduler | null = null
 let disposeEvents: (() => void) | null = null
 let disposeLiveSyncEvents: (() => void) | null = null
 
+/**
+ * A Bot Chat's profile, by stored id — connection-layer bookkeeping, kept
+ * outside `reducerState` deliberately (that state is wire-frame-driven only;
+ * this is remembered purely so a LATER internal resume, one this module
+ * triggers itself with no route params to read, can still supply it).
+ *
+ * M15 Deviation 5: `session.resume`'s own `session_id` never carries enough
+ * to find a Bot Chat — `tui_gateway/methods_session.py:453-455` reads a
+ * SEPARATE `profile` param to pick which profile's `state.db` to look in,
+ * and `_find_live_unpersisted` (:511-517) matches a live, not-yet-persisted
+ * Bot Chat only when its `profile_home` equals that param's. Without it,
+ * lookup falls back to the default store and 4007s (:585-590) — proven live
+ * against the throwaway gateway both before AND after the chat has real
+ * turns in it (a persisted Bot Chat lives in the profile's own `state.db`,
+ * never the default one, so the 4007 isn't a "not yet saved" special case).
+ * `resumeSession`'s caller (the chat screen) knows the profile up front —
+ * it's the `botId` route param — but `rehydrateSession` below is invoked
+ * from inside the reducer's own effects (a `session.reclaimed` event, a
+ * dropped-socket recovery), which carry only a session id, never a profile.
+ * This map is what lets that internal path resupply what the original open
+ * already knew, without threading a profile field through the pure
+ * wire-protocol reducer (`session-stream-reducer.ts` / `session-stream/*`)
+ * that owns none of this identity plumbing.
+ */
+const storedSessionProfile = new Map<string, string>()
+
 const stateListeners = new Set<(state: ConnectionState) => void>()
 
 /** Subscribe to the live gateway's connection state (idle/connecting/open/closed/error). */
@@ -127,7 +153,7 @@ async function rehydrateSession(storedSessionId: string | null, attempts: number
 
   for (let attempt = 0; attempt < totalAttempts; attempt++) {
     try {
-      await resumeSession(storedSessionId)
+      await resumeSession(storedSessionId, undefined, storedSessionProfile.get(storedSessionId))
 
       return
     } catch (error) {
@@ -640,6 +666,10 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
 
   const storedId = response.stored_session_id ?? response.session_id
 
+  if (profile) {
+    storedSessionProfile.set(storedId, profile)
+  }
+
   reducerState = bindSession(reducerState, response.session_id, storedId, { makeActive: true })
   seedSessionMessages(storedId, response.messages)
   publishAll()
@@ -651,10 +681,29 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
  *  and how the `hydrate` effect recovers after a reclaim or lost connection.
  *  Both reconnect branches (inside the server's orphan grace, and after a
  *  `session.reclaimed`) call this the same way, so pending-request restore
- *  (D10.2) runs identically on either. */
-export async function resumeSession(storedSessionId: string, knownTitle?: string): Promise<string> {
+ *  (D10.2) runs identically on either.
+ *
+ *  `profile` (M15 Deviation 5): required for a Bot Chat — see
+ *  `storedSessionProfile`'s own comment above for why `session.resume`
+ *  cannot find one without it. The caller that actually knows the profile
+ *  (the chat screen, from its `botId` route param) passes it explicitly;
+ *  once given, it's remembered here by stored id so `rehydrateSession`'s
+ *  later internal calls (never passed one directly) still supply it. A
+ *  caller resuming a PLAIN, non-bot session simply never passes one, and
+ *  nothing here treats its absence as an error — `session.resume` without
+ *  `profile` is exactly today's plain-session behavior. */
+export async function resumeSession(storedSessionId: string, knownTitle?: string, profile?: string): Promise<string> {
   const client = await ensureGatewayConnection()
-  const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
+  const resolvedProfile = profile ?? storedSessionProfile.get(storedSessionId)
+
+  if (resolvedProfile) {
+    storedSessionProfile.set(storedSessionId, resolvedProfile)
+  }
+
+  const response = await client.request<SessionResumeResponse>('session.resume', {
+    session_id: storedSessionId,
+    ...(resolvedProfile ? { profile: resolvedProfile } : {})
+  })
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
@@ -958,6 +1007,7 @@ export function resetSessionConnectionForTests(): void {
   scheduler?.dispose()
   scheduler = null
   stateListeners.clear()
+  storedSessionProfile.clear()
 }
 
 /** Test-only: inject a fake in place of the real dialed `MobileGateway`, so
