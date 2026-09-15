@@ -299,6 +299,21 @@ and the gateway contract only.
    has no entry of its own for. Same pattern as Deviation 4 (a task-doc field name checked against
    the gateway and corrected) applied to a value set instead of a key name.
 
+9. **Copy and Edit-and-resend collapse into one long-press menu, not the desktop's split
+   hover/click affordances.** The desktop's vendored equivalents are two different
+   interactions on two different message roles: a hover-revealed Copy button on assistant
+   replies only (`apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:636`,
+   `CopyButton` with `label={copy.copy}`) and, on user messages only, clicking the bubble opens
+   an inline edit composer that reverts the turn on send — interrupt + rewind
+   (`apps/desktop/src/components/assistant-ui/thread/user-message.tsx:499-528`). Mobile has
+   neither hover nor a click-vs-long-press distinction to split these across, and M15 task B's
+   own doc text already settles Edit's send behavior differently from the desktop's rewind
+   ("sending creates a new turn, the old one is not rewritten") — so both actions collapse into
+   one long-press menu per message: Copy always present, Edit added only when `message.role
+   === 'user'`. Labels are still the desktop's own vendored copy, not retyped:
+   `assistant.thread.copy` ('Copy') and `assistant.thread.editMessage` ('Edit message'),
+   `src/upstream/i18n/en.ts:3377,3407`.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
@@ -1560,3 +1575,147 @@ by this round's restart-heavy test flow rather than a real second bug.
 commit and landed in `d01dded` (task 2) rather than `0f453de` (task 1), where they belong. Not
 corrected via git history surgery (rebase/amend) per the standing rule against it; left as a
 minor process note rather than silently ignored.
+
+### Round 8 — vendored hand-edit undone, stale model/effort fixed and device-verified, jump-to-latest / refresh / copy-edit built and device-verified (2026-09-16)
+
+**Environment note, not a task finding:** this round's emulator (`hermes-test` AVD) and its
+Metro instance both had to be rebuilt from scratch — the AVD's `emulator` binary wasn't on this
+machine under the SDK root prior rounds used (`C:\Program Files (x86)\Android\android-sdk`); it
+was found under a second, complete SDK install at `D:\Software\Android-SDK` instead. Separately,
+running Metro in `CI=1` (per this round's own instruction) turned out to disable more than
+client auto-reload: **Metro's own transform cache is not invalidated by a source edit while
+running in CI mode**, so a force-stop + cold relaunch of the app — normally enough to pick up
+new JS — kept serving stale bundles for every code change made after Metro's own process
+started. Discovered only after task 2's on-device pill showed no visible text/icon and a
+`console.log` trace never appeared in Metro's own log despite firing on every scroll event in
+the running (stale) bundle. Fixed by killing and restarting Metro with `--clear` (confirmed by
+its own "Bundler cache is empty, rebuilding" line and a genuinely full module count, e.g. `8828
+modules`, not the `(1 module)` deltas a cache hit produces) after every source edit intended for
+device testing, for the rest of the round. Noted here because it cost real time and will recur
+for any future CI=1 round unless Metro is restarted (not just the app) after each edit.
+
+**Task 0 (vendored hand-edit): met.** `d01dded`/`cc57b14`'s hand-added `model?`/`usage?` on
+`ChatMessage` (`src/upstream/lib/chat-messages/types.ts`) removed; both fields now live on a
+local `ChatMessageWithExtras` type (`src/chat/message-extras.ts`, new file) that
+`message-stream.ts`'s `completeAssistantMessage`/`completeMessage`/`newAssistantFromCompletion`
+and `ResponseStats.tsx` use instead — both are optional fields, so a plain `ChatMessage` already
+satisfies the wider type with no cast needed anywhere else in the codebase (confirmed:
+`session-stream/types.ts`'s `SessionState.messages: ChatMessage[]` needed no change).
+`message-usage-stamping.test.ts` updated to import and type against
+`ChatMessageWithExtras` (its `lastAssistantMessage` helper was reading `.model`/`.usage` off a
+bare `ChatMessage`). Proved byte-for-byte: `node scripts/sync-upstream.mjs` then `git status`/
+`git diff --stat src/upstream/` showed only the restorative deletion (16 lines removed, nothing
+added) against the last-committed vendored file — i.e. a fresh sync now reproduces
+`src/upstream/` with zero diff. `npm run check`: exit 0 (627 tests). Commit `4144da5`.
+
+**Task 1 (stale model/effort after restart): met, root-caused and device-verified.** Root cause
+confirmed at `src/gateway/session-connection.ts`'s old `resumeSession`/`createSession`
+(pre-fix): both only ever seeded `messages`, `title` and pending requests from the RPC
+response — never the `model`/`provider`/`reasoning_effort` the response's own `info` field
+(`SessionRuntimeInfo`) carries. Those only ever reached `SessionState` via a live `session.info`
+WebSocket event (`session-info.ts`'s `handleSessionInfoEvent`), which does not re-fire for a
+session that was already running before this client (re)connected — exactly round 7's
+observation. Mirrors the desktop's own `applyRuntimeInfo` call on this same response field
+(`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:1759`). Fix: exported
+`session-info.ts`'s existing `sessionInfoStatePatch`/`applySessionInfoStatePatch` (unchanged —
+`SessionRuntimeInfo` has the same field names/types the live event payload does, so the same
+no-op-if-unchanged patch logic applies with no cast) and apply them to `response.info` in both
+`resumeSession` and `createSession`, via a new `seedSessionInfo` helper next to the existing
+`seedSessionMessages`/`seedSessionTitle`. Four new unit tests in `session-connection.test.ts`
+against a fake gateway (model/provider/effort applied from resume; overwrites a stale value from
+a prior open; a resume with no `info` at all applies nothing; create applies `info` too).
+Device-verified on the hermes-test AVD, throwaway gateway on port 9138 (`setup-gw-r8.sh`, same
+shape as `setup-gw-r7.sh`): created session A, set `deepseek-v4-flash`/`low` from the chips;
+session B, `mimo-v2.5`/`medium`. A Node script over the RPC (`session.resume`, not `GET
+/api/sessions` — `rpc-check.mjs`, password-login → `/api/auth/ws-ticket` → the `hermes-gateway-
+v1`/`hermes-gateway-ticket.<ticket>` WS subprotocol) read both sessions' `info` before the
+restart:
+```
+A: {"model":"deepseek-v4-flash","provider":"opencode-go","reasoning_effort":"low", ...}
+B: {"model":"mimo-v2.5","provider":"opencode-go","reasoning_effort":"medium", ...}
+```
+Force-stopped the app, cold-launched, reopened both from the session list. Header/chips on-device
+showed `deepseek-v4-flash · low` for A and `mimo-v2.5 · medium` for B — not the config-default
+`mimo-v2.5`/Off a stale hydrate would have shown. The same RPC script read both sessions again
+after the relaunch: identical `info` to the pre-restart snapshot, and `config.yaml`'s
+`model.default` unchanged (`mimo-v2.5`/`opencode-go`) throughout. Commit `85f0e76`.
+
+**Task 2 (jump-to-latest): met, device-verified.** Counting logic in `src/chat/latest-pill.ts`
+(new file, pure, unit-tested — 8 tests): tracks settled (`role === 'assistant' && !pending &&
+!hidden`) message ids already seen, so a re-render never double-counts one turn, and resets
+whenever the reader is back at the tail. Wired into `Transcript.tsx` via `FlashList`'s
+`onScroll` (`AT_TAIL_OFFSET_PX = 24`, an allowance for overscroll/sub-pixel reporting, not an
+exact 0) and a `Pressable` pill (`ChevronDown` + `latestPillLabel`, new string in
+`strings.mobile.ts`) positioned `absolute` above the composer. Existing streaming auto-follow
+(`maintainVisibleContentPosition`'s own threshold) is untouched. Device-verified on session D
+(`hermes-test` AVD, gateway 9138): scrolled away from the tail mid-conversation, sent two
+further turns while away — the pill appeared reading "Latest · 1" after the first settled, then
+"Latest · 2" after the second, with the transcript never auto-scrolling back down while away
+(confirmed both by screenshot and by the `isAtTail`/`onScroll` trace logged temporarily for this
+check, then removed before commit). Tapped the pill: scrolled to the tail and the count cleared
+to 0 in the same trace. Screenshots: `128-pill-visible.png` ("Latest · 1"), `129-pill-count2.png`
+("Latest · 2"), `130-after-pill-tap.png` (cleared, at tail). Commit `7621f77`.
+
+**Task 3 (refresh conversation): met, device-verified on both a plain and a bot chat.**
+`SessionHeader.tsx` gained a "More" overflow button (`MoreVertical`, both the plain-chat/Compress
+layout and the bot-chat/Settings layout) opening a `Menu` with one item, "Refresh conversation"
+(`SESSION_HEADER_REFRESH_LABEL`), calling a new `onRefresh` prop. The screen
+(`app/(main)/sessions/[id].tsx`) owns the actual call — a new `refreshConversation` callback
+that calls `resumeSession(id, title, botId)`, the same `botId` `openSession` already threads
+through per M15 Deviation 5 — reporting failure as a toast
+(`SESSION_HEADER_REFRESH_FAILED_TITLE`) rather than replacing the screen with the boot-failure
+card `openSession`'s own error path renders, since a quiet manual re-sync shouldn't blank out a
+transcript already on screen. Device-verified with a temporary trace (removed before commit): on
+the plain chat "Count from 1 to 40 with comments", Refresh conversation called `resumeSession`
+with `botId=(none)`; on the `coder` bot chat, the same action called it with `botId=coder`. Both
+resolved with no visible disruption to the open transcript (screenshots
+`137-overflow-open.png`/`138-after-refresh-tap.png` plain chat, `143-coder-chat.png`/
+`144-coder-refreshed.png` bot chat). Commit `9da2693`.
+
+**Task 4 (copy and edit-and-resend): met, device-verified.** Long-press any message bubble
+(`Transcript.tsx`'s `MessageBubble`, new `Pressable` wrapper, `delayLongPress={350}`) opens a
+`Menu` with "Copy" always present and "Edit message" added only for `message.role === 'user'` —
+see Deviation 9 for why these collapse into one menu instead of the desktop's split hover/click
+affordances. Copy uses React Native core's deprecated-but-still-linked `Clipboard.setString`
+(no `expo-clipboard` dependency exists in this project yet, and adding one is a native module
+that would need a fresh native build outside this round's scope — noted rather than silently
+worked around). Edit calls a new one-shot signal, `requestComposePrefill`
+(`src/store/compose-request.ts`, same "request counter" shape as the existing
+`$scrollToBottomRequests`), which `Composer.tsx` applies via a new effect (`text` is owned as
+local `useState`, not a live store subscription, so an external write needs a signal to apply
+rather than a direct draft write) and focuses the input. Sending the prefilled text submits a
+normal new turn — the original message is never rewritten, matching the task's own wording,
+unlike the desktop's click-to-edit (interrupt + rewind). Device-verified on session D: long-
+pressed the user message "Reply with just the digit 2. No tool use.", tapped Edit, composer
+prefilled with that exact text, appended `-EDITEDNOW`, sent — a brand-new turn appeared at the
+tail with its own reply, and the original "digit 2" turn and its original reply, still earlier
+in the transcript, were untouched (`157-tail-after-edit.png` shows both side by side). Long-
+pressed an assistant reply ("2"), tapped Copy — the Android keyboard's own clipboard-content
+preview showed "2" immediately after
+(`161-composer-longpress.png`), and the native text-selection popup on the composer field
+offered "Paste" (`163-paste-menu2.png`, only shown by the OS when the clipboard is non-empty) —
+both are OS-level confirmations the text reached the system clipboard, independent of this
+app's own code. Commit `7c7da08`.
+
+**Found, not part of this round's tasks, filed for follow-up rather than fixed here:** the
+composer's Model and Reasoning-effort bottom sheets (`ModelChip.tsx`/`EffortChip.tsx`) have
+list rows whose touch hit-regions are degenerate on this emulator — `adb shell uiautomator
+dump` repeatedly showed a selected row's own clickable bounds collapsed to near-zero or inverted
+height (e.g. `bounds="[42,1319][1038,1331]"`, 12px; `bounds="[42,2151][1038,2139]"`, inverted),
+while the row's visible text rendered elsewhere on screen — a direct tap on the visible text
+fell through to whatever real view sat underneath (the composer's own input/icons) instead of
+selecting the row. Only keyboard-focus navigation (`KEYCODE_TAB`/`KEYCODE_DPAD_DOWN` then
+`KEYCODE_ENTER`) reliably selected a row; this is how every model/effort change in this round's
+device testing was actually made, not by tapping the visible label directly. Not one of this
+round's five tasks, and not chased further here; flagged as a background task
+(`task_7ad4c507`, title "Fix untappable rows in composer's Model/Reasoning-effort sheets") for
+separate investigation — likely a FlashList row-measurement issue specific to these two sheets,
+since the same rows worked fine via keyboard focus and other (non-virtualized) `Menu`-based
+sheets in this same round (the jump-to-latest pill, the refresh/copy/edit menus) never showed
+the bug.
+
+**Task 5 (`npm run check`):** exit 0 — `tsc -p . --noEmit` clean, vitest 627/627 (68 files),
+`test:plugin` 52/52, `eslint .` clean, `prettier --check .` clean. Run after `7c7da08`, the
+round's last commit, with a clean working tree.
+
+**Teardown:** see the round's own teardown notes below (steps a-f, mirroring round 7's).
