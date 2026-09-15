@@ -61,7 +61,8 @@ import type {
   RpcEvent,
   SessionCreateResponse,
   SessionMessage,
-  SessionResumeResponse
+  SessionResumeResponse,
+  SessionRuntimeInfo
 } from '../upstream/types/hermes'
 
 import { DeltaFlushScheduler } from './delta-flush-scheduler'
@@ -77,6 +78,7 @@ import {
   restorePendingRequestsFromResume,
   updateSession
 } from './session-stream-reducer'
+import { applySessionInfoStatePatch, sessionInfoStatePatch } from './session-stream/session-info'
 
 const DELTA_EVENT_TYPES = new Set(['message.delta', 'reasoning.delta'])
 
@@ -643,6 +645,32 @@ function seedSessionMessages(storedSessionId: string, messages: SessionMessage[]
   reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
 }
 
+/** Seed a session's model/provider/reasoning-effort/etc from the `info`
+ *  snapshot `session.create`/`session.resume` return directly on their
+ *  response — NOT from waiting on a live `session.info` event, which may not
+ *  arrive again for a session that was already running before this client
+ *  (re)connected. Without this, a reopened session's header/chips keep
+ *  showing whatever this client last knew (or nothing, on a cold start)
+ *  until the next event happens to touch that session — stale after a
+ *  model/effort change made from another client or from this session before
+ *  the app was killed and relaunched. Reuses `sessionInfoStatePatch` /
+ *  `applySessionInfoStatePatch` (session-info.ts) — `SessionRuntimeInfo`
+ *  carries the same field names/types the live event payload does, so the
+ *  same no-op-if-unchanged patch logic applies unmodified. Mirrors the
+ *  desktop's `applyRuntimeInfo` call on this same response field
+ *  (apps/desktop/src/app/session/hooks/use-session-actions/index.ts:1759). */
+function seedSessionInfo(storedSessionId: string, info: SessionRuntimeInfo | undefined): void {
+  const patch = sessionInfoStatePatch(info)
+
+  if (Object.keys(patch).length === 0) {
+    return
+  }
+
+  reducerState = updateSession(reducerState, storedSessionId, session =>
+    applySessionInfoStatePatch(session, patch)
+  ).state
+}
+
 /** Seed a session's title from a caller who already knows it (e.g. the REST
  *  list this resume was opened from) — the reducer only ever learns a title
  *  from a `session.title` event, which can lag well behind the screen
@@ -686,6 +714,7 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
 
   reducerState = bindSession(reducerState, response.session_id, storedId, { makeActive: true })
   seedSessionMessages(storedId, response.messages)
+  seedSessionInfo(storedId, response.info)
   publishAll()
 
   return storedId
@@ -721,6 +750,7 @@ export async function resumeSession(storedSessionId: string, knownTitle?: string
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
+  seedSessionInfo(storedSessionId, response.info)
   seedSessionTitle(storedSessionId, knownTitle)
 
   const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
