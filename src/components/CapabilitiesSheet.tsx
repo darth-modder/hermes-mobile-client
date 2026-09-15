@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { StyleSheet, Switch, Text, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native'
 
 import { type BotProfileDetail, configureBot, describeBot, skillsServerKeptEnabled } from '../api/bots'
 import {
@@ -52,15 +52,26 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
   const [error, setError] = useState<null | string>(null)
   const [lockedSkillNames, setLockedSkillNames] = useState<string[]>([])
 
+  const detailRef = useRef(detail)
+
+  detailRef.current = detail
+
+  // Resets ONLY on a visible transition (sheet freshly opened) — not on
+  // every `detail` prop change while it stays open. Depending on `detail`
+  // directly used to wipe `lockedSkillNames` (and the freshly-loaded skills/
+  // toolsets) the instant `save()` set them: `onSaved(fresh)` updates the
+  // parent's `detail`, which re-triggered this effect and reset the very
+  // note it had just shown. `save()` already applies the server's fresh
+  // state directly; this effect only needs to run for a genuine re-open.
   useEffect(() => {
     if (visible) {
-      setSkills(detail.skills)
-      setToolsets(detail.toolsets)
+      setSkills(detailRef.current.skills)
+      setToolsets(detailRef.current.toolsets)
       setQuery('')
       setError(null)
       setLockedSkillNames([])
     }
-  }, [detail, visible])
+  }, [visible])
 
   const filteredSkills = useMemo(
     () => skills.filter(skill => skill.name.toLowerCase().includes(query.toLowerCase())),
@@ -145,7 +156,12 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
           <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{BOTS_CAPABILITIES_SKILLS_SECTION}</Text>
           {filteredSkills.map(skill => (
             <View key={skill.name}>
-              <View style={styles.row}>
+              <Pressable
+                onPress={() =>
+                  setSkills(current => current.map(s => (s.name === skill.name ? { ...s, enabled: !s.enabled } : s)))
+                }
+                style={styles.row}
+              >
                 <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {skill.name}
                 </Text>
@@ -155,7 +171,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                   }
                   value={skill.enabled}
                 />
-              </View>
+              </Pressable>
               {lockedSkillNames.includes(skill.name) ? (
                 <Text style={[styles.rowSub, { color: tokens.destructive }]}>
                   {botsCapabilitiesSkillLockedNote(skill.name)}
@@ -172,7 +188,15 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
             {BOTS_CAPABILITIES_TOOLSETS_SECTION}
           </Text>
           {filteredToolsets.map(toolset => (
-            <View key={toolset.name} style={styles.row}>
+            <Pressable
+              key={toolset.name}
+              onPress={() =>
+                setToolsets(current =>
+                  current.map(ts => (ts.name === toolset.name ? { ...ts, enabled: !ts.enabled } : ts))
+                )
+              }
+              style={styles.row}
+            >
               <View style={styles.rowText}>
                 <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {toolset.label}
@@ -187,7 +211,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                 }
                 value={toolset.enabled}
               />
-            </View>
+            </Pressable>
           ))}
         </>
       ) : null}
@@ -202,6 +226,12 @@ const styles = StyleSheet.create({
     ...typeTokens.bodySmall,
     textAlign: 'center'
   },
+  // M15 A-close round 1, task 4: `minHeight: 48` sizes this row, but a bare
+  // Switch renders at its own native platform size regardless of the
+  // container — device-measured at ~46.5×27dp, under the 48dp minimum in
+  // both dimensions. The row is now a Pressable that toggles the same
+  // value, so the full row is the touch target; the Switch itself stays
+  // wired for a tap landing directly on it.
   row: {
     alignItems: 'center',
     flexDirection: 'row',
