@@ -278,6 +278,26 @@ and the gateway contract only.
    before that screen exists would promise a redesign that isn't there. The row is renamed in the
    commit that lands the Tasks tab. Rationale in `src/components/drawer-rows.ts`'s header; added
    by Opus at the group A close-out, because round 2 referred to this Deviation without writing it.
+7. **Composer: model/effort chips get their own row above the composer, off `chat.html`'s inline
+   layout.** `docs/mobile-prototypes/chat.html:333-334` puts the model/effort chips inline with
+   the composer's other controls (`.composer__controls`), but this composer's row already holds
+   four icon buttons (M06/M11) — round 7 found that adding two more there would squeeze the
+   `TextInput` below its own placeholder's width, the same failure mode M14 Deviation 15 named for
+   Stop/Steer (device-observed there as "Messag/e Herme/s…" wrapping). Same fix shape: the chips
+   get their own row instead, above the input (`Composer.tsx`'s `chipRow`), so both keep their
+   full 48dp targets and the input's width is untouched — a restyle, not a rebuild, per M14's own
+   adaptation rule, named here since it's a real departure from the prototype's row structure.
+8. **Effort chip: eight options (Off plus seven `VALID_REASONING_EFFORTS` levels), not the task
+   text's five.** M15 task B's doc text describes "a five-option sheet (none, low, medium, high,
+   xhigh, labelled Off … XHigh)" — five words for six slots, already inconsistent with itself.
+   Checked against the primary source instead: `hermes_constants.py:873`'s
+   `VALID_REASONING_EFFORTS` lists seven on-scale words (minimal, low, medium, high, xhigh, max,
+   ultra), mirrored by the desktop at `apps/desktop/src/lib/reasoning-effort.ts:6`
+   (`REASONING_EFFORTS`) — neither has ever had five. `EffortChip`'s sheet lists Off plus all
+   seven, labelled from the vendored `shell.modelOptions` block (`src/upstream/i18n/en.ts:
+   2996-3011`) plus `settings.model.reasoningOff` (`en.ts:1100`) for Off, which `shell.modelOptions`
+   has no entry of its own for. Same pattern as Deviation 4 (a task-doc field name checked against
+   the gateway and corrected) applied to a value set instead of a key name.
 
 ## Verification log
 
@@ -1456,3 +1476,87 @@ No gateway log from that run was kept, so neither cause is confirmed. `setup-gw.
 per-scratch-home secret. The idle test is re-run with it before any client-side cookie work
 starts. For real deployments (Hone), `dashboard.basic_auth.secret` should be set, or every
 gateway restart signs every phone out.
+
+### Round 7 — cookie fix confirmed, model/effort chips and response stats device-verified, two real bugs found and fixed, one found and not fixed (2026-09-15)
+
+**Task 0 (cookie idle re-test): met.** `setup-gw-r7.sh` pins `HERMES_DASHBOARD_BASIC_AUTH_SECRET`
+per scratch home; `gw.log`'s startup carries no "no 'secret' configured" INFO line. Signed in,
+checked REST + WS at ~6, ~12 and ~20 minutes — all three succeeded, zero 401s, zero restarts or
+worker spawns in the gateway log. Confirms the Opus close-out correction: round 6's failure was
+the missing secret, not a client-side cookie-persistence gap. Item closed.
+
+**Task 1 (model/effort chips): met, after a fix.** `ModelChip`/`EffortChip` (`0f453de`) render
+without squeezing the composer's input (Deviation 7); `EffortChip` lists Off plus all seven
+`VALID_REASONING_EFFORTS` levels (Deviation 8). Device pass found the model sheet's list
+rendering zero rows even though `getGlobalModelOptions` returned 58 models — a genuine Android
+layout bug (`f1fad80`): a `ScrollView` nested directly in `Sheet.tsx`'s percentage-height
+(`maxHeight: '88%'`) body measures to zero height regardless of its own `maxHeight`/`height`
+style; render-time logging confirmed React held and re-rendered all 58 options while the native
+list stayed empty. Fixed by wrapping it in a plain `View` (explicit `height: 320`, which sizes
+correctly in that same ancestor chain) with the `ScrollView` filling it via `flex: 1`.
+Device-verified after the fix: changed both model (mimo-v2.5 → claude-sonnet-5) and effort
+(Off → Medium) on session A (`coder`, stored id `20260915_185158_bf85de`) from the chips; the
+next read of that session shows both:
+```
+"model":"claude-sonnet-5","model_config":"{\"follow_profile_config\": true, \"model\":
+\"claude-sonnet-5\", \"provider\": \"anthropic\", ..., \"reasoning_config\": {\"enabled\":
+true, \"effort\": \"medium\"}}"
+```
+Session B (`researcher`, stored id `20260915_193653_ffdb28`, created fresh this round since
+neither `researcher` nor `default` had one yet) is unchanged: `"model":"mimo-v2.5",
+"model_config":"{\"follow_profile_config\": true}"` — no `reasoning_config` override.
+`config.yaml`'s `model.default` is still `mimo-v2.5` / `provider: opencode-go`, untouched, per
+D17.3. (Read via each session's own `GET /api/sessions/{id}?profile=...` — the persisted
+`session.info`-equivalent state — since the round's scratch gateway doesn't expose a direct
+event log; the WS `session.info` push itself was not captured verbatim.)
+
+**Not fixed, reported: the chip/header display goes stale after an app restart.**
+Right after picking a model/effort on-device, the composer header correctly showed "anthropic ·
+claude-sonnet-5 · medium". After a later cold relaunch (force-stop + relaunch, done repeatedly
+this round for Metro-picks-up-the-edit reasons unrelated to this bug), the SAME session's header
+and chips reverted to showing "opencode-go · mimo-v2.5" / "Off" — the pre-change values — even
+though `GET /api/sessions/{id}` confirms the server still has `claude-sonnet-5`/`medium`. This is
+a client-side staleness bug, not a server one: `session-connection.ts`'s `hydrate` effect (a
+full re-fetch) only fires for `session.reclaimed`-while-active or an incomplete-turn recovery,
+not for an ordinary "open an existing chat" navigation — so whatever RPC populates
+`SessionState.model`/`reasoningEffort` on a plain chat-screen mount did not carry the session's
+current values. This also affects task 2's `message.model` stamping (below): a message completed
+under this state showed the stale model, not the actual one used. Not investigated further this
+round (a new bug, not one of the round's five tasks) — filed as a known gap here rather than
+silently worked around.
+
+**Task 2 (response stats): met, after a fix.** `ResponseStats` (`d01dded`) renders `model · Σ
+tok · tok/s` under a settled assistant message when `message.usage.total > 0`, reading
+`usage.avg_tps` directly (matches the desktop's `tokensPerSecondLabel`,
+`apps/desktop/src/lib/statusbar.tsx:72-76`) and `compactNumber` ported verbatim
+(`apps/desktop/src/lib/format.ts:1-24` → `src/lib/format.ts`). Device pass found the model
+segment always empty — traced to a wrong assumption in the original port: `ChatMessage.model` was
+sourced from `message.complete`'s own payload, but the real gateway never sends one there.
+Checked directly: `_complete_turn_payload` (`tui_gateway/prompt_turn.py:622-648`) builds
+`{"text": raw, "usage": _get_usage(agent), "status": status}` plus a few optional keys
+(`reasoning`, `warning`, `response_previewed`, `billing`, `failure_reason`, `rendered`) — no
+`model` key at any point. Fixed (`cc57b14`) by sourcing it from the session's own `model` field
+(set by a prior `session.info`) at the moment `message.complete` lands instead. Device-verified
+post-fix, both themes (light: screenshots in `m15-r7/38-coderA-light-withstats.png`; dark:
+`m15-r7/43-darkset.png` sets Dark under Settings › Appearance, `45-coderA-dark-withstats.png`): a
+new message in session A shows `mimo-v2.5 · Σ 12.2k tok · 6.7 tok/s` beneath it (model reads
+`mimo-v2.5` here rather than the just-picked `claude-sonnet-5` because of the staleness bug
+above — `session.model` was itself stale at send time on that particular run). A message from
+before the feature existed in the same session ("Hi there, friend!", seeded in task 0) shows no
+stats line in both themes (`37-coderA-light-nostats.png`, `41/44-coderA-dark-nostats*.png`) — the
+backend doesn't persist `usage`/`model` onto a stored message row, so a rehydrated message
+correctly has neither, matching the exit criterion's "a transcript row from before the feature
+shows none." One more finding, also not a task-2 bug: an app restart clears the stats line even
+off a message that DID show one before the restart (`hi again` had `Σ 16k tok · 2.8 tok/s`
+in `38-coderA-light-withstats.png`, then showed nothing at all post-restart in
+`44-coderA-dark-nostats2.png`) — the same non-persistence, working as designed, just surfaced
+by this round's restart-heavy test flow rather than a real second bug.
+
+**Task 3 (`npm run check`):** exit 0 — `tsc -p . --noEmit` clean, vitest 614/614 (67 files),
+`test:plugin` 52/52, `eslint .` clean, `prettier --check .` clean. Run at `cc57b14`.
+
+**One commit-hygiene slip, reported per the round's own honesty rule:** `src/lib/strings.mobile.ts`'s
+`MODEL_CHIP_*`/`EFFORT_CHIP_*` string additions were added in one edit pass before task 2's
+commit and landed in `d01dded` (task 2) rather than `0f453de` (task 1), where they belong. Not
+corrected via git history surgery (rebase/amend) per the standing rule against it; left as a
+minor process note rather than silently ignored.
