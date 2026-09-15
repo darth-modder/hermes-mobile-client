@@ -1124,3 +1124,290 @@ mocked failure prior rounds' logs also note, not a real error), lint clean,
   `hermes-test`. Only the local `adb` server daemon process remains (no
   device attached to it) — not a stray client.
 - `git push`: below, working tree clean after this commit.
+
+### Round 6 — M15 group A close-out: skill-lock premise corrected, toolset pin clear device-verified, real 48dp fix, cookie bug isolated to the client (2026-09-15)
+
+**Scope.** A short, fixed checklist: task 1 (Capabilities skill-toggle premise
+correction — `src/components/CapabilitiesSheet.tsx`, `src/api/bots.ts`,
+`src/lib/strings.mobile.ts`, committed `d9ff16c` + a same-round fixup
+`9c23ced`), task 2 (enable-all clears the toolset pin, device-verified), task
+3 (expensive-model, code-verify only), task 4 (48dp audit of four screens,
+one real fix), task 5 (composites — not attempted), task 6 (cookie lifetime,
+time-boxed), task 7 (`npm run check`), task 9 (teardown). Against a fresh
+throwaway gateway (port 9135, `HERMES_HOME` at `%TEMP%\hermes-m15aclose-home`,
+`researcher`/`coder` profiles, basic auth), the same `hermes-test`
+hardware-accelerated AVD every prior round used.
+
+**Task 1.** Done, device-verified, with a self-correction recorded honestly.
+The premise was right: `hermes_cli/skills_config.py:43-54`'s
+`save_disabled_skills` silently drops any name in
+`agent/skill_utils.py:270`'s `ESSENTIAL_SKILLS` (`frozenset({"hermes-agent"})`)
+from the persisted `disabled` set before it ever reaches `profiles.configure`'s
+`_configure_cfg_sections` (`tui_gateway/methods_profiles.py:548-555`) — the
+gateway never disables it, full stop. `CapabilitiesSheet.tsx`'s own defect
+was separate: `save()` discarded `configureBot`'s return value entirely and
+rendered the local toggle state via `onSaved({ ...detail, skills, toolsets })`
+instead of what the server actually stored.
+
+Fixed: `save()` now re-reads `profiles.describe` after `configureBot` and
+renders that (`setSkills(fresh.skills)`, `setToolsets(fresh.toolsets)`,
+`onSaved(fresh)`). A new pure helper, `skillsServerKeptEnabled` (`src/api/
+bots.ts`), diffs what the caller attempted to disable against what the fresh
+read shows still enabled — never hard-codes a skill name — and drives a
+per-row note (`botsCapabilitiesSkillLockedNote`, `src/lib/strings.mobile.ts`:
+*"‘hermes-agent’ can't be disabled — the host keeps it on."*). Unit-tested
+directly (`bots.test.ts`, 3 cases) since this project's vitest setup doesn't
+render `.tsx` components.
+
+First on-device pass found the note never actually rendered. Root cause: the
+sheet's reset `useEffect` depended on `[detail, visible]`, so `onSaved(fresh)`
+updating the parent's `detail` prop re-triggered the SAME effect, which
+unconditionally reset `lockedSkillNames` back to `[]` — wiping the note the
+instant `save()` had just set it, before the screenshot could ever catch it
+displayed. Fixed in the same round (`9c23ced`): the effect now depends only
+on `[visible]` (reads `detail` through a ref so it still sees the current
+value without re-running on every in-place update), since `save()` already
+applies the server's fresh state directly and doesn't need the effect to
+duplicate that. Re-verified device-side after the fix:
+- Toggled `hermes-agent` off, tapped Save (fresh dump each time — the row is
+  now the tap target, see task 4). The switch snapped back to enabled and
+  *"‘hermes-agent’ can't be disabled — the host keeps it on."* appeared
+  directly under it, exactly as designed.
+- The toolset side of the same save (task 2's pin-clear test, run earlier
+  the same round) was already confirmed correct independently.
+- **Not device-verified:** "toggle a genuinely non-essential skill off, save,
+  confirm it stays off via `profiles.describe`." Both seeded profiles
+  (`researcher`/`coder`) were created `--no-skills`, so `hermes-agent` is the
+  ONLY skill installed on either — there was no non-essential skill on this
+  throwaway host to exercise that path with. The general write-then-
+  re-read pipeline is the same code for both cases (only
+  `skillsServerKeptEnabled`'s diff differs in outcome), and the toolset save
+  through the identical `configureBot`/`describeBot` round-trip is
+  device-confirmed working, but the "stays off" half of task 1 specifically
+  is honestly not directly proven this round.
+
+**Task 2.** Done, device-verified. Pinned one toolset (`researcher`,
+toggling off Web Search & Scraping while `stt`/`context_engine` were already
+off by default — 15 of 18 enabled) via the sheet; `profiles.describe` read
+back `toolsets_pinned: true`, `disabled: ["web","stt","context_engine"]`. A
+first UI-driven attempt at the "enable all" half silently produced no
+change server-side (`configureBot` threw no error, but the readback showed
+the pin untouched) — isolated with a direct RPC script bypassing the app
+entirely, which pinned/unpinned correctly every time, confirming the
+mechanism itself (`_save_toolset_pin`, `tui_gateway/methods_profiles.py:
+508-516`) is sound; the one-off app-driven miss was not reproduced on a
+careful retry (fresh dump before every tap, the earlier root cause of most
+of this round's automation friction) and is recorded as unexplained rather
+than claimed as a bug. Retry: toggled `web`, `stt`, `context_engine` all
+back on (18 of 18), saved — `profiles.describe` read back
+`toolsets_pinned: false`, with `stt`/`context_engine` reverting to the
+platform's own default-off set (`hermes_cli/tools_config.py`'s
+`_DEFAULT_OFF_TOOLSETS`, read through `methods_profiles.py:377-397`'s
+`_describe_toolsets`) — the pin is genuinely gone, not just coincidentally
+matching. Both readbacks pasted above; both against `researcher`.
+
+**Task 3 (expensive-model confirm).** Code-verified only, as instructed —
+the throwaway host's `config.yaml` has no model flagged as an expensive-model
+trigger and seeding one was out of this round's scope. The
+`confirm_required` → resend handshake is: `_configure_model`
+(`tui_gateway/methods_profiles.py:480-501`) computes `confirm_message` via
+`hermes_cli.model_selection_guards.combined_selection_warning` unless
+`confirm_expensive_model` is already truthy; `profiles.configure`'s handler
+(`:563-586`) folds that into the same `{confirm_required, confirm_message}`
+shape `config.set`'s model switch uses. Client side: `src/api/bots.ts`'s
+`configureBot` sends `confirm_expensive_model` only when
+`ConfigureBotPatch.confirmExpensiveModel` is set, tested directly in
+`bots.test.ts`'s *"configureBot resends confirm_expensive_model only when
+the caller asks"*; `BotSettingsSheet.tsx:162-163` is where the UI shows the
+`Alert` on `result.confirm_required` and resends with `confirmExpensiveModel:
+true`. The same handshake shape is exercised at the `config.set` layer in
+`models.test.ts` (the `deferred`/`confirm_required` fixtures there).
+
+**Task 4 (48dp audit).** Done — light theme only (dark not attempted, time).
+dp = px / (420/160) = px / 2.625 on this device (`wm density` → 420,
+confirmed again this round). Every clickable node measured across the four
+screens:
+
+| Screen | Node | px (w×h) | dp (w×h) | OK? |
+|---|---|---|---|---|
+| Roster | Open menu | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| Roster | New bot | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| Roster | Bot row (each) | 1080×189–217 | 411×72–83 | ✅ |
+| New-bot sheet | Close | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| New-bot sheet | Name field | 996×132 | 379×50.3 | ✅ |
+| New-bot sheet | Description field | 996×168 | 379×64.0 | ✅ |
+| New-bot sheet | Model row | 996×126 | 379×48.0 | ✅ (exact minimum) |
+| New-bot sheet | Avatar seed field | 996×132 | 379×50.3 | ✅ |
+| New-bot sheet | Cancel | 488×126 | 186×48.0 | ✅ (exact minimum) |
+| New-bot sheet | Create Bot | 487×126 | 185×48.0 | ✅ (exact minimum) |
+| Bot settings sheet | Back | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| Bot settings sheet | Bot settings icon | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| Bot settings sheet | Close | 126×126 | 48.0×48.0 | ✅ (exact minimum) |
+| Bot settings sheet | Model row | 996×147 | 379×56.0 | ✅ |
+| Bot settings sheet | Capabilities row | 996×147 | 379×56.0 | ✅ |
+| Bot settings sheet | Attach image/doc/voice/read-aloud | 126×126 each | 48.0×48.0 each | ✅ (exact minimum) |
+| Bot settings sheet | Composer field | 370×168 | 141×64.0 | ✅ |
+| **Capabilities** | **Skill/toolset row Switch itself** | **122×71** | **46.5×27.0** | **❌ real violation** |
+| Capabilities | Save | 996×126 | 379×48.0 | ✅ (exact minimum) |
+
+**One real violation, fixed and re-dumped.** Every skill/toolset row's bare
+`<Switch>` renders at a fixed native size regardless of its container —
+`styles.row`'s own `minHeight: 48` sizes the ROW (confirmed: the row's own
+clickable bounds after the fix are 996×126px = 379×48.0dp and 996×136px =
+379×51.8dp), but before this round only the Switch itself was clickable,
+and its native rendered bounds (122×71px) are under 48dp in BOTH dimensions
+— worst axis at 27dp, little over half the minimum. Fixed
+(`CapabilitiesSheet.tsx`): each row (skill and toolset) is now wrapped in a
+`Pressable` that toggles the same value; the `Switch` stays wired for a tap
+landing directly on it. Same-scope fix, not touching the other three
+screens' pre-existing `<Switch>` usages elsewhere in the app
+(`settings/toolsets.tsx`, `settings/skills.tsx`, `settings/profiles.tsx`,
+`settings/mcp.tsx`, `settings/notifications.tsx`, `channels/index.tsx`,
+`webhooks/index.tsx` all share this exact bare-Switch pattern — a wider
+issue worth its own pass, out of this round's four-screen scope). Re-dumped
+after the fix: the parent row is now `clickable="true"` at
+`[42,284][1038,410]` (hermes-agent) and `[42,494][1038,630]` (Web Search &
+Scraping) — 48.0dp and 51.8dp tall respectively — and toggling by tapping
+the row (not the tiny switch) was device-confirmed to work
+(`checked="false"` after the tap, matching the intended toggle).
+
+**Task 5 (composites).** Not attempted — time, spent instead on tasks 1/2/4's
+device re-verification after each fix and task 6's investigation below.
+Round 2's roster/new-bot composites (light only) remain the most recent
+evidence; nothing new produced this round.
+
+**Task 6 (cookie lifetime), time-boxed.** Done — root-caused further than
+"reported, not fixed" required, with strong evidence the gap is client-side.
+Signed in to the throwaway gateway (password mode) at `17:10:54`. Left the
+app idle (never killed) and checked at intervals:
+- **T+~5min (`17:16:01`):** Sessions (REST) showed *"Authentication failed —
+  check the password."* — the first sign of trouble, unprompted (no gateway
+  restart this time, unlike round 5's deliberate one).
+- **T+~5-7min:** the WS layer (Bots roster via `profiles.list`, then
+  opening `coder`'s chat and sending "Say hello in exactly three words.")
+  worked completely fine — full streamed reply received (`12.1k tok`).
+  **This is the key data point**: REST failed while the already-open
+  WebSocket (opened once, at sign-in, with a valid ticket) kept working —
+  because an established WS connection is never re-checked against the
+  cookie after its initial upgrade handshake, unlike each fresh REST call.
+- **T+~10-11min (`17:21:36`):** REST still failing with the same message;
+  WS (Bots roster) still working.
+- **T+~14min, cold relaunch (force-stop + `am start`, new PID `6876`):**
+  **both layers now failed** — Sessions (REST) showed the same
+  "Authentication failed," and Bots (a *fresh* WS dial, which DOES need a
+  valid cookie to mint its ws-ticket) also failed the same way. This
+  confirms the earlier WS "success" was only because that one connection
+  never needed to re-present the cookie — a brand-new dial needs it just as
+  much as REST does, and by then it too failed.
+- **Root cause isolation.** Saved the exact `Set-Cookie` bytes from a
+  separate, independent login (`control-cookie.txt`, `17:25:50`) — its own
+  `Max-Age=43200` (12h) is right there in the raw header, confirming
+  `plugins/dashboard_auth/basic/__init__.py:32`'s `_DEFAULT_TTL_SECONDS`
+  code-level reading exactly. Re-sent that SAME saved cookie against
+  `/api/sessions` at `17:35:06` — **9 minutes 16 seconds later, HTTP 200.**
+  The server-issued cookie is fine and the server honors its own 12-hour
+  TTL correctly when the identical bytes are resent (these are stateless
+  HMAC-signed tokens — `plugins/dashboard_auth/basic/__init__.py:87-109`,
+  `_sign`/`_unsign` — no server-side session store to lose, so a resend of
+  the same bytes either verifies or it doesn't, deterministically). Yet the
+  app's own cookie, from a real sign-in, was already dead by minute 5.
+  **Conclusion: this is not a server-side session death — it's the app not
+  correctly persisting or resending its own valid cookie.** The app itself
+  never touches Set-Cookie at all (`src/net/http.ts`, `src/net/auth/
+  password-login.ts`, `src/gateway/session-connection.ts` all pass
+  `credentials: 'include'` and rely entirely on RN's own, unconfigured
+  fetch/cookie-jar layer — `package.json` has no cookie-management
+  dependency, confirmed empty `grep -i cookie package.json`), so the gap is
+  in that layer, not in any code this branch owns. Not fixed, as instructed
+  — reported with file:line and the isolating test above.
+
+**Task 7.** `npm run check` after the last commit (`9c23ced`): typecheck
+clean, 63 test files / 587 tests passed (3 new: `skillsServerKeptEnabled`),
+52/52 Python (the one visible traceback is the same intentionally mocked
+failure every prior round's log also notes), lint clean, `prettier --check .`
+clean. Exit code 0.
+
+**Honest summary of round 6 by task:**
+- 1: done, device-verified, including a same-round fixup after the first
+  on-device pass caught the note not rendering. One sub-check ("a
+  non-essential skill stays disabled") not directly device-verified — no
+  non-essential skill exists on either seeded profile.
+- 2: done, device-verified (`toolsets_pinned` true → false, both readbacks
+  pasted). One earlier app-driven attempt silently no-op'd and was not
+  reproduced on retry — reported as unexplained, not claimed as a bug.
+- 3: done, code-verified only (no expensive-model trigger available, as
+  instructed).
+- 4: done for light theme (dark not attempted) — found and fixed one real
+  violation (Capabilities switch rows), re-dumped to confirm.
+- 5: not attempted (time).
+- 6: done, time-boxed — root-caused past "reported" to a client-side
+  cookie-persistence gap, evidenced by a controlled cookie that survived
+  9m16s using the exact bytes the app's own dead session could not.
+- 7: done, green.
+
+**Task 9 (teardown).** Done, device-verified at each step:
+- Switched to Hone (registry log: `active: ... (Hone)`, list
+  `[Hone primary=true]` only, confirmed before AND after the remove),
+  removed `MACLOSE` via the destructive-tap rule — a fresh `uiautomator
+  dump` immediately before the tap, the confirm dialog's own text checked
+  ("MACLOSE" will be removed...), only then REMOVE tapped. A cold relaunch
+  (force-stop + `am start`, new PID `7046`, confirming a genuine restart)
+  landed cleanly on `/session-list` with Hone's real sessions, registry log
+  showing only Hone, `primary=true`, `needsLogin=false`.
+- Metro (this round's two restarts) and the throwaway gateway (`hermes.exe`)
+  stopped; `curl` to both `127.0.0.1:8081/status` and
+  `127.0.0.1:9135/api/health` returned `000` (connection refused)
+  afterward. No prototype servers were started this round (task 5 not
+  attempted), so nothing else to stop. Left alone: five unrelated `node`
+  processes already running before this round started
+  (`2026-09-15 14:17:xx`–`14:18:xx`, well before this round's own work
+  began) — not touched, matching the standing rule.
+- Deleted: the scratch `HERMES_HOME` (`%TEMP%\hermes-m15aclose-home`),
+  `scratch-password.txt`, this round's own `control-cookie.txt` (task 6's
+  isolation test artifact), and the two `.bat` shims `hermes profile create`
+  wrote to `~/.local/bin` (`coder.bat`, `researcher.bat`) — all confirmed
+  gone by a follow-up `ls` failing on each path.
+- `adb reverse --list` empty after `--remove-all`; `font_scale` confirmed
+  `1.0` (never touched this round).
+- Emulator shut down via `adb emu kill`; `adb devices` empty immediately
+  after. Two `emulator.exe` processes were still visible for a few seconds
+  post-kill (a shutdown-in-progress, not a stray) — a second check after a
+  short wait confirmed both gone, only the local `adb` server daemon
+  process left (no device attached to it). `emulator -list-avds` still
+  lists `hermes-test`.
+- `git push`: below, working tree clean after this commit.
+
+## M15 group A — exit criteria, as of round 6
+
+- **Bots roster/canonical chat/soul edit** (per this doc's own Exit
+  criteria section, "Bots: ... editing the soul changes SOUL.md on the
+  host"): **met** — device-verified across rounds 2-6; soul staleness
+  confirm (both keep-mine and keep-theirs) device-verified round 5.
+- **Capabilities screen reflects the server's actual state, not a locally
+  assumed one**: **met** — round 6, device-verified (this round's task 1).
+  An essential skill cannot be disabled and the sheet now says so instead
+  of silently reverting with no explanation.
+- **Toolset pin set/clear round-trips through `profiles.configure`/
+  `profiles.describe`**: **met** — round 6, device-verified (`toolsets_pinned`
+  true → false, both readbacks pasted in task 2 above).
+- **Connect-reason ladder covers WS connect, ws-ticket mint, and the
+  Sessions REST call**: **met** — round 4 (WS/ticket) and round 5
+  (`sessionsRequest`), both device-verified.
+- **"Switched to Hone, relaunch opened /connect" is either fixed or ruled
+  out**: **met (ruled out)** — round 5, three full cycles, not reproduced.
+- **Every clickable node on the four audited screens meets 48dp**: **met
+  for light theme** — round 6 found and fixed the one real violation
+  (Capabilities switch rows); dark theme not audited (not attempted).
+- **Composites match the prototype in both themes, deviations named**:
+  **not met** — not attempted any round after round 2's light-only roster/
+  new-bot pair; Bot Settings sheet and Capabilities composites never
+  produced in either theme.
+- **Expensive-model confirm exercised end-to-end on device**: **not
+  met, code-verified only** — no throwaway host across any round has ever
+  had a model configured to trigger it; the handshake itself is
+  code-verified and unit-tested (round 6 task 3).
+- **A user on a password connection is not silently logged out**: **not
+  met** — round 6 isolated the cause to a client-side cookie-persistence
+  gap (`src/net/http.ts` and friends rely entirely on RN's own,
+  unconfigured fetch cookie jar); reported with evidence, not fixed, per
+  every round's standing instruction not to expand scope on this one.
