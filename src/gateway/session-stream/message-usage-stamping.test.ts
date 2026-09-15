@@ -1,7 +1,12 @@
-// M15 B, task 2: `message.complete`'s own `model`/`usage` fields must land
-// on the completed ChatMessage itself (Response stats), not just merge into
-// the session-wide running total (`SessionState.usage`, session-info.ts) —
-// see message-stream.ts's `completeAssistantMessage`.
+// M15 B, task 2: a completed ChatMessage must carry the session's model and
+// that turn's own usage (Response stats), not just merge usage into the
+// session-wide running total (`SessionState.usage`, session-info.ts) — see
+// message-stream.ts's `completeAssistantMessage`. `model` comes from the
+// session's own state (set by a prior `session.info`, session-info.ts:51-52)
+// at the moment `message.complete` lands, NOT from that event's own payload
+// — the real gateway never sends one there (`_complete_turn_payload`,
+// tui_gateway/prompt_turn.py:622-648, builds `{text, usage, status, ...}`
+// with no `model` key).
 
 import { describe, expect, it } from 'vitest'
 
@@ -20,13 +25,13 @@ function lastAssistantMessage(h: ReturnType<typeof harnessWithActive>) {
 }
 
 describe('message.complete stamps model/usage onto the completed message', () => {
-  it('a message.complete carrying both lands them on the message, not just the session total', () => {
+  it("a message.complete carrying usage lands the session's model and that usage on the message, not just the session total", () => {
     const h = harnessWithActive()
 
+    h.dispatch({ payload: { model: 'mimo-v2.5' }, session_id: SID, type: 'session.info' })
     h.dispatch({ payload: {}, session_id: SID, type: 'message.start' })
     h.dispatch({
       payload: {
-        model: 'mimo-v2.5',
         text: 'All checks passed.',
         usage: { avg_tps: 3.9, calls: 1, input: 200, output: 14_000, total: 14_200 }
       },
@@ -44,24 +49,24 @@ describe('message.complete stamps model/usage onto the completed message', () =>
     expect(h.session(SID)?.usage?.total).toBe(14_200)
   })
 
-  it('a message.complete with no usage leaves the message without one — no stats line to show', () => {
+  it('a message.complete with no usage leaves the message without one — no stats line to show, even with a known model', () => {
     const h = harnessWithActive()
 
+    h.dispatch({ payload: { model: 'mimo-v2.5' }, session_id: SID, type: 'session.info' })
     h.dispatch({ payload: {}, session_id: SID, type: 'message.start' })
     h.dispatch({ payload: { text: 'Hello.' }, session_id: SID, type: 'message.complete' })
 
     const message = lastAssistantMessage(h)
 
     expect(message?.usage).toBeUndefined()
-    expect(message?.model).toBeUndefined()
   })
 
-  it('a fresh assistant message created straight from message.complete (no message.start) still gets model/usage', () => {
+  it('a fresh assistant message created straight from message.complete (no message.start) still gets the model/usage', () => {
     const h = harnessWithActive()
 
+    h.dispatch({ payload: { model: 'deepseek-v4-flash' }, session_id: SID, type: 'session.info' })
     h.dispatch({
       payload: {
-        model: 'deepseek-v4-flash',
         text: 'Standalone reply.',
         usage: { calls: 1, input: 50, output: 12, total: 62 }
       },
@@ -73,5 +78,20 @@ describe('message.complete stamps model/usage onto the completed message', () =>
 
     expect(message?.model).toBe('deepseek-v4-flash')
     expect(message?.usage).toEqual({ calls: 1, input: 50, output: 12, total: 62 })
+  })
+
+  it('no session.info seen yet leaves the completed message without a model', () => {
+    const h = harnessWithActive()
+
+    h.dispatch({ payload: {}, session_id: SID, type: 'message.start' })
+    h.dispatch({
+      payload: { text: 'Hello.', usage: { calls: 1, input: 1, output: 1, total: 2 } },
+      session_id: SID,
+      type: 'message.complete'
+    })
+
+    const message = lastAssistantMessage(h)
+
+    expect(message?.model).toBeUndefined()
   })
 })

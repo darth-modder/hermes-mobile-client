@@ -579,7 +579,7 @@ export const handleMessageStreamEvent: FamilyHandler = (state, ctx) => {
         payload?.response_previewed,
         failure,
         occurredAt,
-        payload?.model,
+        session.model || undefined,
         payload?.usage
       )
 
