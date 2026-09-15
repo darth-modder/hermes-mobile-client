@@ -4,12 +4,15 @@ import { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
 import { BotAvatar } from '../components/BotAvatar'
+import { Menu, type MenuItem } from '../components/ui/Menu'
 import { compressSession, renameSession } from '../gateway/session-connection'
-import { ChevronLeft, Settings } from '../lib/icons'
+import { ChevronLeft, MoreVertical, RefreshCw, Settings } from '../lib/icons'
 import {
   BOTS_SETTINGS_TITLE,
   SESSION_HEADER_COMPRESS_FAILED_TITLE,
-  SESSION_HEADER_COMPRESS_LABEL
+  SESSION_HEADER_COMPRESS_LABEL,
+  SESSION_HEADER_OVERFLOW_ACCESSIBILITY_LABEL,
+  SESSION_HEADER_REFRESH_LABEL
 } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 import { notify } from '../store/notifications'
@@ -53,16 +56,37 @@ export interface SessionHeaderProps {
    *  reachable from a bot's canonical chat as of this round; noted here
    *  rather than silently dropped. */
   onSettingsPress?: () => void
+  /** M15 B "Refresh conversation": re-runs `session.resume` hydration for
+   *  this screen. The screen owns the call (`resumeSession`, via its own
+   *  `botId` route param) rather than this component, because M15 Deviation
+   *  5 requires passing the bot's profile for a Bot Chat's resume and this
+   *  component is never given that id — only `botName`, which the canonical-
+   *  chat identity contract (see `botName` above) deliberately keeps
+   *  separate from the profile lookup key. Adds a second trailing action (a
+   *  "More" overflow, `Menu`) alongside the existing Compress/Settings
+   *  slot — the one-action layout note above no longer holds now that this
+   *  exists for every chat, bot or plain. */
+  onRefresh: () => void
 }
 
 /** Model/provider/effort + title edit + `session.compress` — the chat
  *  screen's top bar. */
-export function SessionHeader({ botName, onSettingsPress, storedSessionId }: SessionHeaderProps) {
+export function SessionHeader({ botName, onRefresh, onSettingsPress, storedSessionId }: SessionHeaderProps) {
   const tokens = useTheme()
   const router = useRouter()
   const session = useStore($sessionStates)[storedSessionId]
   const [editingTitle, setEditingTitle] = useState<null | string>(null)
   const [compressing, setCompressing] = useState(false)
+  const [overflowOpen, setOverflowOpen] = useState(false)
+
+  const overflowItems: MenuItem[] = [
+    {
+      icon: <RefreshCw color={tokens.foreground} size={18} />,
+      key: 'refresh',
+      label: SESSION_HEADER_REFRESH_LABEL,
+      onPress: onRefresh
+    }
+  ]
 
   if (!session) {
     return (
@@ -193,6 +217,16 @@ export function SessionHeader({ botName, onSettingsPress, storedSessionId }: Ses
           )}
         </TouchableOpacity>
       )}
+      <TouchableOpacity
+        accessibilityLabel={SESSION_HEADER_OVERFLOW_ACCESSIBILITY_LABEL}
+        accessibilityRole="button"
+        hitSlop={10}
+        onPress={() => setOverflowOpen(true)}
+        style={styles.compressButton}
+      >
+        <MoreVertical color={tokens.foreground} size={20} />
+      </TouchableOpacity>
+      <Menu items={overflowItems} onClose={() => setOverflowOpen(false)} visible={overflowOpen} />
     </View>
   )
 }

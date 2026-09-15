@@ -12,7 +12,9 @@ import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
 import { BotSettingsSheet } from '../../../src/components/BotSettingsSheet'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
+import { SESSION_HEADER_REFRESH_FAILED_TITLE } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
+import { notify } from '../../../src/store/notifications'
 import { $sessionStates } from '../../../src/store/session-states'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
@@ -91,6 +93,29 @@ export default function SessionScreen() {
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
   }, [botId, id, router, title])
 
+  /** M15 B "Refresh conversation" (SessionHeader's overflow menu): re-runs
+   *  `session.resume` hydration for an already-open session — same
+   *  `resumeSession` call `openSession` makes, with the same `botId` (M15
+   *  Deviation 5) — but reported as a toast on failure instead of replacing
+   *  the whole screen with the boot-failure card `openSession`'s own error
+   *  path renders; a quiet re-sync shouldn't blank out a transcript the
+   *  reader is already looking at. */
+  const refreshConversation = useCallback(() => {
+    if (!id || id === 'new') {
+      return
+    }
+
+    resumeSession(id, title, botId).catch(err => {
+      notify({
+        id: `refresh-failed-${id}`,
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        title: SESSION_HEADER_REFRESH_FAILED_TITLE,
+        type: 'notify'
+      })
+    })
+  }, [botId, id, title])
+
   useEffect(() => {
     if (!id || startedFor.current === id) {
       return
@@ -156,7 +181,12 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <SessionHeader botName={botName} onSettingsPress={botId ? openBotSettings : undefined} storedSessionId={id} />
+      <SessionHeader
+        botName={botName}
+        onRefresh={refreshConversation}
+        onSettingsPress={botId ? openBotSettings : undefined}
+        storedSessionId={id}
+      />
       <ConnectionBanner />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />

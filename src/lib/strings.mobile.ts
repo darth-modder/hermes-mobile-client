@@ -544,6 +544,20 @@ export function responseStatsLine(model: null | string, tokens: string, tokPerSe
 export const SESSION_HEADER_COMPRESS_LABEL = 'Compress'
 export const SESSION_HEADER_COMPRESS_FAILED_TITLE = 'Compress failed'
 
+// src/chat/SessionHeader.tsx — the header overflow menu's manual re-hydrate
+// action (M15 B, "Refresh conversation"). No vendored equivalent: the
+// desktop's own window stays connected and its session state is kept live
+// by the gateway socket for as long as it's open, so it has never needed a
+// user-triggered re-hydrate; the closest hits in en.ts (cloudSignedInDesc /
+// authSignedInOauth's "the session refreshes automatically") describe an
+// unrelated auto-refresh, not a manual action. Mobile needs one because the
+// app is routinely backgrounded/killed and reopened — see M15 task 1's
+// stale-model bug, which this action also recovers from without a cold
+// relaunch.
+export const SESSION_HEADER_REFRESH_LABEL = 'Refresh conversation'
+export const SESSION_HEADER_REFRESH_FAILED_TITLE = 'Refresh failed'
+export const SESSION_HEADER_OVERFLOW_ACCESSIBILITY_LABEL = 'More'
+
 // src/components/ScreenHeader.tsx — the overflow-menu button's
 // accessibilityLabel. No bare "More" string exists in en.ts (the closest,
 // assistant.thread.moreActions, is "More actions" — a different control, the
