@@ -51,6 +51,8 @@ import { speak } from '../voice/tts'
 
 import { CompletionList } from './CompletionList'
 import { shouldApplyDictationResult } from './dictation-guard'
+import { EffortChip } from './EffortChip'
+import { ModelChip } from './ModelChip'
 import { SlashPalette } from './SlashPalette'
 
 export interface ComposerProps {
@@ -444,6 +446,22 @@ export function Composer({ storedSessionId }: ComposerProps) {
             ))}
           </View>
         ) : null}
+        {/* M15 B, task 1, Deviation: docs/mobile-prototypes/chat.html:333-334
+            puts the model/effort chips inline with the composer's other
+            controls, but this composer's row already holds four icon
+            buttons (M06/M11) — adding two more there would squeeze the
+            TextInput below its placeholder's width, the same wrapping
+            M14-screen-layouts.md's Deviation 15 moved Stop/Steer out for.
+            The chips get their own row instead, above the input, so both
+            keep their full 48dp targets and the input's width is untouched. */}
+        <View style={styles.chipRow}>
+          <ModelChip
+            model={session?.model ?? ''}
+            provider={session?.provider ?? ''}
+            storedSessionId={storedSessionId}
+          />
+          <EffortChip reasoningEffort={session?.reasoningEffort ?? ''} storedSessionId={storedSessionId} />
+        </View>
         <View style={styles.row}>
           <TouchableOpacity
             accessibilityLabel={COMPOSER_ATTACH_IMAGE_LABEL}
@@ -550,6 +568,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingBottom: 8,
     paddingHorizontal: 8
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingTop: 6
   },
   attachmentChip: {
     alignItems: 'center',
