@@ -1,8 +1,19 @@
 import { useStore } from '@nanostores/react'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
-import { memo, useEffect, useMemo, useRef } from 'react'
-import { ActivityIndicator, type LayoutRectangle, StyleSheet, Text, View } from 'react-native'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ActivityIndicator,
+  type LayoutRectangle,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native'
 
+import { ChevronDown } from '../lib/icons'
+import { latestPillLabel } from '../lib/strings.mobile'
 import { $clarifyRequests } from '../store/clarify'
 import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
 import { $scrollToBottomRequests } from '../store/scroll'
@@ -11,6 +22,7 @@ import { type MobileTokens, useTheme } from '../theme/provider'
 import { radius, type } from '../theme/type'
 import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
 
+import { INITIAL_LATEST_PILL_STATE, nextLatestPillState } from './latest-pill'
 import { type MessageGap, messageGap } from './message-gap'
 import { ApprovalCard } from './parts/ApprovalCard'
 import { ClarifyCard } from './parts/ClarifyCard'
@@ -143,6 +155,11 @@ export interface TranscriptProps {
   messages: ChatMessage[]
 }
 
+/** Inverted list, so the tail is offset 0 — a small allowance (not an exact
+ *  0) absorbs bounce/overscroll and sub-pixel scroll reporting so the pill
+ *  doesn't flicker in and out right at the bottom. */
+const AT_TAIL_OFFSET_PX = 24
+
 /**
  * The message list: inverted FlashList so new content appears at the visual
  * bottom without re-measuring the whole scroll range, plus the per-session
@@ -150,6 +167,7 @@ export interface TranscriptProps {
  * (`ListHeaderComponent` — inverted, so "header" is the visual bottom edge).
  */
 export function Transcript({ storedSessionId, messages }: TranscriptProps) {
+  const tokens = useTheme()
   const listRef = useRef<FlashListRef<ChatMessage>>(null)
   // __DEV__-only, read by ApprovalCard to log the header row's own layout
   // alongside the card's own (M14 close-out round 3, task 3) — never read
@@ -167,39 +185,84 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
   // reverse of message order — matches every other inverted chat list.
   const data = useMemo(() => [...messages].reverse(), [messages])
 
+  // Jump-to-latest (M15 B): `isAtTail` drives both the pill's visibility and
+  // (via latest-pill.ts's own rule) when its count resets — see that
+  // module's doc comment. Reset per session so switching chats doesn't carry
+  // a stale count/tail-state from the previous one.
+  const [isAtTail, setIsAtTail] = useState(true)
+  const [pillState, setPillState] = useState(INITIAL_LATEST_PILL_STATE)
+
+  useEffect(() => {
+    setIsAtTail(true)
+    setPillState(INITIAL_LATEST_PILL_STATE)
+  }, [storedSessionId])
+
+  useEffect(() => {
+    setPillState(prev => nextLatestPillState(prev, messages, isAtTail))
+  }, [messages, isAtTail])
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setIsAtTail(event.nativeEvent.contentOffset.y <= AT_TAIL_OFFSET_PX)
+  }, [])
+
+  const jumpToLatest = useCallback(() => {
+    listRef.current?.scrollToOffset({ animated: true, offset: 0 })
+    // Optimistic — matches the tap's intent immediately rather than waiting
+    // for the animated scroll's own onScroll callbacks to catch up.
+    setIsAtTail(true)
+  }, [])
+
   useEffect(() => {
     if (scrollRequestCount > 0) {
       listRef.current?.scrollToOffset({ animated: true, offset: 0 })
+      setIsAtTail(true)
     }
   }, [scrollRequestCount])
 
   return (
-    <FlashList
-      contentContainerStyle={styles.content}
-      data={data}
-      inverted
-      keyExtractor={message => message.id}
-      ListHeaderComponent={
-        secret || sudo || approval || clarify || todos.length > 0 ? (
-          <View onLayout={__DEV__ ? event => (headerLayoutRef.current = event.nativeEvent.layout) : undefined}>
-            {secret ? <SecretCard request={secret} storedSessionId={storedSessionId} /> : null}
-            {sudo ? <SudoCard request={sudo} storedSessionId={storedSessionId} /> : null}
-            {approval ? (
-              <ApprovalCard parentLayoutRef={headerLayoutRef} request={approval} storedSessionId={storedSessionId} />
-            ) : null}
-            {clarify ? <ClarifyCard request={clarify} storedSessionId={storedSessionId} /> : null}
-            <TodoPanel todos={todos} />
-          </View>
-        ) : null
-      }
-      maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}
-      ref={listRef}
-      renderItem={({ index, item }) => (
-        // `data` is reversed (index 0 = newest), so `data[index + 1]` is the
-        // message chronologically BEFORE `item` — the boundary messageGap sizes.
-        <MessageBubble gap={messageGap(item, data[index + 1])} message={item} />
-      )}
-    />
+    <View style={styles.container}>
+      <FlashList
+        contentContainerStyle={styles.content}
+        data={data}
+        inverted
+        keyExtractor={message => message.id}
+        ListHeaderComponent={
+          secret || sudo || approval || clarify || todos.length > 0 ? (
+            <View onLayout={__DEV__ ? event => (headerLayoutRef.current = event.nativeEvent.layout) : undefined}>
+              {secret ? <SecretCard request={secret} storedSessionId={storedSessionId} /> : null}
+              {sudo ? <SudoCard request={sudo} storedSessionId={storedSessionId} /> : null}
+              {approval ? (
+                <ApprovalCard parentLayoutRef={headerLayoutRef} request={approval} storedSessionId={storedSessionId} />
+              ) : null}
+              {clarify ? <ClarifyCard request={clarify} storedSessionId={storedSessionId} /> : null}
+              <TodoPanel todos={todos} />
+            </View>
+          ) : null
+        }
+        maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}
+        onScroll={handleScroll}
+        ref={listRef}
+        renderItem={({ index, item }) => (
+          // `data` is reversed (index 0 = newest), so `data[index + 1]` is the
+          // message chronologically BEFORE `item` — the boundary messageGap sizes.
+          <MessageBubble gap={messageGap(item, data[index + 1])} message={item} />
+        )}
+        scrollEventThrottle={32}
+      />
+      {!isAtTail && pillState.count > 0 ? (
+        <Pressable
+          accessibilityLabel={latestPillLabel(pillState.count)}
+          accessibilityRole="button"
+          onPress={jumpToLatest}
+          style={[styles.latestPill, { backgroundColor: tokens.primary }]}
+        >
+          <ChevronDown color={tokens.primaryForeground} size={16} />
+          <Text style={[styles.latestPillText, { color: tokens.primaryForeground }]}>
+            {latestPillLabel(pillState.count)}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
   )
 }
 
@@ -220,6 +283,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10
   },
+  container: {
+    flex: 1
+  },
   content: {
     paddingHorizontal: 16,
     paddingVertical: 12
@@ -227,6 +293,21 @@ const styles = StyleSheet.create({
   error: {
     ...type.label,
     marginTop: 4
+  },
+  latestPill: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    borderRadius: radius.full,
+    bottom: 12,
+    flexDirection: 'row',
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 14,
+    position: 'absolute'
+  },
+  latestPillText: {
+    ...type.label,
+    fontWeight: '600'
   },
   pendingSpinner: {
     alignSelf: 'flex-start',

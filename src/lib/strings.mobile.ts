@@ -550,6 +550,15 @@ export const SESSION_HEADER_COMPRESS_FAILED_TITLE = 'Compress failed'
 // per-message action row, not this screen-level header button).
 export const SCREEN_HEADER_MORE_ACCESSIBILITY_LABEL = 'More'
 
+// src/chat/Transcript.tsx — the jump-to-latest pill (M15 B, task "Jump-to-
+// latest"), quoted from docs/mobile-prototypes/chat.html:179's own example
+// ("Latest · 3"). Mobile-only: the desktop has no scrolled-away transcript
+// state to name (its own window just keeps the tail in view), so there's no
+// vendored string to reuse.
+export function latestPillLabel(count: number): string {
+  return `Latest · ${count}`
+}
+
 // src/chat/parts/UsageChip.tsx — the context-window-pressure suffix next to
 // the token count (session.usage's context_percent). No vendored format
 // string exists for this anywhere in en.ts (checked for context_percent/
