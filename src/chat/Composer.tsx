@@ -40,6 +40,7 @@ import {
   COMPOSER_STOP_RECORDING_LABEL
 } from '../lib/strings.mobile'
 import { t } from '../lib/t'
+import { $composePrefillRequests } from '../store/compose-request'
 import { clearComposerDraft, type ComposerAttachment, composerDraft, setComposerDraft } from '../store/composer'
 import { notify } from '../store/notifications'
 import { $sessionStates } from '../store/session-states'
@@ -108,6 +109,9 @@ export function Composer({ storedSessionId }: ComposerProps) {
   const slashDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [atItems, setAtItems] = useState<PathCompletionItem[]>([])
   const atDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<TextInput>(null)
+  const lastAppliedPrefillId = useRef(0)
+  const prefillRequest = useStore($composePrefillRequests)[storedSessionId]
 
   // Kept in sync every render (not just via the effect below) so toggleRecording's async
   // transcription branch can tell, once the network call resolves, whether the user has since
@@ -130,6 +134,22 @@ export function Composer({ storedSessionId }: ComposerProps) {
       setRecording(false)
     }
   }, [storedSessionId])
+
+  // M15 B "Edit-and-resend": a message's long-press Edit action calls
+  // requestComposePrefill (src/store/compose-request.ts) rather than writing
+  // the draft store directly — this composer owns `text` as local state
+  // (typing must never round-trip through a store subscription), so an
+  // external write needs a one-shot signal to apply, keyed by `requestId` so
+  // a second edit while one is already pending is still observable.
+  useEffect(() => {
+    if (!prefillRequest || prefillRequest.requestId === lastAppliedPrefillId.current) {
+      return
+    }
+
+    lastAppliedPrefillId.current = prefillRequest.requestId
+    setText(prefillRequest.text)
+    inputRef.current?.focus()
+  }, [prefillRequest])
 
   useEffect(() => {
     setComposerDraft(storedSessionId, { attachments, text })
@@ -514,6 +534,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             onChangeText={setText}
             placeholder={COMPOSER_PLACEHOLDER}
             placeholderTextColor={tokens.mutedForeground}
+            ref={inputRef}
             style={[styles.input, { color: tokens.foreground }]}
             value={text}
           />

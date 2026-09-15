@@ -3,6 +3,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Clipboard,
   type LayoutRectangle,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -12,15 +13,18 @@ import {
   View
 } from 'react-native'
 
+import { Menu, type MenuItem } from '../components/ui/Menu'
 import { ChevronDown } from '../lib/icons'
 import { latestPillLabel } from '../lib/strings.mobile'
+import { t } from '../lib/t'
 import { $clarifyRequests } from '../store/clarify'
+import { requestComposePrefill } from '../store/compose-request'
 import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
 import { type MobileTokens, useTheme } from '../theme/provider'
 import { radius, type } from '../theme/type'
-import type { ChatMessage, ChatMessagePart } from '../upstream/lib/chat-messages'
+import { type ChatMessage, type ChatMessagePart, chatMessageText } from '../upstream/lib/chat-messages'
 
 import { INITIAL_LATEST_PILL_STATE, nextLatestPillState } from './latest-pill'
 import { type MessageGap, messageGap } from './message-gap'
@@ -110,10 +114,19 @@ export const messageRenderCounts: Record<string, number> = {}
  */
 let nextRecycleSlotId = 0
 
-const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: MessageGap; message: ChatMessage }) {
+const MessageBubble = memo(function MessageBubble({
+  gap,
+  message,
+  storedSessionId
+}: {
+  gap: MessageGap
+  message: ChatMessage
+  storedSessionId: string
+}) {
   const tokens = useTheme()
   const roleStyle = roleStyleFor(tokens, message.role)
   const recycleSlotId = useRef<null | number>(null)
+  const [actionsOpen, setActionsOpen] = useState(false)
 
   if (__DEV__) {
     if (recycleSlotId.current === null) {
@@ -125,9 +138,40 @@ const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: Messa
     console.log(`[recycle-slot] slot=${recycleSlotId.current} message=${message.id}`)
   }
 
+  // M15 B "Copy on any message" / "Edit-and-resend on a user message" —
+  // desktop's vendored equivalents (assistant.thread.copy, .editMessage,
+  // src/upstream/i18n/en.ts:3377,3407): a per-message Copy button
+  // (apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx:636)
+  // and, on a user message only, clicking the bubble opens an inline edit
+  // composer that reverts the turn on send (interrupt + rewind) — user-message.tsx:499-528.
+  // Mobile has no hover/click-to-edit affordance and no rewind RPC wired
+  // here (M15 plan, "Edit-and-resend": "sending creates a new turn, the old
+  // one is not rewritten") — so both actions collapse into one long-press
+  // menu instead, and Edit only prefills the composer.
+  const actionItems: MenuItem[] = [
+    {
+      key: 'copy',
+      label: t.assistant.thread.copy,
+      onPress: () => Clipboard.setString(chatMessageText(message))
+    },
+    ...(message.role === 'user'
+      ? [
+          {
+            key: 'edit',
+            label: t.assistant.thread.editMessage,
+            onPress: () => requestComposePrefill(storedSessionId, chatMessageText(message))
+          }
+        ]
+      : [])
+  ]
+
   return (
     <View style={[roleStyle.row, gap === 'turn' ? styles.turnGap : gap === 'block' ? styles.blockGap : null]}>
-      <View style={[styles.bubble, roleStyle.bubble]}>
+      <Pressable
+        delayLongPress={350}
+        onLongPress={() => setActionsOpen(true)}
+        style={[styles.bubble, roleStyle.bubble]}
+      >
         {message.parts.map((part, index) => (
           <MessagePart
             index={index}
@@ -144,8 +188,9 @@ const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: Messa
           <ActivityIndicator color={tokens.mutedForeground} size="small" style={styles.pendingSpinner} />
         ) : null}
         {message.error ? <Text style={[styles.error, { color: tokens.destructive }]}>{message.error}</Text> : null}
-      </View>
+      </Pressable>
       {message.role === 'assistant' && !message.pending ? <ResponseStats message={message} /> : null}
+      <Menu items={actionItems} onClose={() => setActionsOpen(false)} visible={actionsOpen} />
     </View>
   )
 })
@@ -245,7 +290,7 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
         renderItem={({ index, item }) => (
           // `data` is reversed (index 0 = newest), so `data[index + 1]` is the
           // message chronologically BEFORE `item` — the boundary messageGap sizes.
-          <MessageBubble gap={messageGap(item, data[index + 1])} message={item} />
+          <MessageBubble gap={messageGap(item, data[index + 1])} message={item} storedSessionId={storedSessionId} />
         )}
         scrollEventThrottle={32}
       />
