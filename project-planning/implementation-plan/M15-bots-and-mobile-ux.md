@@ -1718,4 +1718,42 @@ the bug.
 `test:plugin` 52/52, `eslint .` clean, `prettier --check .` clean. Run after `7c7da08`, the
 round's last commit, with a clean working tree.
 
-**Teardown:** see the round's own teardown notes below (steps a-f, mirroring round 7's).
+**Teardown (a-f, mirroring round 6/7's own pattern — round 7 itself did not write its teardown
+up in this file, so this mirrors round 6's most recently fully-documented instance instead).**
+Done, device-verified at each step:
+- (a) Switched to Hone from Registered gateways ("Switch to Hone"), confirmed the card flipped to
+  `Primary`/`Current` and M15-R8 lost `Current`. Removed `M15-R8` via the destructive-tap rule — a
+  fresh `uiautomator dump` immediately before the tap, the confirm dialog's own text checked
+  ("M15-R8" will be removed from this app...), only then `REMOVE` tapped; the list afterward
+  showed only Hone (`Primary`, `Current`). A cold relaunch (force-stop + `am start`, reconnect
+  to Metro's dev-launcher — required every relaunch this round, a dev-client property, not a
+  bug) landed cleanly on the session list with Hone's real sessions ("Replace Hermes-ifrah with
+  DeepSeek...", "[someuser] hi i would like...", etc.) — never `/connect`.
+- (b) Metro (PID `4528`, `node.exe`) and the throwaway gateway (PID `2084`,
+  `hermes-agent\.hermes-runtime\python\...\python.exe`, per `setup-gw-r8.sh`) stopped by PID —
+  not `hermes serve --stop`, which is unscoped and would have hit every Hermes process on the
+  machine. `curl --max-time 3` to both `http://127.0.0.1:8081/status` and
+  `http://127.0.0.1:9138/api/health` returned nothing (exit 7, connection refused) afterward.
+  Nothing else running this round to stop (no prototype servers).
+- (c) Deleted: the scratch `HERMES_HOME` (`%TEMP%\hermes-m15r8-home`),
+  `scratch-password.txt`, and the two `.bat` shims `hermes profile create` wrote to
+  `~/.local/bin` (`coder.bat`, `researcher.bat`) — all confirmed gone by a follow-up `ls` failing
+  on each path (`No such file or directory`). The field evidence directory itself
+  (`%LOCALAPPDATA%\hermes-android-field\m15-r8\`, screenshots/dumps/logs) is left in place, per
+  the round's own instruction to put evidence there.
+- (d) `adb reverse --remove-all` wedged mid-teardown (the same class of hang round 6 hit,
+  `adb reverse --remove-all hung past its timeout`) — per the standing rule, killed only the
+  local `adb` server process (not the emulator), `adb start-server`, the device reconnected on
+  its own after a few seconds (`emulator-5554 device`, a fresh `transport_id`), then
+  `adb reverse --remove-all` + `adb reverse --list` completed cleanly (empty). `font_scale`
+  confirmed `1.0` (never touched this round).
+- (e) Emulator shut down via `adb emu kill` (`OK: killing emulator, bye bye`); `adb devices`
+  empty immediately after. Two `emulator.exe` processes were still visible for a few seconds
+  post-kill (shutdown-in-progress, not a stray, same as round 6's note) — a follow-up check ~8s
+  later confirmed both gone. `emulator -list-avds` still lists `hermes-test` (the AVD itself was
+  never deleted, only shut down). Only the local `adb` server daemon process remains, no device
+  attached.
+- (f) `git push`: `274d315` and the five preceding commits (`4144da5`..`7c7da08`) already pushed
+  earlier in the round (`bdb4089..274d315  m15-bots-mobile-ux -> m15-bots-mobile-ux`); `git
+  status` confirms a clean working tree and the branch up to date with `origin/m15-bots-mobile-ux`
+  at teardown time.
