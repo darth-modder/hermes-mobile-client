@@ -10,6 +10,8 @@
 
 import { describe, expect, it } from 'vitest'
 
+import type { ChatMessageWithExtras } from '../../chat/message-extras'
+
 import { createStreamHarness } from './test-helpers'
 
 const SID = 'session-1'
@@ -18,7 +20,7 @@ function harnessWithActive() {
   return createStreamHarness({ activeRuntimeSessionId: SID })
 }
 
-function lastAssistantMessage(h: ReturnType<typeof harnessWithActive>) {
+function lastAssistantMessage(h: ReturnType<typeof harnessWithActive>): ChatMessageWithExtras | undefined {
   const session = h.session(SID)
 
   return [...(session?.messages ?? [])].reverse().find(m => m.role === 'assistant')

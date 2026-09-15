@@ -4,7 +4,7 @@ import { compactNumber } from '../../lib/format'
 import { responseStatsLine } from '../../lib/strings.mobile'
 import { useTheme } from '../../theme/provider'
 import { type } from '../../theme/type'
-import type { ChatMessage } from '../../upstream/lib/chat-messages'
+import type { ChatMessageWithExtras } from '../message-extras'
 
 /**
  * Per-message stats line (M15 B, task 2): model · Σ tokens · tok/s, under a
@@ -23,7 +23,7 @@ import type { ChatMessage } from '../../upstream/lib/chat-messages'
  * (tui_gateway `_get_usage`, per that field's own doc comment on
  * UsageStats.avg_tps, src/upstream/types/hermes.ts:738-739).
  */
-export function ResponseStats({ message }: { message: ChatMessage }) {
+export function ResponseStats({ message }: { message: ChatMessageWithExtras }) {
   const tokens = useTheme()
   const usage = message.usage
 

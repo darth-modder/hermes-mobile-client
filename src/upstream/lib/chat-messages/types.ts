@@ -73,22 +73,6 @@ export type ChatMessage = {
   rowId?: number
   /** Emoji reactions on this message — one per author (see MessageReaction). */
   reactions?: MessageReaction[]
-  /** The model that generated this reply (M15 B, Response stats), stamped
-   *  from the session's own `model` at the moment `message.complete` lands —
-   *  NOT from that event's own payload, which carries no `model` field
-   *  (confirmed against the gateway's own emission: `_complete_turn_payload`,
-   *  tui_gateway/prompt_turn.py:622-648, builds `{text, usage, status,
-   *  ...}` with nothing named `model`). Absent for messages hydrated from
-   *  history — like `usage` below, the backend doesn't persist either onto a
-   *  stored message row, only reports them live on the completing event —
-   *  so an old, rehydrated message correctly shows no stats line. */
-  model?: string
-  /** This message's own token usage, stamped from `message.complete`'s
-   *  `usage` field when the server sent one (M15 B, Response stats) — NOT
-   *  the running session-wide total (`SessionState.usage`, session-info.ts).
-   *  Drives the per-message stats line; absent when the server omitted
-   *  `usage` for this turn, or for a hydrated historical message. */
-  usage?: Partial<UsageStats>
 }
 
 export type GatewayEventPayload = {

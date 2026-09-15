@@ -14,6 +14,7 @@
 // `reaction` is still routed here (falls through as handled-but-inert) so it
 // doesn't reach `status.ts`'s catch-all as an unhandled event.
 
+import type { ChatMessageWithExtras } from '../../chat/message-extras'
 import {
   assistantTextPart,
   type ChatMessage,
@@ -168,7 +169,7 @@ function completeAssistantMessage(
     return mergeFinalAssistantText(parts, visibleFinalText, occurredAt)
   }
 
-  const completeMessage = (message: ChatMessage): ChatMessage => {
+  const completeMessage = (message: ChatMessage): ChatMessageWithExtras => {
     const settled = {
       ...message,
       completedAt: occurredAt,
@@ -192,7 +193,7 @@ function completeAssistantMessage(
     }
   }
 
-  const newAssistantFromCompletion = (): ChatMessage => ({
+  const newAssistantFromCompletion = (): ChatMessageWithExtras => ({
     id: `assistant-${Date.now()}`,
     role: 'assistant',
     parts:
