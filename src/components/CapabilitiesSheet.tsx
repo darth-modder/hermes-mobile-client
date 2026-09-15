@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { StyleSheet, Switch, Text, View } from 'react-native'
 
-import { type BotProfileDetail, configureBot } from '../api/bots'
+import { type BotProfileDetail, configureBot, describeBot, skillsServerKeptEnabled } from '../api/bots'
 import {
   BOTS_CAPABILITIES_SEARCH_PLACEHOLDER,
   BOTS_CAPABILITIES_SKILLS_SECTION,
   BOTS_CAPABILITIES_TITLE,
-  BOTS_CAPABILITIES_TOOLSETS_SECTION
+  BOTS_CAPABILITIES_TOOLSETS_SECTION,
+  botsCapabilitiesSkillLockedNote
 } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 import { useTheme } from '../theme/provider'
@@ -27,6 +28,12 @@ import { Sheet } from './ui/Sheet'
  * "All enabled (or none) = clear the pin; otherwise pin the checked set" —
  * `payload.enabled_toolsets = enabled.length === all || enabled.length ===
  * 0 ? [] : enabled.map(t => t.name)`, quoted and ported below verbatim.
+ *
+ * M15 A-close round 1: `save()` re-reads `profiles.describe` after
+ * `configureBot` and renders ITS skills/toolsets, not the local toggle
+ * state — the server silently keeps an essential skill enabled
+ * (`skillsServerKeptEnabled` in `src/api/bots.ts`) and the sheet has no
+ * other way to learn that happened.
  */
 export interface CapabilitiesSheetProps {
   detail: BotProfileDetail
@@ -43,6 +50,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<null | string>(null)
+  const [lockedSkillNames, setLockedSkillNames] = useState<string[]>([])
 
   useEffect(() => {
     if (visible) {
@@ -50,6 +58,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
       setToolsets(detail.toolsets)
       setQuery('')
       setError(null)
+      setLockedSkillNames([])
     }
   }, [detail, visible])
 
@@ -71,6 +80,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
   const save = async () => {
     setSaving(true)
     setError(null)
+    setLockedSkillNames([])
 
     // profile-config.tsx:585-590, quoted in this file's header: all-or-none
     // toggled = clear the pin, otherwise pin the checked set.
@@ -82,13 +92,34 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
         ? []
         : enabledToolsets.map(toolset => toolset.name)
 
+    const attemptedToDisable = new Set(skills.filter(skill => !skill.enabled).map(skill => skill.name))
+
     try {
       await configureBot(profileName, {
-        disabledSkills: skills.filter(skill => !skill.enabled).map(skill => skill.name),
+        disabledSkills: [...attemptedToDisable],
         enabledToolsets: enabledToolsetNames
       })
-      onSaved({ ...detail, skills, toolsets })
-      onClose()
+
+      // The write is fire-and-forget from the server's point of view — an
+      // essential skill (e.g. hermes-agent) is silently kept enabled
+      // (hermes_cli/skills_config.py:43-54), and `profiles.configure`'s own
+      // response doesn't say which skill that was, only that the section was
+      // applied. Re-reading `profiles.describe` is the only way to know what
+      // actually landed, so the sheet renders the server's truth, not the
+      // local toggle state the desktop request never confirmed.
+      const fresh = await describeBot(profileName)
+
+      setSkills(fresh.skills)
+      setToolsets(fresh.toolsets)
+
+      const stillEnabled = skillsServerKeptEnabled(attemptedToDisable, fresh.skills)
+
+      setLockedSkillNames(stillEnabled)
+      onSaved(fresh)
+
+      if (stillEnabled.length === 0) {
+        onClose()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -113,16 +144,23 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
         <>
           <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{BOTS_CAPABILITIES_SKILLS_SECTION}</Text>
           {filteredSkills.map(skill => (
-            <View key={skill.name} style={styles.row}>
-              <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
-                {skill.name}
-              </Text>
-              <Switch
-                onValueChange={enabled =>
-                  setSkills(current => current.map(s => (s.name === skill.name ? { ...s, enabled } : s)))
-                }
-                value={skill.enabled}
-              />
+            <View key={skill.name}>
+              <View style={styles.row}>
+                <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {skill.name}
+                </Text>
+                <Switch
+                  onValueChange={enabled =>
+                    setSkills(current => current.map(s => (s.name === skill.name ? { ...s, enabled } : s)))
+                  }
+                  value={skill.enabled}
+                />
+              </View>
+              {lockedSkillNames.includes(skill.name) ? (
+                <Text style={[styles.rowSub, { color: tokens.destructive }]}>
+                  {botsCapabilitiesSkillLockedNote(skill.name)}
+                </Text>
+              ) : null}
             </View>
           ))}
         </>

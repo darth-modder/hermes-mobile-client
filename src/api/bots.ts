@@ -187,6 +187,22 @@ export function describeBot(name: string): Promise<BotProfileDetail> {
   return gatewayRequest<BotProfileDetail>('profiles.describe', { name })
 }
 
+/**
+ * Given the skill names a `CapabilitiesSheet` save attempted to disable and
+ * a fresh, post-save `profiles.describe` skills list, returns the subset the
+ * server kept enabled anyway. An essential skill (e.g. `hermes-agent`) is
+ * silently dropped from the persisted `disabled` set — never actually
+ * disabled — by `save_disabled_skills` (`hermes_cli/skills_config.py:43-54`,
+ * `agent/skill_utils.py:268-270`'s `ESSENTIAL_SKILLS`); `profiles.configure`'s
+ * own response only says the `disabled_skills` section was applied, not
+ * which names survived, so the caller must re-read `profiles.describe` and
+ * diff it against what it asked for. Pure so this is testable without
+ * rendering `CapabilitiesSheet.tsx`; never hard-codes a skill name.
+ */
+export function skillsServerKeptEnabled(attemptedToDisable: ReadonlySet<string>, freshSkills: BotSkill[]): string[] {
+  return freshSkills.filter(skill => attemptedToDisable.has(skill.name) && skill.enabled).map(skill => skill.name)
+}
+
 export interface ConfigureBotPatch {
   soul?: string
   description?: string

@@ -32,7 +32,8 @@ const {
   getBotAvatarAsset,
   listBots,
   resolveCanonicalChat,
-  setBotAvatarAsset
+  setBotAvatarAsset,
+  skillsServerKeptEnabled
 } = await import('./bots')
 
 class FakeGateway {
@@ -468,5 +469,44 @@ describe('src/api/bots', () => {
 
       expect(result).toBe('stored-2')
     })
+  })
+})
+
+// M15 A-close round 1: profiles.configure silently keeps an essential skill
+// (e.g. hermes-agent) enabled — hermes_cli/skills_config.py:43-54's
+// save_disabled_skills drops it from the persisted `disabled` set
+// unconditionally. skillsServerKeptEnabled is the pure diff CapabilitiesSheet
+// uses to detect that from a fresh profiles.describe, so it's tested here
+// directly rather than by rendering the (untested-by-this-project's-vitest)
+// .tsx component.
+describe('skillsServerKeptEnabled', () => {
+  it('names a skill the caller tried to disable that the server kept enabled (mocked describe fixture)', () => {
+    const freshSkills = [
+      { name: 'hermes-agent', enabled: true },
+      { name: 'web-research', enabled: false }
+    ]
+
+    const result = skillsServerKeptEnabled(new Set(['hermes-agent', 'web-research']), freshSkills)
+
+    expect(result).toEqual(['hermes-agent'])
+  })
+
+  it('returns empty when every attempted skill actually ended up disabled', () => {
+    const freshSkills = [
+      { name: 'hermes-agent', enabled: true },
+      { name: 'web-research', enabled: false }
+    ]
+
+    const result = skillsServerKeptEnabled(new Set(['web-research']), freshSkills)
+
+    expect(result).toEqual([])
+  })
+
+  it('ignores a skill nobody attempted to disable, even if it is enabled', () => {
+    const freshSkills = [{ name: 'hermes-agent', enabled: true }]
+
+    const result = skillsServerKeptEnabled(new Set(), freshSkills)
+
+    expect(result).toEqual([])
   })
 })

@@ -617,4 +617,17 @@ export const BOTS_SOUL_SAVE_FAILED = 'Could not save SOUL.md'
 export const BOTS_CAPABILITIES_SEARCH_PLACEHOLDER = 'Search skills and toolsets…'
 export const BOTS_CAPABILITIES_SKILLS_SECTION = 'Skills'
 export const BOTS_CAPABILITIES_TOOLSETS_SECTION = 'Toolsets'
+
+// src/components/CapabilitiesSheet.tsx (M15 A-close round 1). The gateway
+// silently refuses to disable an essential skill — `save_disabled_skills`
+// drops it from the persisted set unconditionally
+// (hermes_cli/skills_config.py:43-54, `agent/skill_utils.py:268-270`'s
+// `ESSENTIAL_SKILLS`) — so after a save the sheet re-reads `profiles.describe`
+// and, for any skill the user turned off that the server kept enabled, shows
+// this instead of silently reverting the switch with no explanation. Never
+// hard-codes which skill is essential — the server's readback decides.
+export function botsCapabilitiesSkillLockedNote(name: string): string {
+  return `“${name}” can’t be disabled — the host keeps it on.`
+}
+
 export const BOTS_MODEL_CONFIRM_TITLE = 'Confirm model switch'
