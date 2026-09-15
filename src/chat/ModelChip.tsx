@@ -63,7 +63,9 @@ export function ModelChip({ model, provider, storedSessionId }: ModelChipProps) 
 
           setOptions(flat)
         })
-        .catch(() => setOptions([]))
+        .catch(() => {
+          setOptions([])
+        })
     }
   }
 
@@ -119,27 +121,37 @@ export function ModelChip({ model, provider, storedSessionId }: ModelChipProps) 
       <Sheet onClose={() => setVisible(false)} title={MODEL_CHIP_SHEET_TITLE} visible={visible}>
         <Input onChangeText={setQuery} placeholder={MODEL_CHIP_SEARCH_PLACEHOLDER} value={query} />
         <Text style={[styles.section, { color: tokens.textTertiary }]}>{MODEL_CHIP_THIS_CHAT_SECTION}</Text>
-        <ScrollView style={styles.list}>
-          {filtered.map(option => {
-            const active = option.model === model && option.provider === provider
+        {/* On Android, a ScrollView nested in Sheet.tsx's percentage-height
+            `body` (maxHeight: '88%' of an auto-sized ancestor) measures to
+            zero height even with its own maxHeight/height style — confirmed
+            on-device: state held all 58 fetched options and re-rendered them,
+            but nothing appeared, because the ScrollView itself collapsed.
+            Giving a plain View (which sizes correctly in that same ancestor
+            chain) the explicit height and letting the ScrollView fill it via
+            flex:1 works around it. */}
+        <View style={styles.listOuter}>
+          <ScrollView style={styles.list}>
+            {filtered.map(option => {
+              const active = option.model === model && option.provider === provider
 
-            return (
-              <Pressable
-                key={`${option.provider}/${option.model}`}
-                onPress={() => void pick(option)}
-                style={styles.row}
-              >
-                {active ? <Check color={tokens.primary} size={16} /> : <View style={styles.checkSpacer} />}
-                <View style={styles.rowText}>
-                  <Text style={[styles.rowLabel, { color: active ? tokens.primary : tokens.foreground }]}>
-                    {option.model}
-                  </Text>
-                  <Text style={[styles.rowSub, { color: tokens.textTertiary }]}>{option.provider}</Text>
-                </View>
-              </Pressable>
-            )
-          })}
-        </ScrollView>
+              return (
+                <Pressable
+                  key={`${option.provider}/${option.model}`}
+                  onPress={() => void pick(option)}
+                  style={styles.row}
+                >
+                  {active ? <Check color={tokens.primary} size={16} /> : <View style={styles.checkSpacer} />}
+                  <View style={styles.rowText}>
+                    <Text style={[styles.rowLabel, { color: active ? tokens.primary : tokens.foreground }]}>
+                      {option.model}
+                    </Text>
+                    <Text style={[styles.rowSub, { color: tokens.textTertiary }]}>{option.provider}</Text>
+                  </View>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
+        </View>
       </Sheet>
     </>
   )
@@ -159,7 +171,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14
   },
   list: {
-    maxHeight: 320
+    flex: 1
+  },
+  listOuter: {
+    height: 320
   },
   row: {
     alignItems: 'center',
