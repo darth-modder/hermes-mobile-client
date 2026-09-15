@@ -25,24 +25,24 @@ until the gateway exposes a group transport to non-desktop sources.
 
 ### A. Bots tab (†data layer)
 
-- [ ] † `src/api/bots.ts`: roster from `profiles.list`; canonical chat per profile using the
+- [x] † `src/api/bots.ts`: roster from `profiles.list`; canonical chat per profile using the
       desktop's exact-title rule from `canonical-chat.ts` (read it; vendor the title constant and
       the resolution rule through the sync script if they are pure, otherwise port with a cited
       line range); soul read and write through the profile's `SOUL.md` RPCs; description; model
       pin (`null` = inherit); toolsets and skills per profile. Unit tests against recorded RPC
       fixtures, as `src/api/sessions.ts` did.
-- [ ] Avatars: `blobatar` 2.0.0 rendered through `react-native-svg` (`SvgXml`), seeded exactly as
+- [x] Avatars: `blobatar` 2.0.0 rendered through `react-native-svg` (`SvgXml`), seeded exactly as
       the desktop's `avatar.tsx` seeds it, so the same bot shows the same face on both surfaces.
       Test: the SVG string for a fixed seed equals the desktop's for the same seed.
-- [ ] `app/(main)/bots/index.tsx`: the roster, one row per bot (avatar, name, handle, model, last
+- [x] `app/(main)/bots/index.tsx`: the roster, one row per bot (avatar, name, handle, model, last
       message preview, relative time), "New bot" (create profile sheet: name, description, model,
       avatar seed), pull-to-refresh. Opening a bot opens its canonical chat in the existing chat
       screen with the bot's identity in the header.
-- [ ] Bot settings sheet from the chat header: description, soul editor (mono role, save on
+- [x] Bot settings sheet from the chat header: description, soul editor (mono role, save on
       blur with a confirm if the soul changed on the host since it was loaded), model pin, and a
       "Capabilities" screen listing installed skills and toolsets with per-bot toggles and a
       search over installed skills.
-- [ ] Drawer order becomes Bots, Sessions, Tasks, then the rest, matching the desktop's Bot Mode
+- [x] Drawer order becomes Bots, Sessions, Tasks, then the rest, matching the desktop's Bot Mode
       sidebar strip order (Sessions / Bots) inverted for the phone, recorded as a Deviation.
 
 ### B. Chat affordances
@@ -108,7 +108,7 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
 
 ## Exit criteria (emulator; none are `[physical]`)
 
-- [ ] Bots: with two profiles on the host, the roster shows two bots whose avatar SVGs equal the
+- [x] Bots: with two profiles on the host, the roster shows two bots whose avatar SVGs equal the
       desktop's for the same seeds (test), opening one lands in its canonical chat (the session
       id equals the one the desktop's rule resolves, checked with a Node script against the same
       host), and editing the soul changes `SOUL.md` on the host (read back over RPC).
@@ -270,6 +270,14 @@ and the gateway contract only.
    `createCanonicalChat` (`src/api/bots.ts:413-433`) and
    `findExistingCanonicalChat`'s `session.list` (`src/api/bots.ts`) already
    passed `profile` (round 1) and needed no change.
+
+6. **Drawer order on the phone: Bots, Sessions, then "Scheduled jobs", not yet "Tasks".** The
+   desktop's Bot Mode strip reads Sessions / Bots. The phone inverts it so Bots leads, as task A
+   asks. The third row still opens the existing cron screen under its current label, "Scheduled
+   jobs", because group C's Tasks tab (`app/(main)/tasks/index.tsx`) isn't built yet. Renaming it
+   before that screen exists would promise a redesign that isn't there. The row is renamed in the
+   commit that lands the Tasks tab. Rationale in `src/components/drawer-rows.ts`'s header; added
+   by Opus at the group A close-out, because round 2 referred to this Deviation without writing it.
 
 ## Verification log
 
@@ -1411,3 +1419,40 @@ clean. Exit code 0.
   gap (`src/net/http.ts` and friends rely entirely on RN's own,
   unconfigured fetch cookie jar); reported with evidence, not fixed, per
   every round's standing instruction not to expand scope on this one.
+
+### Opus close-out, group A (2026-09-15)
+
+Group A's five tasks and the Bots exit criterion are ticked. Opus checked the evidence against
+the rounds' commits, dumps and logs, and re-ran `npm run check` at `64df0ef` (exit 0, 587 tests).
+
+**Bots exit criterion, part by part:**
+- **Two bots on the roster:** round 2, task 4a.
+- **Avatar SVGs equal the desktop's:** round 1, task 5 (`src/lib/bot-avatar.test.ts`, against a
+  fixture generated independently from `blobatar`).
+- **Opening a bot lands in the canonical chat the desktop's rule resolves:** the id came from a
+  Node script in round 2 (task 4c). Round 3 showed the chat opening on device after the
+  Deviation 5 fix (`0a118bd`).
+- **A soul edit reaches `SOUL.md`:** read back over `profiles.describe` in rounds 3 and 5, including
+  both directions of the changed-on-host confirm.
+
+**Not claimed, and not part of M15's exit criteria:**
+- the dark-theme 48 dp audit
+- side-by-side composites of the settings sheet and Capabilities
+- an expensive-model confirm on device (code-verified only)
+- a non-essential skill staying disabled (no seeded profile had one)
+
+These are carried as known gaps, not blockers.
+
+**Correction to round 6's cookie conclusion.** The evidence shows the server honours its 12-hour
+cookie lifetime for a freshly issued cookie. It does not show that the client lost its own
+cookie. A different cause fits the same observations:
+- `m14-device/setup-gw.sh` sets no `HERMES_DASHBOARD_BASIC_AUTH_SECRET`.
+- Without one, the basic-auth plugin "generat[es] a random per-process signing key. Sessions will
+  not survive a restart or span multiple workers" (`plugins/dashboard_auth/basic/__init__.py:191-202`).
+- Any gateway restart or second process during the idle window would reject the app's cookie and
+  accept one minted afterwards, which is exactly what round 6 saw.
+
+No gateway log from that run was kept, so neither cause is confirmed. `setup-gw.sh` now pins a
+per-scratch-home secret. The idle test is re-run with it before any client-side cookie work
+starts. For real deployments (Hone), `dashboard.basic_auth.secret` should be set, or every
+gateway restart signs every phone out.
