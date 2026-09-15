@@ -73,6 +73,18 @@ export type ChatMessage = {
   rowId?: number
   /** Emoji reactions on this message — one per author (see MessageReaction). */
   reactions?: MessageReaction[]
+  /** The model that generated this reply, stamped from `message.complete`'s
+   *  own `model` field (M15 B, Response stats). Absent for messages hydrated
+   *  from history — like `usage` below, the backend doesn't persist either
+   *  onto a stored message row, only reports them live on the completing
+   *  event — so an old, rehydrated message correctly shows no stats line. */
+  model?: string
+  /** This message's own token usage, stamped from `message.complete`'s
+   *  `usage` field when the server sent one (M15 B, Response stats) — NOT
+   *  the running session-wide total (`SessionState.usage`, session-info.ts).
+   *  Drives the per-message stats line; absent when the server omitted
+   *  `usage` for this turn, or for a hydrated historical message. */
+  usage?: Partial<UsageStats>
 }
 
 export type GatewayEventPayload = {

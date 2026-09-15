@@ -15,6 +15,7 @@ import { type MessageGap, messageGap } from './message-gap'
 import { ApprovalCard } from './parts/ApprovalCard'
 import { ClarifyCard } from './parts/ClarifyCard'
 import { ReasoningDisclosure } from './parts/ReasoningDisclosure'
+import { ResponseStats } from './parts/ResponseStats'
 import { SecretCard } from './parts/SecretCard'
 import { SudoCard } from './parts/SudoCard'
 import { TextPart } from './parts/TextPart'
@@ -132,6 +133,7 @@ const MessageBubble = memo(function MessageBubble({ gap, message }: { gap: Messa
         ) : null}
         {message.error ? <Text style={[styles.error, { color: tokens.destructive }]}>{message.error}</Text> : null}
       </View>
+      {message.role === 'assistant' && !message.pending ? <ResponseStats message={message} /> : null}
     </View>
   )
 })

@@ -26,6 +26,7 @@ import {
 } from '../../upstream/lib/chat-messages'
 import { parseErrorSurface } from '../../upstream/lib/error-surface'
 import { generatedImageEchoSources, stripGeneratedImageEchoes } from '../../upstream/lib/generated-images'
+import type { UsageStats } from '../../upstream/types/hermes'
 
 import { type FamilyHandler, handled, notHandled } from './context'
 import { flushSessionDeltas, queueDelta } from './delta-queue'
@@ -131,7 +132,9 @@ function completeAssistantMessage(
   text: string,
   responsePreviewed: boolean | undefined,
   failure: { error: string; partial: boolean; surface?: ReturnType<typeof parseErrorSurface> } | undefined,
-  occurredAt: number
+  occurredAt: number,
+  model: string | undefined,
+  usage: Partial<UsageStats> | undefined
 ): CompleteResult {
   if (session.interrupted) {
     return {
@@ -173,6 +176,8 @@ function completeAssistantMessage(
       pending: false,
       interim: false,
       ...(durationS !== undefined ? { durationS } : {}),
+      ...(model !== undefined ? { model } : {}),
+      ...(usage !== undefined ? { usage } : {}),
       ...(completionError && failure?.surface ? { errorSurface: failure.surface } : {})
     }
 
@@ -198,6 +203,8 @@ function completeAssistantMessage(
     completedAt: occurredAt,
     branchGroupId: session.pendingBranchGroup ?? undefined,
     ...(durationS !== undefined ? { durationS } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(usage !== undefined ? { usage } : {}),
     ...(completionError && { error: completionError }),
     ...(completionError && failure?.surface ? { errorSurface: failure.surface } : {})
   })
@@ -566,7 +573,15 @@ export const handleMessageStreamEvent: FamilyHandler = (state, ctx) => {
     let shouldHydrate = false
 
     next = updateSession(next, storedSessionId, session => {
-      const result = completeAssistantMessage(session, finalText, payload?.response_previewed, failure, occurredAt)
+      const result = completeAssistantMessage(
+        session,
+        finalText,
+        payload?.response_previewed,
+        failure,
+        occurredAt,
+        payload?.model,
+        payload?.usage
+      )
 
       shouldHydrate = result.shouldHydrate
 

@@ -504,6 +504,37 @@ export const COMPOSER_NOTHING_TO_SPEAK_TITLE = 'Nothing to speak'
 export const COMPOSER_NO_REPLY_TO_READ_MESSAGE = 'No new reply to read out.'
 export const COMPOSER_SPEECH_FAILED_TITLE = 'Speech failed'
 
+// M15 B, task 1: docs/mobile-prototypes/chat.html's `#chat=model`/`#chat=effort`
+// views (lines 357-407) — the composer's model and effort chips. No desktop
+// counterpart sheet titles exist for either (the desktop's own model picker
+// is a menu panel, not a titled sheet — apps/desktop/src/app/shell/
+// model-menu-panel.tsx has no "Model"/"Reasoning effort" heading of its own),
+// so these are this mobile sheet's own copy, quoted from the prototype.
+export const MODEL_CHIP_SHEET_TITLE = 'Model' // chat.html:373
+export const MODEL_CHIP_SEARCH_PLACEHOLDER = 'Search models…' // chat.html:375
+export const MODEL_CHIP_THIS_CHAT_SECTION = 'This chat' // chat.html:376
+export const EFFORT_CHIP_SHEET_TITLE = 'Reasoning effort' // chat.html:400
+export const MODEL_CHIP_PENDING_SUFFIX = ' (pending)'
+
+/** Response stats line (M15 B, task 2) — quoted verbatim from
+ *  docs/mobile-prototypes/chat.html:113's own example
+ *  (`mimo-v2.5 · Σ 14K tok · 3.9 tok/s`); `tok`/`tok/s`/`min separator ·
+ *  are this line's own mobile-only copy (the desktop's equivalent,
+ *  apps/desktop/src/lib/statusbar.tsx's `tokensPerSecondLabel`, is a global
+ *  status-bar figure — "t/s", no model — not a per-message line, so there
+ *  is no vendored string to reuse for this shape). `model`/`tokens`/`tokPerSecond`
+ *  are pre-formatted by the caller (compactNumber for tokens, one decimal
+ *  for tok/s — see ResponseStats.tsx). `model` is omitted from the line
+ *  (not shown as an empty leading " · ") when the server didn't stamp a
+ *  model onto this particular message even though it did send `usage`. */
+export function responseStatsLine(model: null | string, tokens: string, tokPerSecond: null | string): string {
+  const parts = [model, `Σ ${tokens} tok`, tokPerSecond ? `${tokPerSecond} tok/s` : null].filter(
+    (part): part is string => Boolean(part)
+  )
+
+  return parts.join(' · ')
+}
+
 // src/chat/SessionHeader.tsx — the manual `session.compress` action
 // (compressSession, src/gateway/session-connection.ts). No vendored word
 // exists for it anywhere in en.ts (checked case-insensitively); the closest
