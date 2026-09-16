@@ -366,13 +366,14 @@ and the gateway contract only.
     `src/lib/dev-build.ts` both use. Recorded because "dev routes are gated" is weaker than "dev
     routes are absent", and the difference should not have to be rediscovered from the code.
 
-14. **The Tasks tab draws no tab strip.** `docs/mobile-prototypes/tasks.html:102-106` puts a
-    Bots · Sessions · Tasks tab row under the header on every view. That row is M15 E's work —
-    the prototype's own behaviour note says "Swiping between the three tabs works (M15 E)"
-    (`:50`) — and no shared tab-strip component exists yet. `app/(main)/tasks/index.tsx` is
-    therefore reached from the drawer like every other list screen, and draws no strip at all
-    rather than a dead one that doesn't switch tabs. The counters, rows, detail and New task
-    sheet are all as drawn.
+14. **~~The Tasks tab draws no tab strip.~~ Built round 15 — see Deviation 20.**
+    `docs/mobile-prototypes/tasks.html:102-106` puts a Bots · Sessions · Tasks tab row under the
+    header on every view. That row is M15 E's work — the prototype's own behaviour note says
+    "Swiping between the three tabs works (M15 E)" (`:50`) — and no shared tab-strip component
+    existed yet at the time this was written. `app/(main)/tasks/index.tsx` was therefore reached
+    from the drawer like every other list screen, and drew no strip at all rather than a dead one
+    that doesn't switch tabs. The counters, rows, detail and New task sheet were all as drawn;
+    unchanged by round 15's fix.
 
 15. **The cron humanizer is a port of the desktop's, not a new one — and it drops
     `toLocaleString`.** M15 round 11's task asked for "a small pure one" *if* no vendored or
@@ -427,6 +428,52 @@ and the gateway contract only.
     the basic-auth plugin's env vars (`plugins/dashboard_auth/basic/__init__.py:220-222`) plus
     the signing secret at `:191-202`, which the prototype does not mention at all and without
     which every gateway restart signs every paired phone out.
+
+20. **The tab row switches tabs with `router.replace`, not a co-mounted pager, and the swipe
+    lives on the 48dp strip, not the screen body.** M15 round 15 (group E task 3) found the
+    premise had drifted further than Deviation 14 said: not only was no tab strip drawn, but
+    Bots/Sessions/Tasks were reached only through `AppDrawer.tsx:96`'s `router.push` — a new
+    stack entry every time — while `sessions.html:20` and `bots.html:47` both describe "real tabs
+    that switch in place", explicitly contrasted with the desktop prototype's own push-based
+    tabs ("theirs push a screen and swap the strip"). Two implementation choices, both departures
+    from the most literal reading, both recorded here rather than discovered later:
+    - **`router.replace`, not a `react-native-pager-view` co-mounting all three screens.** A true
+      pager would keep Bots, Sessions and Tasks mounted together so a drag tracks the finger
+      continuously — the fuller reading of "switch in place" — but it is a materially larger
+      change: a new native dependency, three screens' worth of data-loading (`useFocusEffect`,
+      live subscriptions) now needing to coexist mounted rather than mount-on-navigate, and a
+      routing restructure this round's time did not cover carrying through safely. `router.replace`
+      gets the property that actually matters for the exit criterion — the tab row switches
+      without growing the stack — proven live: from Tasks (reached via two `replace` calls,
+      Sessions → Bots → Tasks), an edge-swipe-back exited the app straight to the launcher
+      instead of returning to Bots, meaning neither earlier tab was still on the stack to pop to.
+    - **The swipe gesture is scoped to `TabStrip`'s own 48dp row, not the screen body below it.**
+      Round 10 found no adb-injected gesture (`input swipe`, `draganddrop`, a hand-built
+      motionevent DOWN/MOVE/UP) reaches a JS `PanResponder`; round 15 re-confirmed this for
+      `Sheet.tsx`'s existing drag (see the Verification log) and found the same true of a
+      `react-native-gesture-handler` `Gesture.Pan()` mounted *inside `Sheet`'s `Modal`* — three
+      injection methods, zero result, no regression-testable surface either way. A full-screen
+      recognizer on the tab screens would only have multiplied that untestable surface (fighting
+      `FlatList`/`SectionList` vertical scroll, the drawer's own edge swipe, and
+      `react-native-screens`' edge-back) for a benefit this harness could never confirm. Scoping
+      the gesture to the tab row keeps everything below it exactly as it already was.
+
+    **Correction to the assumption "RNGH gestures are not injectable," recorded rather than
+    silently carried forward.** `TabStrip`'s own `Gesture.Pan()` — same API, same `.runOnJS(true)`
+    threading — *is* reachable by `input swipe` when mounted directly on a screen (not inside a
+    `Modal`): both directions, repeatable, device-verified (Verification log, round 15). The
+    non-injectability is specific to the `Sheet`/`Modal` context, not a blanket property of RNGH
+    on this harness — a real, checked distinction, not a guess generalized from one data point.
+
+    One residual risk, not resolved and not claimed to be: an edge-originating swipe on the tab
+    row (starting inside `EDGE_GUARD_PX`, meant to cede to the system/`react-native-screens` back
+    gesture) gave two different results across otherwise-identical injected swipes from the same
+    tab — once correctly deferring (the screen exited/popped, `TabStrip`'s own gesture never
+    fired), once advancing the active tab by two instead of blocking as coded. Raised
+    `EDGE_GUARD_PX` from 24 to 40 for more margin, but this reads as a genuine touch-dispatch race
+    between the two gesture recognizers rather than a threshold bug, and widening the number does
+    not prove the race is gone. Manual check needed on a real device: an edge-band swipe on the
+    tab row should never double-fire or skip a tab.
 
 ## Verification log
 
@@ -3658,4 +3705,270 @@ the round-10 regression pass couldn't inject with adb.
 too, following `connect.html`'s "Never enter 127.0.0.1 … on your phone". That's right for a phone
 reaching a computer, but it blocks a gateway running on the phone itself (e.g. Termux). Decide
 whether that deployment is supported before M12.
+
+### Round 15 — group E (Gestures): edge-back device-verified everywhere, sheet swipe-down still
+### uninjectable after a real attempt, tab row built and swipe device-verified (2026-09-17)
+
+**Scope.** M15's last open group, per the Opus close-out above: "group E (Gestures), including
+swipe-down on every sheet, which the round-10 regression pass couldn't inject with adb." Against a
+fresh throwaway gateway (`m14-device/setup-gw.sh` unchanged, port 9128, two seeded profiles
+`researcher`/`coder`, `auth_required: true`), the same `hermes-test` hardware-accelerated AVD every
+prior round used (never destroyed). Evidence: `D:\Stuff\hermes-android-field\m15-r15\` (~100
+screenshots/dumps/logs, numbered by capture order).
+
+**Task 0 (test plan, written before any code).** For each gesture: which layer handles it, whether
+adb injection can reach that layer, and what counts as proof.
+
+| gesture | layer | file:line | injectable? |
+| --- | --- | --- | --- |
+| edge-swipe back | `react-native-screens`' native stack `Screen`, default `gestureEnabled: true` (Fabric codegen), no override anywhere in this app | `node_modules/react-native-screens/src/fabric/ScreenNativeComponent.ts:101`; `app/_layout.tsx:43`, `app/(main)/_layout.tsx:8` (`Stack screenOptions={{ headerShown: false }}`, no `gestureEnabled` key) | **untested going in** — round 10 never tried it, only sheet swipe-down |
+| sheet swipe-down | JS `PanResponder` (`Sheet.tsx`) | `src/components/ui/Sheet.tsx:173-189` | **no**, per round 10 (`input swipe`, `draganddrop`, hand-built motionevent DOWN/MOVE/UP, all silent) |
+| tab swipe | did not exist; built this round | `src/components/TabStrip.tsx` (new) | unknown going in — same open question as the sheet |
+| predictive-back manifest flag | Expo config plugin, generates the native manifest attribute at prebuild time | `app.config.ts` (`android.predictiveBackGestureEnabled`), `node_modules/@expo/config-plugins/build/android/PredictiveBackGesture.js:34-37`, `android/app/src/main/AndroidManifest.xml:19` | n/a — a manifest attribute, not a gesture; proof is reading the generated XML, not injection |
+
+Proof standard: for anything injection reaches, a screenshot before and after the injected gesture,
+with the screen identity (header text / route) visible in both. For anything it doesn't, say so
+plainly and add it to the manual checklist at the end rather than mark it done.
+
+**Task 1 (predictive back): config fixed and code-verified; the flag itself needs a native rebuild
+this round didn't do; edge-swipe-back is device-verified independent of it.**
+
+`android/app/src/main/AndroidManifest.xml:19` at the start of this round read
+`android:enableOnBackInvokedCallback="false"` — quoted in full: `<application
+android:name=".MainApplication" ... android:enableOnBackInvokedCallback="false" ...>`. The
+generating source (`app.config.ts`) had no `android.predictiveBackGestureEnabled` key at all;
+`@expo/config-plugins`' own plugin (`PredictiveBackGesture.js:34-37`) resolves a missing key to
+`false` explicitly (`value === true ? 'true' : 'false'`), so this was the plugin's documented
+default, not a stray regression. Added `predictiveBackGestureEnabled: true` to `app.config.ts`'s
+`android` block. `npx expo prebuild --platform android --no-install` regenerated the manifest;
+line 19 now reads `android:enableOnBackInvokedCallback="true"`.
+
+**This needs a native rebuild to reach a running app — code-verified only, not device-verified.**
+`prebuild` only regenerates the `android/` source tree (confirmed gitignored: `git ls-files
+android/app/src/main/AndroidManifest.xml` returns nothing, matching every prior round's "D3, native
+builds regenerate each time" note); it does not compile a new APK. The dev-client binary already
+installed on the emulator (from round 14) was built before this change and still has the old
+manifest baked in. A full Gradle rebuild (WSL2, ~20 minutes per round 2's own account) was not run
+this round — sequencing this after the gesture-testing work below, then running out of round budget
+before it, is an honest description of why, not a claim it was tried and failed.
+
+**Edge-swipe-back itself does not depend on this flag, and is separately, fully device-verified.**
+`enableOnBackInvokedCallback` selects which *protocol* Android uses for the back gesture
+(the modern predictive-back callback API vs. the legacy `onBackPressed()`/`KEYCODE_BACK` path) — it
+is not what makes an edge swipe register as "back" in the first place; that already happens on
+gesture-nav Android regardless of this flag. Proven by testing directly against the **pre-fix**
+install (native deps in this branch are otherwise unchanged since M14 — confirmed round 3's own
+diff, still true): `adb shell input swipe 5 1200 700 1200 300` (an edge-originating left-to-right
+swipe) popped every one of seven distinct screen types, each with a before/after screenshot:
+
+| # | screen (before) | screen (after swipe) | evidence |
+| --- | --- | --- | --- |
+| 1 | chat (`Untitled session`, pushed from Sessions) | Sessions | `14-edge-swipe-test.png` |
+| 2 | Bots roster (pushed from drawer) | Sessions | `17-bots-swipe-result.png` |
+| 3 | bot chat (`default`) | Bots roster | `19-botchat-swipe-result.png` |
+| 4 | Projects (empty state) | Bots roster | `21-projects-swipe-result.png` |
+| 5 | Settings › Appearance (two deep) | Settings (one deep) | `27-appearance-swipe-result.png` |
+| 6 | Task detail (`Morning inbox digest`) | Tasks list | `33-taskdetail-swipe-result.png` |
+| 7 | Connect › "Enter a URL" step | Registered gateways | `37-connect-swipe-result.png` |
+
+Row 7's own result is worth recording precisely: it popped straight to Registered gateways, not to
+an intermediate "Connect to existing Hermes" chooser screen — because `app/connect/index.tsx` draws
+the Tailscale / Enter-a-URL / This-computer chooser and the URL form as *view states inside one
+screen* (round 14 already established this: `app/connect/index.tsx:284`'s single `ScrollView` wraps
+"every step (`:start`, `:steps`, `:url`)"), not as separate pushed routes — so there was only ever
+one stack entry to pop, and it popped correctly.
+
+A control ruled out "any swipe reads as back": a **mid-screen** swipe (`input swipe 400 1200 900
+1200 300`, nowhere near either edge) on the same bot chat screen did **not** pop it
+(`53-midscreen-swipe-control.png` — chat still shown). Edge-swipe-back is genuinely edge-scoped, not
+a blanket gesture-to-back mapping.
+
+**Sheets consume back before the stack does.** Not re-tested this round — round 10's own finding
+(`Sheet.tsx`'s `Modal onRequestClose`) is unchanged code, and no sheet-related code moved this
+round outside the reverted RNGH experiment below.
+
+**Task 2 (swipe down dismisses every sheet): re-confirmed not reachable by injection; RNGH tried
+for real, also not reachable, reverted — on the manual checklist, same as round 10.**
+
+Reproduced round 10's finding fresh, against the *unmodified* `PanResponder` in `Sheet.tsx:173-189`,
+before touching any code: opened the New bot sheet, tried `input swipe 540 1050 540 1500 300` (no
+effect, `40-sheet-swipe-test.png`) and a hand-built `motionevent DOWN` + five `MOVE`s + `UP` (no
+effect, `41-sheet-motionevent-test.png`). Same zero result as round 10, different round, same
+device class.
+
+Per this round's own brief, tried the suggested experiment rather than assuming its outcome:
+migrated `Sheet.tsx`'s drag from `PanResponder` to `react-native-gesture-handler`'s `Gesture.Pan()`
++ `GestureDetector` (native gesture recognizers, the same class of thing `react-native-screens`'
+edge-back uses, which the edge-swipe table above just proved *is* injectable). First attempt crashed
+on open: `[Worklets] Cannot copy value of type 'AnimatedValue'` (`44-new-bot-sheet2.png`'s
+predecessor, a red box) — the worklets babel plugin, auto-installed by `babel-preset-expo` because
+`react-native-reanimated` is a dependency even though nothing in this app uses it otherwise, treats
+`onUpdate`/`onEnd` as worklets by default and tries to serialize their closure over `dragY` (a plain
+`Animated.Value`, not a Reanimated shared value) onto the UI thread. Fixed with `.runOnJS(true)`,
+which keeps the callbacks on the JS thread — the same threading model `PanResponder` always used.
+Sheet opened cleanly after the fix (`47-sheet-open.png`). Then, with the crash fixed, tried
+injection again: `input swipe` from the handle (`48-rngh-swipe-test.png`), a slower/longer `input
+swipe` from the header title row (`50-rngh-swipe-test2.png`), a hand-built 11-point motionevent
+sequence (`51-rngh-motionevent-test.png`), and `input draganddrop` (`55-draganddrop-test.png`) — all
+four left the sheet open. RNGH did not make the sheet's own drag injectable.
+
+**Reverted rather than kept** (`git checkout -- src/components/ui/Sheet.tsx`, confirmed via `git
+status`/`git diff --stat` back to only `app.config.ts` modified): the migration achieved none of
+its purpose — no regression-testable gain — while introducing a new dependency pattern (RNGH +
+worklets threading) across all eight `Sheet` consumers that would need round 10's full
+per-consumer regression pass (a)-(c)/(e)-(f) to trust, which this round did not have budget to
+re-run for zero benefit. Matches the round's own instruction exactly: "Only do that if it's a
+contained change [and verified] ... Otherwise leave it and put it on the manual checklist."
+
+**Task 3 (swipe between Bots/Sessions/Tasks): Deviation proposed and applied — tab row built,
+switches without growing the stack, and the swipe itself is device-verified, both directions.**
+
+Read `sessions.html:10,20,32,47-48` and `bots.html:9,47` as instructed. Found the tab model had
+drifted further than Deviation 14 recorded: no tab strip existed anywhere (confirmed by reading
+`tasks/index.tsx`'s own header comment, which said so directly), and `AppDrawer.tsx:96`'s
+`router.push` meant Bots/Sessions/Tasks were reached by growing the stack, not "real tabs that
+switch in place" the prototype specifically contrasts with the desktop's own push-based framing.
+Stopped and wrote up Deviation 20 (main Deviations list above) before building, as instructed, then
+built `src/components/TabStrip.tsx`: a 48dp row (Bots · Sessions · Tasks, 2dp active indicator,
+12dp inset — `sessions.html:37`'s own measurements), wired into all three screens
+(`app/(main)/bots/index.tsx`, `app/(main)/tasks/index.tsx`, `app/(main)/session-list.tsx`, each
+right under its header), tab taps and swipes both calling `router.replace` rather than `push`.
+
+*In-place switching, device-verified.* Tapped Bots → Sessions → Tasks from a cold Sessions start
+(`57-tap-bots-tab.png`, `58-tap-tasks-tab.png` — active tab and screen content both updated each
+time). Then, from Tasks, an edge-swipe-back (`59-inplace-swipe-result.png`) exited straight to the
+**Android launcher home screen**, not to Bots or Sessions — proof the two `replace` calls never
+grew the stack: there was nothing left to pop to. Relaunched
+(`60-relaunch-after-exit.png`, resumed on Sessions) and checked the other direction too: Bots tab →
+open a bot chat (a genuine `push`) → edge-swipe-back correctly returned to the Bots roster, not the
+launcher (`61-bots-then-chat.png` → `62-bot-chat-open.png` → `73-back-to-bots-tab.png`) — pushed
+screens still stack and unwind normally; only tab-to-tab switches collapse into one entry. One
+real, unrelated flake hit mid-sequence: the Bots roster's `profiles.list` RPC returned "Connection
+timed out" twice in a row after the exit-to-launcher/relaunch cycle (`63-retry.png`, `64-retry2.png`)
+while Sessions' and Tasks' REST calls kept working throughout; a further force-stop + cold relaunch
+cleared it and the same roster loaded fine via the drawer immediately after
+(`71-bots-via-drawer.png`) — recorded as observed, not chased further, since it reproduces the same
+WS-vs-REST asymmetry round 2's "Incidental finding" already logged as pre-existing and out of scope.
+
+**The swipe gesture itself is injectable here — a genuine, checked exception to task 2's finding,
+not a guess generalized from one result.** `TabStrip`'s `Gesture.Pan()` uses the identical API and
+`.runOnJS(true)` threading as the reverted `Sheet` experiment, but is mounted directly on a screen
+rather than inside a `Modal`. `input swipe 700 340 300 340 300` (right-to-left, over the tab row)
+advanced Bots → Sessions (`74-tabstrip-swipe-attempt.png`); the reverse direction
+(`75-swipe-reverse.png`) went back. Repeated after widening `EDGE_GUARD_PX` and a full app restart:
+same result both ways (`81-final-interior-swipe.png`). No crash on either swipe, confirming the
+`runOnJS` fix generalizes.
+
+**One residual risk, not resolved, recorded rather than hidden:** an edge-originating swipe on the
+tab row (meant to defer to the system/`react-native-screens` back gesture via `EDGE_GUARD_PX`) gave
+two different outcomes across nominally identical injected swipes from the same starting tab — once
+correctly deferring (`78-edge-guard-retest.png`: exited to the launcher, `TabStrip`'s own gesture
+never fired), once advancing the active tab by two instead of being blocked
+(`76-edge-guard-test.png`: Bots → Tasks in one swipe). Raised `EDGE_GUARD_PX` from 24 to 40 for more
+margin (`src/components/TabStrip.tsx`) but this reads as a genuine touch-dispatch race between two
+competing native gesture recognizers, not a threshold bug a bigger number reliably fixes — full
+reasoning in Deviation 20. **Manual check needed**, listed below.
+
+**Task 4 (device-verify group E's exit criterion), part by part:**
+
+| part | status | evidence |
+| --- | --- | --- |
+| an edge swipe from the left pops every stack screen | **met by injection** — 7 screen types, both a real gesture-mechanism check and a mid-screen control | table above; `14-`, `17-`, `19-`, `21-`, `27-`, `33-`, `37-*.png` |
+| a swipe down dismisses every sheet | **not met by injection; manual check pending** — round 10's finding stands, RNGH tried and also failed, reverted | `40-`, `41-`, `48-`, `50-`, `51-`, `55-*.png` |
+| a swipe moves between the three tabs | **met by injection** for the tab row itself, both directions, twice over (before and after the edge-guard widen); **manual check pending** for the edge-band-only race | `74-`, `75-`, `81-*.png`; edge-band flake in `76-`/`78-*.png` |
+
+**Task 5.** `npm run check`, run after the last edit (`TabStrip.tsx`'s label-constant and
+`radius.full` fixes, both required by the existing `labels.test.ts` and `no-numeric-border-radius`
+lint rule — first pass caught both, second pass was clean):
+
+```
+Test Files  73 passed (73)
+     Tests  772 passed (772)
+...
+Ran 52 tests in 3.700s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+(772 vs round 14's 771: `labels.test.ts`'s own literal-string scan runs against every source file
+including the two new ones, `TabStrip.tsx` and its wiring, so its assertion count shifted with the
+file set — not a new test file.) The `hermes-push` plugin's printed `Traceback ... RuntimeError:
+boom` is the same intentionally-mocked failure prior rounds noted, inside the 52-test `OK`.
+
+**Manual checklist — exactly what to do on the emulator window with the mouse, and what to
+expect.** Both items below could not be proven or disproven by adb injection from this harness;
+neither "works" nor "doesn't work" should be assumed until checked this way.
+
+1. Open any sheet (e.g. Bots roster → **+** → New bot). Place the mouse pointer on the sheet's
+   handle or title row (near the top of the white sheet, below the grey scrim) and drag down past
+   roughly a quarter of the screen height, then release.
+   **Expected:** the sheet slides down and closes, the same way tapping **✕** does.
+2. From any of the Bots / Sessions / Tasks tabs, place the pointer over the tab row itself (Bots ·
+   Sessions · Tasks, just under the header) and drag left, then separately drag right, each a
+   couple of hundred pixels, release.
+   **Expected:** dragging left moves to the next tab (Bots→Sessions→Tasks), dragging right moves to
+   the previous one; the active tab's label and underline update, and the screen below switches.
+3. From the **Bots** tab specifically (leftmost), start a drag very close to the left edge of the
+   screen (within the first few millimetres) and drag right.
+   **Expected, and the specific thing round 15 couldn't confirm either way:** this should behave
+   like Android's edge-back gesture (pop/exit), **not** advance the tab strip, and it should never
+   jump more than one tab or do both at once. If a swipe that starts right at the edge sometimes
+   changes tabs unexpectedly, that's the race flagged in Deviation 20 and this round's `TabStrip`
+   section above, still unresolved.
+
+**Teardown.**
+
+- **(a) Hone restored, throwaway removed.** Navigated Settings → Registered gateways →
+  "Switch to Hone"; registry log confirmed the flip immediately:
+  ```
+  09-17 01:04:09.463 ReactNativeJS: [registry] active: conn-1789205984475-cpgcec (Hone)
+  09-17 01:04:09.465 ReactNativeJS: [registry] list: conn-1789586777745-rnovkv (http://10.0.2.2:9128) primary=false needsLogin=false
+  09-17 01:04:09.465 ReactNativeJS: [registry] list: conn-1789205984475-cpgcec (Hone) primary=true needsLogin=false
+  ```
+  Removed the throwaway under the destructive-tap rule: fresh dump immediately before tapping
+  **Remove**, confirm dialog read before confirming — `"http://10.0.2.2:9128" will be removed from
+  this app. The instance itself is not touched` (`96-remove-confirm-dialog.png`) — named the
+  throwaway, not Hone, so confirmed. Force-stopped and cold-launched
+  (`monkey -p com.nousresearch.hermes.mobile -c android.intent.category.LAUNCHER 1` — the first
+  attempt omitted `-p` and launched the Files app instead by accident, caught immediately via
+  screenshot and not treated as the real result). Registry log, the storage readback:
+  ```
+  09-17 01:05:44.165 ReactNativeJS: [registry] active: conn-1789205984475-cpgcec (Hone)
+  09-17 01:05:44.167 ReactNativeJS: [registry] list: conn-1789205984475-cpgcec (Hone) primary=true needsLogin=false
+  ```
+  One connection, Hone, active and primary, landed on `/session-list` (`99-teardown-final2.png`).
+- **(b) Metro and the gateway stopped; ports confirmed refusing.** No trace proxy was used this
+  round. Identified processes by full command line first, to avoid touching the persistent,
+  unrelated `hermes gateway run` pair (PIDs 7228/16140, no `--port` flag, left running — not this
+  round's process, per the standing "never touch Hone" rule) versus this round's own
+  `hermes.exe serve --port 9128` pair (PIDs 16860/20032). Killed Metro and the two port-9128
+  processes by PID only:
+  ```
+  metro 8081:   curl exit=7 (connection refused)
+  gateway 9128: curl exit=7 (connection refused)
+  ```
+  The unrelated pair (7228/16140) confirmed still running afterward, untouched.
+- **(c) Scratch state deleted, each path named and re-checked.** All four `ls`'d again afterward,
+  all four "No such file or directory":
+  1. `%TEMP%\hermes-m14-device-home` (the scratch `HERMES_HOME`, `.cookie-secret` included);
+  2. `D:\Stuff\hermes-android-field\m14-device\scratch-password.txt`;
+  3. `~/.local/bin/coder.bat`;
+  4. `~/.local/bin/researcher.bat`.
+- **(d) `adb reverse` empty; `font_scale` 1.0.** `adb reverse --remove-all` wedged past its timeout
+  first — the same hang rounds 6, 8, 9 and 10 all hit. Per the standing rule, killed only the two
+  local `adb.exe` processes (the server, PID 12880, and the wedged client, already gone by the time
+  it was checked), then `adb start-server`; the device reattached on its own
+  (`emulator-5554 device`) and the retry completed clean: `remove-all exit=0`, `reverse --list`
+  exit 0, empty. `settings get system font_scale` → `1.0` (never changed this round).
+- **(e) Emulator shut down, AVD intact.** `adb emu kill` → `OK: killing emulator, bye bye`;
+  `adb devices` empty immediately after. `emulator -list-avds` still lists `hermes-test`: shut
+  down, not deleted.
+- **(f) Push and clean tree — pending**, immediately after this log entry is committed.
 
