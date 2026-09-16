@@ -50,7 +50,7 @@ until the gateway exposes a group transport to non-desktop sources.
 - [x] † `src/api/models.ts`: model options for the picker (the same source Settings › Models
       uses) and per-session `config.set` for `model` and `reasoning_effort` scoped with
       `--session`, never profile-wide.
-- [ ] Composer trailing controls: a model chip and an effort chip. Model chip opens a searchable
+- [x] Composer trailing controls: a model chip and an effort chip. Model chip opens a searchable
       sheet of available models; effort chip opens a five-option sheet (none, low, medium, high,
       xhigh, labelled Off … XHigh). Both change the current session only and reflect in the next
       `session.info`.
@@ -59,7 +59,7 @@ until the gateway exposes a group transport to non-desktop sources.
 - [x] Jump-to-latest: while the reader is scrolled away from the tail, a pill shows "Latest" with
       the count of assistant messages that arrived since; streaming auto-follow only when within
       one viewport of the tail. Tapping the pill scrolls to the tail and clears the count.
-- [ ] Hold-to-dictate: tap the mic to dictate into the composer (M11's path, unchanged); hold
+- [x] Hold-to-dictate: tap the mic to dictate into the composer (M11's path, unchanged); hold
       the mic for 2.5 s to dictate and auto-send on release, with a visible "Auto-send" state and
       an "Edit before sending" escape while the transcript is still editable. Haptic on the
       threshold.
@@ -117,7 +117,7 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
 - [x] Jump-to-latest: scroll up during a streaming reply; the pill appears with a count that
       increments per completed assistant message; tapping it lands on the tail; no auto-scroll
       happened while scrolled away.
-- [ ] Hold-to-dictate: a 2.5 s hold auto-sends the transcript on release (a prompt lands on the
+- [x] Hold-to-dictate: a 2.5 s hold auto-sends the transcript on release (a prompt lands on the
       wire with that text); a tap only fills the composer.
 - [x] Response stats appear only on messages that carry server `usage`; a transcript row from
       before the feature shows none.
@@ -2332,3 +2332,40 @@ Boxes are deliberately left unticked in this file — the user ticks them.
 - **(f) Pushed, working tree clean.** Four commits this round — `019a36b` (the Sheet fix),
   `697d24b` (task 1's evidence and task 2's plan), `782b948` (hold-to-dictate), `0b1db52` (this
   log and Deviations 10-12) — plus this teardown entry. Ordinary `git push`, no force, no merge.
+
+### Opus review, group B closed (2026-09-16)
+
+Opus checked round 9 against its commits, dumps and host state, and re-ran `npm run check` at
+`3826c98` (exit 0, 653 tests). `src/upstream/` is still byte-identical to `4363d9e`. Nothing was
+left listening after teardown, including the trace proxy.
+
+**Ticked:**
+- **Composer chips task.** Round 8's "FlashList row bounds" diagnosis was wrong. The real cause was
+  `Sheet`'s `absoluteFill` root filling the composer's chip row instead of the screen, so Android
+  never delivered touches to rows drawn outside it. Fixed in `019a36b` by hosting `Sheet` in a
+  `Modal`. Effort rows now measure 48.0 dp and model rows 57.9–58.3 dp, in both themes. Taps at the
+  dumped row centres hit the intended rows, confirmed by reading back `session.resume().info`.
+- **Hold-to-dictate task and exit criterion.** Verified through the dev-only transcript seam:
+  - A tap fills the composer and sends nothing.
+  - A hold past 2.5 s sends exactly the transcript on the wire, reproduced three times.
+  - The escape sends nothing and leaves the text in the composer.
+
+  The auto-send waits for a 1.5 s grace window after release (Deviation 12) rather than firing the
+  instant the finger lifts. That window is what makes "Edit before sending" possible. Recognising
+  real speech remains M11's `[physical]` item; this criterion covers M15's hold, send and escape
+  logic, which the seam exercises through the real recorder callback path.
+
+**Carried forward; both must be done before M15 is `done`:**
+1. **Sheet regression pass.** Hosting `Sheet` in a `Modal` changes every consumer, and only the two
+   chip sheets were checked on device. Still to check: bots (new bot), cron (blueprints), projects,
+   settings/profiles (create), `BotSettingsSheet` including the nested Capabilities sheet, and
+   `Menu` (message long-press, row menus). For each: it opens, the keyboard doesn't cover focused
+   inputs, back and swipe-down dismiss it, nested sheets stack, and touch targets are 48 dp.
+2. **`app/dev/` is reachable in release builds.** `app/dev/primitives.tsx` (since M14) and
+   `app/dev/dictation-seam.tsx` have no layout guard and no `__DEV__` gate, so a deep link opens
+   them. The seam is inert outside `__DEV__`, so this is exposure, not a security hole. Add an
+   `app/dev/_layout.tsx` that redirects when `!__DEV__`, with a test.
+
+**Cosmetic, not blocking:** the model sheet's fixed 320 dp list height isn't a multiple of the
+58 dp row pitch, so the last visible row is always partly cut off.
+
