@@ -1781,3 +1781,223 @@ at `f9ff3be` (exit 0, 627 tests). `src/upstream/` is byte-identical to the group
 - **Hold-to-dictate.** Not started. It needs a test plan first, because the emulator's dictation
   never produced real text in M11.
 
+### Round 9 — chip sheets' touch targets root-caused and fixed, hold-to-dictate (2026-09-16)
+
+**Task 1 (Model and effort sheets, 48 dp): met, root-caused and device-verified.**
+
+*Root cause — not the rows, and not FlashList.* Round 8 filed this as "likely a FlashList
+row-measurement issue specific to these two sheets". It is neither. Neither sheet contains a
+`FlashList`: `ModelChip.tsx:133` uses a plain `ScrollView` (round 7's own fix) and
+`EffortChip.tsx:86` renders a `Menu`, which is `Pressable` rows inside a `Sheet`
+(`Menu.tsx:36-57`). The only `FlashList` in the app is the transcript's (`Transcript.tsx:269`),
+which sits *behind* the sheet. The rows' own layout was never wrong either — `Menu.tsx:67-72`
+and `ModelChip.tsx:179-185` both already set `minHeight: 48`.
+
+The defect is in the `Sheet` primitive's root, `Sheet.tsx:77` (pre-fix):
+`<View style={StyleSheet.absoluteFill}>`. `absoluteFill` fills *the caller's mount point*, not
+the screen. Every sheet that worked is mounted at the top level of a full-screen container
+(`app/(main)/bots/index.tsx:330`, `cron/index.tsx:239`, `settings/profiles.tsx:282`,
+`projects/index.tsx:208`, `sessions/[id].tsx:195`), where those are the same thing. `ModelChip`
+and `EffortChip` are mounted inside `Composer`'s `chipRow` (`Composer.tsx:477-484`), a 144 px
+band — where they are not. Android draws children that overflow their parent (RN Views default
+to `overflow: 'visible'`) but `ViewGroup.dispatchTouchEvent` does not dispatch touches to them,
+and `AccessibilityNodeInfoDumper` intersects every node's bounds with its ancestors' visible
+bounds. One cause, both of round 8's symptoms at once: the rows drew where you could see them,
+the taps went to the composer underneath, and `uiautomator` reported collapsed or inverted
+rectangles.
+
+*Proved on device before the fix* (hermes-test AVD, 1080x2400 @ 420 dpi, so 1 dp = 2.625 px and
+48 dp = 126 px), with the pre-fix `Sheet.tsx` deliberately checked back out. Every node of both
+sheets is clipped to exactly `y` in `[1995, 2139]` — 144 px, which is `chipRow` exactly. Effort
+sheet:
+
+```
+      [168,1995][912,1877] 744x-118px = 283.4x-45.0dp   TextView  'Reasoning effort'  <== DEGENERATE
+CLICK [912,1995][1038,1909] 126x-86px = 48.0x-32.8dp    ViewGroup desc='Close'        <== DEGENERATE
+CLICK [42,1995][1038,2067] 996x72px  = 379.4x27.4dp     ViewGroup desc='Off'          <== UNDER 48dp
+CLICK [42,2067][1038,2139] 996x72px  = 379.4x27.4dp     ViewGroup desc='Minimal'      <== UNDER 48dp
+CLICK [42,2193][1038,2139] 996x-54px = 379.4x-20.6dp    ViewGroup desc='Low'          <== DEGENERATE
+CLICK [42,2319][1038,2139] 996x-180px= 379.4x-68.6dp    ViewGroup desc='Medium'       <== DEGENERATE
+```
+
+Model sheet, same run, same clip band — the rows are gone from the dump entirely because their
+clipped rectangle is empty, leaving only the title, the close button and the search field:
+
+```
+      [168,1995][912,1877] 744x-118px = 283.4x-45.0dp   TextView  'Model'             <== DEGENERATE
+CLICK [912,1995][1038,1909] 126x-86px = 48.0x-32.8dp    ViewGroup desc='Close'        <== DEGENERATE
+CLICK [42,1995][1038,2067] 996x72px  = 379.4x27.4dp     EditText  'Search models…'    <== UNDER 48dp
+```
+
+Note the unclipped pitch is already visible in the first block: Low at 2193, Medium at 2319 —
+126 px apart, i.e. the rows were always 48 dp. And the composer's own controls stay listed as
+clickable *over* the sheet in the same dump (`[21,2012][385,2138] desc='Model'`), which is
+exactly why round 8 saw taps "fall through to the composer's own input/icons".
+
+*Fix* (`019a36b`, `src/components/ui/Sheet.tsx`): host the whole sheet in a react-native `Modal`
+(`transparent`, `statusBarTranslucent`, `animationType="none"` so the existing `Animated`
+transition still owns the motion). A Modal gets its own full-screen window, so touch dispatch,
+`uiautomator`'s reported bounds, and the body's percentage `maxHeight` all resolve against the
+display rather than the caller's mount point. Two knock-ons, both deliberate: `onRequestClose`
+gives every sheet Android back-dismissal, which the plain-View version never had (pre-fix, Back
+popped the whole chat screen instead — observed this round); and `mounted` (a ref) had to become
+`rendered` (state), because a modal left mounted after closing swallows every touch on the screen
+behind it, so it must stop rendering once the close animation settles, and only state re-renders.
+
+*Dumps after the fix.* Effort sheet, **light**, every clickable node — all eight rows exactly
+126 px = 48.0 dp, nothing degenerate:
+
+```
+CLICK [912,1141][1038,1267] 126x126px = 48.0x48.0dp  centre=(975,1204)  ViewGroup desc='Close'
+CLICK [42,1299][1038,1425]  996x126px = 379.4x48.0dp centre=(540,1362)  ViewGroup desc='Off'
+CLICK [42,1425][1038,1551]  996x126px = 379.4x48.0dp centre=(540,1488)  ViewGroup desc='Minimal'
+CLICK [42,1551][1038,1677]  996x126px = 379.4x48.0dp centre=(540,1614)  ViewGroup desc='Low'
+CLICK [42,1677][1038,1803]  996x126px = 379.4x48.0dp centre=(540,1740)  ViewGroup desc='Medium'
+CLICK [42,1803][1038,1929]  996x126px = 379.4x48.0dp centre=(540,1866)  ViewGroup desc='High'
+CLICK [42,1929][1038,2055]  996x126px = 379.4x48.0dp centre=(540,1992)  ViewGroup desc='Extra High'
+CLICK [42,2055][1038,2181]  996x126px = 379.4x48.0dp centre=(540,2118)  ViewGroup desc='Max'
+CLICK [42,2181][1038,2307]  996x126px = 379.4x48.0dp centre=(540,2244)  ViewGroup desc='Ultra'
+```
+
+Effort sheet, **dark** (`adb shell cmd uimode night yes`) — identical geometry; only the palette
+changes (`21-effort-sheet-dark.png` shows the dark surface with `Low` in primary):
+
+```
+CLICK [912,1141][1038,1267] 126x126px = 48.0x48.0dp  centre=(975,1204)  ViewGroup desc='Close'
+CLICK [42,1299][1038,1425]  996x126px = 379.4x48.0dp centre=(540,1362)  ViewGroup desc='Off'
+CLICK [42,1425][1038,1551]  996x126px = 379.4x48.0dp centre=(540,1488)  ViewGroup desc='Minimal'
+CLICK [42,1551][1038,1677]  996x126px = 379.4x48.0dp centre=(540,1614)  ViewGroup desc='Low'
+CLICK [42,1677][1038,1803]  996x126px = 379.4x48.0dp centre=(540,1740)  ViewGroup desc='Medium'
+CLICK [42,1803][1038,1929]  996x126px = 379.4x48.0dp centre=(540,1866)  ViewGroup desc='High'
+CLICK [42,1929][1038,2055]  996x126px = 379.4x48.0dp centre=(540,1992)  ViewGroup desc='Extra High'
+CLICK [42,2055][1038,2181]  996x126px = 379.4x48.0dp centre=(540,2118)  ViewGroup desc='Max'
+CLICK [42,2181][1038,2307]  996x126px = 379.4x48.0dp centre=(540,2244)  ViewGroup desc='Ultra'
+```
+
+Model sheet, **light**, every clickable node (filtered to `deepseek` so the interesting rows are
+adjacent) — rows are 152-153 px = 57.9-58.3 dp, taller than 48 dp because each carries a model
+line plus a provider line:
+
+```
+CLICK [912,1093][1038,1219] 126x126px = 48.0x48.0dp  centre=(975,1156)  ViewGroup desc='Close'
+CLICK [42,1251][1038,1383]  996x132px = 379.4x50.3dp centre=(540,1317)  EditText  'Search models…'
+CLICK [42,1466][1038,1619]  996x153px = 379.4x58.3dp centre=(540,1542)  ViewGroup desc='deepseek-v4-flash, opencode-go'
+CLICK [42,1618][1038,1770]  996x152px = 379.4x57.9dp centre=(540,1694)  ViewGroup desc='deepseek-v4-pro, opencode-go'
+CLICK [42,1771][1038,1923]  996x152px = 379.4x57.9dp centre=(540,1847)  ViewGroup desc='deepseek-flash, opencode-go'
+CLICK [42,1923][1038,2075]  996x152px = 379.4x57.9dp centre=(540,1999)  ViewGroup desc='deepseek-v4.1-flash, opencode-go'
+CLICK [42,2075][1038,2228]  996x153px = 379.4x58.3dp centre=(540,2151)  ViewGroup desc='deepseek-v4-flash-vision-exp, opencode-go'
+CLICK [42,2227][1038,2306]  996x79px  = 379.4x30.1dp centre=(540,2266)  ViewGroup desc='deepseek-v4-flash-free, opencode-free'
+```
+
+Model sheet, **dark** — identical geometry to the light dump above, same eight nodes
+(`20-model-sheet-dark.xml` / `20-model-sheet-dark.png`).
+
+One honest caveat on that last model row: 30.1 dp. That is the list's own scroll viewport
+(`ModelChip.tsx:176-178`, `listOuter: { height: 320 }` → 840 px, here `y` in `[1466, 2306]`)
+cutting the row that is half-scrolled off its bottom edge. Scrolling it into view measures it at
+57.9 dp, and scrolling *past* it inverts the rows now off the top — normal behaviour for any
+scrolling list, the same way the session list's bottom row measures 38.5 dp against the screen
+edge. It is categorically different from the pre-fix state, where the clip band was 144 px total
+and *no* row was ever fully hittable. Not fixed further: the fixed 320 dp list height is not a
+multiple of the 58 dp row pitch, so the last visible row is always part-cut; that is cosmetic and
+was not part of this task.
+
+*Selection by tapping, read back off the gateway.* Both taps used a fresh `uiautomator dump`
+immediately before, and the node's own dumped centre. The session was
+`20260916_145310_0997eb`; `session.info` was read over the RPC (`rpc-check.mjs` — password login
+to `/auth/password-login` per `plugins/dashboard_auth/basic/__init__.py:123`, then
+`/api/auth/ws-ticket`, then `/api/ws` with the `hermes-gateway-v1` /
+`hermes-gateway-ticket.<ticket>` subprotocols, `src/gateway/dial.ts:29,56`).
+
+Before either tap:
+
+```
+{"model":"mimo-v2.5","provider":"opencode-go","reasoning_effort":"","title":"Greeting","stored_session_id":"20260916_145310_0997eb"}
+```
+
+Tapped the model row `desc='deepseek-v4-flash, opencode-go'` at its dumped centre `(540,1542)` —
+deliberately the hardest case available, with `deepseek-v4-pro`, `deepseek-flash`,
+`deepseek-v4.1-flash` and `deepseek-v4-flash-vision-exp` as immediate neighbours. On the wire
+(see task 4 for the trace proxy):
+
+```
+09:56:50.454 C->S {"jsonrpc":"2.0","id":"r4","method":"config.set","params":{"key":"model","session_id":"62cf4542","value":"deepseek-v4-flash --provider opencode-go --session"}}
+```
+
+Tapped the effort row `desc='Low'` at its dumped centre `(540,1614)`, between `Minimal` and
+`Medium`:
+
+```
+09:58:07.716 C->S {"jsonrpc":"2.0","id":"r5","method":"config.set","params":{"key":"reasoning","session_id":"62cf4542","value":"low"}}
+```
+
+`session.info` after both:
+
+```
+{"model":"deepseek-v4-flash","provider":"opencode-go","reasoning_effort":"low","title":"Greeting","stored_session_id":"20260916_145310_0997eb"}
+```
+
+Both taps hit the intended row, not a neighbour. The header re-rendered to
+`opencode-go · deepseek-v4-flash · low`.
+
+*Regression check on the shared primitive.* The `Modal` change touches every sheet in the app, so
+one screen-level sheet was re-checked on device: the chat header's overflow `Menu`
+(`SessionHeader.tsx:229`) still opens, measures `996x126px = 379.4x48.0dp`, and its "Refresh
+conversation" item still fires —
+`10:04:26.318 C->S {"jsonrpc":"2.0","id":"r6","method":"session.resume","params":{"session_id":"20260916_145310_0997eb"}}` —
+with the transcript intact.
+
+**Task 2 (hold-to-dictate test plan), written before any code.**
+
+*(a) What the dictation path actually is.* Gateway STT over REST, not on-device recognition and
+not the `voice.*` RPCs. The chain is: the mic button (`Composer.tsx:504-518`) → `toggleRecording`
+(`Composer.tsx:366-413`) → `startRecording` / `stopRecordingAndTranscribe`
+(`src/voice/recorder.ts`, `expo-audio` capturing m4a) → `transcribeAudio` (`src/voice/api.ts:66`)
+→ `POST /api/audio/transcribe` with a `data:audio/m4a;base64,…` payload → the host's local
+Whisper, upstream `hermes_cli/web_routers/audio.py`. There is no on-device recognizer and no
+`voice.*` call site anywhere in `src/` (grepped; the only hit is a comment in
+`src/api/system.ts:23`). AGENTS.md is explicit about why: "`voice.*`/`wake.*` RPCs … drive the
+*server's* mic and speaker. Mobile voice goes through `/api/audio/*` with on-device capture."
+
+*Why M11's emulator text was empty* (M11-push-and-voice.md:384-395): the emulator's virtual
+microphone has no scriptable way to inject speech — no `adb emu` mic command, and
+`emulator -help-audio` offers only a backend choice, no WAV-input flag — so what `expo-audio`
+records is silence. The host's Whisper "base" model answers silence with an empty transcript
+rather than an error, which is `audio.py`'s own documented behaviour ("no speech detected …
+returns an empty transcript"), and `Composer.tsx`'s `if (transcript)` guard then correctly
+inserts nothing. So the failure is *upstream of the app*: the capture, encode, upload and
+empty-result paths were all proven live in M11; only the audio content was missing.
+
+*(b) The two options, evaluated.*
+
+**Option 1 — the emulator's host-audio microphone with a played sample.** It would prove the one
+thing nothing else can: that real audio in produces real text out, end to end (expo-audio →
+m4a → base64 → POST → Whisper → transcript). It proves nothing at all about this task's actual
+subject — the hold threshold, the auto-send decision, or the escape — because those sit
+downstream of a transcript and behave the same whatever produced it. It is also not achievable
+here: routing audio into the guest means feeding the *host's* default recording device, and this
+machine has no microphone and no virtual loopback device to play a WAV into; installing an audio
+driver (VB-Cable or equivalent) is out of scope for this round. Even with one, the sample would
+have to be played inside the 2.5 s hold window, which is timing-fragile for a scripted run. This
+is precisely the gap M11 already looked at and left open.
+
+**Option 2 — a `__DEV__`-only transcript-source seam.** Keep `startRecording` and the real
+recorder stop untouched — permission, native capture and stop all still run for real — and
+substitute only the value that `transcribeAudio` would have returned, so fixed text arrives at
+exactly the callback point a real transcript would. It proves everything this task adds: that a
+tap fills the composer and sends nothing; that a ≥2.5 s hold auto-sends on release and puts
+`prompt.submit` on the wire with exactly that text; that "Edit before sending" cancels the
+auto-send and leaves the text editable; and that a cancel sends nothing. It does not prove real
+recognition — mic capture content, encoding, upload and Whisper are all bypassed by construction.
+It must be `__DEV__`-gated so it cannot reach a shipped build.
+
+**Option 3 — both.** Strictly the best coverage, and the right answer if option 1 were available.
+Here it collapses to option 2, because option 1 cannot be run on this machine.
+
+*Chosen: option 2, with the result labelled for what it is.* The two halves are genuinely
+separable, and M11 already closed the other one as far as this environment allows: M11's
+2026-09-09 device pass proved permission, native recording, upload and the empty-transcript guard
+live. So the seam covers the logic M15 actually adds, M11 covers the mechanism, and the one thing
+neither covers — a real spoken word coming back as text — stays M11's open `[physical]`-class
+item. Task 4's result is therefore labelled "wire path verified with the dev seam; real-speech
+recognition remains M11's [physical] item", per this round's own instruction.
