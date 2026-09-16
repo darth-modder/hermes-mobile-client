@@ -2893,3 +2893,212 @@ Vitest: **714 passed (71 files)**, against round 10's 660 — +50 `cron-schedule
 - *`app/dev/` release-path gate* — unchanged, still code-verified only.
 - *Two sub-48 dp inputs on the old cron screen* — moot: that screen is now a `<Redirect>` and the
   inputs are gone with it. The replacement's touch targets are **unmeasured**.
+
+### Round 12 — round 11's claims corrected; sheets and Tasks tab device-verified, five fixes (2026-09-16)
+
+Branch `m15-bots-mobile-ux`, from `9de462a`. Six commits: `bf84a78` (task 0 correction), `7f7d371`,
+`4781d18`, `ee5ecdc`, `565575d` (fixes found by verification), plus this log.
+
+Evidence: `%LOCALAPPDATA%\hermes-android-field\m15-r12\` — 60+ dumps, screenshots, the wire trace,
+`setup-gw.log`, `metro.log`.
+
+**Task 0 (environment): done. Three round-11 claims were false, all mine.** Commit `bf84a78`.
+
+The field kit was there the whole time, at
+`C:\Users\you\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\hermes-android-field\`
+— 20 round folders, `m14-device/setup-gw.sh`, `m15-r10/` with its 24 files.
+
+Why round 11 missed it: `%LOCALAPPDATA%` in this shell resolves to the **un-redirected**
+`C:\Users\you\AppData\Local`, which is not where the kit lives. Earlier rounds ran with
+the MSIX container's merged view, where `Packages\Claude_*\LocalCache\Local` overlays
+`AppData\Local`, so the same path string reached the kit for them and missed it here.
+Independently, `setup-gw.sh` was searched for only inside the *repo* — the brief's
+`m14-device\setup-gw.sh` was read as repo-relative when it is field-kit-relative — and "not in the
+repo" was then written up as "does not exist anywhere". Two different mistakes, same wrong
+conclusion.
+
+```
+$ echo "LOCALAPPDATA=$LOCALAPPDATA TEMP=$TEMP"
+LOCALAPPDATA=C:\Users\you\AppData\Local TEMP=C:\Users\COMPUT~1\AppData\Local\Temp
+```
+
+Note the split that matters for the script: `hermes-android-field` lives under the LocalCache
+overlay, but `hermes` (with `bin/hermes.exe` and `.env`) lives under the real `AppData\Local`.
+`setup-gw.sh` uses `$LOCALAPPDATA` for **both** (`DIR` at :2, `REAL`/`H` at :5 and :24). Running
+it with `LOCALAPPDATA=C:/Users/you/AppData/Local` works because `DIR` is only ever
+*written* to; that directory was created rather than the kit being moved or a junction added.
+
+**The 401s were not pairing.** Round 11's hand-started gateway had no basic auth, so no dashboard
+session token could be minted. `setup-gw.sh` sets
+`HERMES_DASHBOARD_BASIC_AUTH_USERNAME`/`_PASSWORD` plus the pinned `_SECRET` (:27-33). Signing in
+at `POST /auth/password-login` with `{"provider":"basic","username":"tester","password":…}`
+returns 200 and sets `hermes_session_at`; that cookie (or the same value as a `Bearer` token)
+opens the whole cron surface:
+
+```
+=== cron REST, signed in (cookie jar) ===
+GET /api/cron/jobs -> 200  bytes=1059
+GET /api/cron/blueprints -> 200  bytes=21631
+GET /api/cron/delivery-targets -> 200  bytes=391
+
+=== same endpoints WITHOUT the cookie (round 11's state) ===
+GET /api/cron/jobs -> 401
+GET /api/cron/blueprints -> 401
+```
+
+Pairing was never needed.
+
+**Task 1 (sheet fixes from `434c3cc`): (a) and (c) device-verified; (b) NOT met.**
+
+- **(a) Scrim — verified.** The backdrop now renders as a full-screen node,
+  `[0,0][1080,2400] 411.4x914.3dp 'Close'`, in every sheet dump; in round 10 it never appeared at
+  all. Visually dimmed behind the sheet (`14-newtask-sheet.png` — the list header behind it is
+  visibly greyed). Nested dismissal works one level at a time: from `BotSettings → Capabilities`,
+  one backdrop tap at (540,200) returned to `BotSettingsSheet` (its `Model` row present again),
+  a second closed it back to the chat (`Bot settings` header button present).
+  `54..56-*.xml`.
+- **(c) Keyboard cap — verified** on the tallest sheet, `BotSettingsSheet` with the soul editor
+  focused. Keyboard down, the editor sits at `y 1345–1732`. With `mInputShown=true` it lifts to
+  `y 677–1064` and the sheet's header `Close` is at `y 243–369` — both fully on screen, the header
+  not pushed off the top, which is exactly what round 11's `windowHeight - keyboardInset` cap was
+  for. `57-soul-closed.xml`, `58-soul-keyboard.xml`.
+- **(b) Capabilities 48 dp — NOT met, and round 11's fix for it did not work.** See `565575d`.
+  `pointerEvents`/`importantForAccessibility` are applied by `ReactViewGroup`, and RN's `Switch`
+  renders a native `AndroidSwitch` that is not one, so round 11's props on the Switch were
+  silently ignored. Moving them to a wrapping `View` fixes the **touch** half — confirmed by
+  tapping the label (x=300) and the Switch itself (x=977) and getting the same row toggle either
+  way, and by the save round-tripping (`browser` gone from `enabled_toolsets` in
+  `profiles/coder/config.yaml`). The **accessibility node** survives all three attempts tried
+  (props on the Switch; props on a wrapping View with `no-hide-descendants`; `accessible={false}`
+  + `focusable={false}`): `uiautomator` still reports one `Switch 46.5x27.0dp clickable=true` per
+  row. So the behaviour the rule protects is correct and the criterion as written is not met.
+  Removing the node needs the native `Switch` to stop being rendered — a View-drawn toggle — which
+  is a control rewrite, deliberately not started at the end of a verification round.
+
+**Task 2 (Tasks tab, `3a616f3`): device-verified, with four fixes found.**
+
+- **(a) Drawer and redirects — verified.** Drawer row three reads `Tasks`
+  (`[0,490][787,616] 299.8x48.0dp`) and opens `/(main)/tasks`. The old `/(main)/cron` routes were
+  **not** re-exercised as deep links this round — Deviation 17's redirect is still code-only.
+- **(b) List — verified (dark theme only).** Rows carry name, schedule in words, next and last
+  run, and the state label, with the two Field counters above them:
+
+  ```
+  'RUNNING NOW' '0'        'SCHEDULED' '2'
+  'Morning inbox digest'  'scheduled'
+  'Every day at 9:00 AM · 0 9 * * *'
+  'Next Sep 17, 2026, 9:00 AM · last —'
+  'Morning briefing'      'scheduled'
+  'Every day at 8:00 AM · 0 8 * * *'
+  'Next Sep 17, 2026, 8:00 AM · last —'
+  ```
+
+  This is the `cron-schedule.ts` port doing real work: the gateway returns
+  `schedule_display: "0 9 * * *"` and the row reads "Every day at 9:00 AM · 0 9 * * *".
+  **Light theme was not captured — that half of (b) is not done.**
+- **(c) Exit criterion — two thirds met, one third not reachable.**
+  - *Create from a template — met.* Wire trace through a logging proxy on 9142:
+
+    ```
+    --- POST /api/cron/blueprints/instantiate
+    body: {"blueprint":"morning-brief","values":{"time":"08:00","deliver":"origin"}}
+    <-- 200 {"id":"24e0fd2f07f8","name":"Morning briefing",...,
+             "schedule":{"kind":"cron","expr":"0 8 * * *","display":"0 8 * * *"},
+             "schedule_display":"0 8 * * *",...}
+    ```
+
+    Read back from the gateway (`18-job-readback.txt`): `deliver: "origin"`, `enabled: true`,
+    `state: "scheduled"`, `next_run_at: "2026-09-17T08:00:00+05:00"`, `last_run_at: null`.
+    `model` was then pinned to `deepseek-v4-flash` over REST, because **the New task sheet has no
+    Model row** — the prototype draws one (`tasks.html:311-315`) and round 11 did not build it.
+    Recorded as a gap, not fixed this round.
+  - *List shows next and last run — met.* After the trigger the row read
+    `'Next Sep 17, 2026, 8:00 AM · last today 6:26 PM'`, matching the gateway's
+    `last_run_at: 2026-09-16T18:26:25+05:00`.
+  - *"Running now" — NOT met, and not reachable through this API.*
+    `effective_job_state()` (`../hermes-agent/cron/jobs.py:488-501`) can only return `completed`,
+    `error`, `paused` or `scheduled`. The only `running` in `cron/` is `scheduler.py:691`'s
+    `get_inflight_guard_stats()`, an in-memory probe snapshot of `_running_job_ids` that no
+    `/api/cron/*` route exposes. Polling the gateway directly every 1.5 s across a whole run
+    confirms it: `state` stays `'scheduled'` and `last_run_at` is stamped at *dispatch* time. The
+    client's `jobState()` port is faithful (`job-state.ts:16-20`); the data does not exist on this
+    surface. Needs either a new host surface or a different signal, and is a decision to take
+    rather than code to write.
+- **(d) Plain-language echo — verified, both cases.** `0 9 * * *` → `'Every day at 9:00 AM'` next
+  to `'0 9 * * *'`. `*/7 * * * *` → the echo row reads `'*/7 * * * *'`, the raw expression, with no
+  sentence at all. `16-echo-undescribable.xml`.
+- **(e) Detail edit and delete — verified.** Prompt edited in place → `PUT /api/cron/jobs/
+  b32ddbff8455` with `body: {"updates":{"prompt":"Write a haiku about scheduled jobs. Edited by
+  R12."}}`, and the gateway read back exactly that. Delete under the destructive-tap rule: fresh
+  dump, confirm dialog read before confirming — `'Delete cron job?'` / `'This will remove R12
+  heartbeat permanently. It will stop firing immediately.'` / `CANCEL` / `DELETE`, destructive
+  last, naming the throwaway and not another job. After confirming, `DELETE /api/cron/jobs/
+  b32ddbff8455` on the wire and the gateway lists only the two remaining jobs.
+- **(f) dp dumps — partially done.** New task sheet: 12 clickable nodes, **0 under 48 dp** after
+  `7f7d371` (`15-newtask-fixed.xml`). List: 5 nodes, 0 under 48 dp (`27-list-three.xml`). Detail:
+  5 nodes, 0 under 48 dp (`20-detail-dark.xml`). All dark theme; **no light-theme pass**.
+
+**Four defects found by verification and fixed.**
+
+1. `7f7d371` — **the second footer button was off-screen.** `Button`'s `block` is `width: '100%'`
+   (`ui/Button.tsx:93-95`); two in a row ask for 200%. "Create cron" measured
+   `[1059,2191][1080,2317] 8.0x48.0dp` — an 8 dp sliver, unreachable. Same defect in the detail
+   screen's two action rows. Fixed with the call-site `flex: 1` the four older sheets already use.
+   After: Cancel `185.9x48.0dp`, Create cron `185.5x48.0dp`.
+2. `4781d18` — **Trigger now left the list stale**, because `refresh()` never invalidated
+   `['cron-jobs', profile]`. And **"Custom" was rendered as a field label** in both the detail grid
+   and the sheet's picker row; `scheduleLabels.*` names the *kind*, never the field.
+3. `ee5ecdc` — **no polling**, though the prototype specifies it for both the list (`:40`) and the
+   open detail (`:45-46`). `POST .../trigger` returns at *dispatch*, so the invalidation on its
+   success still reads `last_run_at: null`; the run finished ~40 s later and the screen sat on
+   "LAST —". With a 5 s detail poll:
+
+   ```
+   18:42:07  BEFORE  LAST='today 6:38 PM'  RUN_HISTORY='2'
+   18:42:07  TAP Trigger now
+   18:42:10  LAST='today 6:38 PM'  RUN_HISTORY='2'
+   18:42:16  LAST='today 6:42 PM'  RUN_HISTORY='3'
+   ```
+4. `565575d` — the Capabilities touch target, above.
+
+**Task 3 (`npm run check`): exit 0**, after `565575d`.
+
+```
+Ran 52 tests in 3.666s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+Vitest 729 passed (71 files) — unchanged from round 11; this round added no tests, only fixes to
+screens that have none.
+
+**Exit criteria touched.**
+
+- *Tasks* — **not met.** Two of its three clauses are now device-verified (template create posts
+  the expected payload; the list shows next and last run) and the third, "Running now", is not
+  reachable through `/api/cron/*` at all, for the host-side reason above. Not a client defect and
+  not closable by this app alone.
+- *Pairing*, *Banner*, *Gestures* — untouched.
+
+**Carried items, status.**
+
+- *Sheet scrim* (round 10 → 11) — **fixed and device-verified.** Closed.
+- *Capabilities switch under 48 dp* (round 10 → 11) — **still open.** Touch behaviour correct,
+  accessibility node still sub-48 dp; needs a View-drawn toggle.
+- *Keyboard cap on tall sheets* (round 11) — **fixed and device-verified.** Closed.
+- *`AppDrawer`'s zero-height backdrop* (round 11, out of scope) — **still open, unchanged and
+  untouched.** `src/components/AppDrawer.tsx:142-144` still carries only a `backgroundColor`, so
+  the drawer's scrim does not dim and its tap-to-close `Pressable` is zero-sized. Recorded only.
+- *Swipe-down to dismiss a sheet* — still unexercised, still group E.
+- *`app/dev/` release-path gate* — unchanged, code-verified only.
+
+**Not done this round, named rather than implied.** Light-theme dumps and screenshots for the list,
+detail and New task sheet; re-exercising the `/(main)/cron` deep-link redirects on device; a Model
+row in the New task sheet.
