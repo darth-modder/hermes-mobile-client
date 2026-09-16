@@ -2600,3 +2600,80 @@ with a space or a leading capital is still checked.
 tasks 0 and 1 are carried blockers and infrastructure, not criteria, and the Tasks criterion was
 not attempted. The Tasks / Pairing / Banner / Gestures criteria all stand exactly as they did at
 the group B close.
+
+**Task 6 (teardown): done, each step with its own readback.**
+
+- **(a) Hone restored, throwaway removed.** "Switch to Hone" tapped at its dumped centre
+  `(211,677)`; the registry log — the storage readback — flipped straight away:
+
+  ```
+  09-16 16:44:46.457 14104 14184 I ReactNativeJS: [registry] active: conn-1789557801666-7fk4z4 (M15-R10)
+  09-16 16:56:31.766 14104 14184 I ReactNativeJS: [registry] active: conn-1789205984475-cpgcec (Hone)
+  ```
+
+  `M15-R10` then removed under the destructive-tap rule: fresh dump immediately before, the two
+  `Remove` buttons disambiguated by card (M15-R10's action row at `y 761-887`, Hone's at
+  `y 1250-1376`), and the confirm dialog read before confirming — `"M15-R10" will be removed from
+  this app. The instance itself is not touched — you can add it again any time.` It named the
+  throwaway, not Hone, so `REMOVE` was tapped. The list afterwards holds one card:
+
+  ```
+  CLICK [76,351][1004,477] 928x126px = 353.5x48.0dp  centre=(540,414)  ViewGroup desc='Hone, Primary, Current'
+  CLICK [42,816][1038,942] 996x126px = 379.4x48.0dp  centre=(540,879)  Button    desc='Add connection'
+  ```
+
+  Force-stopped and cold-launched (new PID `15348`, against `14104` before):
+
+  ```
+  09-16 16:57:32.058 15348 15426 I ReactNativeJS: [registry] active: conn-1789205984475-cpgcec (Hone)
+  09-16 16:57:32.059 15348 15426 I ReactNativeJS: [registry] list: conn-1789205984475-cpgcec (Hone) primary=true needsLogin=false
+  ```
+
+  One connection, Hone, active and primary, and the app landed on the session list with Hone's own
+  sessions ("Replace Hermes-ifrah with DeepSeek v4.1 flash", …) — never `/connect`.
+  `50-teardown-session-list.png`.
+
+- **(b) Metro, the gateway and the trace proxy stopped; ports refusing.** Stopped by PID — never
+  `hermes serve --stop`, which AGENTS.md records as unscoped and fatal to every Hermes process on
+  the machine. Metro `19128` (`node`), the throwaway gateway `1480` (`python`), the wire-trace
+  proxy `3496` (`node`).
+
+  ```
+  http://127.0.0.1:8081/status     -> exit 7 output=[]
+  http://127.0.0.1:9141/api/health -> exit 7 output=[]
+  http://127.0.0.1:9142/api/health -> exit 7 output=[]
+  ```
+
+  All three `curl --max-time 3` calls exit 7 (connection refused), no body.
+
+- **(c) Scratch state deleted, each path named and re-checked.** Deleted, then `ls`'d again — all
+  report `No such file or directory`:
+  1. the scratch `HERMES_HOME`, `%TEMP%\hermes-m15r10-home` (recursively);
+  2. `%TEMP%\hermes-m15r10-home\.cookie-secret`;
+  3. `scratch-password.txt` in the evidence directory;
+  4. `~/.local/bin/coder.bat` and `~/.local/bin/researcher.bat` — unlike round 9, this round's
+     script is the full `m14-device/setup-gw.sh` copy and *does* keep its two
+     `hermes profile create` lines (task 0 needed a bot for `BotSettingsSheet`), so the two shims
+     existed again and had to go.
+
+  The real Hermes home (`%LOCALAPPDATA%\hermes`) is present and untouched — only ever read from,
+  for the provider key. The evidence directory
+  (`%LOCALAPPDATA%\hermes-android-field\m15-r10\`, screenshots, dumps and `setup-gw-r10.sh`) is
+  left in place per the round's own instruction.
+
+- **(d) `adb reverse` empty, `font_scale` 1.0.** `adb reverse --remove-all` wedged past its
+  timeout first (exit 124) — the same hang rounds 6, 8 and 9 hit. Per the standing rule only the
+  local `adb` server process was killed (PID `12336`; the emulator left running), then
+  `adb start-server`, after which the device reattached on its own (`emulator-5554 device`) and
+  the retry completed: `remove-all exit=0`, `adb reverse --list` → `exit=0 output=[]`, empty.
+  `settings get system font_scale` → `1.0` (never changed this round). Night mode, which the whole
+  task 0 sweep ran in, set back to `no`.
+
+- **(e) Emulator shut down, AVD intact.** `adb emu kill` → `OK: killing emulator, bye bye`;
+  `adb devices` empty immediately after. Two `emulator` processes lingered a few seconds
+  (shutdown in progress, as in rounds 6, 8 and 9) — a check ~15 s later shows none.
+  `emulator -list-avds` still lists `hermes-test`: shut down, not deleted.
+
+- **(f) Pushed, working tree clean.** Four commits this round — `2e8d02f` (the sheet keyboard
+  fix), `2677229` (the `app/dev/` gate), `df696f9` (the labels-test rule), `efffdfe` (this log and
+  Deviation 13) — plus this teardown entry. Ordinary `git push`, no force, no merge.
