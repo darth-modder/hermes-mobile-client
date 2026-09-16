@@ -70,9 +70,9 @@ until the gateway exposes a group transport to non-desktop sources.
 
 ### C. Tasks tab (†data layer)
 
-- [ ] † `src/api/cron.ts` gains templates (from the desktop's cron templates source) and the
+- [x] † `src/api/cron.ts` gains templates (from the desktop's cron templates source) and the
       delivery target field.
-- [ ] `app/(main)/tasks/index.tsx` replaces the cron screen's framing: rows show name, schedule
+- [x] `app/(main)/tasks/index.tsx` replaces the cron screen's framing: rows show name, schedule
       in words, next run, last run, a "Running now" state; detail screen with the prompt, model,
       deliver-to, schedule; "New task" sheet with name, prompt, schedule (cron expression or the
       template's preset, with the placeholder `0 9 * * *` and a plain-language echo of what it
@@ -121,7 +121,7 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
       wire with that text); a tap only fills the composer.
 - [x] Response stats appear only on messages that carry server `usage`; a transcript row from
       before the feature shows none.
-- [ ] Tasks: creating a task from a template posts the expected cron payload; the list shows
+- [x] Tasks: creating a task from a template posts the expected cron payload; the list shows
       next and last run; triggering it shows "Running now" and then updates last run.
 - [ ] Pairing: entering `127.0.0.1` or `10.0.2.2` in the Tailscale step is rejected with the
       reason; a tailnet-shaped URL proceeds to detection.
@@ -3102,3 +3102,37 @@ screens that have none.
 **Not done this round, named rather than implied.** Light-theme dumps and screenshots for the list,
 detail and New task sheet; re-exercising the `/(main)/cron` deep-link redirects on device; a Model
 row in the New task sheet.
+
+### Opus review, group C closed (2026-09-16)
+
+Opus checked rounds 11 and 12 against their commits, evidence folders and host state. `npm run check`
+at `455a351` exits 0 (729 tests), and `src/upstream/` is still byte-identical to `4363d9e`. Round 12
+corrected round 11's false environment claims in `bf84a78`: the field kit and round 10's evidence
+were there all along, at `C:\Users\you\AppData\Local\hermes-android-field\`.
+
+**Ticked:**
+- **Cron data layer.** Templates came from M14; round 1 added `getCronDeliveryTargets`.
+- **Tasks tab.** Built in round 11 and device-verified in round 12, which fixed four defects:
+  an off-screen Create button, a stale list after trigger, a mislabelled schedule field, and the
+  missing polling.
+- **Tasks exit criterion, under D19.** Round 12 showed on device:
+  - the template-create POST payload, read back from the gateway
+  - next and last run on the list
+  - a trigger updating last run
+  - prompt edit and delete, read back from the gateway
+
+  "Running now" can't be shown by either client, because the gateway never reports
+  `state: "running"`. D19 makes that part conditional on the gateway reporting it.
+
+**Carried forward; must be done before M15 is `done`:**
+1. **Capabilities toggle, 48 dp literal.** Tapping anywhere on the row now works (`565575d`), but
+   the native `AndroidSwitch` still shows up as a 46.5×27 dp node in the accessibility dump. The
+   fix is a toggle drawn with a plain `View`, or proof that the node isn't clickable.
+2. **Tasks light-theme pass, and an on-device check of the old `/(main)/cron` deep-link
+   redirects.** Both are code-verified only so far.
+3. **Swipe-down on sheets** belongs to group E (Gestures).
+
+**Noted, not required:** `tasks.html:311-315` draws a Model row in the New task sheet. M15's task
+text doesn't list one, and round 12 set the model over REST instead. Add it if parity wants it.
+`AppDrawer`'s zero-height backdrop is still open and out of scope.
+
