@@ -53,7 +53,7 @@ const DRAWER_ICONS: Record<string, IconComponent> = {
   '/(main)/bots': IconRobot,
   '/(main)/channels': MessageCircle,
   '/(main)/command-center': LayoutDashboard,
-  '/(main)/cron': Clock,
+  '/(main)/tasks': Clock,
   '/(main)/projects': FolderOpen,
   '/(main)/session-list': IconMessages,
   '/(main)/settings': Settings,

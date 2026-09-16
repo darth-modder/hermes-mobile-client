@@ -7,28 +7,32 @@
 // two mobile-only additions (Projects, Settings last).
 //
 // M15 round 2: Bots now leads for real (`/(main)/bots` exists), Sessions is
-// second (unchanged route), and the existing `/(main)/cron` row moved up to
-// third, still titled "Scheduled jobs" — M15 C's Tasks-tab rebuild hasn't
-// landed, so this is not yet renamed "Tasks" (drawer-rows.ts's own header;
-// M15 Deviations). The "prepended by M15 A, not a row yet" framing this
-// test used in M14 is retired: Bots is a row now, and the assertion below
-// checks it explicitly instead of asserting its absence.
+// second (unchanged route), and the cron row moved up to third. The
+// "prepended by M15 A, not a row yet" framing this test used in M14 is
+// retired: Bots is a row now, and the assertion below checks it explicitly
+// instead of asserting its absence.
+//
+// M15 round 11: row three is now Tasks, routed to `app/(main)/tasks/`, which
+// closes M15 Deviation 6. The old "has no row for Tasks" assertion was the
+// guard that kept the rename from landing ahead of the screen; it is
+// replaced below by its inverse — the row must exist AND must point at the
+// new route, so the label and the destination can never drift apart again.
 //
 // Tests drawer-rows.ts (the pure order/route/title data), not AppDrawer.tsx
 // itself — see drawer-rows.ts's header for why importing the .tsx component
 // doesn't work under vitest here.
 import { describe, expect, it } from 'vitest'
 
-import { BOTS_TAB_LABEL } from '../lib/strings.mobile'
+import { BOTS_TAB_LABEL, TASKS_TAB_LABEL } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
 import { DRAWER_ROW_META } from './drawer-rows'
 
 describe('drawer order', () => {
-  it('leads with Bots, then Sessions, then Scheduled jobs (M15 round 2)', () => {
+  it('leads with Bots, then Sessions, then Tasks (M15 round 11)', () => {
     const leadingTitles = DRAWER_ROW_META.slice(0, 3).map(row => row.title)
 
-    expect(leadingTitles).toEqual([BOTS_TAB_LABEL, t.commandCenter.sections.sessions, t.sidebar.nav.cron])
+    expect(leadingTitles).toEqual([BOTS_TAB_LABEL, t.commandCenter.sections.sessions, TASKS_TAB_LABEL])
   })
 
   it('matches the desktop nav strip, then §A overlay screens, then Projects, then Settings', () => {
@@ -49,13 +53,18 @@ describe('drawer order', () => {
     ])
   })
 
-  it('has no row for Tasks (M15 C has not rebuilt the cron screen as Tasks yet)', () => {
-    const titles = DRAWER_ROW_META.map(row => row.title)
+  it('routes the Tasks row at the rebuilt screen, not the old cron list (M15 Deviation 6)', () => {
+    const tasksRow = DRAWER_ROW_META.find(row => row.title === TASKS_TAB_LABEL)
 
-    expect(titles).not.toContain('Tasks')
+    expect(tasksRow).toBeDefined()
+    expect(tasksRow?.route).toBe('/(main)/tasks')
   })
 
-  it('every row title comes from the vendored en.ts or the documented BOTS_TAB_LABEL exception', () => {
+  it('has no row left pointing at the old cron routes', () => {
+    expect(DRAWER_ROW_META.map(row => row.route)).not.toContain('/(main)/cron')
+  })
+
+  it('every row title comes from the vendored en.ts or a documented strings.mobile exception', () => {
     const flatten = (value: unknown, out: Set<string>): void => {
       if (typeof value === 'string') {
         out.add(value)
@@ -70,6 +79,9 @@ describe('drawer order', () => {
 
     flatten(t, allStrings)
     allStrings.add(BOTS_TAB_LABEL)
+    // Same documented exception as Bots: the desktop has no Tasks tab, so
+    // there is no vendored string to reuse (strings.mobile.ts's own note).
+    allStrings.add(TASKS_TAB_LABEL)
 
     for (const row of DRAWER_ROW_META) {
       expect(allStrings.has(row.title), `"${row.title}" is not a value from the vendored en.ts`).toBe(true)

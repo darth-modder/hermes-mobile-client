@@ -698,3 +698,97 @@ export function botsCapabilitiesSkillLockedNote(name: string): string {
 }
 
 export const BOTS_MODEL_CONFIRM_TITLE = 'Confirm model switch'
+
+// ── Tasks tab (M15 C, app/(main)/tasks/**, src/components/NewTaskSheet.tsx) ──
+//
+// Every string below was checked against the vendored `src/upstream/i18n/
+// en.ts` `cron.*` block first, which is rich — `title`, `states.*`,
+// `emptyTitleNew`, `emptyDescNew`, `promptLabel`, `deliverLabel`,
+// `modelLabel`, `triggerNow`, `pauseTitle`, `resumeTitle`, `deleteTitle`,
+// `createAction`, `scheduleLabels.*`, `scheduleHints.*` and the whole
+// humanizer vocabulary are all used directly from there and are deliberately
+// NOT duplicated here. What follows is only what the desktop has no concept
+// of, because the desktop has no Tasks *tab*: it has a /cron overlay.
+
+// tasks.html:26-27, a `Field (ours)` — the counters above the list. en.ts has
+// `cron.states.running` ('running'), the state of one job; it has no word for
+// "how many are running at this moment", which is what the tile counts. The
+// desktop never aggregates this because its pane shows every job at once.
+export const TASKS_RUNNING_NOW_LABEL = 'Running now'
+// Pairs with the tile above. `cron.states.scheduled` is the lowercase
+// per-job state; this is the tile's heading for the count of them.
+export const TASKS_SCHEDULED_LABEL = 'Scheduled'
+
+// tasks.html:140 — the row's state chip when a job is mid-run. en.ts's
+// `cron.states.running` is the bare adjective 'running'; the prototype says
+// "running now" specifically to distinguish the in-flight job from the ones
+// merely enabled, which on this screen sit in the same column.
+export const TASKS_STATE_RUNNING_NOW = 'running now'
+
+// tasks.html:121 — the list's one section heading. en.ts's `cron.title` is
+// 'Scheduled jobs' and is already used as this screen's *header* title, so
+// reusing it for the section inside would print the same words twice; this
+// is the section's own label.
+export const TASKS_SECTION_LABEL = 'Scheduled jobs'
+
+// tasks.html:131 — the row meta line, "Next … · last …". The desktop's cron
+// page labels these as grid headers ('NEXT'/'LAST' in its own markup, not
+// en.ts strings — checked, there is no `cron.nextRun`/`cron.lastRun`), so
+// there is nothing vendored to reuse for the inline prefixes.
+export const TASKS_NEXT_RUN_PREFIX = 'Next'
+export const TASKS_LAST_RUN_PREFIX = 'last'
+
+// tasks.html:99 / :345 — the header action and the empty state's button.
+// en.ts has `cron.newCron` ('New cron') and `cron.createTitle` ('New cron
+// job'); both name the desktop's own noun. This tab's noun is "task"
+// throughout its prototype, which is the whole point of the re-framing, so
+// the label follows the screen rather than the vendored wording. Recorded as
+// a Deviation in the M15 doc.
+export const TASKS_NEW_TASK_ACTION = 'New task'
+export const TASKS_NEW_TASK_TITLE = 'New task'
+
+// tasks.html:264 — the template chip row's heading. `cron.blueprints.
+// startFrom` in en.ts is 'Start from', which fits exactly; used from there,
+// not redefined. (Noted so the absence of a constant here reads as checked,
+// not forgotten.)
+
+// tasks.html:283 — the schedule section heading in the New task sheet.
+// en.ts has no heading for this: the desktop's create dialog puts the
+// schedule Select inline with no section of its own.
+export const TASKS_WHEN_TO_RUN_LABEL = 'When to run'
+
+// tasks.html:300-302 — the raw-expression field under the picker.
+// `cron.scheduleHints.custom` ('Cron syntax or natural language') is the
+// vendored hint and IS used as this field's hint; the label itself has no
+// vendored counterpart.
+export const TASKS_ADVANCED_SCHEDULE_LABEL = 'Advanced — schedule string'
+
+// tasks.html:274 — the Name field. en.ts's cron block has no `nameLabel`
+// (checked): the desktop's create dialog derives the name from the prompt
+// rather than asking for one.
+export const TASKS_NAME_LABEL = 'Name'
+export const TASKS_NAME_PLACEHOLDER = 'Morning inbox digest'
+
+// tasks.html:270 — the "no template" chip that clears a picked blueprint.
+// The desktop's "Start from" Select has an empty option with no label; a
+// chip row needs a word on the chip.
+export const TASKS_TEMPLATE_NONE = 'Custom'
+
+// The detail screen's Prompt / Run history section headings and its
+// delete-confirm body. `cron.promptLabel` ('Prompt') is vendored and used;
+// 'Run history' is not in en.ts (checked) — the desktop labels that pane in
+// markup. The confirm body is assembled from the vendored
+// `cron.deleteDescPrefix`/`deleteDescSuffix` pair, so nothing is added here.
+export const TASKS_RUN_HISTORY_LABEL = 'Run history'
+export const TASKS_NO_RUNS_YET = 'No completed runs yet'
+
+// src/components/drawer-rows.ts — the drawer row for the Tasks tab, closing
+// M15's Deviation 6. The vendored `t.sidebar.nav.cron` ('Scheduled jobs') is
+// what the row said while it still opened the old cron screen, and it is
+// still the right words for the *screen header* (the Tasks screen uses
+// `t.cron.title`, the same string). This is the tab's own name, which
+// `docs/mobile-prototypes/tasks.html` uses throughout (:33 `#tasks=list`,
+// :102-106 the tab row, :95 the header title) and which the M14 tab row
+// names alongside Bots and Sessions. No vendored counterpart: the desktop
+// has no Tasks tab, only a /cron overlay.
+export const TASKS_TAB_LABEL = 'Tasks'
