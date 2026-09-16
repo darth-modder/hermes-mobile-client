@@ -571,3 +571,21 @@ release. It does not block M14.
 - A build flag keeps one codebase and one set of screens, and costs a test per flavour.
 - Hiding per screen, instead of waiting for all six, means the app never withholds a screen that
   already works.
+
+## D19 — M15's Tasks exit criterion: "Running now" is conditional on the gateway reporting it (2026-09-16)
+
+**Decision.** M15's Tasks exit criterion reads "triggering it shows 'Running now' and then updates
+last run". It is met when:
+- triggering the job updates last run, observed on device; and
+- the Tasks screen shows the running state *whenever the gateway reports `state: "running"`*,
+  using the desktop's own rule (`apps/desktop/src/app/cron/job-state.ts:16-20`,
+  `jobState(job) === 'running'`), verified in code and tests.
+
+A running pip visible on device is not required.
+
+**Reasoning.** The gateway never sends that state today. `effective_job_state()`
+(`hermes-agent cron/jobs.py:488-501`) returns only `completed`, `error`, `paused` or `scheduled`.
+The only "running" signal is an in-memory scheduler probe (`scheduler.py:691`) that no route
+exposes. M15 round 12 polled the gateway every 1.5 s across a triggered run and saw `scheduled`
+throughout. The desktop client has the same limitation, so this is parity, not a mobile gap. If
+the gateway starts exposing the state, both clients already render it.
