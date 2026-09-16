@@ -792,3 +792,17 @@ export const TASKS_NO_RUNS_YET = 'No completed runs yet'
 // names alongside Bots and Sessions. No vendored counterpart: the desktop
 // has no Tasks tab, only a /cron overlay.
 export const TASKS_TAB_LABEL = 'Tasks'
+
+// app/(main)/tasks/[id].tsx's schedule grid label and
+// src/components/NewTaskSheet.tsx's picker row. Round 12 device-verification
+// caught both rendering `t.cron.scheduleLabels.custom` ("Custom") as a FIELD
+// label — the detail grid read "CUSTOM  Every day at 8:00 AM · 0 8 * * *" and
+// the sheet's row read "Custom  0 9 * * *". `scheduleLabels.*` is the map of
+// schedule *kinds* (daily/weekdays/…/custom); it names the value, never the
+// field. en.ts's cron block has no field label for either (checked): the
+// desktop's create dialog puts the schedule Select inline with no label of
+// its own, and its inspector labels the grid in markup. The prototype names
+// them — "Schedule" in the detail grid (tasks.html:195) and "Frequency" in
+// the sheet (tasks.html:285).
+export const TASKS_SCHEDULE_FIELD_LABEL = 'Schedule'
+export const TASKS_FREQUENCY_LABEL = 'Frequency'

@@ -41,6 +41,7 @@ import {
   TASKS_NEXT_RUN_PREFIX,
   TASKS_NO_RUNS_YET,
   TASKS_RUN_HISTORY_LABEL,
+  TASKS_SCHEDULE_FIELD_LABEL,
   TASKS_STATE_RUNNING_NOW
 } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
@@ -84,9 +85,18 @@ export default function TaskDetailScreen() {
 
   const job = jobQuery.data
 
+  // The LIST's query key too, not just this screen's two. Round 12 caught
+  // this on device: Trigger now updated the detail (LAST filled in) while the
+  // list behind it still read "last —" until a manual pull-to-refresh, because
+  // nothing here touched `['cron-jobs', profile]`. The `cron.changed`
+  // broadcast is supposed to cover exactly this, but it cannot be the only
+  // path — it did not arrive for a trigger in this session, and a mutation
+  // this screen performed itself should not depend on a round trip through
+  // the gateway to be reflected one screen back.
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: jobKey })
     void queryClient.invalidateQueries({ queryKey: runsKey })
+    void queryClient.invalidateQueries({ queryKey: ['cron-jobs', profile] })
   }
 
   const toggleMutation = useMutation({
@@ -201,7 +211,7 @@ export default function TaskDetailScreen() {
         {/* Field (tasks.html:22-23): the labelled schedule grid. */}
         <View style={styles.grid}>
           <GridRow
-            label={t.cron.scheduleLabels.custom}
+            label={TASKS_SCHEDULE_FIELD_LABEL}
             tokens={tokens}
             value={words && words !== expr ? `${words} · ${expr}` : expr}
           />

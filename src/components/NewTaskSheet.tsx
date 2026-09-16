@@ -9,9 +9,10 @@ import {
   instantiateCronBlueprint,
   listCronBlueprints
 } from '../api/cron'
-import { describeCronExpr, SCHEDULE_PRESETS } from '../lib/cron-schedule'
+import { describeCronExpr, SCHEDULE_PRESETS, scheduleKindForExpr } from '../lib/cron-schedule'
 import {
   TASKS_ADVANCED_SCHEDULE_LABEL,
+  TASKS_FREQUENCY_LABEL,
   TASKS_NAME_LABEL,
   TASKS_NAME_PLACEHOLDER,
   TASKS_NEW_TASK_TITLE,
@@ -223,7 +224,11 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
           />
 
           <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{TASKS_WHEN_TO_RUN_LABEL}</Text>
-          <ListRow onPress={() => setOpenPicker('schedule')} title={t.cron.scheduleLabels.custom} value={schedule} />
+          <ListRow
+            onPress={() => setOpenPicker('schedule')}
+            title={TASKS_FREQUENCY_LABEL}
+            value={t.cron.scheduleLabels[scheduleKindForExpr(schedule)]}
+          />
           <Input
             autoCapitalize="none"
             hint={t.cron.scheduleHints.custom}
