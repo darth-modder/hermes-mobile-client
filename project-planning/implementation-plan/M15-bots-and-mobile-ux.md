@@ -3972,3 +3972,221 @@ neither "works" nor "doesn't work" should be assumed until checked this way.
   down, not deleted.
 - **(f) Push and clean tree — pending**, immediately after this log entry is committed.
 
+### Round 16 — M15 close-out prep: tab-strip edge race fixed structurally, native rebuild verifies
+### predictive back, sheet swipe-down investigated and left open (2026-09-17)
+
+**Scope.** Prep for M15's close-out: fix round 15's tab-strip edge race for real, rebuild and
+install the dev client so `predictiveBackGestureEnabled` is more than a config value, one bounded
+attempt at the sheet swipe-down question, then leave the environment running for the user's own
+manual check rather than tearing down. Same throwaway gateway pattern as every prior round
+(`m14-device/setup-gw.sh`, port 9128, `researcher`/`coder` profiles, `auth_required: true`), same
+`hermes-test` AVD. Evidence: `D:\Stuff\hermes-android-field\m15-r16\`.
+
+**Task 1 (tab-strip edge race): fixed structurally, device-verified — 10/10 and 2/2.**
+
+Root cause, precisely: round 15's `onEnd`-only guard let `TabStrip`'s `Gesture.Pan()` *activate*
+on an edge-originating touch and only refused to call `goToIndex` afterward — by then the touch had
+already been claimed away from `react-native-screens`' own edge-back recognizer, and the two
+recognizers raced for the same stream with two different outcomes across nominally identical
+injected swipes (round 15's own finding).
+
+Fix (`src/components/TabStrip.tsx`): `.hitSlop({ left: -EDGE_GUARD_PX })` on the `Gesture.Pan()`
+chain. Traced the mechanism rather than assuming the prop does what its name suggests:
+`GestureHandlerOrchestrator.kt:634-659`'s `isWithinBounds` subtracts a negative `padLeft` from the
+hit rect's left edge (`left -= padLeft`, so a `-40` pad moves `left` from `0` to `40`), and
+`GestureHandlerOrchestrator.kt:503,542` call `isWithinBounds` on `ACTION_DOWN`, during
+`extractGestureHandlers` — *before* a handler is added as a candidate for a touch stream at all. A
+touch starting inside the band is therefore never offered to this gesture, structurally, not
+merely refused post-activation. `startX`/`isInEdgeBand` stay as a defensive second check in
+`onEnd`, belt-and-suspenders against a future edit widening the `GestureDetector`'s own View past
+the strip.
+
+Also, per the task: **at most one tab per gesture, whatever the translation.** This was already
+true of the single `if/else if` in `onEnd` (nothing there could produce a multi-step jump), but
+round 15's stray "advanced by two" result pointed more plausibly at the `Gesture.Pan()` object
+being *rebuilt on every render* — tearing down and re-registering the native handler mid-gesture —
+than at arithmetic. Extracted the decision into two pure functions in a new file,
+`src/components/tab-strip-gesture.ts` (`isInEdgeBand`, `stepFor`), and memoized the gesture on
+`activeIndex` (`useMemo`, `TabStrip.tsx`) so it survives re-renders that don't represent an actual
+tab change — a tab change is exactly the one point where a fresh gesture instance is correct. The
+extraction is also what let this be unit-tested at all: this project's vitest setup can't import a
+`.tsx` file that pulls in `react-native-gesture-handler` (same limitation `drawer-rows.ts`'s own
+header documents for `react-native`) — `tab-strip-gesture.ts` has neither import.
+
+**Unit tests** (`src/components/TabStrip.test.ts`, 10 cases): `isInEdgeBand` at the boundary
+(`EDGE_GUARD_PX - 1` → `true`, `EDGE_GUARD_PX` → `false`) and past it; `stepFor` at the threshold
+(no step), just past it each direction (±1), and — the direct regression test for round 15's
+finding — many multiples past the threshold and a full-screen-width translation, both asserting
+still exactly ±1, never more.
+
+**Device-verified**, against the *existing* dev client (no rebuild needed — this is a JS-only
+change), throwaway gateway connected, on the Sessions tab (`10-after-done.png`):
+
+- **10 injected swipes starting inside the band** (`input swipe 20 340 500 340 300`, `20px < 40px`
+  guard): **0/10 tab changes.** Rather than 10 screenshots, used `dumpsys window |
+  grep mCurrentFocus` as the pass/fail signal — cheaper and unambiguous — relaunching the app
+  before each trial (Sessions is the stack root reached via the connect flow, so a correctly-ceded
+  edge swipe exits the app, same as round 15's own "exited to launcher" result for this exact
+  scenario):
+
+  ```
+  trial 1: before=[...com.nousresearch.hermes.mobile.MainActivity] after=[...nexuslauncher.NexusLauncherActivity]
+  trial 2: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 3: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 4: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 5: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 6: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 7: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 8: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 9: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 10: before=[...MainActivity] after=[...NexusLauncherActivity]
+  ```
+
+  Hermes focused before every trial, the launcher focused after every trial — the touch was ceded
+  to the system back gesture and `TabStrip`'s own gesture never fired, 10 times running.
+
+- **Swipes starting outside the band, both directions: exactly one step each**, screenshotted.
+  From Sessions, `input swipe 700 340 300 340 300` (leftward) advanced to **Tasks**, skipping Bots
+  (`13-outside-left.png` — header reads "Scheduled jobs", Tasks tab underlined). The reverse,
+  `input swipe 300 340 700 340 300` (rightward), returned to **Sessions** (`14-outside-right.png`).
+  Both single, clean, one-tab steps.
+
+Committed `aea359f`.
+
+**Task 2 (native dev-client rebuild): done, device-verified, on the newly built client.**
+
+Followed `docs/CONNECTING.md`'s WSL2 path exactly (D3): `npx expo prebuild --platform android
+--clean` from Windows, `android/local.properties` rewritten to `sdk.dir=/home/you/Android/Sdk`
+(WSL's own SDK, confirmed distinct from the Windows one per the doc), then `./gradlew assembleDebug
+--no-daemon` via `MSYS2_ARG_CONV_EXCL="*" wsl -d Ubuntu-26.04 -- bash
+/mnt/d/Stuff/hermes-android-field/m15-r16/wsl-build.sh` — run as a script file per the doc's own
+warning about inline multi-statement `wsl` calls being unreliable. The field kit being on `D:` now
+(round 14) meant WSL saw it directly at `/mnt/d/Stuff/hermes-android-field/...`, exactly as this
+round's brief predicted; no path workaround needed.
+
+Build tail:
+
+```
+BUILD SUCCESSFUL in 21m 32s
+846 actionable tasks: 846 executed
+```
+
+21m 32s — inside the doc's own 20–32 minute estimate, on the slower end consistent with the
+hard-link-across-the-WSL-boundary fallback the doc names (`Hard link from ... failed. Doing a
+slower copy instead`, seen throughout the log for every native module: worklets, reanimated,
+gesture-handler, the app itself).
+
+**Manifest verified from the built APK directly**, not inferred: `aapt2 dump xmltree
+android\app\build\outputs\apk\debug\app-debug.apk --file AndroidManifest.xml` —
+
+```
+A: http://schemas.android.com/apk/res/android:enableOnBackInvokedCallback(0x0101066c)=true
+```
+
+— quoted exactly as it appears in the dump. Installed via `adb install -r` (`Performing Streamed
+Install / Success`); `dumpsys package com.nousresearch.hermes.mobile` confirms
+`lastUpdateTime=2026-09-17 02:13:43`, a fresh install distinct from every prior round's client.
+
+**Re-ran 3 of round 15's 7 screen types, plus the sheets-consume-back-first check, on this new
+client** (named throughout: the client installed at `lastUpdateTime=2026-09-17 02:13:43`, versionCode
+1, built from commit `aea359f` — the tab-strip fix above plus every prior round 16 commit at build
+time):
+
+| check | result | evidence |
+| --- | --- | --- |
+| edge-swipe pops Bots (tab, stack root) | exited to launcher (correct — nothing to pop to, same as round 15's own finding for a tab reached without a push underneath) | `19-edgeswipe-bots.png` |
+| edge-swipe pops Settings → Appearance (2 deep) | popped to Settings (1 deep) | `22-appearance.png` → `23-appearance-swipe.png` |
+| edge-swipe pops task detail | popped to Tasks list | `29-taskdetail3.png` → `30-taskdetail-swipe.png` |
+| sheets consume back before the stack | hardware back (`keyevent 4`) on the open New task sheet closed only the sheet, landed back on Tasks list, not popped further | `31-newtask-sheet.png` → `32-back-closes-sheet.png` |
+
+All four match round 10's and round 15's findings on the old client — the rebuild changed the
+manifest attribute and nothing else observable about edge-back behaviour, which is exactly what
+task 1's own reasoning (round 15) predicted: the flag selects the back-gesture *protocol*, not
+whether an edge swipe registers as back at all.
+
+One repeat of the same pre-existing flake round 15 already logged: `Bots`' `profiles.list` RPC hit
+"Connection timed out" once on this client too (`17-botchat.png`, `18-retry.png`), while REST-backed
+screens (Tasks, Sessions) kept working — not chased further, same as round 15's own call, since it
+doesn't bear on anything this round tests and a force-relaunch cleared it in round 15's instance of
+the same thing.
+
+**Task 3 (sheet swipe-down, bounded attempt): investigated, not resolved, left for the manual
+check — no code shipped.**
+
+Traced rather than tried another workaround blind, since round 15 already tried "swap the
+mechanism" (PanResponder → RNGH) and it didn't help inside the `Modal` specifically. Found one
+real, citable, but partial explanation:
+
+- `Sheet.tsx`'s `Modal` (`:196`) renders into a separate Android `Dialog` window. RN's own
+  `ReactModalHostView.kt`'s `DialogRootViewGroup` (`:578-592`) forwards both
+  `onInterceptTouchEvent` and `onTouchEvent` to `jSTouchDispatcher.handleTouchEvent` — the same
+  legacy touch-responder pipeline `PanResponder` is built on. The forwarding call exists.
+- This app has exactly one `GestureHandlerRootView` in its entire source tree (`app/_layout.tsx:39`,
+  confirmed via `grep -r GestureHandlerRootView **/*.tsx` — one match, one file), wrapping the main
+  Activity's content. `Sheet.tsx`'s `Modal` content is not wrapped in a second one.
+  `RNGestureHandlerRootHelper.kt:20-39` installs RNGH's own native touch interception per root-view
+  instance; a Dialog window with no `GestureHandlerRootView` of its own has none of that
+  interception installed. This is a real, checkable gap, and a plausible contributor to why round
+  15's RNGH migration *also* failed specifically inside the Modal while working fine on `TabStrip`
+  (mounted on a plain screen, inside the one `GestureHandlerRootView` that exists).
+- **It does not fully explain the original finding.** Round 10's `PanResponder` failure predates
+  any RNGH involvement in this codebase and does not depend on `GestureHandlerRootView` at all —
+  `PanResponder` rides on the `jSTouchDispatcher` path that RN's own source (above) shows *is*
+  forwarded from inside the Dialog. Something between that forwarding call and a `PanResponder`
+  listener actually receiving a continuation MOVE is still unaccounted for.
+
+Did not attempt a code change: the partial finding above doesn't point at a specific low-risk fix
+(the `GestureHandlerRootView` gap explains an RNGH problem this round isn't re-attempting, not the
+`PanResponder` one that's actually in `Sheet.tsx` today), and round 15 already spent a real attempt
+cycle (crash, fix, re-test, revert) proving that swapping mechanisms alone doesn't help here. Per
+the task's own instruction, stopping rather than shipping an unverified change.
+`src/components/ui/Sheet.tsx` is untouched this round.
+
+**Task 4.** `npm run check`, run after the last commit (`aea359f`):
+
+```
+Test Files  74 passed (74)
+     Tests  782 passed (782)
+...
+Ran 52 tests in 3.689s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+782 vs round 15's 772: the 10 new `TabStrip.test.ts` cases. The `hermes-push` plugin's printed
+`Traceback ... RuntimeError: boom` is the same intentionally-mocked failure every prior round
+noted, inside the 52-test `OK`.
+
+**Task 5 — exit criteria, one line per part:**
+
+| part | status |
+| --- | --- |
+| an edge swipe from the left pops every stack screen | **met by injection** — round 15's 7 screen types plus this round's 3-screen re-check on the newly rebuilt client, consistent throughout |
+| sheets consume back before the stack does | **met by injection** — round 10's finding, re-confirmed this round on the new client (`31-`/`32-*.png`) |
+| a swipe down dismisses every sheet | **not met by injection; manual check pending** — round 10 and round 15 both found no adb-injected gesture reaches it (PanResponder and RNGH alike); round 16 investigated the mechanism further (see task 3) without resolving it |
+| a swipe moves between the three tabs | **met by injection** — round 15's interior-swipe result plus this round's edge-band fix: 10/10 zero tab changes from inside the guard band, exactly one step each direction from outside it |
+
+**M15 boxes still unticked, as observed** (`grep -n "^- \[ \]"` against the doc):
+- Task list's own group E line (`- [ ] Edge-swipe back on every stack screen, and on sheets (swipe
+  down to dismiss)...`) — edge-swipe half is now fully met by injection; the sheet-swipe half is
+  not, per task 3 above.
+- Task list's own group E line (`- [ ] Swipe between Bots, Sessions and Tasks tabs.`) — met by
+  injection per task 1 above.
+- Exit criteria's own gestures line (`- [ ] Gestures: an edge swipe from the left pops every stack
+  screen; a swipe down dismisses every sheet; a swipe between the three tabs works.`) — two of
+  three parts met by injection, the sheet-swipe part still open.
+
+Ticking any of these is the user's call, not this round's, per standing instruction.
+
+**Task 6 — environment left running, not torn down.** Proof of each, pasted below this line at the
+point the round's own final message is composed, immediately before handing back — emulator,
+Metro, gateway connection and the app's current screen are all live at that moment, not
+reconstructed from earlier evidence in this log.
+
