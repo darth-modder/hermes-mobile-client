@@ -366,6 +366,48 @@ and the gateway contract only.
     `src/lib/dev-build.ts` both use. Recorded because "dev routes are gated" is weaker than "dev
     routes are absent", and the difference should not have to be rediscovered from the code.
 
+14. **The Tasks tab draws no tab strip.** `docs/mobile-prototypes/tasks.html:102-106` puts a
+    Bots · Sessions · Tasks tab row under the header on every view. That row is M15 E's work —
+    the prototype's own behaviour note says "Swiping between the three tabs works (M15 E)"
+    (`:50`) — and no shared tab-strip component exists yet. `app/(main)/tasks/index.tsx` is
+    therefore reached from the drawer like every other list screen, and draws no strip at all
+    rather than a dead one that doesn't switch tabs. The counters, rows, detail and New task
+    sheet are all as drawn.
+
+15. **The cron humanizer is a port of the desktop's, not a new one — and it drops
+    `toLocaleString`.** M15 round 11's task asked for "a small pure one" *if* no vendored or
+    desktop humanizer existed. One does (`apps/desktop/src/app/cron/index.tsx:151-264` over
+    `SCHEDULE_OPTIONS:101-109`), so `src/lib/cron-schedule.ts` ports it — same branch order, same
+    predicates, same en.ts strings. Two functions deliberately differ:
+    `formatCronTime` (desktop `:161-173`) and `formatRunTimestamp`
+    (`src/lib/task-format.ts`, desktop `formatTime` `:266-278`) end in
+    `toLocaleTimeString`/`toLocaleString` upstream, which on Electron is Chromium's full ICU.
+    Here that would make a sentence describing a *locale-free* cron expression render differently
+    per device and per Hermes-engine Intl build, and would make the unit tests assert whatever
+    locale the machine running them happened to be set to. Both format directly instead, in the
+    shape the prototype draws (`tasks.html:130-131`, "Every day at 9:00 AM", "Next Sep 13, 2026,
+    9:00 AM · last today 9:00 AM"). The guard order of both originals is preserved, including
+    the desktop's non-integer fallback to a raw `hour:minute` pair.
+
+16. **"New task", not the vendored "New cron".** `src/upstream/i18n/en.ts` has
+    `cron.newCron` ('New cron') and `cron.createTitle` ('New cron job'); D15.4 normally makes the
+    vendored wording win. Both name the *desktop's* noun, and the whole point of M15 C is the
+    re-framing of that screen as the Tasks tab — `tasks.html` says "task" throughout (`:33`,
+    `:95`, `:99`, `:343-345`). The header action, the sheet title and the empty state therefore
+    follow the screen's noun. Everything else on these screens uses the vendored strings
+    directly, including `cron.title`, `cron.states.*`, `cron.emptyTitleNew`, `cron.emptyDescNew`,
+    `cron.promptLabel`, `cron.deliverLabel`, `cron.modelLabel`, `cron.triggerNow`,
+    `cron.pauseTitle`, `cron.resumeTitle`, `cron.deleteTitle`, the `deleteDesc` pair,
+    `cron.createAction`, `cron.scheduleLabels.*`, `cron.scheduleHints.*` and the whole humanizer
+    vocabulary.
+
+17. **The old `/(main)/cron` routes became redirects, not deletions.** M15 C replaces that
+    screen, and the drawer no longer points at it. Deleting the two route files would have made
+    `hermes-android://(main)/cron` and `.../cron/<id>` dead. Both are now bare `<Redirect>`s —
+    the detail one forwards its `id` — and both are listed in `route-replicates.test.ts`'s
+    `NOT_A_SCREEN`, the same explicit mechanism `app/index.tsx` and `app/session/[id].tsx`
+    already use for shims with no rendered UI of their own.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
@@ -2677,3 +2719,173 @@ the group B close.
 - **(f) Pushed, working tree clean.** Four commits this round — `2e8d02f` (the sheet keyboard
   fix), `2677229` (the `app/dev/` gate), `df696f9` (the labels-test rule), `efffdfe` (this log and
   Deviation 13) — plus this teardown entry. Ordinary `git push`, no force, no merge.
+
+### Round 11 — sheet scrim root-caused and fixed, Tasks tab built; not device-verified (2026-09-16)
+
+Branch `m15-bots-mobile-ux`, from `35be976`. Two commits: `434c3cc` (task 0) and `3a616f3`
+(task 1).
+
+**Task 0 (sheet follow-ups): done, code-verified only — NOT device-verified.** Commit `434c3cc`.
+
+*(a) The scrim. Both causes found, with file:line.*
+
+1. **Zero height.** `styles.backdrop` (`src/components/ui/Sheet.tsx`, pre-change) carried only a
+   `backgroundColor`. As a plain flex child of the `absoluteFill` root it stretched to full width
+   and collapsed to zero height, because its only child is `position: absolute` and so
+   contributes nothing to its parent's intrinsic size. That is exactly what round 10's `onLayout`
+   measured (`{"x":0,"y":0,"width":411.4,"height":0}`).
+
+2. **Why round 10's fix for (1) did nothing.** That attempt spread
+   `...StyleSheet.absoluteFillObject`. **React Native 0.86.3 has no such export.**
+   `node_modules/react-native/Libraries/StyleSheet/StyleSheetExports.js:21-27` declares
+   `absoluteFill` as a plain object literal and exports exactly that one name at `:110`; there is
+   no `absoluteFillObject` beside it. (The two-name era — `absoluteFill` a registered style ID,
+   `absoluteFillObject` its object form — is gone; `absoluteFill` *is* the object now.) Spreading
+   `undefined` into an object literal is legal JavaScript and contributes nothing, so the style
+   stayed `{backgroundColor}` and the backdrop stayed zero-height. The edit compiled and read
+   like a fix while changing nothing at runtime. `tsc` does flag it — `TS2551: Property
+   'absoluteFillObject' does not exist on type 'typeof StyleSheet'. Did you mean 'absoluteFill'?`
+   — which is how it was caught here. Round 10 never saw that error because the change was
+   reverted before a typecheck ran.
+
+   So the "second cause" is not a second rendering fault: it is the reason the first fix was a
+   no-op. With `...StyleSheet.absoluteFill` the style is correct.
+
+   **Not fixed, found while fixing this:** `src/components/AppDrawer.tsx:142-144` carries the
+   identical zero-height `backdrop` — `Sheet`'s style was copied from it. The drawer's scrim
+   therefore does not dim, and its tap-to-close `Pressable` is zero-sized too. Left alone
+   deliberately: fixing it would start dimming the screen behind the drawer, a visible behaviour
+   change outside this round's scope, and it needs its own device pass. Filed, not chased.
+
+*(b) `CapabilitiesSheet` switches.* The `Switch` is now a pure indicator — `pointerEvents="none"`,
+`importantForAccessibility="no"` (so it leaves the accessibility tree `uiautomator` dumps), and
+its `onValueChange` deleted rather than left dead. The semantics moved to the row, which now
+carries `accessibilityRole="switch"` and the `checked` state, so a toggle is one node instead of
+two.
+
+*(c) Keyboard lift on tall sheets.* `marginBottom: keyboardInset` lifted the sheet by the
+keyboard's full height with nothing bounding it against the space left above the IME, so a tall
+sheet pushed its own header off the top. The primitive's 88% rule is now measured against
+`windowHeight - keyboardInset` and caps the sheet as a whole rather than just its body; the body
+became a `ScrollView` with `flexShrink: 1` so it is the part that gives.
+
+Also split the open effect so the native-driver animation starts after mount rather than against
+unattached nodes. Recorded in the code as **defensive, not a fix for an observed symptom** — both
+values end at their on-screen state, so a late attach has always attached already-correct.
+
+**None of (a), (b) or (c) was device-verified.** No dp dump, no keyboard-open dump, no
+backdrop-tap test, no nested BotSettings → Capabilities check. The round never reached a running
+build (see task 2). The pasted blocks the task asked for — the dp dump showing no clickable node
+under 48 dp, and the tall-sheet dump with the keyboard open — **are empty; they were not
+captured.**
+
+**Task 1 (Tasks tab, M15 C): built, `npm run check` green, NOT device-verified.** Commit
+`3a616f3`.
+
+New: `app/(main)/tasks/index.tsx`, `app/(main)/tasks/[id].tsx`,
+`src/components/NewTaskSheet.tsx`, `src/lib/cron-schedule.ts`, `src/lib/cron-job-state.ts`,
+`src/lib/task-format.ts`, plus tests for the three pure modules.
+
+*One research correction that changed the design.* Round 10 recorded "schedule in words is
+server-provided". That is true for intervals and one-shots and **false for every cron
+expression**: `../hermes-agent/cron/jobs.py:716-726` (`_cron_schedule`) returns
+`{"kind": "cron", "expr": expr, "display": display}` where `display` is *the string the user
+typed*, so `0 9 * * *` comes back as the literal `0 9 * * *`. Only `_interval_schedule`
+(`:729-730`, `"every 30m"`) and the one-shot branches (`:778`, `:793`, `"once at …"`) write a
+sentence host-side. A client-side humanizer is therefore needed on the **list**, not only in the
+create sheet.
+
+*Layers searched before writing one*, per M14 Deviation 13's rule:
+
+1. `src/upstream/` — no humanizer, but `src/upstream/i18n/en.ts`'s `cron.*` carries the entire
+   output vocabulary (`days`, `dayFallback`, `everyDayAt`, `weekdaysAt`, `everyDayOfWeekAt`,
+   `monthlyOnDayAt`, `topOfHour`, `everyHourAt`, `scheduleHints`). Those strings exist because
+   something feeds them.
+2. `apps/desktop/` — **it has one.** `apps/desktop/src/app/cron/index.tsx`: `cronParts`
+   (:151-155), `dayName` (:157-159), `formatCronTime` (:161-173), `isIntegerToken` (:175-177),
+   `scheduleOptionForExpr` (:179-232), `scheduleSummary` (:234-264), over `SCHEDULE_OPTIONS`
+   (:101-109). So `src/lib/cron-schedule.ts` is a **port**, branch order and predicates included
+   — not the "small pure one" the task allowed for, because the task's precondition ("if no
+   vendored or desktop humanizer exists") turned out to be false.
+3. `node_modules/` — no `cronstrue` or equivalent is a dependency.
+4. The host (`../hermes-agent`, read-only) — declines to humanize cron, as above.
+
+`src/lib/cron-job-state.ts` likewise ports `apps/desktop/src/app/cron/job-state.ts:16-29`
+verbatim. Anything the humanizer cannot describe returns `null` and every caller renders the raw
+expression — never a wrong sentence. 50 tests cover it, including every "returns null" case.
+
+Drawer row 3 renamed to the Tasks label and routed at `/(main)/tasks`; `drawer-rows.test.ts`'s
+`has no row for Tasks` guard replaced by its inverse (the row must exist AND point at the new
+route). The old `/(main)/cron` routes became `<Redirect>`s rather than being deleted, so an
+existing deep link still lands; both added to `route-replicates.test.ts`'s `NOT_A_SCREEN`. No
+dead links.
+
+**Deviation 6 is now stale** — its premise ("M15 C's Tasks-tab rebuild hasn't landed") no longer
+holds. Left for you to close rather than closed here.
+
+**Task 2 (device-verify the Tasks exit criterion): NOT DONE.** This is the round's main gap, and
+it is the second round running that the Tasks criterion goes unverified.
+
+How far it got, so the next round does not repeat the setup:
+
+- The emulator was cold — `adb devices` empty at the start of the round.
+- **Round 10's evidence directory (`%LOCALAPPDATA%\hermes-android-field\m15-r10\`) does not
+  exist**, despite round 10's teardown entry recording that it was "left in place per the round's
+  own instruction". `%LOCALAPPDATA%\hermes-android-field` itself was absent. Whatever removed it
+  also took `setup-gw-r10.sh` with it.
+- **`m14-device/setup-gw.sh` does not exist** anywhere under `D:\Stuff\Code\git` — searched this
+  worktree, the main checkout and the tree above both. The round's standing instruction to use it
+  could not be followed.
+- `hermes-test` was booted and a throwaway gateway stood up by hand instead: scratch
+  `HERMES_HOME` at `%TEMP%\hermes-m15r11-home`, `hermes serve --port 9141 --host 127.0.0.1
+  --skip-build --isolated`. It came up — `HERMES_BACKEND_READY port=9141`, and `/api/health`
+  returned `{"ok":true,"version":"0.21.0","auth_required":false}`. `hermes serve --stop` was
+  never used (AGENTS.md records it as unscoped and fatal to every Hermes process on the machine).
+- It stopped there. Despite `auth_required: false`, `/api/cron/jobs` and `/api/cron/blueprints`
+  both answer **401**, and `hermes pairing` offers only `list`/`approve`/`revoke`/
+  `clear-pending` — the identity is device-scoped and client-initiated, so the REST surface
+  cannot be exercised without first driving the app through pairing. That is the same full device
+  path (Metro, a dev-client build carrying this round's new code, pairing, then UI taps), and
+  there was not time left to attempt it.
+
+**All of task 2's pasted blocks are empty**: no POST payload from a wire trace, no job read back
+from the gateway, no list/detail/New-task dp dumps, no "Running now" → last-run timestamped
+dumps. Nothing about the Tasks tab has been seen running on a device.
+
+**Task 3 (`npm run check`): exit 0**, run after `3a616f3` with a clean tree.
+
+```
+Ran 52 tests in 3.666s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+Vitest: **714 passed (71 files)**, against round 10's 660 — +50 `cron-schedule.test.ts`, +15
+`task-format.test.ts`, minus the label-test case count shifting with the new files.
+
+**Exit criteria touched.** None closed.
+
+- *Tasks* — the screens now exist and `npm run check` is green, but the criterion is written in
+  terms of device behaviour ("creating a task from a template posts the expected cron payload;
+  the list shows next and last run; triggering it shows 'Running now' and then updates last
+  run") and **none of that was observed**. Not met; no evidence.
+- *Pairing*, *Banner*, *Gestures* — untouched, exactly as at the group B close.
+
+**Round 10's carried items, status.**
+
+- *Sheet scrim* — root-caused (both causes, above) and fixed in code. **Device-unverified.**
+- *`CapabilitiesSheet` sub-48 dp toggles* — fixed in code. **Device-unverified**; the dump that
+  would prove it is empty.
+- *Swipe-down to dismiss a sheet* — correctly out of scope this round; still unexercised, still
+  blocked by round 10's finding that no adb-injected gesture reaches RN's JS responder system on
+  this emulator. Moves to group E with its own test plan.
+- *`app/dev/` release-path gate* — unchanged, still code-verified only.
+- *Two sub-48 dp inputs on the old cron screen* — moot: that screen is now a `<Redirect>` and the
+  inputs are gone with it. The replacement's touch targets are **unmeasured**.
