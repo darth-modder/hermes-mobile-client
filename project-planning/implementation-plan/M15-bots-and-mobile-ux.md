@@ -2258,3 +2258,77 @@ previous rounds; the suite reports `OK`.)
   claimed here.
 
 Boxes are deliberately left unticked in this file — the user ticks them.
+
+**Task 7 (teardown): done, each step with its own readback.**
+
+- **(a) Hone restored, throwaway removed.** "Switch to Hone" tapped at its dumped centre
+  `(211,677)`; the registry log — the storage readback — flipped immediately:
+  `[registry] active: conn-1789205984475-cpgcec (Hone)`. `M15-R9` then removed under the
+  destructive-tap rule: fresh dump immediately before the tap, the two `Remove` buttons
+  disambiguated by card (`M15-R9`'s action row at `y 761-887`, Hone's at `y 1250-1376`), and the
+  confirm dialog's own text read before confirming — `"M15-R9" will be removed from this app. The
+  instance itself is not touched — you can add it again any time.` Named the throwaway, not Hone,
+  so `REMOVE` was tapped. The list afterwards holds one card:
+
+  ```
+  CLICK [76,351][1004,477] 928x126px = 353.5x48.0dp  centre=(540,414)  ViewGroup desc='Hone, Primary, Current'
+        [76,487][1004,540] 928x53px  = 353.5x20.2dp  centre=(540,513)  TextView  'https://gateway.example.org'
+  ```
+
+  Force-stopped and cold-launched (new PID `16377`, against `14238` before). The registry log
+  after the relaunch:
+
+  ```
+  09-16 15:36:30.138 16377 16474 I ReactNativeJS: [registry] active: conn-1789205984475-cpgcec (Hone)
+  09-16 15:36:30.138 16377 16474 I ReactNativeJS: [registry] list: conn-1789205984475-cpgcec (Hone) primary=true needsLogin=false
+  ```
+
+  One connection, Hone, active and primary. The app landed on the session list with Hone's real
+  sessions ("Replace Hermes-ifrah with DeepSeek v4.1 flash", "Friendly greeting for mobile UI
+  test", …) — never `/connect`. `51-cold-launch-session-list.png`. (The dev-client launcher step
+  in between is a dev-build property, as in rounds 6-8, not a boot failure.)
+
+- **(b) Metro, the gateway and the trace proxy stopped, ports refusing.** Stopped by PID — never
+  `hermes serve --stop`, which AGENTS.md records as unscoped and fatal to every Hermes process on
+  the machine. Metro `16928` (`node`), the throwaway gateway `8772` (`python`), the wire-trace
+  proxy `15824` (`node`). Afterwards:
+
+  ```
+  http://127.0.0.1:8081/status    -> exit 7 output=[]
+  http://127.0.0.1:9139/api/health -> exit 7 output=[]
+  http://127.0.0.1:9140/api/health -> exit 7 output=[]
+  ```
+
+  All three `curl --max-time 3` calls exit 7 (connection refused) with no body. Nothing else was
+  started this round.
+
+- **(c) Scratch state deleted, each path named and re-checked.** Deleted, then `ls`'d again:
+  1. the scratch `HERMES_HOME`, `%TEMP%\hermes-m15r9-home` (recursively — it held `.env`,
+     `config.yaml`, `auth.json`, `sessions`, `state.db*`, and the rest of a real Hermes home);
+  2. `%TEMP%\hermes-m15r9-home\.cookie-secret`, the round's stable cookie-signing key;
+  3. `scratch-password.txt` in the evidence directory.
+
+  All three now report `No such file or directory`. The real Hermes home
+  (`%LOCALAPPDATA%\hermes`) is present and untouched — it was only ever read from, for the
+  provider key. Unlike round 8 there are **no** `~/.local/bin` profile shims to remove: this
+  round's `setup-gw-r9.sh` drops r8's two `hermes profile create` lines, because nothing here
+  needed bot profiles; confirmed by `ls ~/.local/bin/*.bat` reporting no such file. The evidence
+  directory itself (`%LOCALAPPDATA%\hermes-android-field\m15-r9\`, 24 screenshots/dumps plus
+  `setup-gw-r9.sh`) is left in place, per the round's own instruction.
+
+- **(d) `adb reverse` empty, `font_scale` 1.0.** `adb reverse --remove-all` wedged past its
+  timeout first (exit 124) — the same hang rounds 6 and 8 hit. Per the standing rule, only the
+  local `adb` server process was killed (PID `9036`; the emulator was left running), then
+  `adb start-server`, after which the device reattached on its own (`emulator-5554 device`) and
+  the retry completed cleanly: `remove-all exit=0`, and `adb reverse --list` returned `exit=0
+  output=[]` — empty. `settings get system font_scale` returns `1.0` (never changed this round).
+  Night mode, which task 1's dark-theme dumps switched on, was set back to `no`.
+
+- **(e) Emulator shut down, AVD intact.** `adb emu kill` → `OK: killing emulator, bye bye`;
+  `adb devices` empty immediately after. Two `emulator` processes lingered for a few seconds
+  (shutdown in progress, same as rounds 6 and 8) — a check ~12 s later shows none.
+  `emulator -list-avds` still lists `hermes-test`: shut down, not deleted.
+
+- **(f) Pushed, working tree clean.** Four commits this round — `019a36b` (the Sheet fix),
+  `697d24b` (task 1's evidence and task 2's plan), `782b948` (hold-to-dictate), `0b1db52` (this
+  log and Deviations 10-12) — plus this teardown entry. Ordinary `git push`, no force, no merge.
