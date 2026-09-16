@@ -11,6 +11,7 @@ import { NotificationBanner } from '../../../src/chat/NotificationBanner'
 import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
 import { BotSettingsSheet } from '../../../src/components/BotSettingsSheet'
+import { getActiveConnection } from '../../../src/connections/registry'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { SESSION_HEADER_REFRESH_FAILED_TITLE } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
@@ -187,7 +188,23 @@ export default function SessionScreen() {
         onSettingsPress={botId ? openBotSettings : undefined}
         storedSessionId={id}
       />
-      <ConnectionBanner />
+      {/* M15 D: the banner's recovering action re-resumes THIS session with
+          its bot profile — `refreshConversation` is already the Deviation 5
+          path (same `resumeSession(id, title, botId)` call `openSession`
+          makes), so "Sync now" reuses it rather than re-deriving it. */}
+      <ConnectionBanner
+        onResume={refreshConversation}
+        onSignIn={() => {
+          const active = getActiveConnection()
+
+          if (active) {
+            router.push({
+              params: { baseUrl: active.baseUrl, id: active.id, label: active.label },
+              pathname: '/connect/[id]/login'
+            })
+          }
+        }}
+      />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />
       <Composer storedSessionId={id} />

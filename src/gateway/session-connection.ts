@@ -39,7 +39,7 @@ import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '..
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
-import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
+import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
@@ -129,6 +129,49 @@ export function onGatewayConnectionState(listener: (state: ConnectionState) => v
  *  `src/chat/ConnectionBanner.tsx`'s initial render. */
 export function getGatewayConnectionState(): ConnectionState {
   return gateway?.connectionState ?? 'idle'
+}
+
+/**
+ * The one persistent "connection needs attention" signal the banner renders
+ * (M15 D). Before this the reason was classified through M04's ladder and
+ * then *thrown* — `describeConnectReason(reason)` at :391 and in
+ * mobile-gateway.ts:86 — so it reached whichever call site happened to be in
+ * flight and nowhere else. A banner cannot read a rejected promise, which is
+ * why the pre-M15 banner could only say "connection lost" with no cause.
+ *
+ * `needs-login` outranks `unreachable`: a 401 is actionable by the user and
+ * a redial will not fix it, so it must not be masked by the socket that
+ * closed alongside it.
+ */
+export type ConnectionAttention = { kind: 'needs-login' } | { kind: 'unreachable'; reason: ConnectReason } | null
+
+let attention: ConnectionAttention = null
+const attentionListeners = new Set<(value: ConnectionAttention) => void>()
+
+export function getConnectionAttention(): ConnectionAttention {
+  return attention
+}
+
+export function onConnectionAttention(listener: (value: ConnectionAttention) => void): () => void {
+  attentionListeners.add(listener)
+
+  return () => attentionListeners.delete(listener)
+}
+
+export function setConnectionAttention(next: ConnectionAttention): void {
+  const same =
+    attention?.kind === next?.kind &&
+    (attention?.kind !== 'unreachable' || attention.reason === (next as { reason: ConnectReason }).reason)
+
+  if (same) {
+    return
+  }
+
+  attention = next
+
+  for (const listener of attentionListeners) {
+    listener(attention)
+  }
 }
 
 function publishAll(): void {
@@ -320,6 +363,7 @@ export function handleSocketClose(connection: MobileConnection, code: number): v
     return
   }
 
+  setConnectionAttention({ kind: 'needs-login' })
   void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 }
 
@@ -334,6 +378,8 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
   const refreshed = await refreshConnectionOAuth(connection.id, connection.baseUrl)
 
   if (!refreshed) {
+    setConnectionAttention({ kind: 'needs-login' })
+    setConnectionAttention({ kind: 'needs-login' })
     await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 
     return
@@ -388,6 +434,10 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
     if (error instanceof HttpError) {
       const reason = classifyConnectReason({ httpStatus: error.status })
 
+      setConnectionAttention(
+        reason === 'unauthorized' || reason === 'forbidden' ? { kind: 'needs-login' } : { kind: 'unreachable', reason }
+      )
+
       throw new Error(describeConnectReason(reason), { cause: error })
     }
 
@@ -427,6 +477,7 @@ async function flagOauthSessionExpiredIfConfirmed(connection: MobileConnection, 
     return
   }
 
+  setConnectionAttention({ kind: 'needs-login' })
   await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 }
 
@@ -503,6 +554,18 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   }
 
   instance.onState(state => {
+    // The banner's signal rides the same transition the state listeners do.
+    // 'open' is the only thing that clears it — including a `needs-login`,
+    // because a socket that opened carried credentials the gateway accepted.
+    // A close/error only *raises* `unreachable`, never downgrades an existing
+    // `needs-login`: the 401 is the more specific and more actionable cause,
+    // and the socket closing is usually that same event seen a layer down.
+    if (state === 'open') {
+      setConnectionAttention(null)
+    } else if ((state === 'closed' || state === 'error') && getConnectionAttention()?.kind !== 'needs-login') {
+      setConnectionAttention({ kind: 'unreachable', reason: 'unreachable' })
+    }
+
     for (const listener of stateListeners) {
       listener(state)
     }
