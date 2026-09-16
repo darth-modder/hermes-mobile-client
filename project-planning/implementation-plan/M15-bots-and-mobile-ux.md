@@ -47,25 +47,25 @@ until the gateway exposes a group transport to non-desktop sources.
 
 ### B. Chat affordances
 
-- [ ] † `src/api/models.ts`: model options for the picker (the same source Settings › Models
+- [x] † `src/api/models.ts`: model options for the picker (the same source Settings › Models
       uses) and per-session `config.set` for `model` and `reasoning_effort` scoped with
       `--session`, never profile-wide.
 - [ ] Composer trailing controls: a model chip and an effort chip. Model chip opens a searchable
       sheet of available models; effort chip opens a five-option sheet (none, low, medium, high,
       xhigh, labelled Off … XHigh). Both change the current session only and reflect in the next
       `session.info`.
-- [ ] Response stats line under a settled assistant message: model, total tokens, tokens per
+- [x] Response stats line under a settled assistant message: model, total tokens, tokens per
       second, shown only when the server provided `usage` for that message; older rows stay bare.
-- [ ] Jump-to-latest: while the reader is scrolled away from the tail, a pill shows "Latest" with
+- [x] Jump-to-latest: while the reader is scrolled away from the tail, a pill shows "Latest" with
       the count of assistant messages that arrived since; streaming auto-follow only when within
       one viewport of the tail. Tapping the pill scrolls to the tail and clears the count.
 - [ ] Hold-to-dictate: tap the mic to dictate into the composer (M11's path, unchanged); hold
       the mic for 2.5 s to dictate and auto-send on release, with a visible "Auto-send" state and
       an "Edit before sending" escape while the transcript is still editable. Haptic on the
       threshold.
-- [ ] Refresh conversation action in the header overflow (re-runs `session.resume` hydration),
+- [x] Refresh conversation action in the header overflow (re-runs `session.resume` hydration),
       for the case the user does not trust the live view.
-- [ ] Edit-and-resend on a user message (long-press → Edit → composer prefilled; sending
+- [x] Edit-and-resend on a user message (long-press → Edit → composer prefilled; sending
       creates a new turn, the old one is not rewritten), and Copy on any message.
 
 ### C. Tasks tab (†data layer)
@@ -112,14 +112,14 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
       desktop's for the same seeds (test), opening one lands in its canonical chat (the session
       id equals the one the desktop's rule resolves, checked with a Node script against the same
       host), and editing the soul changes `SOUL.md` on the host (read back over RPC).
-- [ ] Model and effort: changing both from the composer chips is reflected in the next
+- [x] Model and effort: changing both from the composer chips is reflected in the next
       `session.info` for that session only; another session's `session.info` is unchanged.
-- [ ] Jump-to-latest: scroll up during a streaming reply; the pill appears with a count that
+- [x] Jump-to-latest: scroll up during a streaming reply; the pill appears with a count that
       increments per completed assistant message; tapping it lands on the tail; no auto-scroll
       happened while scrolled away.
 - [ ] Hold-to-dictate: a 2.5 s hold auto-sends the transcript on release (a prompt lands on the
       wire with that text); a tap only fills the composer.
-- [ ] Response stats appear only on messages that carry server `usage`; a transcript row from
+- [x] Response stats appear only on messages that carry server `usage`; a transcript row from
       before the feature shows none.
 - [ ] Tasks: creating a task from a template posts the expected cron payload; the list shows
       next and last run; triggering it shows "Running now" and then updates last run.
@@ -1757,3 +1757,27 @@ Done, device-verified at each step:
   earlier in the round (`bdb4089..274d315  m15-bots-mobile-ux -> m15-bots-mobile-ux`); `git
   status` confirms a clean working tree and the branch up to date with `origin/m15-bots-mobile-ux`
   at teardown time.
+
+### Opus review, group B partial (2026-09-16)
+
+Opus checked rounds 7 and 8 against their commits, logs and host state, and re-ran `npm run check`
+at `f9ff3be` (exit 0, 627 tests). `src/upstream/` is byte-identical to the group A close
+(`4363d9e`), so round 7's hand-edit to the vendored file is fully undone (`4144da5`).
+
+**Ticked:**
+- **Tasks:** the models data layer (round 1), response stats (round 7), jump-to-latest,
+  refresh conversation, and copy / edit-and-resend (all round 8).
+- **Model and effort exit criterion.** Round 7 changed both from the chips. Round 8 then read
+  `session.info` over RPC with a Node script: session A changed, session B unchanged, and
+  `config.yaml`'s `model.default` unchanged, still true after a cold relaunch (`85f0e76`).
+- **Jump-to-latest exit criterion** (round 8, task 2).
+- **Response stats exit criterion.** Round 7 showed stats on a new message and none on a message
+  from before the feature, in both themes.
+
+**Not ticked:**
+- **The composer chips task.** Round 8 reports reproducible touch-target defects in the model and
+  effort sheets (degenerate FlashList row bounds). Those must reach 48 dp before the task counts
+  as done.
+- **Hold-to-dictate.** Not started. It needs a test plan first, because the emulator's dictation
+  never produced real text in M11.
+
