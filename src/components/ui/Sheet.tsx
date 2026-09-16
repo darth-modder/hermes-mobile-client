@@ -10,9 +10,33 @@
 // the root layout) — same unmount-when-closed-and-settled shape, plain
 // `Animated` (matching AppDrawer's own choice over Reanimated for a single
 // transform+opacity transition), 200ms per M14's motion rule for sheets.
+//
+// M15 round 9 — why the whole sheet lives inside a `Modal`:
+//
+// Callers mount a `Sheet` wherever the control that opens it happens to sit
+// in the tree. Before this change the sheet's root was a plain
+// `StyleSheet.absoluteFill` View, so "full screen" actually meant "the size
+// of whatever view the caller mounted us in". For callers whose mount point
+// is a full-screen container (every `app/(main)/**` screen) that is the same
+// thing; for `ModelChip`/`EffortChip`, mounted inside `Composer`'s ~130 dp
+// bottom bar, it is not. Android still *draws* children that overflow their
+// parent (RN Views default to `overflow: 'visible'`), but it does not
+// dispatch touches to them — `ViewGroup.dispatchTouchEvent` only descends
+// into children whose hit rect is inside the parent — and
+// `AccessibilityNodeInfoDumper` intersects each node's bounds with its
+// ancestors' visible bounds, which is what produced round 8's collapsed and
+// inverted `bounds=` rectangles. The rows were always 48 dp tall; nothing
+// below the composer's own top edge could be tapped.
+//
+// `Modal` puts the sheet in its own full-screen window, so the root really
+// is the screen: touch dispatch, `uiautomator`'s reported bounds and the
+// body's `maxHeight: '88%'` all resolve against the display instead of the
+// caller's mount point. `onRequestClose` additionally gives every sheet
+// Android's hardware/gesture back dismissal, which the plain-View version
+// never had.
 import type { ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Animated, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useTheme } from '../../theme/provider'
@@ -35,18 +59,27 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
   const insets = useSafeAreaInsets()
   const translateY = useRef(new Animated.Value(1)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
-  const mounted = useRef(false)
   const dragY = useRef(new Animated.Value(0)).current
+  // Keeps the modal window up for the length of the close animation, then
+  // takes it down. A ref can't do this job any more: the modal has to stop
+  // being rendered once it settles closed (a stale transparent modal window
+  // swallows every touch on the screen behind it), and only state re-renders.
+  const [rendered, setRendered] = useState(visible)
 
   useEffect(() => {
+    if (visible) {
+      setRendered(true)
+      dragY.setValue(0)
+    }
+
     Animated.parallel([
       Animated.timing(translateY, { duration: ANIM_MS, toValue: visible ? 0 : 1, useNativeDriver: true }),
       Animated.timing(backdropOpacity, { duration: ANIM_MS, toValue: visible ? 1 : 0, useNativeDriver: true })
-    ]).start()
-
-    if (visible) {
-      dragY.setValue(0)
-    }
+    ]).start(({ finished }) => {
+      if (finished && !visible) {
+        setRendered(false)
+      }
+    })
   }, [backdropOpacity, dragY, translateY, visible])
 
   const panResponder = useRef(
@@ -67,55 +100,55 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
     })
   ).current
 
-  if (!visible && !mounted.current) {
+  if (!rendered) {
     return null
   }
 
-  mounted.current = visible
-
   return (
-    <View pointerEvents={visible ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-        <Pressable accessibilityLabel="Close" onPress={onClose} style={StyleSheet.absoluteFill} />
-      </Animated.View>
-      <Animated.View
-        style={[
-          styles.sheet,
-          {
-            // `tokens.popover` is deliberately translucent (resolve.ts:
-            // `mix(bgElevated, TRANSPARENT, 0.96)`) — a desktop material meant
-            // to sit over a blurred backdrop. This sheet has no blur behind
-            // it, so at 96% opacity the screen underneath (its text included)
-            // showed through; `card` is the same family of surface, fully
-            // opaque.
-            backgroundColor: tokens.card,
-            borderTopLeftRadius: radius.sheet,
-            borderTopRightRadius: radius.sheet,
-            paddingBottom: insets.bottom + 8,
-            transform: [
-              {
-                translateY: Animated.add(dragY, translateY.interpolate({ inputRange: [0, 1], outputRange: [0, 900] }))
-              }
-            ]
-          }
-        ]}
-      >
-        <View {...panResponder.panHandlers}>
-          <View style={[styles.handle, { backgroundColor: tokens.textQuaternary }]} />
-          {title ? (
-            <View style={styles.head}>
-              <View style={styles.headSpacer} />
-              <Text style={[styles.title, { color: tokens.foreground }]}>{title}</Text>
-              <Pressable accessibilityLabel="Close" hitSlop={12} onPress={onClose} style={styles.headSpacer}>
-                <Text style={[styles.close, { color: tokens.textSecondary }]}>{'✕'}</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.body}>{children}</View>
-        {footer ? <View style={styles.footer}>{footer}</View> : null}
-      </Animated.View>
-    </View>
+    <Modal animationType="none" onRequestClose={onClose} statusBarTranslucent transparent visible>
+      <View pointerEvents={visible ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
+        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+          <Pressable accessibilityLabel="Close" onPress={onClose} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              // `tokens.popover` is deliberately translucent (resolve.ts:
+              // `mix(bgElevated, TRANSPARENT, 0.96)`) — a desktop material meant
+              // to sit over a blurred backdrop. This sheet has no blur behind
+              // it, so at 96% opacity the screen underneath (its text included)
+              // showed through; `card` is the same family of surface, fully
+              // opaque.
+              backgroundColor: tokens.card,
+              borderTopLeftRadius: radius.sheet,
+              borderTopRightRadius: radius.sheet,
+              paddingBottom: insets.bottom + 8,
+              transform: [
+                {
+                  translateY: Animated.add(dragY, translateY.interpolate({ inputRange: [0, 1], outputRange: [0, 900] }))
+                }
+              ]
+            }
+          ]}
+        >
+          <View {...panResponder.panHandlers}>
+            <View style={[styles.handle, { backgroundColor: tokens.textQuaternary }]} />
+            {title ? (
+              <View style={styles.head}>
+                <View style={styles.headSpacer} />
+                <Text style={[styles.title, { color: tokens.foreground }]}>{title}</Text>
+                <Pressable accessibilityLabel="Close" hitSlop={12} onPress={onClose} style={styles.headSpacer}>
+                  <Text style={[styles.close, { color: tokens.textSecondary }]}>{'✕'}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.body}>{children}</View>
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
+        </Animated.View>
+      </View>
+    </Modal>
   )
 }
 
