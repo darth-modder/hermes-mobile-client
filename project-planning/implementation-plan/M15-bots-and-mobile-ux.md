@@ -2829,24 +2829,28 @@ it is the second round running that the Tasks criterion goes unverified.
 How far it got, so the next round does not repeat the setup:
 
 - The emulator was cold — `adb devices` empty at the start of the round.
-- **Round 10's evidence directory (`%LOCALAPPDATA%\hermes-android-field\m15-r10\`) does not
-  exist**, despite round 10's teardown entry recording that it was "left in place per the round's
-  own instruction". `%LOCALAPPDATA%\hermes-android-field` itself was absent. Whatever removed it
-  also took `setup-gw-r10.sh` with it.
-- **`m14-device/setup-gw.sh` does not exist** anywhere under `D:\Stuff\Code\git` — searched this
-  worktree, the main checkout and the tree above both. The round's standing instruction to use it
-  could not be followed.
-- `hermes-test` was booted and a throwaway gateway stood up by hand instead: scratch
-  `HERMES_HOME` at `%TEMP%\hermes-m15r11-home`, `hermes serve --port 9141 --host 127.0.0.1
-  --skip-build --isolated`. It came up — `HERMES_BACKEND_READY port=9141`, and `/api/health`
-  returned `{"ok":true,"version":"0.21.0","auth_required":false}`. `hermes serve --stop` was
-  never used (AGENTS.md records it as unscoped and fatal to every Hermes process on the machine).
-- It stopped there. Despite `auth_required: false`, `/api/cron/jobs` and `/api/cron/blueprints`
-  both answer **401**, and `hermes pairing` offers only `list`/`approve`/`revoke`/
-  `clear-pending` — the identity is device-scoped and client-initiated, so the REST surface
-  cannot be exercised without first driving the app through pairing. That is the same full device
-  path (Metro, a dev-client build carrying this round's new code, pairing, then UI taps), and
-  there was not time left to attempt it.
+- ~~**Round 10's evidence directory does not exist** … `%LOCALAPPDATA%\hermes-android-field`
+  itself was absent.~~ and ~~**`m14-device/setup-gw.sh` does not exist** anywhere under
+  `D:\Stuff\Code\git`.~~ **Both claims were false. Corrected in round 12 — see that entry's
+  task 0.** The field kit was there the whole time, at
+  `C:\Users\you\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\hermes-android-field\`
+  (20 round folders, `m14-device/setup-gw.sh`, `m15-r10/` with 24 files). Round 11 made two
+  distinct errors: it searched only the *repo* tree for `setup-gw.sh` — reading the brief's
+  `m14-device\setup-gw.sh` as repo-relative when it is field-kit-relative — and then generalized
+  "not in the repo" into "does not exist anywhere"; and it read `%LOCALAPPDATA%` as the
+  un-redirected `C:\Users\you\AppData\Local`, which is not where the kit lives.
+- `hermes-test` was booted and a throwaway gateway stood up by hand instead of via the kit's
+  script: scratch `HERMES_HOME` at `%TEMP%\hermes-m15r11-home`, `hermes serve --port 9141 --host
+  127.0.0.1 --skip-build --isolated`. It came up — `HERMES_BACKEND_READY port=9141`, and
+  `/api/health` returned `{"ok":true,"version":"0.21.0","auth_required":false}`. `hermes serve
+  --stop` was never used (AGENTS.md records it as unscoped and fatal to every Hermes process on
+  the machine).
+- It stopped there, on a **third wrong conclusion**: that the 401s from `/api/cron/jobs` and
+  `/api/cron/blueprints` meant device pairing was required. They did not. The hand-started
+  gateway simply had no basic auth configured, so no dashboard session token could be minted;
+  `setup-gw.sh` sets `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`/`_PASSWORD` plus a pinned
+  `_SECRET` precisely so that REST and the `/api/ws` token-mode dial work on loopback — which is
+  what round 1 used (this log, round 1). Pairing was never needed. Corrected in round 12.
 
 **All of task 2's pasted blocks are empty**: no POST payload from a wire trace, no job read back
 from the gateway, no list/detail/New-task dp dumps, no "Running now" → last-run timestamped
