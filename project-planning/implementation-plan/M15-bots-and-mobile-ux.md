@@ -314,6 +314,43 @@ and the gateway contract only.
    `assistant.thread.copy` ('Copy') and `assistant.thread.editMessage` ('Edit message'),
    `src/upstream/i18n/en.ts:3377,3407`.
 
+10. **The chip sheets' untappable rows were a `Sheet` primitive bug, not a FlashList bug — and
+    the fix changes every sheet in the app.** Round 8 filed this as "likely a FlashList
+    row-measurement issue specific to these two sheets". Neither sheet contains a `FlashList`
+    (`ModelChip.tsx:133` is a `ScrollView`, `EffortChip.tsx:86` is a `Menu` of `Pressable` rows),
+    and both already set `minHeight: 48` on their rows. The defect was `Sheet.tsx`'s
+    `StyleSheet.absoluteFill` root, which fills the caller's mount point rather than the screen —
+    fine for the eight sheets mounted at a screen's top level, wrong for the two mounted inside
+    `Composer`'s 144 px `chipRow`. So the fix is in the shared primitive: every `Sheet` in the app
+    now renders inside a react-native `Modal`. That is a wider blast radius than a two-file fix
+    would have been, and it is the right one — the bug is in the primitive, and a caller-side
+    workaround would have left the next caller to rediscover it. Two behaviour changes come with
+    it, both improvements and both deliberate: Android Back now dismisses a sheet instead of
+    popping the whole screen behind it (`onRequestClose`), and a closed sheet now genuinely
+    unmounts (`mounted` ref → `rendered` state), which it had to, because a transparent modal left
+    up would swallow every touch on the screen behind it. One screen-level sheet was re-verified
+    on device against this change (round 9's verification log, task 1).
+
+11. **Hold-to-dictate keeps M11's tap as a toggle rather than making the whole gesture
+    press-and-hold.** The obvious implementation of "hold the mic" is `onPressIn` starts
+    recording and `onPressOut` stops it — but M15 task B also says the tap path is "M11's path,
+    unchanged", and M11's path is a toggle (tap to start, tap again to stop and transcribe). A
+    pure press-and-hold would have turned a tap into a ~100 ms recording. So the release
+    *decides*: under the threshold it hands back to M11's toggle untouched, and only a hold past
+    `HOLD_AUTO_SEND_MS` stops the recorder and arms the send. Both gestures live on one button
+    with no long-press/short-press ambiguity, because the two outcomes are distinguished by the
+    hold duration the task already specifies.
+
+12. **The auto-send fires after a 1.5 s grace window, not instantly on release.** M15 task B asks
+    for "an 'Edit before sending' escape while the transcript is still editable", and an escape
+    is only meaningful if there is an interval to take it in: send-on-release-immediately leaves
+    nowhere for it to live. So releasing an armed hold puts the transcript in the composer,
+    shows the escape, and submits `AUTO_SEND_GRACE_MS` later. The exit criterion ("a 2.5 s hold
+    auto-sends the transcript on release") is still met — the release is what commits the send;
+    the window only makes it revocable. Unlike the 2.5 s, this 1.5 s is **not** one of D16.3's
+    three tunings restated from observation: it is this project's own choice, and the constant
+    says so rather than implying a provenance it does not have.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
@@ -2001,3 +2038,223 @@ live. So the seam covers the logic M15 actually adds, M11 covers the mechanism, 
 neither covers — a real spoken word coming back as text — stays M11's open `[physical]`-class
 item. Task 4's result is therefore labelled "wire path verified with the dev seam; real-speech
 recognition remains M11's [physical] item", per this round's own instruction.
+
+**Task 3 (hold-to-dictate implementation): met.** Commit `782b948`.
+
+`src/chat/hold-to-dictate.ts` is the whole decision surface — a pure reducer over
+`press` / `threshold` / `release` / `transcript-empty` / `escape` / `grace-elapsed` / `cancel`,
+returning one named effect per transition. `Composer.tsx` runs the effects and owns nothing
+else. Split out for the same reason `latest-pill.ts` and `dictation-guard.ts` were: the
+threshold, the release decision, the escape and the cancel are then unit-testable without
+mounting `Composer`, running a recorder, or spending 2.5 s of wall clock per case. 26 tests
+(`hold-to-dictate.test.ts`).
+
+- **Tap — M11's path, unchanged.** Below the threshold the release hands straight back to M11's
+  toggle: the first tap leaves the recorder running, the second stops it and fills the composer.
+  Same `stopRecordingAndTranscribe`, same cross-session guard (`dictation-guard.ts`), same
+  "empty transcript inserts nothing".
+- **Hold ≥ 2.5 s — auto-send on release.** `HOLD_AUTO_SEND_MS = 2500`, cited at the constant as
+  D16.3's observed tuning ("a 2.5 s hold … restated from observation of the product, not from
+  its source").
+- **Visible "Auto-send" state** from the moment the threshold is crossed until the send fires or
+  is escaped — a row above the chips reading "Auto-send" (primary) with "Release to send" while
+  the finger is still down.
+- **"Edit before sending" escape**, replacing that hint once the transcript is actually in the
+  composer and editable. `AUTO_SEND_GRACE_MS = 1500` is the window it lives in.
+- **Haptic on the threshold**: a new `hapticArmed()` (`src/lib/haptics.ts`), `ImpactFeedbackStyle
+  .Medium` rather than the `Light` the existing helpers use — it has to be felt without looking,
+  since the point of the gesture is that the user is holding the phone and talking.
+
+Three decisions worth naming, all of them load-bearing:
+
+1. `release` measures the hold from its own press timestamp instead of trusting the threshold
+   timer to have fired. The timer drives only the visible state and its haptic, so a starved JS
+   thread (the ordinary case mid-stream, not a hypothetical) cannot lose an auto-send. Tested:
+   "a long enough release auto-sends even if the threshold timer never fired".
+2. `grace-elapsed` is ignored outside `pending`. The grace timer is not cancellable from a pure
+   reducer, so the *only* thing stopping an escaped transcript from flying anyway is that the
+   late timer is a no-op. Tested directly.
+3. An empty transcript never auto-sends. M11 saw exactly that on the emulator — silence in,
+   empty transcript out — so a queued send whose transcript comes back empty is dropped rather
+   than submitting an empty prompt.
+
+`Composer` needed two refs to make the queued send correct, both because the send fires from a
+`setTimeout` whose closure predates the transcript landing: `dictationRef` (so every dispatch
+reduces the *current* machine, not the one that existed when the timer was armed) and `textRef`
+(so `send()` submits the text that is in the composer now). `send()` reading `textRef.current`
+rather than `text` is the one behavioural change to an existing path, and it is a strict
+improvement — the Send button's own closure is always current anyway.
+
+**Strings.** No upstream equivalent exists: grepped `src/upstream/i18n/en.ts` for `auto.?send`,
+`autosend`, `editBeforeSend` and for any `hold` / `dictat` / `record` key and found nothing,
+because the desktop has no touch gesture to label. The four labels
+(`COMPOSER_AUTO_SEND_LABEL`, `COMPOSER_AUTO_SEND_ARMED_HINT`,
+`COMPOSER_EDIT_BEFORE_SENDING_LABEL`, `COMPOSER_HOLD_TO_AUTO_SEND_HINT`) go in
+`strings.mobile.ts` with that reason recorded next to them, per the round's instruction.
+
+**The dev seam**, as task 2's plan settled: `src/voice/dev-transcript-seam.ts` substitutes only
+the text `transcribeAudio` would have returned, in `recorder.ts` *after* the real
+`recorder.stop()` — permission, native capture and stop all still run. It is hard-wired to
+`null` outside `__DEV__` (the gate is in the seam, not at the caller, so no future caller can
+switch it on in a shipped build), and is reachable from `adb` through
+`app/dev/dictation-seam.tsx`, a dev-only route in the same namespace and with the same
+dev-only-by-convention status as `primitives.tsx`.
+
+**Task 4 (device verification): met for the wire path. Labelled — wire path verified with the
+dev seam; real-speech recognition remains M11's [physical] item.**
+
+Same AVD, gateway and app build as task 1, on the fresh bundle that includes the dictation code
+(`Android Bundled 17659ms index.ts (8832 modules)` after a `--clear` restart — 8832 against task
+1's 8829, i.e. the three new modules). `RECORD_AUDIO` granted up front
+(`adb shell pm grant`, confirmed `granted=true`) so no permission dialog could land mid-gesture.
+
+*The wire trace.* The gateway's own log has no request logging at any level this round could
+reach (`setup-gw-r9.log` is three lines: `SETUP DONE`, `HERMES_BACKEND_READY port=9139`,
+`Hermes backend listening`), so "nothing was sent" could not be shown from it. Instead a
+logging proxy sits in front: `adb reverse tcp:9139 tcp:9140` points the device's
+`127.0.0.1:9139` at a Node proxy (`ws-trace.cjs`, `ws@7.5.13` out of the repo's own
+`node_modules`) that logs every HTTP request and every client→server WebSocket frame before
+forwarding to the real gateway on 9139. The app's configured URL never changed. Every block
+below is that log, unedited, including the heartbeats — so an absence of `prompt.submit` is a
+real absence and not a filtered one.
+
+*(a) Tap: the composer fills and nothing is sent.* Seam armed with
+`hold to dictate wire check R9`. First tap at the mic's dumped centre `(336,2259)` — the
+accessibility label flipped to `Stop recording`, i.e. the recorder is running and M11's toggle
+is intact:
+
+```
+CLICK [273,2196][399,2322] 126x126px = 48.0x48.0dp  centre=(336,2259)  Button  desc='Stop recording'
+```
+
+Second tap at the same centre — the recorder stops, the transcript lands, the label goes back:
+
+```
+CLICK [273,2196][399,2322] 126x126px = 48.0x48.0dp  centre=(336,2259)  Button    desc='Record voice message'
+CLICK [525,2153][895,2321] 370x168px = 141.0x64.0dp centre=(710,2237)  EditText  'hold to dictate wire check R9'
+CLICK [906,2196][1059,2322] 153x126px = 58.3x48.0dp centre=(982,2259)  ViewGroup desc='Send'
+```
+
+Every client→server frame in that window:
+
+```
+10:19:16.853 C->S {"jsonrpc":"2.0","id":"heartbeat-4","method":"gateway.ping","params":{}}
+10:19:31.870 C->S {"jsonrpc":"2.0","id":"heartbeat-5","method":"gateway.ping","params":{}}
+10:19:46.886 C->S {"jsonrpc":"2.0","id":"heartbeat-6","method":"gateway.ping","params":{}}
+10:20:01.903 C->S {"jsonrpc":"2.0","id":"heartbeat-7","method":"gateway.ping","params":{}}
+```
+
+Four heartbeats, no `prompt.submit`. Nothing was sent.
+
+*(b) Hold 2.5 s and release: a prompt lands with exactly that text.* Composer cleared, seam
+re-armed with `auto send on release R9`, then `input motionevent DOWN` at `(336,2259)`, 3.0 s,
+`UP`:
+
+```
+10:21:47.020 C->S {"jsonrpc":"2.0","id":"heartbeat-14","method":"gateway.ping","params":{}}
+10:22:02.037 C->S {"jsonrpc":"2.0","id":"heartbeat-15","method":"gateway.ping","params":{}}
+10:22:03.374 C->S {"jsonrpc":"2.0","id":"r7","method":"prompt.submit","params":{"session_id":"aacd7489","text":"auto send on release R9"}}
+10:22:17.053 C->S {"jsonrpc":"2.0","id":"heartbeat-16","method":"gateway.ping","params":{}}
+```
+
+Exactly the transcript — nothing appended, nothing truncated. Reproduced twice more in the
+course of the (c) runs, with different phrases each time, both auto-sent on release with no
+escape tapped: `"text":"escape keeps the text R9"` at `10:26:35.287` and
+`"text":"escape run three R9"` at `10:29:27.355`.
+
+The visible state was captured by `screencap` rather than `uiautomator dump`, because **a dump
+taken while a touch is held returns nothing** — `uiautomator dump` waits for the window to go
+idle and a held press never lets it. Two mid-hold dumps came back empty before this was
+understood; the screenshots are the evidence instead. `36-hold-armed.png`, at ~3.2 s into the
+hold, shows the row above the chips reading "Auto-send" (primary) on the left and "Release to
+send" on the right, the mic icon red (`MicOff`), and the OS's own green microphone-in-use dot
+lit in the status bar — the recorder really is capturing. `35-hold-below-threshold.png`, at
+~1.2 s, shows no such row.
+
+*(c) Hold, then "Edit before sending": nothing is sent and the text stays.* The escape's own
+node, from a dump taken inside the grace window:
+
+```
+CLICK [682,1869][1049,1995] 367x126px = 139.8x48.0dp  centre=(865,1932)  Button  desc='Edit before sending'
+```
+
+and the composer alongside it, already holding the transcript and editable:
+
+```
+CLICK [525,2153][895,2321] 370x168px = 141.0x64.0dp  centre=(710,2237)  EditText  'escape keeps the text R9'
+```
+
+Seam re-armed with `escape run four R9`; `DOWN`, 3.0 s, `UP`, then the escape tapped at
+`(865,1932)`. Every client→server frame from the mark to eight seconds after the tap — well
+past the 1.5 s grace:
+
+```
+10:30:47.619 C->S {"jsonrpc":"2.0","id":"heartbeat-50","method":"gateway.ping","params":{}}
+10:31:02.636 C->S {"jsonrpc":"2.0","id":"heartbeat-51","method":"gateway.ping","params":{}}
+```
+
+No `prompt.submit`. The composer afterwards:
+
+```
+CLICK [525,2153][895,2321] 370x168px = 141.0x64.0dp  centre=(710,2237)  EditText  'escape run four R9'
+CLICK [906,2196][1059,2322] 153x126px = 58.3x48.0dp  centre=(982,2259)  ViewGroup desc='Send'
+```
+
+Text intact, Auto-send row gone, no turn running. `40-after-escape.png` shows the same thing
+from the other side: the three earlier auto-sends are user bubbles in the transcript
+("escape keeps the text R9", "escape run two R9", "escape run three R9") while "escape run four
+R9" is still sitting in the composer.
+
+*One procedural deviation, stated rather than glossed.* The round's rule is a fresh dump and a
+node-centre tap before every tap. For this one tap that is not physically possible: the grace
+window is 1.5 s and a `uiautomator dump` + `adb pull` round trip is about 2 s, so three attempts
+to dump-then-tap all had the grace fire first (their sends are the two extra `prompt.submit`
+lines quoted in (b), which is why they are quoted there — they are real auto-sends, not
+failures). The successful run tapped `(865,1932)` immediately on release. That coordinate is not
+guessed: two dumps of this exact screen state, taken minutes apart in the two immediately
+preceding runs, both reported `desc='Edit before sending'` at `[682,1869][1049,1995]`, and the
+composer was confirmed idle (no Stop/Steer action row, which is the only thing that shifts this
+row) in the dump immediately before the hold. The tap is non-destructive, and its effect was
+verified by dump afterwards.
+
+*What this does and does not prove.* It proves the tap path fills and sends nothing, that a
+≥2.5 s hold auto-sends on release with exactly the transcript text on the wire, that the visible
+Auto-send state and its haptic path are reached, and that the escape cancels the send while
+keeping the text. It does not prove real-speech recognition: the transcript came from the
+`__DEV__` seam, so mic content, m4a encoding, upload and Whisper were bypassed by construction.
+Per this round's own instruction the result is labelled: **wire path verified with the dev seam;
+real-speech recognition remains M11's [physical] item.** The seam was cleared
+(`hermes-android://dev/dictation-seam?clear=1`, screen confirming `(none — real transcription)`)
+before teardown.
+
+**Task 5 (`npm run check`): exit 0.** Run at `782b948`, the round's last code commit, with a
+clean working tree.
+
+```
+ Test Files  69 passed (69)
+      Tests  653 passed (653)
+Ran 52 tests in 3.671s
+OK
+All matched files use Prettier code style!
+EXIT=0
+```
+
+653 against round 8's 627 — the 26 new `hold-to-dictate.test.ts` cases. `tsc -p . --noEmit`
+clean, `eslint .` clean. (The `RuntimeError: boom` and `Expo push send failed` lines in the
+Python half's output are `hermes-push`'s own deliberate failure-path fixtures, unchanged from
+previous rounds; the suite reports `OK`.)
+
+**Exit criteria touched this round.**
+
+- **Model and effort (chips task, group B).** Met. Both sheets' rows are real ≥48 dp native
+  targets in both themes (48.0 dp effort, 57.9-58.3 dp model), and a tap at a dumped row centre
+  selects that row and no other — proved on the wire (`config.set` model then reasoning) and by
+  `session.resume().info` reading back `deepseek-v4-flash` / `low`.
+- **Hold-to-dictate.** Met for the wire half, with the label the round's own instruction
+  specifies. "A 2.5 s hold auto-sends the transcript on release (a prompt lands on the wire with
+  that text)" — proved three times, `prompt.submit` carrying exactly the transcript. "A tap only
+  fills the composer" — proved, with zero `prompt.submit` in the window. Both via the `__DEV__`
+  transcript seam; real-speech recognition remains M11's `[physical]`-class item and is not
+  claimed here.
+
+Boxes are deliberately left unticked in this file — the user ticks them.
