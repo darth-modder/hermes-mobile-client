@@ -36,7 +36,18 @@
 // never had.
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { Animated, Keyboard, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
+import {
+  Animated,
+  Keyboard,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View
+} from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useTheme } from '../../theme/provider'
@@ -96,6 +107,17 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
   const tokens = useTheme()
   const insets = useSafeAreaInsets()
   const keyboardInset = useKeyboardInset()
+  const { height: windowHeight } = useWindowDimensions()
+  // M15 round 11 (task 0c). `marginBottom: keyboardInset` slides the sheet up
+  // by the keyboard's full height; on a *tall* sheet that pushes its own top
+  // — handle, title, Close — off the top of the screen, because nothing ever
+  // bounded the sheet against the space actually left above the IME. The
+  // primitive's 88% rule (primitives.html "Sheet") is therefore measured
+  // against what remains above the keyboard rather than against the whole
+  // display, and it caps the sheet as a whole instead of just its body, so
+  // the header and footer are inside the budget rather than added on top of
+  // it. The body is the part that gives, which is why it scrolls below.
+  const maxSheetHeight = (windowHeight - keyboardInset) * 0.88
   const translateY = useRef(new Animated.Value(1)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
   const dragY = useRef(new Animated.Value(0)).current
@@ -105,10 +127,37 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
   // swallows every touch on the screen behind it), and only state re-renders.
   const [rendered, setRendered] = useState(visible)
 
+  // Opening is two renders, not one, and the split matters — see the second
+  // effect. This one only flips the window on; it never starts an animation.
   useEffect(() => {
     if (visible) {
       setRendered(true)
       dragY.setValue(0)
+    }
+  }, [dragY, visible])
+
+  // M15 round 11. Not the scrim bug — that was the two causes recorded on
+  // `styles.backdrop` below — but a latent race found while reading this, and
+  // fixed here because the scrim's opacity is one of the two values it drives.
+  //
+  // The open animation used to start in the effect above, in the same pass
+  // that calls `setRendered(true)`: at that moment `rendered` is still false,
+  // so the early `return null` means neither `Animated.View` is mounted and
+  // neither animated value is attached to a view. `useNativeDriver: true`
+  // needs the value's native node connected to a real view tag
+  // (`connectAnimatedNodeToView`, done by `AnimatedProps.__attach()` on
+  // mount) before the driver can write to it, so a timing started against an
+  // unattached node can run natively while nothing is listening.
+  //
+  // It has never produced a *visible* fault: both values happen to end at
+  // their on-screen state (`translateY` 0, `backdropOpacity` 1), so a view
+  // that attaches late attaches already-correct. Depending on `rendered`
+  // instead makes the first `start()` happen on the render after mount, which
+  // is the ordering the native driver actually documents. Recorded as
+  // defensive, not as a fix for an observed symptom.
+  useEffect(() => {
+    if (!rendered) {
+      return
     }
 
     Animated.parallel([
@@ -119,7 +168,7 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
         setRendered(false)
       }
     })
-  }, [backdropOpacity, dragY, translateY, visible])
+  }, [backdropOpacity, rendered, translateY, visible])
 
   const panResponder = useRef(
     PanResponder.create({
@@ -162,6 +211,7 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
               backgroundColor: tokens.card,
               borderTopLeftRadius: radius.sheet,
               borderTopRightRadius: radius.sheet,
+              maxHeight: maxSheetHeight,
               // Lift the whole sheet by exactly the keyboard's height rather
               // than padding it: padding would make the sheet taller and push
               // its own top off-screen, while a margin slides the same-sized
@@ -190,7 +240,13 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
               </View>
             ) : null}
           </View>
-          <View style={styles.body}>{children}</View>
+          <ScrollView
+            contentContainerStyle={styles.bodyContent}
+            keyboardShouldPersistTaps="handled"
+            style={styles.body}
+          >
+            {children}
+          </ScrollView>
           {footer ? <View style={styles.footer}>{footer}</View> : null}
         </Animated.View>
       </View>
@@ -199,11 +255,43 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
 }
 
 const styles = StyleSheet.create({
+  // M15 round 11 (task 0a), the scrim's *first* cause. This carried only a
+  // `backgroundColor`, so as a plain flex child of the `absoluteFill` root it
+  // stretched to full width and collapsed to **zero height** — its one child
+  // is `position: absolute` and so contributes nothing to its parent's
+  // intrinsic size. Round 10's `onLayout` measured exactly that
+  // (`{"x":0,"y":0,"width":411.4,"height":0}`). A zero-height View cannot dim
+  // anything and its `absoluteFill` Pressable — absolute *relative to it* —
+  // is zero-sized too, which is why the scrim never appeared in a dump and
+  // tapping outside a sheet did nothing.
+  //
+  // `AppDrawer.tsx:142-144` still carries the identical shape; this style was
+  // copied from there. The drawer only looks correct because its panel is
+  // opaque and covers the part of the screen you look at.
+  //
+  // The *second* cause is why round 10's fix for the first one didn't take.
+  // It spread `StyleSheet.absoluteFillObject`, which **does not exist in
+  // React Native 0.86.3**: `Libraries/StyleSheet/StyleSheetExports.js:21-27`
+  // declares `absoluteFill` as a plain object and exports exactly that name
+  // at `:110` — there is no `absoluteFillObject` alongside it (the two-name
+  // era, where `absoluteFill` was a registered style ID and
+  // `absoluteFillObject` its object form, is gone). Spreading `undefined`
+  // into an object literal is legal and silently contributes nothing, so the
+  // style stayed `{backgroundColor}` and the backdrop stayed zero-height —
+  // the edit read as a fix and compiled, but changed nothing at runtime.
+  // `tsc` does flag it (TS2551), which is how it was caught here.
   backdrop: {
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.4)'
   },
+  // `flexShrink: 1` against the sheet's `maxHeight` is what makes the body —
+  // not the header or the footer — absorb the overflow on a tall sheet, so
+  // the title stays on screen and the content scrolls under it.
   body: {
-    maxHeight: '88%',
+    flexGrow: 0,
+    flexShrink: 1
+  },
+  bodyContent: {
     paddingHorizontal: 16,
     paddingVertical: 4
   },

@@ -157,6 +157,9 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
           {filteredSkills.map(skill => (
             <View key={skill.name}>
               <Pressable
+                accessibilityLabel={skill.name}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: skill.enabled }}
                 onPress={() =>
                   setSkills(current => current.map(s => (s.name === skill.name ? { ...s, enabled: !s.enabled } : s)))
                 }
@@ -165,12 +168,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                 <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {skill.name}
                 </Text>
-                <Switch
-                  onValueChange={enabled =>
-                    setSkills(current => current.map(s => (s.name === skill.name ? { ...s, enabled } : s)))
-                  }
-                  value={skill.enabled}
-                />
+                <Switch importantForAccessibility="no" pointerEvents="none" value={skill.enabled} />
               </Pressable>
               {lockedSkillNames.includes(skill.name) ? (
                 <Text style={[styles.rowSub, { color: tokens.destructive }]}>
@@ -189,6 +187,9 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
           </Text>
           {filteredToolsets.map(toolset => (
             <Pressable
+              accessibilityLabel={toolset.label}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: toolset.enabled }}
               key={toolset.name}
               onPress={() =>
                 setToolsets(current =>
@@ -205,12 +206,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                   {toolset.description}
                 </Text>
               </View>
-              <Switch
-                onValueChange={enabled =>
-                  setToolsets(current => current.map(ts => (ts.name === toolset.name ? { ...ts, enabled } : ts)))
-                }
-                value={toolset.enabled}
-              />
+              <Switch importantForAccessibility="no" pointerEvents="none" value={toolset.enabled} />
             </Pressable>
           ))}
         </>
@@ -229,9 +225,18 @@ const styles = StyleSheet.create({
   // M15 A-close round 1, task 4: `minHeight: 48` sizes this row, but a bare
   // Switch renders at its own native platform size regardless of the
   // container — device-measured at ~46.5×27dp, under the 48dp minimum in
-  // both dimensions. The row is now a Pressable that toggles the same
-  // value, so the full row is the touch target; the Switch itself stays
-  // wired for a tap landing directly on it.
+  // both dimensions. The row is a Pressable that toggles the same value, so
+  // the full row is the touch target.
+  //
+  // M15 round 11 (task 0b): leaving the Switch independently wired kept a
+  // 46.5×27 dp *clickable node* inside the 48 dp row, so the row being big
+  // enough didn't clear the criterion — a dump still showed a sub-48 dp
+  // target. The Switch is now a pure indicator: `pointerEvents="none"` so it
+  // takes no touches, `importantForAccessibility="no"` so it leaves the
+  // accessibility tree that `uiautomator` dumps, and its `onValueChange` is
+  // gone rather than left dead. The semantics moved up to the row, which
+  // carries `accessibilityRole="switch"` and the `checked` state, so
+  // TalkBack still announces it as a toggle with one node instead of two.
   row: {
     alignItems: 'center',
     flexDirection: 'row',
