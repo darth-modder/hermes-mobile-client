@@ -3347,3 +3347,264 @@ Vitest 771 passed — 729 plus 42 new `gateway-url-guard.test.ts`.
 - *Cron deep-link redirects* — **done, device-verified.** Closed.
 - *`AppDrawer`'s zero-height backdrop* (`src/components/AppDrawer.tsx:142-144`) — still open,
   untouched, out of scope as instructed. Recorded only.
+
+### Round 14 — field kit moved off the MSIX overlay; Detect regression root-caused and fixed; Banner, Capabilities and Tasks-light device-verified (2026-09-16)
+
+**Task 0 (move the field kit off the MSIX overlay): done.** The kit at
+`C:\Users\you\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\hermes-android-field`
+(2308 files, 262,024,667 bytes, 29 directories) was copied — not moved — to
+`D:\Stuff\hermes-android-field` with `robocopy /E`. Both sides verified equal on file count,
+directory count, and total bytes. Nothing in the overlay was deleted. `setup-gw.sh`'s `DIR` now
+points at `/d/Stuff/hermes-android-field/m14-device`; `SCRATCH` is untouched and still resolves
+under `$TEMP`.
+
+**The MSIX finding, confirmed and narrower than rounds 12–13 wrote it up.** Round 12 attributed
+the round-11 misses to *which shell session* was used, reasoning that "earlier rounds ran with the
+MSIX container's merged view" as if it were session-dependent. The actual boundary is *which
+process*, not which shell: any process running under the Claude app's package identity — including
+this session's own Bash and PowerShell tool calls — sees `%LOCALAPPDATA%\hermes-android-field` and
+`C:\Users\you\AppData\Local\hermes-android-field` both resolve, via Windows' per-package
+VFS redirection, to the merged overlay view (confirmed: `ls` through this session's Bash tool on
+either path lists the full kit, `m14-device` included). WSL is not such a process — it is a
+separate OS-level environment outside that virtualization entirely — so the identical path string
+resolves for it to the real, un-virtualized NTFS directory, which holds only the empty
+`hermes-android-field/m14-device` stub round 12 created:
+
+```
+$ wsl -d Ubuntu-26.04 -- bash -c "ls /mnt/c/Users/you/AppData/Local/hermes-android-field/m14-device/ | wc -l"
+0
+```
+
+against the same path, copied to `D:\Stuff\hermes-android-field` (not virtualized, not under a
+package-owned prefix), which WSL lists in full — `m14-device`'s 101 files (`find -type f | wc -l`), including
+`setup-gw.sh`, `seed-host.sh`, and every round's dumps.
+
+This is what rounds 11–13's "missing path" reports were actually hitting: any tool or process
+outside the Claude app's own virtualization — WSL foremost, but potentially any externally-spawned
+shell too — reads straight through the overlay to the real, mostly-empty directory tree and
+reports it as missing or empty, correctly, for what it can see. It was never a wrong env var or a
+wrong guess at `%LOCALAPPDATA%`; it is a hard visibility boundary that no amount of path-fixing
+from inside the app's own shell could have caught, because that shell was never the one failing.
+The fix is the move in this task, not a corrected path — D: is real, unvirtualized storage, so
+every process, inside the package or out, now sees the same bytes.
+
+*One inconsistency in the above, recorded rather than smoothed over:* mid-round, this session's own
+Bash tool listed `$LOCALAPPDATA/hermes-android-field` (top level) successfully but then failed to
+`ls` `$LOCALAPPDATA/hermes-android-field/m15-r13` specifically ("No such file or directory"), even
+though that directory was present in the overlay per the very first `Get-ChildItem` of this round.
+The D: copy resolved it immediately. So the "any in-package process sees the merged view" claim
+above is not perfectly clean — some nested paths through the overlay were flaky for this session's
+own tools too, not just for WSL. Not root-caused; flagged as a further reason D: is now the only
+place evidence lives, rather than pursued further.
+
+**Task 1 (the "Detect auth mode" regression): root cause found, proven on device exactly as
+prescribed, fixed.** Commit pending.
+
+Read `app/connect/index.tsx:284` before touching anything: the screen's one `ScrollView` wrapped
+every step (`:start`, `:steps`, `:url`) and carried no `keyboardShouldPersistTaps`, so it defaulted
+to `'never'` — RN's documented behaviour there is that the *first* tap outside a focused
+`TextInput` is consumed dismissing the keyboard, and only a second tap reaches the touched child's
+`onPress`.
+
+Proof, both halves, against the throwaway gateway's Metro (`CI=1`), with a one-line
+`console.log('ROUND14_DETECT_FIRED')` as `detect()`'s first statement, reverted before committing:
+
+- **(a) keyboard open:** typed `http://myhost.tail1234.ts.net:9119`, left the IME up
+  (`mInputShown=true`), tapped Detect. `mInputShown` went `true` → `false` (the OS dismissed the
+  keyboard) but Metro's log gained **zero** new lines — `detect()` never ran.
+- **(b) keyboard already down:** same URL, no further typing, tapped Detect again. Metro printed
+  `ROUND14_DETECT_FIRED` immediately.
+
+(a) failed and (b) fired — the hypothesis held. Fix: `keyboardShouldPersistTaps="handled"` added to
+the `ScrollView`. Re-ran (a) after the fix: typed the URL fresh, kept the keyboard up, tapped
+Detect — `ROUND14_DETECT_FIRED` printed **with the keyboard still open** (`mInputShown` stayed
+`true` this time), and the probe proceeded to a real network attempt: `"Could not reach that Hermes
+gateway. Couldn't find that host — check the address."` against the fake hostname. Evidence:
+`m15-r14/25-*` through `m15-r14/33-*`.
+
+*One environment trap this proof surfaced, worth recording so it isn't re-discovered at cost next
+round:* `CI=1` Metro doesn't just disable Fast Refresh — its delta/update graph stops tracking file
+changes at all, because that tracking rides on the same file watcher `CI=1` turns off. A force-stop
++ cold relaunch of the app is **not** enough to pick up an edit; the dev client requests an
+incremental update relative to a revision it already holds, and Metro serves that delta without
+re-checking the edited file on disk. The first attempt at proving the fix (`edit → force-stop →
+relaunch → tap`) silently replayed the *pre-fix* behaviour twice before this was caught — confirmed
+by directly requesting `/app/connect/index.bundle` over HTTP, which forced Metro to read the file
+fresh and did contain the fix. **Killing and restarting the Metro process itself** (not just the
+app) before every fresh-bundle check was the only reliable fix; every result reported for task 1 and
+task 3 is from a bundle the (twice-restarted) Metro process built after the corresponding edit.
+
+**Audit of every other `ScrollView`/`FlatList` holding a `TextInput` plus a button, as instructed.**
+Six screens total carry the pattern; five besides the one above had the identical missing default,
+all fixed the same way:
+
+| file:line | what's in it |
+| --- | --- |
+| `app/connect/index.tsx:284` | URL field, Detect / Scan QR — the one proven above |
+| `app/connect/[id]/login.tsx:166` | username/password fields, Sign in |
+| `app/(main)/settings/providers.tsx:199` | per-row API-key `TextInput`, Save |
+| `app/(main)/settings/connections.tsx:183` | connection label edit (submits via `onSubmitEditing`, but shares the ScrollView with other buttons — see below), Remove/Sign out |
+| `app/(main)/settings/mcp.tsx:122` | name/target fields, Add server |
+| `app/(main)/webhooks/index.tsx:106` | name/prompt/events fields, Create |
+
+`connections.tsx`'s own label field saves on IME submit rather than a separate button tap, so its
+specific edit flow was never exposed to this bug — but the same `ScrollView` also holds each card's
+Remove/Sign out/Test buttons, which a focused label edit elsewhere on screen would still have
+swallowed the first tap on; fixed for consistency and because it carries the same missing default,
+not because its own save button was provably broken.
+
+**Not part of the audit, but hit live while proving task 3c and fixed anyway** — see task 3 below;
+a second, unrelated bug in `app/(main)/sessions/[id].tsx`'s "Sign in again" wiring.
+
+Every `TextInput`+button surface that lives inside `src/components/ui/Sheet.tsx` (`BotSettingsSheet`,
+`NewTaskSheet`, the new-bot sheet in `app/(main)/bots/index.tsx`, `CapabilitiesSheet`) was **not**
+affected — `Sheet.tsx:245` already sets `keyboardShouldPersistTaps="handled"` on its own internal
+`ScrollView`, centrally, for every sheet at once. Confirmed by reading the primitive rather than
+assumed.
+
+**Task 3 (finish round 13's device verification): done, device-verified, against a throwaway
+gateway on `http://10.0.2.2:9128`.** Evidence: `D:\Stuff\hermes-android-field\m15-r14\` (100+
+dumps/screenshots/logs). Never touched Hone beyond the unavoidable minimum (reading its session
+list to find Settings, and once accidentally landing in one of its existing chats mid-navigation —
+see below).
+
+**3a (pairing).** A tailnet-shaped URL (`http://myhost.tail1234.ts.net:9119`) reached detection and
+failed to connect exactly as expected — fake host, real DNS failure: `"Could not reach that Hermes
+gateway. Couldn't find that host — check the address."` (`33-fixed-detect-result.xml/png`). Real
+connection: `10.0.2.2:9128` on the **"Enter a URL" path** — `127.0.0.1:9128` was tried first and
+rejected even on that path (`"That address is this phone, not your computer"`,
+`38-before-real-detect.xml`), which is a genuine finding against this round's own brief (it names
+"the adb-reverse 127.0.0.1 URL on that path" as an option): `gateway-url-guard.ts` rejects
+`127.0.0.0/8` unconditionally, with no path-dependent exception the way it has one for `10.0.2.2`
+(round 13's finding). `10.0.2.2` detected `basic` auth, signed in as `tester` with the scratch
+password, reached "Connected". Registry log confirms: `[registry] active: conn-...-p1tt8f
+(http://10.0.2.2:9128)`.
+
+**3b (capabilities).** `wm density` → 420 (48dp = 126px). Every *visible* `Switch` row in the
+Capabilities sheet measured 126–137px tall — at or over the minimum, none under
+(`54-capabilities.xml`, `55-capabilities-scrolled.xml`). Two rows initially looked sub-threshold
+(17px and a negative height) but both were scroll-clipped rows at the bottom edge of the sheet, not
+real touch targets — `Sheet.tsx`'s own header comments document this exact
+`AccessibilityNodeInfoDumper`-intersects-visible-bounds artifact from round 8. Scrolling them into
+view and re-dumping showed the same 126–137px rows as everything else. Toggled "Speech-to-Text"
+(was off) on; the Save-and-close round-trip is confirmed via the **host's own persisted config**
+rather than a raw `profiles.describe` RPC call (the RPC needs a signed WS handshake this session
+didn't script) — `profiles/coder/config.yaml`'s `tools.enabled_toolsets` gained `stt`, which is the
+exact same data `profiles.describe` (RPC 5063, `src/api/bots.ts:187`) reads and returns to the app.
+Named as an inference: the toggle reaching disk is observed directly; that `profiles.describe`
+specifically would read it back is inferred from `bots.ts` rather than watched over the wire.
+
+**3c (banner) — plus one genuine, previously-undiscovered bug found live.** All four states,
+timestamped:
+
+| state | cause | result | evidence |
+| --- | --- | --- | --- |
+| unreachable | `taskkill` on `hermes.exe` (throwaway gateway) at 22:53:29 | "Connection needs attention / Could not reach the host." at 22:53:43 | `60-banner-unreachable.xml/png` |
+| 401 | deleted `.cookie-secret` before restarting the gateway, invalidating the session cookie already in the app | "The host rejected this phone's credentials. Sign in again to continue." at 22:54:21 (tapped Sync now at 22:54:17) | `62-401-result.xml/png` |
+| restore + Sync now | host killed again live mid-chat (23:03:49), restarted **without** touching `.cookie-secret` this time (23:04:xx), tapped Sync now at 23:04:31 | banner gone by 23:04:36, no app restart | `96-*`, `97-after-sync-restore.xml/png` |
+| re-resume carries the profile | same cycle, from an open `coder` chat with a message already in flight | transcript shows `"resumed interrupted turn"` immediately under the `coder` bot's own tool calls (`search_files`, `terminal`) — the resume used this session's bot context, not a generic reconnect | `97-after-sync-restore.png` (screenshot) |
+
+**The bug found live:** the banner's own "Sign in again" (`app/(main)/sessions/[id].tsx:197-206`,
+wired to `ConnectionBanner`'s `onSignIn`) pushes `/connect/[id]/login` with
+`{ baseUrl, id, label }` — no `provider`. `login.tsx:102-105`'s `submit()` starts with `if (!baseUrl
+|| !provider) { return }`, so **every tap on "Sign in again" from a live 401 silently did nothing**:
+no error, no log, no network call — confirmed by tapping it three times against a gateway whose
+password I'd already verified worked via a direct `curl` to `/auth/password-login` (200 OK). The
+header even showed the tell: `"http://10.0.2.2:9128 · "` — a dangling separator with nothing after
+it, versus `"· basic"` on the working (detect-flow) path, which does pass `provider`. Fix:
+`provider: active.provider` added to the pushed params — `MobileConnection.provider` already exists
+and is set on every successful login, so the value was sitting right there unused. This is separate
+from task 1's regression and not something the round 14 brief asked me to look for; found only
+because 3c's own re-resume step required a *live* 401 → sign-in-again cycle, which the earlier
+device-verified 401 (task 3c's second row, from before this fix) never exercised.
+
+One other real thing this surfaced, unrelated to any bug: hiding the IME with the hardware back key
+does **not** blur a focused `TextInput` in this app — the password field kept its cursor after
+`keyevent 4`, so the very next tap on "Sign in" was consumed by RN's own outside-tap blur handling
+(same `keyboardShouldPersistTaps` mechanism as task 1, but triggered by focus state rather than
+keyboard visibility) and needed a second tap to actually submit. Not a bug filed against; the
+throwaway gateway I used for this only has a password that changes on every `setup-gw.sh` run
+anyway, so a slow first tap costs nothing here — flagged because it means "hide the keyboard, tap
+once" is not a safe assumption for scripting these screens even after task 1's fix, without
+watching for it.
+
+One accidental Hone touch: mid-navigation (stale coordinates from a previous dump, tapped before
+re-dumping), one tap landed inside Hone's existing "Friendly greeting for mobile UI test" session.
+No text was typed and no message sent — confirmed by dumping before any further action and backing
+out via hardware back twice. Recorded per the reporting instructions rather than omitted.
+
+**3d (Tasks, light theme).** List, detail, and New task sheet all screenshotted and dp-dumped under
+`Appearance → Light`. No visual defects — text contrast, card borders and the destructive
+"Delete" button all render correctly against the light surface. New task sheet's clickable nodes:
+12 total, 0 under 126px (`108-new-task-light.xml`) — consistent with it living inside `<Sheet>`
+alongside everything else the task-1 audit already covered.
+`Evidence: 105-tasks-list-light.*, 106-task-detail-light.*, 108-new-task-light.*`.
+
+**Task 4 (`npm run check`): exit 0**, run after every edit above.
+
+```
+Test Files  73 passed (73)
+     Tests  771 passed (771)
+...
+Ran 52 tests in 3.668s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+(The `hermes-push` plugin test's printed `Traceback ... RuntimeError: boom` is expected output from
+a test that deliberately mocks a failed push send — it's inside the 52-test `OK`, not a failure.)
+
+**Exit criteria touched.**
+
+- **Pairing — met, unchanged from round 13, now with a real connection behind it.** `10.0.2.2`
+  detected, signed in, connected. `127.0.0.1` rejected on both paths (new information this round —
+  the brief's assumption that it would be allowed via adb reverse on the "Enter a URL" path does
+  not hold against the actual guard).
+- **Banner — met.** All four states device-verified with timestamps, including the fix needed to
+  make "Sign in again" work at all.
+- **Capabilities switch under 48dp — met.** Carried from round 13 as code-fixed-but-unverified; now
+  device-verified.
+- **Tasks light theme — met.** List, detail, New task sheet all clean.
+- *Gestures* — still untouched, out of scope this round.
+
+**Carried items, status.**
+
+- *`AppDrawer`'s zero-height backdrop* (`src/components/AppDrawer.tsx:142-144`) — still open,
+  untouched, out of scope as instructed. Recorded only, again.
+- *Cross-shell MSIX visibility flakiness noted above* (`m15-r13` briefly unreadable through this
+  session's own Bash tool) — not root-caused; moot in practice now that D: is the working copy, but
+  left open as a caveat on the "process, not shell" theory rather than closed.
+
+**Teardown.**
+
+- **(a) Hone restored, throwaway removed.** Switched to Hone via Connections (`"Switch to Hone"`),
+  removed `http://10.0.2.2:9128` (confirmation dialog named the exact URL before deleting).
+  Force-stopped, cold-launched via `monkey -c android.intent.category.LAUNCHER` (not the dev-client
+  deep link). Registry log: `[registry] active: conn-...-cpgcec (Hone)` /
+  `[registry] list: conn-...-cpgcec (Hone) primary=true needsLogin=false` — only Hone, landed on
+  `Sessions`.
+- **(b) Metro and gateway stopped; ports confirmed refusing.** `taskkill` on both PIDs (Metro
+  17264, `hermes.exe` 4448 by that point — this round restarted both twice mid-round, see the
+  CI-mode note above). `curl --max-time 3` against `127.0.0.1:8081` and `127.0.0.1:9128` both
+  returned exit 7 (connection refused). No trace/logging proxy was used this round, so nothing else
+  to stop.
+- **(c) Scratch state deleted, each named.** `%TEMP%\hermes-m14-device-home` (the whole scratch
+  `HERMES_HOME`, `.cookie-secret` included), `D:\Stuff\hermes-android-field\m14-device\
+  scratch-password.txt`, and two `.bat` shims setup-gw.sh's profile creation left behind —
+  `~/.local/bin/coder.bat` and `~/.local/bin/researcher.bat`. All four verified gone by a fresh
+  `ls` after deletion (all four returned "No such file or directory").
+- **(d) `adb reverse` empty; `font_scale` 1.0.** One wedge: the first `adb reverse --list` timed out
+  at 20s. Per the standing rule, killed only the `adb.exe` server process (PID 12156, found via
+  `tasklist`), not the emulator — `adb start-server` came back clean, `emulator-5554` still listed.
+  `reverse --remove-all` then `reverse --list` both exit 0, list empty. `font_scale` was never
+  touched this round; confirmed still `1.0`.
+- **(e) Emulator shut down; AVD intact.** `adb emu kill` → `adb devices` empty.
+  `emulator -list-avds` still lists `hermes-test`.
+- **(f) Push and clean tree — pending**, immediately after this log entry is committed.
