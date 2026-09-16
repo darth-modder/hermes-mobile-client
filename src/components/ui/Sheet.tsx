@@ -36,7 +36,7 @@
 // never had.
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { Animated, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Animated, Keyboard, Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useTheme } from '../../theme/provider'
@@ -54,9 +54,48 @@ export interface SheetProps {
 const ANIM_MS = 200
 const DISMISS_DRAG_PX = 80
 
+/**
+ * How far to lift the sheet so the keyboard does not sit on top of it.
+ *
+ * `AndroidManifest.xml:31` sets `android:windowSoftInputMode="adjustResize"`
+ * on `MainActivity`, which is why every *screen* in this app already reflows
+ * around the IME. A `Modal` is its own window and does not inherit that, so
+ * once the sheet moved into one (M15 round 9) a focused input inside it was
+ * simply covered — confirmed on device in round 10 against the New profile
+ * sheet: the IME was up (`mInputShown=true`) while the sheet's own nodes
+ * stayed at their unfocused coordinates, with the NAME field and both footer
+ * buttons behind the keyboard.
+ *
+ * React Native's own `Keyboard` events are used rather than
+ * `react-native-keyboard-controller` (already a dependency, driving the
+ * composer): its components read a `KeyboardProvider` context that is mounted
+ * once in `app/_layout.tsx:40`, in the main window — a second provider would
+ * have to go inside every modal. `Keyboard`'s events come from the IME itself
+ * and need no provider, so they work the same in either window.
+ */
+function useKeyboardInset(): number {
+  const [height, setHeight] = useState(0)
+
+  useEffect(() => {
+    // `keyboardDidShow`/`Hide` rather than the `will*` pair: Android only
+    // emits the `did*` events (the `will*` ones are iOS-only), and this
+    // component ships on Android today.
+    const show = Keyboard.addListener('keyboardDidShow', event => setHeight(event.endCoordinates.height))
+    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0))
+
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
+
+  return height
+}
+
 export function Sheet({ children, footer, onClose, title, visible }: SheetProps) {
   const tokens = useTheme()
   const insets = useSafeAreaInsets()
+  const keyboardInset = useKeyboardInset()
   const translateY = useRef(new Animated.Value(1)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
   const dragY = useRef(new Animated.Value(0)).current
@@ -123,7 +162,14 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
               backgroundColor: tokens.card,
               borderTopLeftRadius: radius.sheet,
               borderTopRightRadius: radius.sheet,
-              paddingBottom: insets.bottom + 8,
+              // Lift the whole sheet by exactly the keyboard's height rather
+              // than padding it: padding would make the sheet taller and push
+              // its own top off-screen, while a margin slides the same-sized
+              // sheet up, which is what a bottom sheet should do. The safe-area
+              // inset is only needed when the keyboard is down — the IME
+              // already covers the gesture bar.
+              marginBottom: keyboardInset,
+              paddingBottom: keyboardInset > 0 ? 8 : insets.bottom + 8,
               transform: [
                 {
                   translateY: Animated.add(dragY, translateY.interpolate({ inputRange: [0, 1], outputRange: [0, 900] }))
