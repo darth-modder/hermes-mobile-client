@@ -18,11 +18,8 @@
 // min-height with 12×16 padding, 40 dp lead tile + 12 gap, state chip 20 high
 // (2×8 pad). Touch targets 48 dp.
 //
-// Deviation (recorded in the M15 doc): the prototype draws a tab row
-// (Bots · Sessions · Tasks) under the header. That row belongs to M15 E
-// (Gestures — "Swiping between the three tabs works", :50) and does not exist
-// as a shared component yet, so this screen is reached from the drawer like
-// every other list screen. No tab strip is drawn here rather than a dead one.
+// M15 round 15 (group E) built the tab row this file's own comment above used to say didn't
+// exist yet — see `src/components/TabStrip.tsx`'s header for the swipe/replace design.
 import { useStore } from '@nanostores/react'
 import { IconPlus as Plus } from '@tabler/icons-react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -34,6 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { listCronJobs } from '../../../src/api/cron'
 import { NewTaskSheet } from '../../../src/components/NewTaskSheet'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { TabStrip } from '../../../src/components/TabStrip'
 import { Button } from '../../../src/components/ui/Button'
 import { isRunningNow, jobState, jobStateTone, jobTitle } from '../../../src/lib/cron-job-state'
 import { scheduleExpr, scheduleWords } from '../../../src/lib/cron-schedule'
@@ -137,6 +135,8 @@ export default function TasksScreen() {
         ]}
         title={t.cron.title}
       />
+
+      <TabStrip active="tasks" />
 
       <ScrollView
         contentContainerStyle={styles.content}

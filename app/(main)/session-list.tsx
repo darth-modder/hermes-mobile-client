@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
+import { TabStrip } from '../../src/components/TabStrip'
 import { Plus, Settings } from '../../src/lib/icons'
 import { groupSessions } from '../../src/lib/session-groups'
 import { OPEN_MENU_ACCESSIBILITY_LABEL } from '../../src/lib/strings.mobile'
@@ -28,11 +29,11 @@ import { radius, type } from '../../src/theme/type'
 import type { SessionInfo } from '../../src/upstream/types/hermes'
 
 /**
- * Replicates: docs/mobile-prototypes/sessions.html, `list` view. The other
- * views in that prototype are excluded here: the Bots·Sessions·Tasks tab
- * row (`Field:`, D16/M15), the connection-status header subtitle (`Field:`),
- * and the row preview's per-row model chip beyond what already existed
- * (`Field (ours):` — already built, M07) stay as they were; see M14
+ * Replicates: docs/mobile-prototypes/sessions.html, `list` view. The
+ * Bots·Sessions·Tasks tab row (`Field:`, D16/M15) is built — `TabStrip`, M15
+ * round 15. Still excluded: the connection-status header subtitle
+ * (`Field:`), and the row preview's per-row model chip beyond what already
+ * existed (`Field (ours):` — already built, M07) stay as they were; see M14
  * Deviations for the lead-cell status dot (kept as the existing unread dot,
  * not the busy/warn/ok/bad state the prototype draws — that needs live
  * per-row session state this REST list doesn't carry).
@@ -249,6 +250,8 @@ export default function SessionListScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <TabStrip active="sessions" />
 
       <TextInput
         onChangeText={setQuery}

@@ -7,6 +7,7 @@ import { type BotProfile, CANONICAL_CHAT_TITLE, createBot, listBots, resolveCano
 import { getGlobalModelOptions } from '../../../src/api/models'
 import { BotAvatar } from '../../../src/components/BotAvatar'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
+import { TabStrip } from '../../../src/components/TabStrip'
 import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
 import { Menu, type MenuItem } from '../../../src/components/ui/Menu'
@@ -259,6 +260,8 @@ export default function BotsScreen() {
         ]}
         title={BOTS_TAB_LABEL}
       />
+
+      <TabStrip active="bots" />
 
       {error ? (
         <View style={styles.center}>
