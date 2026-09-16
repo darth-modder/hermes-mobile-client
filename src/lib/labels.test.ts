@@ -68,6 +68,16 @@ const LOOKS_TECHNICAL = /^[./]|^[a-z0-9@][a-z0-9\-_/.:]*$/
 const LOOKS_LIKE_COLOR_VALUE = /^rgba?\([\d\s.,%]+\)$/i
 const LOOKS_LIKE_SVG_PATH_DATA = /^[MLHVCSQTAZ][MLHVCSQTAZ0-9\s,.-]+$/i
 
+// A third shape LOOKS_TECHNICAL misses, because its own trailing character
+// class (`[a-z0-9\-_/.:]*`) stops at an interior capital: a camelCase
+// platform-API identifier, e.g. the event names in ui/Sheet.tsx's
+// `Keyboard.addListener('keyboardDidShow')` (M15 round 10). One word, no
+// whitespace, starts lowercase — never prose, since a real label in this
+// codebase is either capitalized or multi-word with spaces. Deliberately
+// narrow: anything containing a space, or starting with a capital, is still
+// checked.
+const LOOKS_LIKE_CAMEL_IDENTIFIER = /^[a-z][A-Za-z0-9]*$/
+
 // A string literal passed directly to `console.<method>(...)` — a debug tag
 // like `'[approval-card-layout] card'` (ApprovalCard.tsx's __DEV__-only
 // layout log, M14 close-out round 3, task 3) is developer-facing diagnostic
@@ -132,7 +142,8 @@ function extractLiteralCandidates(source: string, fileName: string): string[] {
       /[A-Za-z]/.test(value) &&
       !LOOKS_TECHNICAL.test(value) &&
       !LOOKS_LIKE_COLOR_VALUE.test(value) &&
-      !LOOKS_LIKE_SVG_PATH_DATA.test(value)
+      !LOOKS_LIKE_SVG_PATH_DATA.test(value) &&
+      !LOOKS_LIKE_CAMEL_IDENTIFIER.test(value)
   )
 }
 
