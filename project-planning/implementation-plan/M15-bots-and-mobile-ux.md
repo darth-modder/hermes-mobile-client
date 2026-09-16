@@ -351,6 +351,21 @@ and the gateway contract only.
     three tunings restated from observation: it is this project's own choice, and the constant
     says so rather than implying a provenance it does not have.
 
+13. **`app/dev/` is gated by a layout redirect, not by excluding the routes from the build.**
+    M15 round 10 task 1 asked for a `__DEV__` gate on `app/dev/primitives.tsx` and
+    `app/dev/dictation-seam.tsx`, which expo-router otherwise registers — and therefore exposes by
+    deep link — in every build. The alternative would have been to keep the files out of a release
+    bundle entirely (a Metro `blockList`, or moving them outside `app/`), which is a stronger
+    guarantee: a redirect still ships the screen's code. It was not taken, for two reasons. Moving
+    them out of `app/` costs them their routes, and a dev story screen you cannot open by URL is
+    most of the way to useless; and a bundler-level exclusion is invisible at the call site, where
+    the next person adding an `app/dev/` screen will not see it. The layout is where a reader
+    looks. The redirect is also the second lock rather than the only one — round 9 had already put
+    the transcript seam's own guard in `src/voice/dev-transcript-seam.ts` rather than at its
+    caller, precisely so no route could switch it on — and that guard is now the shared
+    `src/lib/dev-build.ts` both use. Recorded because "dev routes are gated" is weaker than "dev
+    routes are absent", and the difference should not have to be rediscovered from the code.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
@@ -2369,3 +2384,219 @@ left listening after teardown, including the trace proxy.
 **Cosmetic, not blocking:** the model sheet's fixed 320 dp list height isn't a multiple of the
 58 dp row pitch, so the last visible row is always partly cut off.
 
+### Round 10 — Sheet regression pass, `app/dev/` gated; Tasks tab not started (2026-09-16)
+
+**Scope note, stated up front.** This round covered tasks 0, 1, 4 and 6 (the two carried
+blockers, the check, the teardown). **Tasks 2 and 3 — the Tasks tab (M15 C) and its device
+verification — were not attempted.** Task 0 turned into far more than a pass/fail sweep: it found
+a real regression, and then a second symptom that took several device rebuild cycles to attribute
+correctly (each `CI=1` Metro restart with `--clear` is ~2 minutes before a single tap can be
+retried). Rather than start a screen of the size `tasks.html` describes with what was left, it is
+not started at all — an unfinished Tasks screen would have been worse than none. What *was*
+produced for it is the source research task 2 asked for, recorded below so the next round starts
+from it rather than repeating it.
+
+**Task 0 (Sheet regression pass): done, device-verified, one regression found and fixed.**
+
+`019a36b` moved every `Sheet` into a `Modal`; round 9 only verified the model and effort sheets.
+All six remaining consumers were checked on device (dark theme, hermes-test AVD, 1080x2400 @
+420 dpi, throwaway gateway `M15-R10` on port 9141).
+
+*The regression: a `Modal` does not inherit the activity's soft-input mode.*
+`android/app/src/main/AndroidManifest.xml:31` sets
+`android:windowSoftInputMode="adjustResize"` on `MainActivity`, which is why every *screen* in
+this app reflows around the IME. A `Modal` is its own window and does not inherit it, so once the
+sheet moved into one, a focused input inside it was simply covered. Measured on the New profile
+sheet (`app/(main)/settings/profiles.tsx:282`): with the IME up (`mInputShown=true`), every sheet
+node stayed at its unfocused coordinates —
+
+```
+CLICK [912,1304][1038,1430] 126x126px = 48.0x48.0dp  centre=(975,1367)  ViewGroup desc='Close'
+CLICK [42,1621][1038,1753] 996x132px = 379.4x50.3dp  centre=(540,1687)  EditText  'profile name'
+CLICK [42,2190][530,2316]  488x126px = 185.9x48.0dp  centre=(286,2253)  Button    desc='Cancel'
+CLICK [551,2190][1038,2316] 487x126px = 185.5x48.0dp centre=(794,2253)  Button    desc='Create profile'
+```
+
+— with the NAME field and both footer buttons behind the keyboard
+(`01-profiles-keyboard.png` shows the sheet's title and one line of body, then keyboard).
+
+*Fix* (`2e8d02f`, `src/components/ui/Sheet.tsx`): subscribe to React Native's own `Keyboard`
+events and lift the sheet by the reported height (`marginBottom`, not `paddingBottom` — padding
+would make the sheet taller and push its own top off-screen; a margin slides the same-sized sheet
+up). RN's `Keyboard` rather than `react-native-keyboard-controller` (already a dependency,
+driving the composer) because that library's components read a `KeyboardProvider` context mounted
+once in `app/_layout.tsx:40`, in the main window — a second provider would have to go inside every
+modal, whereas `Keyboard`'s events come from the IME and need none.
+
+After the fix, the same sheet with the IME up — every node moved by the same 757 px delta:
+
+```
+CLICK [912,547][1038,673]  126x126px = 48.0x48.0dp  centre=(975,610)   ViewGroup desc='Close'
+CLICK [42,864][1038,996]   996x132px = 379.4x50.3dp centre=(540,930)   EditText  'profile name'
+CLICK [42,1192][1038,1318] 996x126px = 379.4x48.0dp centre=(540,1255)  ViewGroup desc='default'
+CLICK [42,1433][530,1559]  488x126px = 185.9x48.0dp centre=(286,1496)  Button    desc='Cancel'
+CLICK [551,1433][1038,1559] 487x126px = 185.5x48.0dp centre=(794,1496) Button    desc='Create profile'
+```
+
+and tapping Cancel at its new centre `(286,1496)` — with the keyboard still up — closed the
+sheet, so the footer is genuinely reachable and not merely repositioned
+(`02-profiles-keyboard-fixed.png`).
+
+*Per-consumer results.* (a) opens · (b) focused input clear of the keyboard · (c) hardware back
+dismisses only the top sheet · (d) swipe-down · (e) nested stacking · (f) every clickable node
+≥ 48 dp.
+
+| consumer | a | b | c | d | e | f |
+| --- | --- | --- | --- | --- | --- | --- |
+| `app/(main)/bots/index.tsx` — New bot | ✓ | ✓ lifted 757 px | ✓ | see below | n/a | ✓ 48.0–64.0 dp |
+| `app/(main)/cron/index.tsx` — blueprints | ✓ | n/a, no input | ✓ | see below | n/a | ✓ 48.0–58.3 dp |
+| `app/(main)/projects/index.tsx` — New project | ✓ | ✓ lifted 757 px | ✓ | see below | n/a | ✓ 48.0–50.3 dp |
+| `app/(main)/settings/profiles.tsx` — New profile | ✓ | ✓ lifted 757 px | ✓ | see below | n/a | ✓ 48.0–50.3 dp |
+| `src/components/BotSettingsSheet.tsx` | ✓ | ✓ | ✓ | see below | ✓ | ✓ 48.0–147.4 dp |
+| ↳ nested `CapabilitiesSheet.tsx` | ✓ | ✓ | ✓ | see below | ✓ | ✗ see below |
+| `src/components/ui/Menu.tsx` — header overflow | ✓ | n/a | ✓ | see below | n/a | ✓ 48.0 dp |
+| `src/components/ui/Menu.tsx` — message long-press | ✓ | n/a | ✓ | see below | n/a | ✓ 48.0 dp |
+
+*(e), in full.* From `BotSettingsSheet`, tapping `Capabilities` opened `CapabilitiesSheet` above
+it: the dump then reports only the child's nodes (`Search skills and toolsets…`, the toolset
+rows), the parent's own rows having dropped out of the accessibility tree because the child's
+modal window occludes them. One Back returned to the parent with its rows present again
+(`Capabilities, Skills and toolsets for this bot, 1 · 16` and `Model, Pinned for this bot,
+mimo-v2.5` both back); a second Back closed the parent and left the chat (`Bot settings` header
+button present). So nested sheets stack and unwind one level at a time, which is (c) and (e)
+together.
+
+*(c), a detail worth recording.* On a sheet with a focused input it takes two Backs, because the
+first closes the IME — standard Android, not a sheet behaviour. On a sheet with no input, one
+Back is enough.
+
+*(d) could not be exercised — an instrumentation limit, not a result.* No adb-injected gesture
+reaches React Native's JS responder system on this emulator. A temporary trace on
+`onMoveShouldSetPanResponder`, `…Capture`, `onPanResponderMove` and `onPanResponderRelease`
+(removed before commit) logged **nothing at all** for `input swipe` (400 ms, 1200 ms), for
+`input draganddrop`, and for a hand-built `input motionevent DOWN` + seven `MOVE`s + `UP`, while
+`input tap` in the same session reached the same subtree fine (a `CLOSE pressed` trace fired from
+the ✕ inside the drag strip). Since the responder never receives a MOVE, the drag-to-dismiss path
+cannot be reached from here at all, and this round can report neither pass nor fail for it. It
+needs a real finger, or an injection method that produces a motion stream RN tracks.
+
+Two things were tried and **reverted** rather than shipped unverified, both recorded here so they
+are not re-attempted blind:
+- Adding `onMoveShouldSetPanResponderCapture` to the drag handle. Motivated by a misreading — a
+  "dead sheet head" that turned out to be my own broken multi-process `motionevent` drag wedging
+  the touch stream (the head was reachable again on the next clean launch). With a real finger a
+  `dy > 4` capture would also steal a slightly sloppy tap on Close, and none of that is testable
+  here.
+- Sizing the backdrop (`...StyleSheet.absoluteFillObject`) and splitting the open effect so the
+  animation starts after mount. Neither made the scrim appear.
+
+*Found, not fixed, not part of this round's tasks.* Two separate items, both filed rather than
+chased:
+1. **The sheet scrim never renders.** `onLayout` on the backdrop `Animated.View` reported
+   `{"x":0,"y":0,"width":411.4,"height":0}` — `styles.backdrop` carries only a `backgroundColor`,
+   so as a plain flex child it has no height, and the tap-to-dismiss `Pressable` inside it
+   (`absoluteFill` *relative to that View*) is zero-sized too. On device the screen behind an open
+   sheet is at full brightness (`06-backdrop-dimmed.png`) and the scrim's `Pressable` never
+   appears in a dump. So tapping outside a sheet to close it does nothing. Pre-existing, not a
+   `Modal` regression — the style has always been this shape. Sizing it did not make it appear
+   either, so there is a second cause still unidentified; deliberately left as a known bug rather
+   than a half-fix.
+2. **`CapabilitiesSheet`'s toggles are under 48 dp.** Every `Switch` measures
+   `122x71px = 46.5x27.0dp` (e.g. `[916,479][1038,550]`). The row around it is 51.8–52.2 dp and is
+   itself tappable, but the switch — the thing a user aims at — is not. Unrelated to the `Modal`
+   change; it is the `Switch` component's own size.
+
+Also noticed while opening the cron screen, and relevant to task 2 when it happens: two inputs on
+the *existing* cron screen (not a sheet) are under 48 dp —
+`[42,806][1038,918] 42.7dp 'Morning briefing'` and
+`[42,1143][1038,1254] 42.3dp '0 9 * * * or weekdays at 9am'`. That screen is the one M15 C
+replaces.
+
+**Task 1 (gate `app/dev/` in release builds): done; dev path device-verified, release path
+code-verified only.** Commit `2677229`.
+
+`app/dev/_layout.tsx` redirects to `/` unless `devRoutesEnabled()`. The `typeof __DEV__` guard
+moved into `src/lib/dev-build.ts` and `src/voice/dev-transcript-seam.ts` now imports it, so the
+two cannot drift — that guard had already been written twice (`src/connections/registry.ts:194`
+and the seam), and a dev-only escape hatch failing open in a shipped build is exactly what it
+exists to prevent. 9 tests (`src/lib/dev-build.test.ts`) cover `__DEV__` absent (the vitest case,
+where a bare reference would throw rather than read falsy — the `typeof` half is load-bearing),
+`false`, and `true`, plus that `devRoutesEnabled` tracks `isDevBuild` exactly.
+
+`route-replicates.test.ts` still excludes `app/dev/`, and excludes this file twice over: once by
+filename (`entry === '_layout.tsx'`, `src/lib/route-replicates.test.ts:44`) and once by prefix
+(`rel.startsWith('dev/')`, same file, :50). Re-ran it: passes.
+
+Device-verified in the dev build — `hermes-android://dev/primitives` and
+`hermes-android://dev/dictation-seam?text=…` both still open, now inside the layout's `Stack`
+(the new "Navigate up" header in the dump is that `Stack`, which is itself evidence the layout is
+mounted). **The release case is code-verified only**: no release variant was built this round, so
+"redirects in a release build" rests on the unit tests plus reading `_layout.tsx`, not on a
+device.
+
+**Tasks 2 and 3 (Tasks tab, M15 C): not attempted.** See the scope note above. The research task 2
+asked for was done and is recorded here so it is not repeated:
+
+- **"Schedule in words" is a server-provided string, not a client-side humanizer.** The desktop
+  reads it with a fallback chain, `apps/desktop/src/app/cron/index.tsx:130-133`:
+
+  ```ts
+  function jobScheduleDisplay(job: CronJob): string {
+    return asText(job.schedule_display) || asText(job.schedule?.display) || asText(job.schedule?.expr) || '—'
+  }
+  ```
+
+  and the raw expression separately at :135-137 (`jobScheduleExpr`: `schedule?.expr` first, then
+  `schedule_display`). `schedule_display` is produced host-side by
+  `../hermes-agent/cron/jobs.py:438-470` (`_schedule_display_for_job`, called from the job
+  normalizer), and written on create at `cron/jobs.py:1763`
+  (`"schedule_display": parsed_schedule.get("display", schedule)`). So the list and detail screens
+  must use the desktop's chain against `CronJob.schedule_display` / `schedule.display` /
+  `schedule.expr`, not invent a parser.
+- **The "Running now" state.** `apps/desktop/src/app/cron/job-state.ts:16-20`:
+
+  ```ts
+  export function jobState(job: CronJob): string {
+    const state = typeof job.state === 'string' ? job.state.trim() : ''
+
+    return state || (job.enabled === false ? 'disabled' : 'scheduled')
+  }
+  ```
+
+  with the state vocabulary fixed by `STATE_DOT` at :5-13 — `completed`, `disabled`, `enabled`,
+  `error`, `paused`, `running`, `scheduled`. "Running now" is `jobState(job) === 'running'`.
+  `jobTitle` at :24-28 is the matching name fallback (name → first 60 of prompt → first 60 of
+  script → id).
+- **The plain-language echo in the New task sheet is a mobile-only addition, and the prototype
+  says so.** `docs/mobile-prototypes/tasks.html:30-32` marks it `Field (ours)` — "the structured
+  schedule picker … with a plain-language echo and the raw schedule string behind Advanced (the
+  desktop's SchedulePicker; theirs only ever shows `0 9 * * *`)". It cannot reuse
+  `schedule_display`, because that only exists once the job does. For template presets
+  `CronBlueprint.scheduleHuman` (`src/api/cron.ts:86`) already carries one from the host — the
+  blueprints sheet on device shows exactly these ("daily at 08:00", "every 30 minutes",
+  "weekdays at 09:00"). Only a *typed* expression would need a client-side humanizer, and that
+  would be new mobile-only logic needing its own tests and a Deviation.
+
+**Task 4 (`npm run check`): exit 0**, run at `df696f9` with a clean tree.
+
+```
+ Test Files  70 passed (70)
+      Tests  660 passed (660)
+Ran 52 tests in 3.672s
+OK
+All matched files use Prettier code style!
+EXIT=0
+```
+
+660 against round 9's 653: +9 `dev-build.test.ts`, and the two counts differ by the label-test
+case count shifting with the new file. One incidental fix was needed to get there
+(`df696f9`): `Sheet.tsx`'s `Keyboard.addListener('keyboardDidShow')` tripped
+`labels.test.ts`'s retyped-label check, because `LOOKS_TECHNICAL`'s trailing character class
+stops at an interior capital, so a camelCase platform-API event name read as prose. Added a
+narrow `LOOKS_LIKE_CAMEL_IDENTIFIER` rule — one word, no whitespace, starts lowercase; anything
+with a space or a leading capital is still checked.
+
+**Exit criteria touched.** None of M15's own exit criteria are closed or advanced by this round —
+tasks 0 and 1 are carried blockers and infrastructure, not criteria, and the Tasks criterion was
+not attempted. The Tasks / Pairing / Banner / Gestures criteria all stand exactly as they did at
+the group B close.
