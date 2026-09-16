@@ -57,6 +57,9 @@ import type { CronJob } from '../../../src/upstream/types/hermes'
 
 const QUERY_KEY_ROOT = 'cron-jobs'
 
+/** See `jobsQuery` — the polling floor under the `cron.changed` broadcast. */
+const LIST_POLL_MS = 10000
+
 export function toneColor(tone: ReturnType<typeof jobStateTone>, tokens: MobileTokens): string {
   if (tone === 'danger') {
     return tokens.destructive
@@ -87,7 +90,11 @@ export default function TasksScreen() {
 
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 
-  const jobsQuery = useQuery({ queryFn: () => listCronJobs(profile), queryKey })
+  // "The list polls" (docs/mobile-prototypes/tasks.html:40). The `cron.changed`
+  // tick below is still the fast path; this is the floor under it, and it is
+  // what makes a run started elsewhere — or by this app's own Trigger now, one
+  // screen over — show up without a manual pull-to-refresh.
+  const jobsQuery = useQuery({ queryFn: () => listCronJobs(profile), queryKey, refetchInterval: LIST_POLL_MS })
 
   // Same live-update seam the cron screen used: `cron.changed` bumps the
   // tick (src/store/live-sync.ts) and we refetch rather than poll. The

@@ -53,6 +53,12 @@ import { radius, type } from '../../../src/theme/type'
 
 import { toneColor } from './index'
 
+/** How often the open detail screen re-reads the job and its runs. Fast
+ *  enough that a triggered run's completion shows up while you are still
+ *  looking at the screen, slow enough not to be a busy loop on a REST
+ *  endpoint that mostly returns the same bytes. */
+const DETAIL_POLL_MS = 5000
+
 export default function TaskDetailScreen() {
   const tokens = useTheme()
   const router = useRouter()
@@ -64,12 +70,26 @@ export default function TaskDetailScreen() {
   const jobKey = ['cron-job', id, profile]
   const runsKey = ['cron-job-runs', id, profile]
 
-  const jobQuery = useQuery({ enabled: Boolean(id), queryFn: () => getCronJob(id, profile), queryKey: jobKey })
+  // Polled, not just invalidated on mutation — "Run history polls while the
+  // detail is open" (docs/mobile-prototypes/tasks.html:45-46), which round 11
+  // did not implement. Round 12 showed why it is load-bearing: `POST
+  // /api/cron/jobs/{id}/trigger` returns as soon as the run is *dispatched*,
+  // so the invalidation that fires on its success still reads `last_run_at:
+  // null`. The run finished ~40 s later and this screen sat on "LAST —" for
+  // as long as it was open, because nothing asked again and the `cron.changed`
+  // broadcast never arrived for a trigger in that session.
+  const jobQuery = useQuery({
+    enabled: Boolean(id),
+    queryFn: () => getCronJob(id, profile),
+    queryKey: jobKey,
+    refetchInterval: DETAIL_POLL_MS
+  })
 
   const runsQuery = useQuery({
     enabled: Boolean(id),
     queryFn: () => getCronJobRuns(id, profile, 10),
-    queryKey: runsKey
+    queryKey: runsKey,
+    refetchInterval: DETAIL_POLL_MS
   })
 
   const [promptDraft, setPromptDraft] = useState<null | string>(null)
