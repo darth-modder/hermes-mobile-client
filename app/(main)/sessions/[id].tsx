@@ -199,7 +199,7 @@ export default function SessionScreen() {
 
           if (active) {
             router.push({
-              params: { baseUrl: active.baseUrl, id: active.id, label: active.label },
+              params: { baseUrl: active.baseUrl, id: active.id, label: active.label, provider: active.provider },
               pathname: '/connect/[id]/login'
             })
           }
