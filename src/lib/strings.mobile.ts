@@ -806,3 +806,104 @@ export const TASKS_TAB_LABEL = 'Tasks'
 // the sheet (tasks.html:285).
 export const TASKS_SCHEDULE_FIELD_LABEL = 'Schedule'
 export const TASKS_FREQUENCY_LABEL = 'Frequency'
+
+// ── Connect / pairing (M15 D, app/connect/index.tsx) ────────────────────────
+//
+// Connect is a mobile-only flow — `docs/mobile-prototypes/connect.html:54-56`
+// says so outright: "the desktop reaches a gateway from its own settings and
+// has no pairing story". So `src/upstream/i18n/en.ts` has nothing to reuse for
+// any of it. Checked, and the only loopback copy it does carry runs the other
+// way: `:862` `localDesc` RECOMMENDS localhost ("Start a private Hermes
+// backend on localhost") and `:1901` ships `http://127.0.0.1:8080` as a
+// placeholder — both correct on a desktop, which IS the host, and both exactly
+// the advice this screen has to contradict on a phone.
+
+// connect.html `:start` view — the two entry cards.
+export const CONNECT_TAILSCALE_TITLE = 'Pair over Tailscale'
+export const CONNECT_TAILSCALE_RECOMMENDED = 'Recommended'
+export const CONNECT_TAILSCALE_DESC =
+  'The phone joins the same private tailnet as your computer, so port 9119 never faces the public internet.'
+export const CONNECT_URL_TITLE = 'Enter a URL'
+export const CONNECT_URL_DESC =
+  'You already have a reachable, authenticated gateway — a LAN address, a reverse proxy, or an emulator host.'
+
+// connect.html `:steps` view — three steps, two machines.
+export const CONNECT_STEPS_TITLE = 'Pair a phone'
+export const CONNECT_STEPS_SUBTITLE = 'Three steps, two machines'
+export const CONNECT_STEP_TAILNET_TITLE = 'Join the same Tailnet'
+export const CONNECT_STEP_TAILNET_DESC =
+  'Install Tailscale here and on your computer, then sign both into the same tailnet.'
+export const CONNECT_STEP_GATEWAY_TITLE = 'Run a reachable gateway'
+export const CONNECT_STEP_GATEWAY_DESC =
+  'On the computer, bind `hermes serve` to the tailnet address so the auth gate engages.'
+export const CONNECT_STEP_AUTH_TITLE = 'Authenticate in the app'
+export const CONNECT_STEP_AUTH_DESC =
+  'Enter the tailnet URL, test it, then sign in. The password is exchanged for revocable tokens.'
+
+// connect.html `:steps` — the `Field:` checklist, pasteable on the host
+// (:20-22). The three commands are the prototype's own, verbatim.
+export const CONNECT_COPY_CHECKLIST = 'Copy setup checklist'
+export const CONNECT_COPY_CHECKLIST_HINT = "Copies the three commands, in order, for the computer's terminal."
+export const CONNECT_CHECKLIST_COMMANDS = [
+  'tailscale up',
+  'hermes serve --host $(tailscale ip -4) --port 9119',
+  'hermes auth add password --user tester'
+].join('\n')
+
+// connect.html `:steps` / `:start` — the link to the host-side recipe, which
+// is docs/CONNECTING.md (the prototype names that file at :56).
+export const CONNECT_THIS_COMPUTER_TITLE = 'This computer'
+export const CONNECT_GUIDE_LINK = 'Gateway connection guide'
+export const CONNECT_GUIDE_HINT = 'How to keep `hermes serve` running on Windows, macOS or Linux, and bind it safely.'
+
+// connect.html `:url` view — the field, now tailnet-shaped. It used to be
+// `http://127.0.0.1:9119` (app/connect/index.tsx:245 before this round), which
+// the prototype calls out as the thing to stop doing (:17-19).
+export const CONNECT_URL_PLACEHOLDER = 'https://your-pc.tailnet.ts.net:9119'
+export const CONNECT_URL_HINT_TAILSCALE =
+  'Never enter 127.0.0.1, localhost or 10.0.2.2 on your phone — those point back at the phone itself, not at your computer.'
+export const CONNECT_NOTHING_SENT_YET = 'Nothing is sent anywhere yet. Sign-in appears only after the gateway answers.'
+
+// connect.html `:rejected` view — "the error IS the guard sentence: rule plus
+// reason, in the field, not a toast". One function per rejection family so the
+// sentence can name the address actually typed.
+export function connectRejectedLoopback(host: string): string {
+  return `That address is this phone, not your computer. “${host}” points back at the phone itself, so there is nothing here to test.`
+}
+
+export function connectRejectedEmulatorHost(host: string): string {
+  return `That address is this phone, not your computer. “${host}” is the emulator's alias for the machine running it, not a tailnet address — use the computer's tailnet name instead.`
+}
+
+export function connectRejectedUnspecified(host: string): string {
+  return `That address is this phone, not your computer. “${host}” means “every interface” when a server binds it; it is not an address you can dial.`
+}
+
+export const CONNECT_USE_COMPUTER_ADDRESS_TITLE = "Use the computer's address"
+export const CONNECT_USE_COMPUTER_ADDRESS_DESC = 'Its tailnet name, for example https://your-pc.tailnet.ts.net:9119.'
+export const CONNECT_BACK_TO_STEPS = 'Back to the pairing steps'
+
+// connect.html `:steps` — the button onto the URL step.
+export const CONNECT_NEXT_URL = 'Next: enter the gateway URL'
+
+// The "This computer" card's destination. `docs/CONNECTING.md` is a repo
+// file, not a hosted page, so the phone cannot open it locally; this points
+// at the same file on the project's origin. Kept beside the copy it belongs
+// to rather than in a config, because it is a label's destination.
+export const CONNECTING_DOC_URL = 'https://github.com/darth-modder/hermes-mobile/blob/main/docs/CONNECTING.md'
+
+// ── Connection banner (M15 D, src/chat/ConnectionBanner.tsx) ────────────────
+//
+// The banner's existing copy is vendored from `boot.*` (that component's own
+// header records why: gateway-connecting.html has no banner-shaped string of
+// its own). What M15 D adds has no vendored source either — checked `boot.*`
+// and `settings.gateway.*` in en.ts: the desktop has no "needs attention"
+// banner with a recovering action, because it never loses its own backend the
+// way a phone loses a host. connect.html:24-27 marks this a `Field:` — "a
+// banner whose primary action actually recovers the stated cause".
+export const BANNER_NEEDS_ATTENTION_TITLE = 'Connection needs attention'
+export const BANNER_SYNC_NOW = 'Sync now'
+export const BANNER_SIGN_IN_AGAIN = 'Sign in again'
+// The 401 case. `boot.errors.*` has nothing for "your token expired, sign in
+// again" — the desktop's equivalent is a login window, not a banner line.
+export const BANNER_NEEDS_LOGIN_DETAIL = 'The host rejected this phone’s credentials. Sign in again to continue.'
