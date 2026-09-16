@@ -841,13 +841,25 @@ export const CONNECT_STEP_AUTH_DESC =
   'Enter the tailnet URL, test it, then sign in. The password is exchanged for revocable tokens.'
 
 // connect.html `:steps` — the `Field:` checklist, pasteable on the host
-// (:20-22). The three commands are the prototype's own, verbatim.
+// (:20-22).
+//
+// NOT the prototype's three lines verbatim. Its third is
+// `hermes auth add password --user tester`, and that command does not exist:
+// `hermes auth add <provider>` is "Add a pooled credential"
+// (hermes_cli/_parser.py:73) and configures MODEL-provider API keys, not the
+// dashboard gate. The real mechanism is the basic-auth plugin's env vars
+// (plugins/dashboard_auth/basic/__init__.py:220-222) plus the signing secret
+// at :191-202 — without which every gateway restart invalidates every issued
+// cookie and signs the phone out. Recorded as a Deviation in the M15 doc;
+// docs/CONNECTING.md carries the long form.
 export const CONNECT_COPY_CHECKLIST = 'Copy setup checklist'
-export const CONNECT_COPY_CHECKLIST_HINT = "Copies the three commands, in order, for the computer's terminal."
+export const CONNECT_COPY_CHECKLIST_HINT = "Copies the commands, in order, for the computer's terminal."
 export const CONNECT_CHECKLIST_COMMANDS = [
   'tailscale up',
-  'hermes serve --host $(tailscale ip -4) --port 9119',
-  'hermes auth add password --user tester'
+  'export HERMES_DASHBOARD_BASIC_AUTH_USERNAME=you',
+  'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=<a long random password>',
+  'export HERMES_DASHBOARD_BASIC_AUTH_SECRET=$(python -c "import secrets;print(secrets.token_hex(32))")',
+  'hermes serve --host $(tailscale ip -4) --port 9119'
 ].join('\n')
 
 // connect.html `:steps` / `:start` — the link to the host-side recipe, which
