@@ -80,16 +80,16 @@ until the gateway exposes a group transport to non-desktop sources.
 
 ### D. Pairing and connection health
 
-- [ ] Connect flow gains a "Pair over Tailscale (recommended)" path: three steps (join the same
+- [x] Connect flow gains a "Pair over Tailscale (recommended)" path: three steps (join the same
       tailnet; run a reachable, authenticated gateway; enter the host's tailnet URL), a hard
       rejection of `127.0.0.1`, `localhost` and `10.0.2.2` with the reason ("that address is this
       phone, not your computer"), then the existing detection and login. A "This computer"
       section links the host-side docs.
-- [ ] `docs/CONNECTING.md` gains the host-side recipe: keep `hermes serve` running after login
+- [x] `docs/CONNECTING.md` gains the host-side recipe: keep `hermes serve` running after login
       on Windows (Task Scheduler), macOS (LaunchAgent) and Linux (systemd user unit), bound so
       the gate engages (D13.3), with the tailnet hostname. Scripts under `scripts/host/` are
       optional; the doc is the deliverable.
-- [ ] "Connection needs attention" banner: one persistent banner state when the gateway is
+- [x] "Connection needs attention" banner: one persistent banner state when the gateway is
       unreachable or needs login, with the reason from the M04 ladder and a "Sync now" action
       that redials and re-resumes. Replaces ad-hoc toasts for that case.
 
@@ -123,9 +123,9 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
       before the feature shows none.
 - [x] Tasks: creating a task from a template posts the expected cron payload; the list shows
       next and last run; triggering it shows "Running now" and then updates last run.
-- [ ] Pairing: entering `127.0.0.1` or `10.0.2.2` in the Tailscale step is rejected with the
+- [x] Pairing: entering `127.0.0.1` or `10.0.2.2` in the Tailscale step is rejected with the
       reason; a tailnet-shaped URL proceeds to detection.
-- [ ] Banner: killing the host produces the banner with "unreachable"; a 401 produces it with
+- [x] Banner: killing the host produces the banner with "unreachable"; a 401 produces it with
       "sign in again"; "Sync now" after the host returns clears it without an app restart.
 - [ ] Gestures: an edge swipe from the left pops every stack screen; a swipe down dismisses every
       sheet; a swipe between the three tabs works.
@@ -3608,3 +3608,54 @@ a test that deliberately mocks a failed push send — it's inside the 52-test `O
 - **(e) Emulator shut down; AVD intact.** `adb emu kill` → `adb devices` empty.
   `emulator -list-avds` still lists `hermes-test`.
 - **(f) Push and clean tree — pending**, immediately after this log entry is committed.
+
+### Opus review, group D closed (2026-09-17)
+
+Opus checked rounds 13 and 14 against their commits, evidence and host state. `npm run check` at
+`176a008` exits 0 (771 tests), and `src/upstream/` is still byte-identical to `4363d9e`.
+
+**Correction to Opus's own round-12 review.** Opus called round 11's "the field kit doesn't exist"
+false. It was a view difference, not a fabrication. The Claude desktop app is an MSIX package, and
+writes to `%LOCALAPPDATA%` from inside it land in
+`...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\`. Processes inside the package see that
+overlay; WSL and processes outside it don't. Round 14 copied the kit to
+`D:\Stuff\hermes-android-field\` (23 dirs, 2,445 files including round 14's evidence), and
+`setup-gw.sh` now points there.
+
+**Ticked:**
+- **Pairing task and exit criterion.** Round 13 showed on device that `127.0.0.1` and `10.0.2.2`
+  are rejected on the Tailscale step, with the reason shown. Round 14 took a tailnet-shaped URL
+  through to detection once the Detect bug was fixed. The guard covers all of `127.0.0.0/8`, `::1`,
+  `0.0.0.0`, `::` and `*.localhost` on both paths; `10.0.2.2` is rejected on the Tailscale path
+  only (Deviation 18). 42 tests.
+- **`docs/CONNECTING.md` host recipe.** Docs only, with every flag and config key cited to file:line,
+  including the required `dashboard.basic_auth.secret` step.
+- **Connection banner task and exit criterion.** Round 14 showed all four on device, timestamped:
+  - "unreachable" when the host is killed
+  - "sign in again" on a 401
+  - "Sync now" clearing the banner without an app restart
+  - a repeat from a bot chat, with the profile passed
+
+  Round 14 also fixed "Sign in again" doing nothing (`fd1a32b`): it never passed the provider to the
+  login screen.
+
+**Real defect fixed on the way (`7f299d9`).** The connect screen's `ScrollView` had no
+`keyboardShouldPersistTaps`, so the first tap after typing, with the keyboard still open, only
+dismissed the keyboard. That blocked "Detect auth mode" for every user, and it predated M15.
+Round 14 proved it both ways on device: with the keyboard open the tap failed, and with it hidden
+the tap fired. `"handled"` fixed it. The same one-line fix went into five other screens (`connections`,
+`mcp`, `providers`, `webhooks`, `connect/[id]/login`); those are code-verified only.
+
+**Carried items from group C, now closed:**
+- The Capabilities toggle is drawn with Views, and the dump shows no clickable node under 48 dp.
+- The Tasks light-theme pass is done on list, detail and the New task sheet.
+- The `/(main)/cron` deep-link redirects are verified on device.
+
+**Still open before M15 is `done`:** group E (Gestures), including swipe-down on every sheet, which
+the round-10 regression pass couldn't inject with adb.
+
+**Open product question, not blocking M15:** the guard rejects `127.0.0.1` on the "Enter a URL" path
+too, following `connect.html`'s "Never enter 127.0.0.1 … on your phone". That's right for a phone
+reaching a computer, but it blocks a gateway running on the phone itself (e.g. Termux). Decide
+whether that deployment is supported before M12.
+
