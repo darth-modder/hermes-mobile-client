@@ -177,6 +177,7 @@ export default function TaskDetailScreen() {
             disabled={busy}
             loading={toggleMutation.isPending}
             onPress={() => toggleMutation.mutate()}
+            style={styles.actionButton}
             variant="secondary"
           >
             {paused ? t.cron.resumeTitle : t.cron.pauseTitle}
@@ -186,6 +187,7 @@ export default function TaskDetailScreen() {
             disabled={busy}
             loading={triggerMutation.isPending}
             onPress={() => triggerMutation.mutate()}
+            style={styles.actionButton}
             variant="primary"
           >
             {t.cron.triggerNow}
@@ -224,13 +226,14 @@ export default function TaskDetailScreen() {
         />
         {promptDraft !== null && promptDraft !== (job.prompt ?? '') ? (
           <View style={styles.actions}>
-            <Button block onPress={() => setPromptDraft(null)} variant="secondary">
+            <Button block onPress={() => setPromptDraft(null)} style={styles.actionButton} variant="secondary">
               {t.common.cancel}
             </Button>
             <Button
               block
               loading={promptMutation.isPending}
               onPress={() => promptMutation.mutate(promptDraft)}
+              style={styles.actionButton}
               variant="primary"
             >
               {t.common.save}
@@ -291,6 +294,11 @@ function GridRow({ label, tokens, value }: { label: string; tokens: ReturnType<t
 }
 
 const styles = StyleSheet.create({
+  // See NewTaskSheet.tsx's `footerButton`: `block` is `width: '100%'`, so two
+  // of them in a row overflow unless each also takes a share of it.
+  actionButton: {
+    flex: 1
+  },
   actions: {
     flexDirection: 'row',
     gap: 8,

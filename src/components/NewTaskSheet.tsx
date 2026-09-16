@@ -145,7 +145,7 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
     <Sheet
       footer={
         <>
-          <Button block onPress={onClose} variant="secondary">
+          <Button block onPress={onClose} style={styles.footerButton} variant="secondary">
             {t.common.cancel}
           </Button>
           <Button
@@ -153,6 +153,7 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
             disabled={!canCreate || createMutation.isPending}
             loading={createMutation.isPending}
             onPress={() => createMutation.mutate()}
+            style={styles.footerButton}
             variant="primary"
           >
             {t.cron.createAction}
@@ -376,6 +377,15 @@ const styles = StyleSheet.create({
   error: {
     ...typeTokens.caption,
     marginTop: 6
+  },
+  // `Button`'s `block` is `width: '100%'` (ui/Button.tsx:93-95), so two of
+  // them inside `Sheet`'s `flexDirection: 'row'` footer overflow and the
+  // second is pushed off-screen — device-measured at 8.0x48.0 dp in round 12
+  // before this. Same call-site `flex: 1` the other two-button sheet footers
+  // already use (app/(main)/bots/index.tsx:494-496 `sheetFooterButton`,
+  // projects/index.tsx, settings/profiles.tsx).
+  footerButton: {
+    flex: 1
   },
   hint: {
     ...typeTokens.caption,
