@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { type BotProfileDetail, configureBot, describeBot, skillsServerKeptEnabled } from '../api/bots'
 import {
@@ -16,6 +16,7 @@ import { type as typeTokens } from '../theme/type'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { Sheet } from './ui/Sheet'
+import { SwitchIndicator } from './ui/Switch'
 
 /**
  * Replicates: docs/mobile-prototypes/bots.html's `settings` view's
@@ -168,9 +169,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                 <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {skill.name}
                 </Text>
-                <View importantForAccessibility="no-hide-descendants" pointerEvents="none">
-                  <Switch accessible={false} focusable={false} value={skill.enabled} />
-                </View>
+                <SwitchIndicator value={skill.enabled} />
               </Pressable>
               {lockedSkillNames.includes(skill.name) ? (
                 <Text style={[styles.rowSub, { color: tokens.destructive }]}>
@@ -208,9 +207,7 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                   {toolset.description}
                 </Text>
               </View>
-              <View importantForAccessibility="no-hide-descendants" pointerEvents="none">
-                <Switch accessible={false} focusable={false} value={toolset.enabled} />
-              </View>
+              <SwitchIndicator value={toolset.enabled} />
             </Pressable>
           ))}
         </>
@@ -232,37 +229,25 @@ const styles = StyleSheet.create({
   // both dimensions. The row is a Pressable that toggles the same value, so
   // the full row is the touch target.
   //
-  // M15 round 11 (task 0b): leaving the Switch independently wired kept a
-  // 46.5×27 dp *clickable node* inside the 48 dp row, so the row being big
-  // enough didn't clear the criterion — a dump still showed a sub-48 dp
-  // target. The semantics moved up to the row, which carries
-  // `accessibilityRole="switch"` and the `checked` state, and the Switch's
-  // `onValueChange` was removed rather than left dead.
+  // M15 round 11 (task 0b) moved the toggle's semantics up to the row, which
+  // carries `accessibilityRole="switch"` and the checked state. That was the
+  // right shape and it did not clear the 48 dp rule, because the row still
+  // contained React Native's `Switch` — a native `android.widget.Switch`,
+  // which reports `clickable="true"` at its own ~46.5×27 dp no matter what
+  // the JS side asks for. Round 12 tried three ways to silence it
+  // (`pointerEvents`/`importantForAccessibility` on the Switch; both on a
+  // wrapping `View` with `no-hide-descendants`; `accessible={false}` +
+  // `focusable={false}`) and the dump still carried, inside the non-clickable
+  // wrapper:
   //
-  // M15 round 12: still not enough, and the device said so. The dump STILL
-  // reports one `Switch 46.5x27.0dp` clickable node per row. Three things
-  // were tried and all three failed to remove it:
-  //   1. `pointerEvents="none"` + `importantForAccessibility="no"` on the
-  //      Switch itself (round 11);
-  //   2. moving both onto a wrapping `View` with `no-hide-descendants`;
-  //   3. adding `accessible={false}` and `focusable={false}` to the Switch.
+  //   [916,742][1038,813] class=android.view.ViewGroup    clickable=false
+  //   [916,742][1038,813] class=android.widget.Switch     clickable=true
   //
-  // What they DID achieve, confirmed on device: the wrapper's
-  // `pointerEvents="none"` genuinely stops the Switch taking touches. Tapping
-  // the label at x=300 and tapping the Switch itself at x=977 both toggle via
-  // the row, so the real touch target is the full 48 dp row either way, and a
-  // save round-trips (`browser` disappeared from `enabled_toolsets` in
-  // profiles/coder/config.yaml).
+  // None of those props reach a native widget that is not a `ReactViewGroup`.
   //
-  // What remains is the accessibility NODE, not the touch target:
-  // `uiautomator` still walks the native `AndroidSwitch` and reports it
-  // `clickable=true` at its own 46.5x27.0 dp size. So the 48 dp criterion as
-  // written ("no clickable node under 48 dp in a dump") is NOT met, while the
-  // behaviour it exists to protect is. Removing the node needs the native
-  // `Switch` to stop being rendered at all — a View-drawn toggle — which is a
-  // real control rewrite and is deliberately NOT being done at the end of a
-  // verification round. Left as a known gap with this trail so the next
-  // attempt does not re-try the three above.
+  // M15 round 13: the row now draws the control instead of hosting a widget —
+  // `SwitchIndicator` (ui/Switch.tsx) is two plain `View`s and contributes no
+  // node of its own, so the only node left in the row IS the row, at 48 dp.
   row: {
     alignItems: 'center',
     flexDirection: 'row',

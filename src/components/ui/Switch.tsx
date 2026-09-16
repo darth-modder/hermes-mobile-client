@@ -15,9 +15,52 @@ export interface SwitchProps {
   value: boolean
 }
 
-export function Switch({ accessibilityLabel, disabled, onValueChange, value }: SwitchProps) {
+/**
+ * The track-and-thumb picture on its own, with no `Pressable` and no
+ * accessibility identity of its own — two plain `View`s, so it contributes
+ * **no node at all** to the tree `uiautomator` walks.
+ *
+ * Split out in M15 round 13 for rows that are themselves the switch. React
+ * Native's own `Switch` renders a native `android.widget.Switch`, and that
+ * widget reports `clickable="true"` at its own ~46.5×27 dp regardless of what
+ * the JS side asks for: round 12 tried `pointerEvents="none"` and
+ * `importantForAccessibility` on the Switch, then both on a wrapping `View`
+ * with `no-hide-descendants`, then `accessible={false}` + `focusable={false}`,
+ * and the dump still carried
+ * `[916,742][1038,813] class=android.widget.Switch clickable=true` inside the
+ * non-clickable wrapper. None of those props reach a native widget that is not
+ * a `ReactViewGroup`. Drawing the control instead is the only way the node
+ * stops existing — see `CapabilitiesSheet.tsx`'s row.
+ */
+export function SwitchIndicator({ disabled, value }: { disabled?: boolean; value: boolean }) {
   const tokens = useTheme()
 
+  return (
+    <View
+      style={[
+        styles.track,
+        {
+          backgroundColor: value ? tokens.primary : tokens.bgQuaternary,
+          borderRadius: radius.full,
+          opacity: disabled ? 0.5 : 1
+        }
+      ]}
+    >
+      <View
+        style={[
+          styles.thumb,
+          {
+            backgroundColor: tokens.background,
+            borderRadius: radius.full,
+            transform: [{ translateX: value ? 18 : 0 }]
+          }
+        ]}
+      />
+    </View>
+  )
+}
+
+export function Switch({ accessibilityLabel, disabled, onValueChange, value }: SwitchProps) {
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
@@ -26,25 +69,8 @@ export function Switch({ accessibilityLabel, disabled, onValueChange, value }: S
       disabled={disabled}
       hitSlop={8}
       onPress={() => onValueChange(!value)}
-      style={{ opacity: disabled ? 0.5 : 1 }}
     >
-      <View
-        style={[
-          styles.track,
-          { backgroundColor: value ? tokens.primary : tokens.bgQuaternary, borderRadius: radius.full }
-        ]}
-      >
-        <View
-          style={[
-            styles.thumb,
-            {
-              backgroundColor: tokens.background,
-              borderRadius: radius.full,
-              transform: [{ translateX: value ? 18 : 0 }]
-            }
-          ]}
-        />
-      </View>
+      <SwitchIndicator disabled={disabled} value={value} />
     </Pressable>
   )
 }
