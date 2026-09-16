@@ -408,6 +408,26 @@ and the gateway contract only.
     `NOT_A_SCREEN`, the same explicit mechanism `app/index.tsx` and `app/session/[id].tsx`
     already use for shims with no rendered UI of their own.
 
+18. **The URL guard rejects `10.0.2.2` on the Tailscale path only.** M15 D's brief says
+    "hard-reject 127.0.0.1, localhost and 10.0.2.2". The first two are rejected on both entry
+    paths; `10.0.2.2` is not. `docs/mobile-prototypes/connect.html`'s Behaviour block draws the
+    line itself: it "is rejected the same way (M15 exit criterion)" on the Tailscale path, but
+    "on the 'Enter a URL' path it is allowed, because on an emulator it IS the computer" — and
+    that path's own `:start` card offers "a LAN address, a reverse proxy, or **an emulator
+    host**" as valid answers, so rejecting it there would contradict the screen's own
+    description. The exit criterion is exercised on the Tailscale path, where both addresses are
+    rejected. `src/net/gateway-url-guard.ts` takes the path as a `mode` parameter rather than
+    inferring it.
+
+19. **The in-app setup checklist is not the prototype's three lines.** connect.html `:steps`
+    ends its pasteable checklist with `hermes auth add password --user tester`. That command does
+    not exist: `hermes auth add <provider>` is "Add a pooled credential"
+    (`hermes_cli/_parser.py:73`) and configures **model-provider** API keys, not the dashboard
+    auth gate. The checklist and `docs/CONNECTING.md` both use the mechanism that does exist —
+    the basic-auth plugin's env vars (`plugins/dashboard_auth/basic/__init__.py:220-222`) plus
+    the signing secret at `:191-202`, which the prototype does not mention at all and without
+    which every gateway restart signs every paired phone out.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)
@@ -3136,3 +3156,194 @@ were there all along, at `C:\Users\you\AppData\Local\hermes-android-field\`.
 text doesn't list one, and round 12 set the model over REST instead. Add it if parity wants it.
 `AppDrawer`'s zero-height backdrop is still open and out of scope.
 
+### Round 13 — group D built; pairing criterion met, but a connect regression blocked the rest (2026-09-16)
+
+Branch `m15-bots-mobile-ux`, merged from `origin/main` (`daed1ac`, D19 only, clean). Commits:
+`1a33f92`, `c9f14db`, `1e64ca8`, `c4d1bf6`, `459ca6b`.
+
+Evidence: `…\hermes-android-field\m15-r13\`.
+
+**The headline, first: I introduced a regression in this round's connect changes and did not
+root-cause it, and it cost most of the round's device verification.** "Detect auth mode" no longer
+invokes its handler. The node is present, `clickable='true'` and `enabled='true'`
+(`18-detect-instrumented.xml`), a tap on the neighbouring "Scan QR" in the same row navigates
+fine, and an instrumented `console.log` as the first statement of `detect()` **never printed** —
+so `onPress` is not firing at all. The only thing this round added to that control is
+`disabled={detecting || !guard.ok}` and an `opacity`, and the guard itself is provably happy at
+that moment (the destructive error is absent and the neutral hint renders, which is the `guard.ok`
+branch). Suspect is that `disabled` expression or the closure it captures; not proven, so not
+claimed. The instrumentation was reverted, not committed.
+
+Consequence: **no throwaway connection could be established through the connect screen**, and
+tasks 1a, 1b and 4 all need one. They are not attempted-and-failed; they are blocked behind this.
+
+**Task 0 (merge): done.** `git fetch origin && git merge origin/main` → "Merge made by the 'ort'
+strategy", one file, `project-planning/DECISIONS.md | 18 ++++++`. Exactly the expected D19 commit
+`c2c6c46`. No conflict, no rebase, no force.
+
+*One environment mismatch, same as round 12.* The brief's absolute path
+`C:\Users\you\AppData\Local\hermes-android-field\m14-device\setup-gw.sh` does not hold in
+this shell:
+
+```
+$ ls -la "/c/Users/you/AppData/Local/hermes-android-field/m14-device/"
+total 0
+drwxr-xr-x 1 you 197121 0 Sep 16 19:04 .
+```
+
+— that directory is the empty one round 12 created. The real kit is behind the MSIX LocalCache
+overlay:
+
+```
+$ ls -l ".../Packages/Claude_pzs8sxrjxfjjc/LocalCache/Local/hermes-android-field/m14-device/setup-gw.sh"
+-rwxr-xr-x 1 you 197121 2167 Sep 15 17:59 …/m14-device/setup-gw.sh
+```
+
+Ran it with `LOCALAPPDATA=C:/Users/you/AppData/Local` (where `hermes/bin/hermes.exe`
+lives) and `TEMP` exported; it came up first time: `SETUP DONE`, `HERMES_BACKEND_READY port=9128`.
+
+**Task 1a (Capabilities toggle): fixed in code, NOT device-verified.** Commit `1a33f92`.
+
+First, the thing the task asked for as an alternative — proving the node isn't clickable — is
+**disproved**. Round 12's saved dump has two nodes at identical bounds, and the widget is clickable:
+
+```
+[916,742][1038,813] class=android.view.ViewGroup   clickable=false   (the pointerEvents wrapper)
+[916,742][1038,813] class=android.widget.Switch    clickable=true    (46.5x27.0 dp)
+```
+
+So the View-drawn route was the only one left. `src/components/ui/Switch.tsx` already existed as
+an M14 primitive but wraps itself in a `Pressable` — a 44×26 dp node, itself under the minimum —
+so its track and thumb were split out as `SwitchIndicator`, two plain `View`s with no
+accessibility identity, and `Switch` now composes it. `CapabilitiesSheet`'s rows render the
+indicator, leaving the 48 dp row as the only node.
+
+**The dp dump proving it is empty — not captured.** Reaching that sheet needs a bot roster, which
+needs a gateway connection. Blocked by the regression above. Likewise the tap-to-toggle and the
+`profiles.describe` readback.
+
+**Task 1b (Tasks in light theme): not attempted.** Same blocker. Empty.
+
+**Task 1c (cron deep-link redirects): done and device-verified.** The one carried item that needs
+no connection.
+
+- `hermes-android:///cron` → the Tasks screen: `'Scheduled jobs'`, `'No scheduled jobs yet'`,
+  `'Schedule a prompt to run on a cron expression…'`, action `'New task'` (`20-deeplink-cron.xml`).
+  That is `app/(main)/tasks/index.tsx`'s empty state; the old cron screen had a manual create form
+  and a "Create cron" button, neither of which is present.
+- `hermes-android:///cron/05597b82f881` → the Tasks **detail** route, which then requested
+  `/api/cron/jobs/05597b82f881` and rendered its error state, `'HTTP 404 …'` with `Back`/`Retry`
+  (`21-deeplink-cron-id.xml`). The 404 is expected — the app was still pointed at the user's own
+  connection, which has no such job — and it is itself the proof that the id survived the redirect
+  into the new screen's query. Deviation 17 holds on device.
+
+**Task 2 (pairing): built, and the exit criterion is device-verified.** Commits `c9f14db`,
+`459ca6b`.
+
+`:start` renders the two entry cards plus "This computer" — 3 clickable nodes, 0 under 48 dp
+(`01-connect-start.xml`). `:steps` renders the three steps, the checklist and the guide link
+(`02-connect-steps.xml`, `11-steps-checklist-fixed.xml`).
+
+The criterion, in full:
+
+| input | path | result |
+| --- | --- | --- |
+| `http://127.0.0.1:9119` | Tailscale | rejected — *"That address is this phone, not your computer. “127.0.0.1” points back at the phone itself, so there is nothing here to test."* Detect gone from the clickable set. `04-reject-127.xml` |
+| `http://10.0.2.2:9119` | Tailscale | rejected — *"…“10.0.2.2” is the emulator's alias for the machine running it, not a tailnet address…"* Detect gone. `05-reject-10022.xml` |
+| `http://myhost.tail1234.ts.net:9119` | Tailscale | **not rejected**; no error, Detect present and clickable again. `06-tailnet-accepted.xml` |
+| `http://10.0.2.2:9128` | Enter a URL | **not rejected** — the mode split, on device. `13-10022-allowed-on-url-path.xml` |
+
+That last row is the one place this differs from a literal reading of "hard-reject 10.0.2.2", and
+it comes from the prototype rather than from me: connect.html's Behaviour block says 10.0.2.2 is
+rejected on the Tailscale path "(M15 exit criterion)" but "on the 'Enter a URL' path it is
+allowed, because on an emulator it IS the computer", and that path's own card offers "an emulator
+host" as a valid answer. Flagged rather than silently chosen.
+
+*What is NOT shown:* the tailnet URL proceeding to a detection **result**. It is not rejected and
+Detect is enabled, which is what the criterion asks. The probe's outcome was never observable,
+because of the same regression — so "proceeds to detection" is verified as *permitted*, not as
+*executed*.
+
+`::1`, the rest of `127.0.0.0/8`, and `0.0.0.0`/`::` are all rejected too, with their reasons in
+`src/net/gateway-url-guard.ts`'s comments and 42 unit tests. Briefly: the whole `/8` is loopback
+per RFC 1122 and the kernel honours it, so `127.0.0.2` is the same mistake; `::1` is the same
+address in IPv6; `0.0.0.0` and `::` are *bind* addresses meaning "every interface", which is
+exactly why they get typed in (`hermes serve --host 0.0.0.0` is a real command) and which route to
+the local host when dialled. `localhost` and anything under it go too (RFC 6761 §6.3).
+
+`src/net/auth/loopback-listener.ts` and `native-login.ts:164` keep using `127.0.0.1` for the RFC
+8252 redirect — the phone listening on *itself*, which is correct — and the guard deliberately
+does not apply there.
+
+**Task 3 (`docs/CONNECTING.md` host section): done, documentation only.** Commit `1e64ca8`.
+Nothing was run against this machine's services.
+
+Windows Task Scheduler / macOS LaunchAgent / Linux systemd user unit, each with the caveat that
+actually bites (run-whether-logged-on, LaunchAgent stopping at logout, `loginctl enable-linger`).
+Every flag and key carries its upstream `file:line`; the load-bearing ones:
+
+- `should_require_auth` (`hermes_cli/web_server.py:443-450`) — *"True iff the auth gate must be
+  active: any non-loopback bind"*, with its own docstring recording that RFC1918/CGNAT/link-local
+  are *"deliberately PUBLIC — a hostile LAN device is the threat model"* and that `--insecure` is
+  *"accepted for old launch scripts but IGNORED"*. That is D13.3's rule, quoted rather than
+  paraphrased.
+- The bind is refused outright without a provider (`web_server.py:1054-1056`).
+- The required secret: `_resolve_secret` (`plugins/dashboard_auth/basic/__init__.py:191-202`)
+  logs at **INFO** and carries on when it is unset, so the failure is silent on the host and lands
+  on the phone as a 401 that looks like a bad password.
+
+One correction to the prototype, also applied to the in-app checklist (`459ca6b`): its third line
+`hermes auth add password --user tester` is not a real command — `hermes auth add <provider>` is
+*"Add a pooled credential"* (`hermes_cli/_parser.py:73`), for model-provider API keys.
+
+**Task 4 (connection banner): built, NOT device-verified.** Commit `c4d1bf6`.
+
+What `src/chat/ConnectionBanner.tsx` already did, read before extending it: subscribed to
+`onGatewayConnectionState`, returned `null` for `idle`/`open`, and otherwise rendered one of two
+vendored `boot.*` lines — `retryingRemoteBackend` vs `gatewayConnectionLost` — with no cause and
+no action. 77 lines, no `Pressable` anywhere (`:33-57` before this round).
+
+Extended, not duplicated. The cause now arrives: M04's ladder was already classifying, but
+`describeConnectReason(reason)` was only ever *thrown* (`session-connection.ts:391`,
+`mobile-gateway.ts:86`), so it reached whichever call site was in flight and nowhere else — a
+banner cannot read a rejected promise. `session-connection.ts` now publishes a
+`ConnectionAttention` signal beside the existing state fan-out; `needs-login` outranks
+`unreachable` and a close never downgrades it. "Sync now" goes through
+`reconnectAndProbeGateway()` and then asks the owning screen to re-resume; the chat screen passes
+`refreshConversation`, which is already the Deviation 5 path (`resumeSession(id, title, botId)`).
+A 401 gets "Sign in again" instead, because a redial cannot fix an expired credential.
+
+**All three of its pasted blocks are empty** — no "unreachable", no "sign in again", no "Sync now
+clears it". Every one needs the throwaway connection.
+
+**Task 5 (`npm run check`): exit 0**, after `459ca6b`.
+
+```
+Ran 52 tests in 3.673s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+Vitest 771 passed — 729 plus 42 new `gateway-url-guard.test.ts`.
+
+**Exit criteria touched.**
+
+- **Pairing — met.** `127.0.0.1` and `10.0.2.2` rejected with the reason on screen; a
+  tailnet-shaped URL not rejected and Detect enabled. Evidence in the table above.
+- **Banner — not met, no evidence.** Built and code-verified only.
+- *Tasks*, *Gestures* — untouched.
+
+**Carried items.**
+
+- *Capabilities switch under 48 dp* — code fix landed (the widget is gone), **device-unverified**.
+- *Tasks light theme* — **not attempted**.
+- *Cron deep-link redirects* — **done, device-verified.** Closed.
+- *`AppDrawer`'s zero-height backdrop* (`src/components/AppDrawer.tsx:142-144`) — still open,
+  untouched, out of scope as instructed. Recorded only.
