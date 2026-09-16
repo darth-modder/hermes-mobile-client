@@ -23,11 +23,9 @@
  * `connections/registry.ts:194` — the global is absent under plain Node/vitest.
  */
 
-let override: null | string = null
+import { isDevBuild as devBuild } from '../lib/dev-build'
 
-function devBuild(): boolean {
-  return typeof __DEV__ !== 'undefined' && __DEV__
-}
+let override: null | string = null
 
 /** Sets (or with `null` clears) the fixed transcript. No-op outside `__DEV__`. */
 export function setDevTranscriptOverride(text: null | string): void {
