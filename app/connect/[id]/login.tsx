@@ -163,7 +163,7 @@ export default function PasswordLoginScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.safeArea, { backgroundColor: tokens.background }]}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={[styles.title, { color: tokens.foreground }]}>{t.install.signIn}</Text>
         <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>
           {label || baseUrl} · {provider}

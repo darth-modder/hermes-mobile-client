@@ -119,6 +119,7 @@ export default function McpSettings() {
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.mcp }} />
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             onRefresh={() => void serversQuery.refetch()}
