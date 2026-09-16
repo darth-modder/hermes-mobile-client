@@ -504,6 +504,19 @@ export const COMPOSER_NOTHING_TO_SPEAK_TITLE = 'Nothing to speak'
 export const COMPOSER_NO_REPLY_TO_READ_MESSAGE = 'No new reply to read out.'
 export const COMPOSER_SPEECH_FAILED_TITLE = 'Speech failed'
 
+// M15 B, round 9: src/chat/Composer.tsx's hold-to-dictate states. Mobile-only
+// by construction — hold-to-dictate is a touch gesture and the desktop has no
+// counterpart at all: grepped `src/upstream/i18n/en.ts` for `auto.?send`,
+// `autosend` and `editBeforeSend` and for any `hold`/`dictat`/`record` key,
+// and there is nothing to reuse. `COMPOSER_RECORD_VOICE_LABEL` above already
+// names the button itself; these three name the auto-send state the hold
+// arms, the escape out of it, and the hint that explains the gesture on the
+// accessibility label.
+export const COMPOSER_AUTO_SEND_LABEL = 'Auto-send'
+export const COMPOSER_AUTO_SEND_ARMED_HINT = 'Release to send'
+export const COMPOSER_EDIT_BEFORE_SENDING_LABEL = 'Edit before sending'
+export const COMPOSER_HOLD_TO_AUTO_SEND_HINT = 'Hold to dictate and send'
+
 // M15 B, task 1: docs/mobile-prototypes/chat.html's `#chat=model`/`#chat=effort`
 // views (lines 357-407) — the composer's model and effort chips. No desktop
 // counterpart sheet titles exist for either (the desktop's own model picker
