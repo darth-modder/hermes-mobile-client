@@ -168,7 +168,9 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                 <Text numberOfLines={1} style={[styles.rowLabel, { color: tokens.foreground }]}>
                   {skill.name}
                 </Text>
-                <Switch importantForAccessibility="no" pointerEvents="none" value={skill.enabled} />
+                <View importantForAccessibility="no-hide-descendants" pointerEvents="none">
+                  <Switch accessible={false} focusable={false} value={skill.enabled} />
+                </View>
               </Pressable>
               {lockedSkillNames.includes(skill.name) ? (
                 <Text style={[styles.rowSub, { color: tokens.destructive }]}>
@@ -206,7 +208,9 @@ export function CapabilitiesSheet({ detail, onClose, onSaved, profileName, visib
                   {toolset.description}
                 </Text>
               </View>
-              <Switch importantForAccessibility="no" pointerEvents="none" value={toolset.enabled} />
+              <View importantForAccessibility="no-hide-descendants" pointerEvents="none">
+                <Switch accessible={false} focusable={false} value={toolset.enabled} />
+              </View>
             </Pressable>
           ))}
         </>
@@ -231,12 +235,34 @@ const styles = StyleSheet.create({
   // M15 round 11 (task 0b): leaving the Switch independently wired kept a
   // 46.5×27 dp *clickable node* inside the 48 dp row, so the row being big
   // enough didn't clear the criterion — a dump still showed a sub-48 dp
-  // target. The Switch is now a pure indicator: `pointerEvents="none"` so it
-  // takes no touches, `importantForAccessibility="no"` so it leaves the
-  // accessibility tree that `uiautomator` dumps, and its `onValueChange` is
-  // gone rather than left dead. The semantics moved up to the row, which
-  // carries `accessibilityRole="switch"` and the `checked` state, so
-  // TalkBack still announces it as a toggle with one node instead of two.
+  // target. The semantics moved up to the row, which carries
+  // `accessibilityRole="switch"` and the `checked` state, and the Switch's
+  // `onValueChange` was removed rather than left dead.
+  //
+  // M15 round 12: still not enough, and the device said so. The dump STILL
+  // reports one `Switch 46.5x27.0dp` clickable node per row. Three things
+  // were tried and all three failed to remove it:
+  //   1. `pointerEvents="none"` + `importantForAccessibility="no"` on the
+  //      Switch itself (round 11);
+  //   2. moving both onto a wrapping `View` with `no-hide-descendants`;
+  //   3. adding `accessible={false}` and `focusable={false}` to the Switch.
+  //
+  // What they DID achieve, confirmed on device: the wrapper's
+  // `pointerEvents="none"` genuinely stops the Switch taking touches. Tapping
+  // the label at x=300 and tapping the Switch itself at x=977 both toggle via
+  // the row, so the real touch target is the full 48 dp row either way, and a
+  // save round-trips (`browser` disappeared from `enabled_toolsets` in
+  // profiles/coder/config.yaml).
+  //
+  // What remains is the accessibility NODE, not the touch target:
+  // `uiautomator` still walks the native `AndroidSwitch` and reports it
+  // `clickable=true` at its own 46.5x27.0 dp size. So the 48 dp criterion as
+  // written ("no clickable node under 48 dp in a dump") is NOT met, while the
+  // behaviour it exists to protect is. Removing the node needs the native
+  // `Switch` to stop being rendered at all — a View-drawn toggle — which is a
+  // real control rewrite and is deliberately NOT being done at the end of a
+  // verification round. Left as a known gap with this trail so the next
+  // attempt does not re-try the three above.
   row: {
     alignItems: 'center',
     flexDirection: 'row',
