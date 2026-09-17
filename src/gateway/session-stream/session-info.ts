@@ -45,7 +45,14 @@ type SessionInfoPatch = Partial<
   >
 >
 
-function sessionInfoStatePatch(payload: GatewayEventPayload | undefined): SessionInfoPatch {
+/** Exported for session-connection.ts's `resumeSession`/`createSession`: both
+ *  `session.resume` and `session.create` return their own `info` snapshot
+ *  (`SessionRuntimeInfo`, structurally the same field names/types as the
+ *  live `session.info` event payload this reads), and that snapshot needs
+ *  the identical no-op-if-unchanged patch applied so a reopened session's
+ *  header/chips show the server's current model/effort right away instead
+ *  of waiting for the next live `session.info` push. */
+export function sessionInfoStatePatch(payload: GatewayEventPayload | undefined): SessionInfoPatch {
   const patch: SessionInfoPatch = {}
 
   if (typeof payload?.model === 'string') {
@@ -87,7 +94,7 @@ function sessionInfoStatePatch(payload: GatewayEventPayload | undefined): Sessio
   return patch
 }
 
-function applySessionInfoStatePatch(session: SessionState, patch: SessionInfoPatch): SessionState {
+export function applySessionInfoStatePatch(session: SessionState, patch: SessionInfoPatch): SessionState {
   if (
     (patch.branch === undefined || patch.branch === session.branch) &&
     (patch.cwd === undefined || patch.cwd === session.cwd) &&

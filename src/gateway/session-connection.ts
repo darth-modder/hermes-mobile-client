@@ -39,6 +39,7 @@ import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '..
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
+import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { setClarifyRequest } from '../store/clarify'
@@ -60,7 +61,8 @@ import type {
   RpcEvent,
   SessionCreateResponse,
   SessionMessage,
-  SessionResumeResponse
+  SessionResumeResponse,
+  SessionRuntimeInfo
 } from '../upstream/types/hermes'
 
 import { DeltaFlushScheduler } from './delta-flush-scheduler'
@@ -76,6 +78,7 @@ import {
   restorePendingRequestsFromResume,
   updateSession
 } from './session-stream-reducer'
+import { applySessionInfoStatePatch, sessionInfoStatePatch } from './session-stream/session-info'
 
 const DELTA_EVENT_TYPES = new Set(['message.delta', 'reasoning.delta'])
 
@@ -84,6 +87,32 @@ let reducerState: ReducerState = createReducerState()
 let scheduler: DeltaFlushScheduler | null = null
 let disposeEvents: (() => void) | null = null
 let disposeLiveSyncEvents: (() => void) | null = null
+
+/**
+ * A Bot Chat's profile, by stored id — connection-layer bookkeeping, kept
+ * outside `reducerState` deliberately (that state is wire-frame-driven only;
+ * this is remembered purely so a LATER internal resume, one this module
+ * triggers itself with no route params to read, can still supply it).
+ *
+ * M15 Deviation 5: `session.resume`'s own `session_id` never carries enough
+ * to find a Bot Chat — `tui_gateway/methods_session.py:453-455` reads a
+ * SEPARATE `profile` param to pick which profile's `state.db` to look in,
+ * and `_find_live_unpersisted` (:511-517) matches a live, not-yet-persisted
+ * Bot Chat only when its `profile_home` equals that param's. Without it,
+ * lookup falls back to the default store and 4007s (:585-590) — proven live
+ * against the throwaway gateway both before AND after the chat has real
+ * turns in it (a persisted Bot Chat lives in the profile's own `state.db`,
+ * never the default one, so the 4007 isn't a "not yet saved" special case).
+ * `resumeSession`'s caller (the chat screen) knows the profile up front —
+ * it's the `botId` route param — but `rehydrateSession` below is invoked
+ * from inside the reducer's own effects (a `session.reclaimed` event, a
+ * dropped-socket recovery), which carry only a session id, never a profile.
+ * This map is what lets that internal path resupply what the original open
+ * already knew, without threading a profile field through the pure
+ * wire-protocol reducer (`session-stream-reducer.ts` / `session-stream/*`)
+ * that owns none of this identity plumbing.
+ */
+const storedSessionProfile = new Map<string, string>()
 
 const stateListeners = new Set<(state: ConnectionState) => void>()
 
@@ -100,6 +129,49 @@ export function onGatewayConnectionState(listener: (state: ConnectionState) => v
  *  `src/chat/ConnectionBanner.tsx`'s initial render. */
 export function getGatewayConnectionState(): ConnectionState {
   return gateway?.connectionState ?? 'idle'
+}
+
+/**
+ * The one persistent "connection needs attention" signal the banner renders
+ * (M15 D). Before this the reason was classified through M04's ladder and
+ * then *thrown* — `describeConnectReason(reason)` at :391 and in
+ * mobile-gateway.ts:86 — so it reached whichever call site happened to be in
+ * flight and nowhere else. A banner cannot read a rejected promise, which is
+ * why the pre-M15 banner could only say "connection lost" with no cause.
+ *
+ * `needs-login` outranks `unreachable`: a 401 is actionable by the user and
+ * a redial will not fix it, so it must not be masked by the socket that
+ * closed alongside it.
+ */
+export type ConnectionAttention = { kind: 'needs-login' } | { kind: 'unreachable'; reason: ConnectReason } | null
+
+let attention: ConnectionAttention = null
+const attentionListeners = new Set<(value: ConnectionAttention) => void>()
+
+export function getConnectionAttention(): ConnectionAttention {
+  return attention
+}
+
+export function onConnectionAttention(listener: (value: ConnectionAttention) => void): () => void {
+  attentionListeners.add(listener)
+
+  return () => attentionListeners.delete(listener)
+}
+
+export function setConnectionAttention(next: ConnectionAttention): void {
+  const same =
+    attention?.kind === next?.kind &&
+    (attention?.kind !== 'unreachable' || attention.reason === (next as { reason: ConnectReason }).reason)
+
+  if (same) {
+    return
+  }
+
+  attention = next
+
+  for (const listener of attentionListeners) {
+    listener(attention)
+  }
 }
 
 function publishAll(): void {
@@ -127,7 +199,7 @@ async function rehydrateSession(storedSessionId: string | null, attempts: number
 
   for (let attempt = 0; attempt < totalAttempts; attempt++) {
     try {
-      await resumeSession(storedSessionId)
+      await resumeSession(storedSessionId, undefined, storedSessionProfile.get(storedSessionId))
 
       return
     } catch (error) {
@@ -291,6 +363,7 @@ export function handleSocketClose(connection: MobileConnection, code: number): v
     return
   }
 
+  setConnectionAttention({ kind: 'needs-login' })
   void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 }
 
@@ -305,6 +378,8 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
   const refreshed = await refreshConnectionOAuth(connection.id, connection.baseUrl)
 
   if (!refreshed) {
+    setConnectionAttention({ kind: 'needs-login' })
+    setConnectionAttention({ kind: 'needs-login' })
     await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 
     return
@@ -349,6 +424,23 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
   } catch (error) {
     await flagOauthSessionExpiredIfConfirmed(connection, error)
 
+    // httpRequest (src/net/http.ts) already turns a network-level failure
+    // (host stopped, wrong port, DNS, TLS) into a classified, friendly
+    // message — nothing to add for those here. An HttpError is the one
+    // case it deliberately leaves alone (its `.status` matters to callers
+    // like flagOauthSessionExpiredIfConfirmed above), so only that case
+    // needs classifying here, via the same M04 reason ladder
+    // (src/net/auth/ladder.ts, through src/net/connect-reason.ts).
+    if (error instanceof HttpError) {
+      const reason = classifyConnectReason({ httpStatus: error.status })
+
+      setConnectionAttention(
+        reason === 'unauthorized' || reason === 'forbidden' ? { kind: 'needs-login' } : { kind: 'unreachable', reason }
+      )
+
+      throw new Error(describeConnectReason(reason), { cause: error })
+    }
+
     throw error
   }
 }
@@ -385,6 +477,7 @@ async function flagOauthSessionExpiredIfConfirmed(connection: MobileConnection, 
     return
   }
 
+  setConnectionAttention({ kind: 'needs-login' })
   await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
 }
 
@@ -461,6 +554,18 @@ export async function ensureGatewayConnection(): Promise<MobileGateway> {
   }
 
   instance.onState(state => {
+    // The banner's signal rides the same transition the state listeners do.
+    // 'open' is the only thing that clears it — including a `needs-login`,
+    // because a socket that opened carried credentials the gateway accepted.
+    // A close/error only *raises* `unreachable`, never downgrades an existing
+    // `needs-login`: the 401 is the more specific and more actionable cause,
+    // and the socket closing is usually that same event seen a layer down.
+    if (state === 'open') {
+      setConnectionAttention(null)
+    } else if ((state === 'closed' || state === 'error') && getConnectionAttention()?.kind !== 'needs-login') {
+      setConnectionAttention({ kind: 'unreachable', reason: 'unreachable' })
+    }
+
     for (const listener of stateListeners) {
       listener(state)
     }
@@ -550,8 +655,11 @@ export async function reconnectAndProbeGateway(): Promise<void> {
  *  "placeholder key" convention (session-keys.ts): a session this client just
  *  created has no runtime->stored mapping until its first `session.info`, so
  *  RPCs addressed by the caller's stored id fall through to it unchanged,
- *  which is exactly the runtime id `session.create` minted. */
-function runtimeIdForStored(storedSessionId: string): string {
+ *  which is exactly the runtime id `session.create` minted. Exported (M15 B)
+ *  for `src/api/models.ts`'s per-session `config.set` calls, which need the
+ *  same stored->runtime resolution every other session-addressed RPC in this
+ *  file gets for free. */
+export function runtimeIdForStored(storedSessionId: string): string {
   for (const [runtimeId, stored] of reducerState.runtimeToStored) {
     if (stored === storedSessionId) {
       return runtimeId
@@ -600,6 +708,32 @@ function seedSessionMessages(storedSessionId: string, messages: SessionMessage[]
   reducerState = updateSession(reducerState, storedSessionId, session => ({ ...session, messages: chatMessages })).state
 }
 
+/** Seed a session's model/provider/reasoning-effort/etc from the `info`
+ *  snapshot `session.create`/`session.resume` return directly on their
+ *  response — NOT from waiting on a live `session.info` event, which may not
+ *  arrive again for a session that was already running before this client
+ *  (re)connected. Without this, a reopened session's header/chips keep
+ *  showing whatever this client last knew (or nothing, on a cold start)
+ *  until the next event happens to touch that session — stale after a
+ *  model/effort change made from another client or from this session before
+ *  the app was killed and relaunched. Reuses `sessionInfoStatePatch` /
+ *  `applySessionInfoStatePatch` (session-info.ts) — `SessionRuntimeInfo`
+ *  carries the same field names/types the live event payload does, so the
+ *  same no-op-if-unchanged patch logic applies unmodified. Mirrors the
+ *  desktop's `applyRuntimeInfo` call on this same response field
+ *  (apps/desktop/src/app/session/hooks/use-session-actions/index.ts:1759). */
+function seedSessionInfo(storedSessionId: string, info: SessionRuntimeInfo | undefined): void {
+  const patch = sessionInfoStatePatch(info)
+
+  if (Object.keys(patch).length === 0) {
+    return
+  }
+
+  reducerState = updateSession(reducerState, storedSessionId, session =>
+    applySessionInfoStatePatch(session, patch)
+  ).state
+}
+
 /** Seed a session's title from a caller who already knows it (e.g. the REST
  *  list this resume was opened from) — the reducer only ever learns a title
  *  from a `session.title` event, which can lag well behind the screen
@@ -637,8 +771,13 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
 
   const storedId = response.stored_session_id ?? response.session_id
 
+  if (profile) {
+    storedSessionProfile.set(storedId, profile)
+  }
+
   reducerState = bindSession(reducerState, response.session_id, storedId, { makeActive: true })
   seedSessionMessages(storedId, response.messages)
+  seedSessionInfo(storedId, response.info)
   publishAll()
 
   return storedId
@@ -648,13 +787,33 @@ export async function createSession(params: { cwd?: string; profile?: string; ti
  *  and how the `hydrate` effect recovers after a reclaim or lost connection.
  *  Both reconnect branches (inside the server's orphan grace, and after a
  *  `session.reclaimed`) call this the same way, so pending-request restore
- *  (D10.2) runs identically on either. */
-export async function resumeSession(storedSessionId: string, knownTitle?: string): Promise<string> {
+ *  (D10.2) runs identically on either.
+ *
+ *  `profile` (M15 Deviation 5): required for a Bot Chat — see
+ *  `storedSessionProfile`'s own comment above for why `session.resume`
+ *  cannot find one without it. The caller that actually knows the profile
+ *  (the chat screen, from its `botId` route param) passes it explicitly;
+ *  once given, it's remembered here by stored id so `rehydrateSession`'s
+ *  later internal calls (never passed one directly) still supply it. A
+ *  caller resuming a PLAIN, non-bot session simply never passes one, and
+ *  nothing here treats its absence as an error — `session.resume` without
+ *  `profile` is exactly today's plain-session behavior. */
+export async function resumeSession(storedSessionId: string, knownTitle?: string, profile?: string): Promise<string> {
   const client = await ensureGatewayConnection()
-  const response = await client.request<SessionResumeResponse>('session.resume', { session_id: storedSessionId })
+  const resolvedProfile = profile ?? storedSessionProfile.get(storedSessionId)
+
+  if (resolvedProfile) {
+    storedSessionProfile.set(storedSessionId, resolvedProfile)
+  }
+
+  const response = await client.request<SessionResumeResponse>('session.resume', {
+    session_id: storedSessionId,
+    ...(resolvedProfile ? { profile: resolvedProfile } : {})
+  })
 
   reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
   seedSessionMessages(storedSessionId, response.messages)
+  seedSessionInfo(storedSessionId, response.info)
   seedSessionTitle(storedSessionId, knownTitle)
 
   const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
@@ -955,6 +1114,7 @@ export function resetSessionConnectionForTests(): void {
   scheduler?.dispose()
   scheduler = null
   stateListeners.clear()
+  storedSessionProfile.clear()
 }
 
 /** Test-only: inject a fake in place of the real dialed `MobileGateway`, so

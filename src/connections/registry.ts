@@ -73,6 +73,8 @@ export function setActiveConnection(connection: MobileConnection | null): void {
   if (connection) {
     registerConnection(connection)
   }
+
+  logRegistryState()
 }
 
 /** Add or edit a connection's metadata in the registry without making it
@@ -100,6 +102,8 @@ export function deleteConnection(id: string): void {
   if (active && active.id === id) {
     writeJson(ACTIVE_CONNECTION_KEY, null)
   }
+
+  logRegistryState()
 }
 
 /** Marks exactly one connection primary; every other list entry is
@@ -112,6 +116,7 @@ export function setPrimaryConnection(id: string): void {
   }
 
   writeList(list.map(c => ({ ...c, primary: c.id === id })))
+  logRegistryState()
 }
 
 export function getPrimaryConnection(): MobileConnection | null {
@@ -131,6 +136,7 @@ export function switchActiveConnection(id: string): MobileConnection | null {
 
   writeJson(ACTIVE_CONNECTION_KEY, activated)
   registerConnection(activated)
+  logRegistryState()
 
   return activated
 }
@@ -155,4 +161,41 @@ export function updateActiveConnection(
 
 export function clearActiveConnection(): void {
   setActiveConnection(null)
+}
+
+/** The exact text `logRegistryState` below would print, as an array of
+ *  lines — split out so a test can assert on the content without depending
+ *  on the `__DEV__` global (absent under plain Node/vitest; see the guard
+ *  below). Only id/label/primary/needsLogin ever appear here — never
+ *  `baseUrl`, `authMode` or `headerNames`, and never anything from
+ *  secure.ts (this module never imports it), so there is no token, secret
+ *  or header value this can leak. */
+export function registryLogLines(): string[] {
+  const active = getActiveConnection()
+  const lines = [`active: ${active ? `${active.id} (${active.label})` : 'none'}`]
+
+  for (const connection of listConnections()) {
+    lines.push(
+      `list: ${connection.id} (${connection.label}) primary=${Boolean(connection.primary)} needsLogin=${Boolean(connection.needsLogin)}`
+    )
+  }
+
+  return lines
+}
+
+/** __DEV__-only readback of the registry's actual state, read through the
+ *  same functions the app itself reads through — never a raw MMKV byte
+ *  scan, which round 4 found returns stale bytes left behind by an earlier,
+ *  larger write that a shorter overwrite doesn't zero out (see M15's
+ *  Verification log, round 4 task 0). This is the storage readback to trust
+ *  from here on. Call once at startup (`app/_layout.tsx`) and after every
+ *  registry write. */
+export function logRegistryState(): void {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) {
+    return
+  }
+
+  for (const line of registryLogLines()) {
+    console.log(`[registry] ${line}`)
+  }
 }

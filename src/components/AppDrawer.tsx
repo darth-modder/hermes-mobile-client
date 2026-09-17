@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { IconHierarchy2, IconMessages, IconPuzzle } from '@tabler/icons-react-native'
+import { IconHierarchy2, IconMessages, IconPuzzle, IconRobot } from '@tabler/icons-react-native'
 import { type Href, useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
@@ -34,7 +34,7 @@ interface DrawerRow {
 }
 
 /**
- * D16/M15A note: `IconPuzzle`/`IconMessages`/`IconHierarchy2` aren't in
+ * D16/M15A note: `IconPuzzle`/`IconMessages`/`IconHierarchy2`/`IconRobot` aren't in
  * `src/lib/icons.ts`'s generated alias table — like `ScreenHeader`'s
  * `IconMenu2`, the desktop's own icon module has no alias for a concept it
  * doesn't need (a persistent sidebar has no drawer to iconify), so these are
@@ -50,9 +50,10 @@ interface DrawerRow {
 const DRAWER_ICONS: Record<string, IconComponent> = {
   '/(main)/agents': IconHierarchy2,
   '/(main)/artifacts': FileImage,
+  '/(main)/bots': IconRobot,
   '/(main)/channels': MessageCircle,
   '/(main)/command-center': LayoutDashboard,
-  '/(main)/cron': Clock,
+  '/(main)/tasks': Clock,
   '/(main)/projects': FolderOpen,
   '/(main)/session-list': IconMessages,
   '/(main)/settings': Settings,

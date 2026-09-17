@@ -66,6 +66,7 @@ const {
   handleSocketClose,
   reconnectAndProbeGateway,
   resetSessionConnectionForTests,
+  resumeSession,
   setGatewayForTests,
   setReducerStateForTests,
   submitPrompt
@@ -192,6 +193,129 @@ describe('submitPrompt: optimistic user-message insert', () => {
     fake.request.mockRejectedValue(new Error('boom'))
 
     await expect(submitPrompt('stored-1', 'hello')).rejects.toThrow('boom')
+  })
+})
+
+describe('resumeSession: M15 Deviation 5 — a Bot Chat needs `profile` to be found', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+  })
+
+  it("sends no `profile` for a plain session — matches session.resume's existing behavior", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1' })
+  })
+
+  it("sends `profile` when the caller passes one (the chat screen's botId route param)", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'researcher' })
+  })
+
+  it("remembers a Bot Chat's profile so a later call with none supplied still sends it — this is what lets rehydrateSession recover one without ever seeing a route param", async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+    fake.request.mockClear()
+    await resumeSession('stored-1')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'researcher' })
+  })
+
+  it('an explicit profile on a later call overrides the remembered one', async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    await resumeSession('stored-1', undefined, 'researcher')
+    fake.request.mockClear()
+    await resumeSession('stored-1', undefined, 'coder')
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { session_id: 'stored-1', profile: 'coder' })
+  })
+})
+
+describe("resumeSession/createSession: a reopened session's model/provider/effort must reflect the server, not go stale", () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+  })
+
+  it("resumeSession applies session.resume's own `info` onto the session state — not just messages", async () => {
+    fake.request.mockResolvedValue({
+      info: { model: 'deepseek-v4-flash', provider: 'nous', reasoning_effort: 'high' },
+      session_id: 'runtime-1'
+    })
+
+    await resumeSession('stored-1')
+
+    const session = $sessionStates.get()['stored-1']
+
+    expect(session.model).toBe('deepseek-v4-flash')
+    expect(session.provider).toBe('nous')
+    expect(session.reasoningEffort).toBe('high')
+  })
+
+  it('a stale model/effort left over from a prior open (e.g. before a force-stop/relaunch) is overwritten by the fresh resume, not left stuck', async () => {
+    fake.request.mockResolvedValue({
+      info: { model: 'deepseek-v4-flash', provider: 'nous', reasoning_effort: 'high' },
+      session_id: 'runtime-1'
+    })
+    await resumeSession('stored-1')
+    expect($sessionStates.get()['stored-1'].model).toBe('deepseek-v4-flash')
+
+    // Simulates reopening the same session after the model/effort were
+    // changed elsewhere (another client, or this session before the app was
+    // killed) — this client never saw a live session.info for the change.
+    fake.request.mockResolvedValue({
+      info: { model: 'mimo-v2.5', provider: 'moonshot', reasoning_effort: 'low' },
+      session_id: 'runtime-1'
+    })
+    await resumeSession('stored-1')
+
+    const session = $sessionStates.get()['stored-1']
+
+    expect(session.model).toBe('mimo-v2.5')
+    expect(session.reasoningEffort).toBe('low')
+  })
+
+  it('a resume response with no `info` at all leaves the session state untouched — nothing to apply', async () => {
+    fake.request.mockResolvedValue({ session_id: 'runtime-1' })
+
+    // A known title forces the session entry to materialize (seedSessionTitle
+    // also uses updateSession's create-if-missing) so there is something to
+    // read back — resumeSession's own bindSession doesn't materialize one for
+    // a runtime id it has never seen live state for (session-keys.ts).
+    await resumeSession('stored-1', 'My Session')
+
+    const session = $sessionStates.get()['stored-1']
+
+    expect(session.model).toBe('')
+  })
+
+  it("createSession applies session.create's own `info` onto the fresh session too", async () => {
+    fake.request.mockResolvedValue({
+      info: { model: 'deepseek-v4-flash', provider: 'nous' },
+      session_id: 'runtime-1',
+      stored_session_id: 'stored-1'
+    })
+
+    const { createSession } = await import('./session-connection')
+
+    const storedId = await createSession()
+
+    expect(storedId).toBe('stored-1')
+    expect($sessionStates.get()['stored-1'].model).toBe('deepseek-v4-flash')
   })
 })
 

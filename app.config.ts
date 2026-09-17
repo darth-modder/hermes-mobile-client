@@ -10,6 +10,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: 'automatic',
   android: {
     package: 'com.nousresearch.hermes.mobile',
+    predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',

@@ -13,6 +13,7 @@ import * as FileSystemLegacy from 'expo-file-system/legacy'
 import { Platform } from 'react-native'
 
 import { transcribeAudio } from './api'
+import { devTranscriptOverride } from './dev-transcript-seam'
 
 const RECORDING_MIME_TYPE = 'audio/m4a'
 
@@ -120,6 +121,17 @@ export async function stopRecordingAndTranscribe(): Promise<TranscribeResult> {
 
   activeRecorder = null
   await recorder.stop()
+
+  // __DEV__-only device-testing seam (dev-transcript-seam.ts), deliberately
+  // placed after the real stop so permission, capture and stop are all still
+  // exercised; only the text the gateway's Whisper would have returned is
+  // substituted. `devTranscriptOverride()` is hard-wired to null outside
+  // __DEV__, so this branch cannot be reached in a shipped build.
+  const seeded = devTranscriptOverride()
+
+  if (seeded !== null) {
+    return { provider: 'dev-seam', transcript: seeded }
+  }
 
   const uri: null | string = recorder.uri
 

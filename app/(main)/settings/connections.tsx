@@ -180,6 +180,7 @@ export default function ConnectionsSettings() {
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.connections.title }} />
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
         }

@@ -164,3 +164,186 @@ HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
 
 Generate the password into a scratch file outside the repo the same way as the session token —
 never paste it into a commit, log, or milestone file.
+
+## Keeping `hermes serve` running on the host (M15 D)
+
+Everything above is the dev loop. This section is the **user-facing recipe** the app links to
+from Connect → "This computer" (`app/connect/index.tsx`, `CONNECTING_DOC_URL`): how to leave a
+gateway running on your own computer so a phone can reach it.
+
+Every flag and config key below was checked against the upstream source at
+`../hermes-agent`; each one carries its `file:line`. Nothing here is inferred from a README.
+
+### Three requirements, in order
+
+1. **Bind so the auth gate engages.** `should_require_auth`
+   (`hermes_cli/web_server.py:443-450`) is exactly one rule: *"True iff the auth gate must be
+   active: any non-loopback bind."* Its docstring is explicit that a home LAN does not count as
+   safe — *"RFC1918 / CGNAT / link-local are deliberately PUBLIC — a hostile LAN device is the
+   threat model"* — and that the legacy `--insecure` flag *"is accepted for old launch scripts
+   but IGNORED since the June 2026 hermes-0day campaign"*. So binding anywhere other than
+   loopback turns authentication on and there is no way to turn it back off.
+
+   Bind to the **tailnet address**, not `0.0.0.0`: it is non-loopback (so the gate engages) but
+   only reachable from your own tailnet.
+
+2. **Register an auth provider before you bind.** The gate refuses to start without one —
+   `web_server.py:1054-1056`:
+
+   ```
+   Refusing to bind dashboard to {host} — {gate_reason}, but no auth providers are registered.
+   ```
+
+   The bundled one is basic auth. It reads, in `plugins/dashboard_auth/basic/__init__.py`:
+
+   | env var | config key | line |
+   | --- | --- | --- |
+   | `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` | `dashboard.basic_auth.username` | `:220` |
+   | `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` | `dashboard.basic_auth.password` | `:222` |
+   | `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH` | `dashboard.basic_auth.password_hash` | `:221` |
+
+   > There is no `hermes auth add password` command. `hermes auth add <provider>` is *"Add a
+   > pooled credential"* (`hermes_cli/_parser.py:73`) and is about **model-provider** API keys,
+   > not the dashboard gate. Configure basic auth through the env vars or config keys above.
+
+3. **Set the cookie-signing secret. This one is not optional.**
+
+   `_resolve_secret` (`plugins/dashboard_auth/basic/__init__.py:191-202`) reads
+   `HERMES_DASHBOARD_BASIC_AUTH_SECRET` or `dashboard.basic_auth.secret`, and when neither is
+   set it says so and carries on:
+
+   ```
+   dashboard-auth-basic: no 'secret' configured; generating a random per-process signing key.
+   Sessions will not survive a restart or span multiple workers. Set dashboard.basic_auth.secret
+   (or HERMES_DASHBOARD_BASIC_AUTH_SECRET) for stable sessions.
+   ```
+
+   That is an INFO log, not an error, so it is easy to miss — and the consequence lands on the
+   phone, not the host. **Every gateway restart re-signs with a fresh random key, which
+   invalidates every session cookie already issued, so every paired phone is signed out.** A
+   service that restarts on login, on update, or on crash therefore signs your phone out on a
+   schedule, and the app's only symptom is a 401 that looks like an expired password.
+
+   M15 found this the hard way: the field kit's own `setup-gw.sh` carries the comment *"Stable
+   cookie-signing key for the life of this scratch home. Without it the basic-auth plugin
+   generates a random per-process key … so any gateway restart or second process silently
+   invalidates every issued session cookie."*
+
+   Generate one once and keep it:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_hex(32))"
+   ```
+
+### Find your tailnet address
+
+```bash
+tailscale ip -4          # e.g. 100.101.102.103
+tailscale status --self  # shows the MagicDNS name, e.g. your-pc.tailnet.ts.net
+```
+
+Use the **MagicDNS name** in the phone (`https://your-pc.tailnet.ts.net:9119`) so the URL keeps
+working if the address changes.
+
+### Windows — Task Scheduler
+
+Task Scheduler is the only one of the three that survives logout without extra configuration.
+Create the task with "Run whether user is logged on or not".
+
+```powershell
+# One-time: store the secrets for the account that will run the task.
+[Environment]::SetEnvironmentVariable('HERMES_DASHBOARD_BASIC_AUTH_USERNAME','you','User')
+[Environment]::SetEnvironmentVariable('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD','<a long random password>','User')
+[Environment]::SetEnvironmentVariable('HERMES_DASHBOARD_BASIC_AUTH_SECRET','<the token_hex(32) value>','User')
+
+$tailnetIp = (tailscale ip -4)
+$action  = New-ScheduledTaskAction -Execute "$env:LOCALAPPDATA\hermes\bin\hermes.exe" `
+  -Argument "serve --host $tailnetIp --port 9119 --skip-build"
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+Register-ScheduledTask -TaskName 'Hermes gateway' -Action $action -Trigger $trigger -RunLevel Limited
+```
+
+`--skip-build` is in `hermes serve`'s own help (*"Skip the web UI build step … Useful for
+non-interactive contexts (Windows Scheduled Tasks, CI) where npm may not be available"*) and is
+wired at `hermes_cli/main_dashboard.py:689`. `--host` and `--port` are at `:681-682`.
+
+### macOS — LaunchAgent
+
+`~/Library/LaunchAgents/ai.nousresearch.hermes.gateway.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.nousresearch.hermes.gateway</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string><string>-lc</string>
+    <string>exec hermes serve --host "$(tailscale ip -4)" --port 9119 --skip-build</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HERMES_DASHBOARD_BASIC_AUTH_USERNAME</key><string>you</string>
+    <key>HERMES_DASHBOARD_BASIC_AUTH_PASSWORD</key><string>REPLACE</string>
+    <key>HERMES_DASHBOARD_BASIC_AUTH_SECRET</key><string>REPLACE</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+```
+
+```bash
+chmod 600 ~/Library/LaunchAgents/ai.nousresearch.hermes.gateway.plist
+launchctl load ~/Library/LaunchAgents/ai.nousresearch.hermes.gateway.plist
+```
+
+A LaunchAgent runs at **login** and stops at logout. The plist holds the password in plain text,
+hence `chmod 600`; prefer `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH` (`:221`) if you would
+rather not store the plaintext at all.
+
+### Linux — systemd user unit
+
+`~/.config/systemd/user/hermes-gateway.service`:
+
+```ini
+[Unit]
+Description=Hermes gateway
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -lc 'exec hermes serve --host "$(tailscale ip -4)" --port 9119 --skip-build'
+EnvironmentFile=%h/.config/hermes/gateway.env
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+`~/.config/hermes/gateway.env`, `chmod 600`:
+
+```
+HERMES_DASHBOARD_BASIC_AUTH_USERNAME=you
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=REPLACE
+HERMES_DASHBOARD_BASIC_AUTH_SECRET=REPLACE
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now hermes-gateway
+loginctl enable-linger "$USER"   # keep it running after you log out
+```
+
+Without `enable-linger`, a user unit stops when your last session ends.
+
+### Check it from the host before reaching for the phone
+
+```bash
+curl -s http://<tailnet-name>:9119/api/health
+```
+
+`auth_required` must be `true`. If it is `false`, the bind is still loopback and the gate never
+engaged (`web_server.py:443-450`) — the phone would be able to connect with no credentials at
+all, and that is the configuration this whole section exists to avoid.
+
+> **Never bind to `127.0.0.1` for a phone.** It is the one address that is guaranteed not to
+> work: on the phone, `127.0.0.1` is the phone. The app now rejects it in the field with that
+> reason (`src/net/gateway-url-guard.ts`).

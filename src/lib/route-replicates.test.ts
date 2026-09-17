@@ -30,7 +30,11 @@ const APP_ROOT = join(REPO_ROOT, 'app')
 // forwards straight to `/(main)/sessions/[id]`, which itself does carry the
 // comment. Listed explicitly, not sniffed, so a genuinely new screen can't
 // slip through this exclusion by accident.
-const NOT_A_SCREEN = new Set(['index.tsx', 'session/[id].tsx'])
+//
+// M15 round 11 adds the two `(main)/cron` files for the same reason: both
+// became bare `<Redirect>`s when `app/(main)/tasks/` replaced that screen,
+// kept rather than deleted so existing deep links still land somewhere real.
+const NOT_A_SCREEN = new Set(['(main)/cron/[id].tsx', '(main)/cron/index.tsx', 'index.tsx', 'session/[id].tsx'])
 
 function listRouteFiles(dir: string): string[] {
   const out: string[] = []

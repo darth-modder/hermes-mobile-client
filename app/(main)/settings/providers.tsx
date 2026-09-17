@@ -196,6 +196,7 @@ export default function ProvidersSettings() {
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.nav.providers }} />
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={tokens.mutedForeground} />
         }

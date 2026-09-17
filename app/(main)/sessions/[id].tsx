@@ -4,13 +4,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { type BotProfile, listBots } from '../../../src/api/bots'
 import { Composer } from '../../../src/chat/Composer'
 import { ConnectionBanner } from '../../../src/chat/ConnectionBanner'
 import { NotificationBanner } from '../../../src/chat/NotificationBanner'
 import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
+import { BotSettingsSheet } from '../../../src/components/BotSettingsSheet'
+import { getActiveConnection } from '../../../src/connections/registry'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
+import { SESSION_HEADER_REFRESH_FAILED_TITLE } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
+import { notify } from '../../../src/store/notifications'
 import { $sessionStates } from '../../../src/store/session-states'
 import { useTheme } from '../../../src/theme/provider'
 import { radius, type } from '../../../src/theme/type'
@@ -42,10 +47,31 @@ import { radius, type } from '../../../src/theme/type'
 export default function SessionScreen() {
   const router = useRouter()
   const tokens = useTheme()
-  const { id, title } = useLocalSearchParams<{ id: string; title?: string }>()
+
+  const { botId, botName, id, title } = useLocalSearchParams<{
+    botId?: string
+    botName?: string
+    id: string
+    title?: string
+  }>()
+
   const [error, setError] = useState<null | string>(null)
   const [ready, setReady] = useState(false)
   const startedFor = useRef<string | null>(null)
+  const [botSettingsOpen, setBotSettingsOpen] = useState(false)
+  const [botRoster, setBotRoster] = useState<BotProfile[] | null>(null)
+
+  const openBotSettings = useCallback(() => {
+    setBotSettingsOpen(true)
+
+    if (botRoster === null) {
+      void listBots()
+        .then(result => setBotRoster(result.profiles))
+        .catch(() => setBotRoster([]))
+    }
+  }, [botRoster])
+
+  const botProfile = botId ? botRoster?.find(p => p.name === botId) : undefined
 
   const openSession = useCallback(() => {
     if (!id) {
@@ -55,7 +81,7 @@ export default function SessionScreen() {
     setError(null)
     setReady(false)
 
-    const open = id === 'new' ? createSession() : resumeSession(id, title)
+    const open = id === 'new' ? createSession() : resumeSession(id, title, botId)
 
     open
       .then(storedId => {
@@ -66,7 +92,30 @@ export default function SessionScreen() {
         }
       })
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
-  }, [id, router, title])
+  }, [botId, id, router, title])
+
+  /** M15 B "Refresh conversation" (SessionHeader's overflow menu): re-runs
+   *  `session.resume` hydration for an already-open session — same
+   *  `resumeSession` call `openSession` makes, with the same `botId` (M15
+   *  Deviation 5) — but reported as a toast on failure instead of replacing
+   *  the whole screen with the boot-failure card `openSession`'s own error
+   *  path renders; a quiet re-sync shouldn't blank out a transcript the
+   *  reader is already looking at. */
+  const refreshConversation = useCallback(() => {
+    if (!id || id === 'new') {
+      return
+    }
+
+    resumeSession(id, title, botId).catch(err => {
+      notify({
+        id: `refresh-failed-${id}`,
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        title: SESSION_HEADER_REFRESH_FAILED_TITLE,
+        type: 'notify'
+      })
+    })
+  }, [botId, id, title])
 
   useEffect(() => {
     if (!id || startedFor.current === id) {
@@ -133,11 +182,40 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
-      <SessionHeader storedSessionId={id} />
-      <ConnectionBanner />
+      <SessionHeader
+        botName={botName}
+        onRefresh={refreshConversation}
+        onSettingsPress={botId ? openBotSettings : undefined}
+        storedSessionId={id}
+      />
+      {/* M15 D: the banner's recovering action re-resumes THIS session with
+          its bot profile — `refreshConversation` is already the Deviation 5
+          path (same `resumeSession(id, title, botId)` call `openSession`
+          makes), so "Sync now" reuses it rather than re-deriving it. */}
+      <ConnectionBanner
+        onResume={refreshConversation}
+        onSignIn={() => {
+          const active = getActiveConnection()
+
+          if (active) {
+            router.push({
+              params: { baseUrl: active.baseUrl, id: active.id, label: active.label, provider: active.provider },
+              pathname: '/connect/[id]/login'
+            })
+          }
+        }}
+      />
       <NotificationBanner />
       <Transcript messages={session.messages} storedSessionId={id} />
       <Composer storedSessionId={id} />
+      {botProfile ? (
+        <BotSettingsSheet
+          onClose={() => setBotSettingsOpen(false)}
+          profile={botProfile}
+          roster={botRoster ?? []}
+          visible={botSettingsOpen}
+        />
+      ) : null}
     </SafeAreaView>
   )
 }

@@ -36,6 +36,14 @@ export function hapticReject(): void {
   fireAndForget(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning))
 }
 
+/** The hold-to-dictate threshold was crossed and the auto-send is armed
+ *  (M15 B, `src/chat/hold-to-dictate.ts`). Medium rather than Light: this one
+ *  has to be felt without looking, since the whole point of the gesture is
+ *  that the user is holding the phone and talking, not watching the composer. */
+export function hapticArmed(): void {
+  fireAndForget(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium))
+}
+
 /** Any error notification (wired once, in src/store/notifications.ts, so
  *  every `notify({ kind: 'error', ... })` call site gets this for free). */
 export function hapticError(): void {

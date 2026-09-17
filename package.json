@@ -22,6 +22,7 @@
     "@tabler/icons-react-native": "^3.44.0",
     "@tanstack/react-query": "5.102.8",
     "@vscode/codicons": "^0.0.45",
+    "blobatar": "2.0.0",
     "expo": "~57.0.20",
     "expo-audio": "~57.0.4",
     "expo-camera": "~57.0.4",

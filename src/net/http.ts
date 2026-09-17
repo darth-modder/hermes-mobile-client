@@ -1,3 +1,5 @@
+import { classifyConnectReason, describeConnectReason } from './connect-reason'
+
 /** Typed error for a non-2xx REST response, carrying the parsed (or raw-text) body. */
 export class HttpError extends Error {
   readonly body: unknown
@@ -99,6 +101,24 @@ export async function httpRequest<T>(baseUrl: string, path: string, options: Htt
     }
 
     return body as T
+  } catch (error) {
+    // A non-2xx response (HttpError, thrown above) and the timeout race
+    // above both already carry a clear message — leave them alone. What's
+    // left is `fetch()` itself failing before any response arrived: host
+    // stopped, wrong port, DNS, TLS. RN's fetch on Android passes the
+    // underlying OkHttp exception's message through (src/net/
+    // connect-reason.ts's docstring), so the same reason ladder used for
+    // the WS connect path (src/gateway/mobile-gateway.ts) applies here too
+    // — every REST caller (session lists, cron, the ws-ticket mint, ...)
+    // gets the real cause instead of a raw Java exception string.
+    if (error instanceof HttpError || (error instanceof Error && error.message.startsWith('request timed out'))) {
+      throw error
+    }
+
+    const rawMessage = error instanceof Error ? error.message : String(error)
+    const reason = classifyConnectReason({ rawMessage })
+
+    throw new Error(describeConnectReason(reason), { cause: error })
   } finally {
     clearTimeout(timer!)
   }

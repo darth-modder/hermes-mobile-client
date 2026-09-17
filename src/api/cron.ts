@@ -17,10 +17,46 @@
  * below. The M10-era decision to leave these unwrapped stands corrected in
  * cause, not in effect until this milestone: `cron/[id].tsx` (M14) now
  * wraps and uses both.
+ *
+ * `CronBlueprint`/`CronBlueprintField` (M15 task 1): these two were briefly
+ * hand-added to the vendored `../upstream/types/hermes.ts` in M14
+ * (`e8156bf`) — a rule violation (upstream types are synced by
+ * `scripts/sync-upstream.mjs`, never hand-edited) that also happened to be
+ * wrong on the facts: `apps/desktop/src/types/hermes.ts` has never declared
+ * `CronBlueprint`/`CronBlueprintField` at any commit (checked the full
+ * history: only `AutomationBlueprint`/`AutomationBlueprintField` ever
+ * existed there). They describe `GET /api/cron/blueprints` /
+ * `POST /api/cron/blueprints/instantiate`'s JSON
+ * (`../hermes-agent/cron/blueprint_catalog.py`'s `blueprint_catalog_entry`,
+ * a superset of `blueprint_form_schema`) — a shape this app defined itself
+ * from the REST route, not a desktop type — so they live here, not in the
+ * vendored file. `type` is one of `'text' | 'enum' | 'time' | 'weekdays'` in
+ * practice (the catalog's own `BlueprintSlot.type`), kept as `string` since
+ * the server treats it as an open set.
+ *
+ * `getCronDeliveryTargets` (M15 task 3, `CronDeliveryTarget` — a genuine
+ * desktop type, `apps/desktop/src/types/hermes.ts:924-929`, already vendored
+ * straight, unlike `CronBlueprint` above): `createCronJob`/`updateCronJob`'s
+ * `deliver` field already existed in both payload types before this
+ * milestone, but this app had no way to list which delivery targets are
+ * actually valid on this host to populate a picker with.
+ * `GET /api/cron/delivery-targets` (`hermes_cli/web_routers/cron.py:231-243`,
+ * `get_cron_delivery_targets`) always includes `{id: 'local', name: 'Local
+ * (save only)', home_target_set: true, home_env_var: null}` first, then
+ * `cron_delivery_targets()`'s configured gateway platforms — a platform with
+ * no cron home channel is still listed, with `home_target_set: false`, so a
+ * picker can show it disabled-with-reason instead of omitting it. The desktop
+ * (`apps/desktop/src/api/cron.ts:55-63`) scopes this call with
+ * `profileScoped()`/`connectionScoped()`, both Electron-IPC concepts with no
+ * equivalent here (this file's header); the route itself takes no `profile`
+ * query param at all (checked its signature directly — no `Optional[str]`),
+ * so the optional `profile` below is accepted for this module's own
+ * consistency with every other function here, not because the server reads
+ * it.
  */
 
 import type {
-  CronBlueprint,
+  CronDeliveryTarget,
   CronJob,
   CronJobCreatePayload,
   CronJobUpdates,
@@ -28,6 +64,30 @@ import type {
 } from '../upstream/types/hermes'
 
 import { restRequest } from './rest'
+
+export interface CronBlueprintField {
+  default?: string
+  help?: string
+  label: string
+  name: string
+  optional?: boolean
+  options?: string[]
+  strict?: boolean
+  type: string
+}
+
+export interface CronBlueprint {
+  appUrl: string
+  category?: string
+  command: string
+  description?: string
+  fields: CronBlueprintField[]
+  key: string
+  schedule: string
+  scheduleHuman: string
+  tags?: string[]
+  title: string
+}
 
 function profileQuery(profile?: string): { profile?: string } {
   return profile ? { profile } : {}
@@ -125,4 +185,12 @@ export function instantiateCronBlueprint(
     method: 'POST',
     ...profileQuery(profile)
   })
+}
+
+/** `GET /api/cron/delivery-targets` — the deliver-to picker's options: always
+ *  `local` first, then each configured gateway platform (`home_target_set:
+ *  false` when the platform has no cron home channel yet, still listed so a
+ *  picker can show it disabled-with-reason rather than omit it). */
+export function getCronDeliveryTargets(profile?: string): Promise<{ targets: CronDeliveryTarget[] }> {
+  return restRequest<{ targets: CronDeliveryTarget[] }>('/api/cron/delivery-targets', profileQuery(profile))
 }

@@ -103,6 +103,7 @@ export default function WebhooksScreen() {
       <ScreenHeader title={t.shell.statusbar.webhooks} />
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             onRefresh={() => void webhooksQuery.refetch()}

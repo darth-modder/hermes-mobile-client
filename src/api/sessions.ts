@@ -13,7 +13,8 @@
 
 import { getActiveConnection } from '../connections/registry'
 import { getConnectionOAuth, getConnectionToken } from '../connections/secure'
-import { httpRequest, type HttpRequestOptions } from '../net/http'
+import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
+import { HttpError, httpRequest, type HttpRequestOptions } from '../net/http'
 import type { PaginatedSessions } from '../upstream/types/hermes'
 
 async function restAuth(): Promise<Pick<HttpRequestOptions, 'credentials' | 'token'>> {
@@ -48,7 +49,21 @@ async function sessionsRequest<T>(path: string, options: HttpRequestOptions = {}
 
   const auth = await restAuth()
 
-  return httpRequest<T>(connection.baseUrl, path, { ...options, ...auth })
+  try {
+    return await httpRequest<T>(connection.baseUrl, path, { ...options, ...auth })
+  } catch (error) {
+    // http.ts deliberately leaves a parsed HttpError alone (round 4's known
+    // gap: a stale-session 401 here surfaced as a raw "HTTP 401 ..." on the
+    // Sessions screen) — classify it the same way session-connection.ts's
+    // resolveAuth does for its own HttpError case, via the M04 reason ladder.
+    if (error instanceof HttpError) {
+      const reason = classifyConnectReason({ httpStatus: error.status })
+
+      throw new Error(describeConnectReason(reason), { cause: error })
+    }
+
+    throw error
+  }
 }
 
 export interface ListSessionsParams {
