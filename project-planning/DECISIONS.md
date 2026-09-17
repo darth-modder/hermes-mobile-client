@@ -589,3 +589,90 @@ The only "running" signal is an in-memory scheduler probe (`scheduler.py:691`) t
 exposes. M15 round 12 polled the gateway every 1.5 s across a triggered run and saw `scheduled`
 throughout. The desktop client has the same limitation, so this is parity, not a mobile gap. If
 the gateway starts exposing the state, both clients already render it.
+
+## D20 — Readiness claims are gated separately from milestone status (2026-09-17)
+
+**Decision.** Adopted from Opus's proposal in `an internal review note (not published)` §4, with the
+scope widened in part 1.
+
+1. **Scope.** This binds whoever makes the statement (Sonnet, Opus or Fable), wherever it is made:
+   in a report, in chat with the user, or in any text drafted for a third party (a post, a DM, a
+   store listing, a README status line). "Ready", "close to parity", "nothing blocks" and a
+   feature list presented as working are all readiness claims.
+2. **The check.** Before any statement that the app is ready to announce, demo to a third party
+   or hand to testers, the claimant runs the release-readiness check and pastes the result beside
+   the claim. Every item is met, or waived by name in this file for a stated audience:
+   1. An installable non-dev build exists: signed, tagged, cold-started once, no dev-client
+      overlay.
+   2. No open `[physical]` register row, or each one explicitly waived for that audience.
+   3. Identity reviewed: app name, package id, and an unaffiliated notice in the app and the
+      README. `name: 'Hermes'` with `com.nousresearch.hermes.mobile` does not pass.
+   4. The tracker README and the root README match the milestone files.
+   5. Every feature named in the claim was seen end to end on a build of merged `main` (D13.2),
+      with a real model on the wire, since the last change that touched its screen. A pass from
+      before a restyle does not count for the restyled screen.
+   6. No known defect in the approval, sudo or secret path is open without a root cause.
+3. **A milestone being `done` never satisfies this check.** Closing a milestone also means
+   updating the tracker README in the same commit (handover rule 5 stands: Opus makes that edit).
+4. **Audiences, so "announce" stops meaning three things.** *Closed test*: named people, a signed
+   build, items 1, 3, 4, 5 and 6 met, physical rows may be waived. *Open beta*: all six met,
+   inert screens hidden (D18). *Public release*: M12 `done`.
+
+**Reasoning.** Opus's review shows how the claim formed: exit criteria are emulator-scoped by
+design (D1, D9), so "every milestone is done" was true and said nothing about release state,
+identity, the physical register or whether restyled flows still work. Nothing required anyone to
+read those before answering "can we announce". On 2026-09-17 that produced a drafted message to a
+third party listing approval and clarify cards, voice and pairing as working, when by Opus's own
+later list only Reject had been seen on the current build. The rule costs one checklist per claim
+and makes the three audiences explicit, which is where the word "announce" slid.
+
+## D21 — After the announce-claim reviews: a scope rule for round reports, and the ordered path to a closed test (2026-09-17)
+
+**Decision.** Folds `an internal review note (not published)` (Opus) and
+`an internal review note (not published)` (Sonnet) into rules and work. Three parts.
+
+1. **Scope rule for every round report (Sonnet's proposal, adopted).** Any sentence that says
+   "verified", "fixed", "met", "confirmed" or "device-verified" names what was tested in that
+   sentence or the next: the input, the path, the instance, the theme, the build. It also says
+   which of three scopes it is: *component* (one piece in isolation), *path* (one input end to
+   end), or *general* (the inputs that matter). A guess is written as a guess. "Fixed" without
+   "tested with X" is an intention, not a status. Build is always stated: branch dev client, or
+   dev client built from merged `main` at a named commit (D13.2).
+2. **The standing fact both reviews establish.** No device check in M13, M14 or M15 was run on a
+   build of merged `main`; the D13.2 rebuild after merge `5d4871f` is still owed. Since the
+   restyle, on any build, nobody has seen: approval Run / Allow this session / Always allow,
+   clarify, sudo, secret, image or file attachment, the 25 s reconnect, OAuth login, skin sync,
+   real-speech dictation or push. Only Reject has been seen. Cold start is unverified. The app is
+   therefore "work in progress, not a beta" (Opus's words), and no readiness claim passes D20.
+3. **Ordered path to a D20 closed test.** Each step names its owner; a step does not start a
+   readiness claim.
+   1. *Sonnet* — the approval path. Reproduce "no card after a Reject" (M14 close-out) with a wire
+      trace beside the screen: second `approval.request` after a Reject in the same session, on
+      both themes. Find the root cause; ship a failing-first test. For the overlap glitch, vary
+      what the six attempts never did: font scale 1.3×, keyboard open, a long history, rotation.
+      D20.2.6 makes this first.
+   2. *Sonnet* — upstream drift. `CronBlueprint` / `CronBlueprintField` are gone upstream, so the
+      next `sync-upstream` breaks the build. Re-pin deliberately: sync, fix what breaks, keep the
+      sync idempotent.
+   3. *Opus* — rebuild the dev client from merged `main` (D13.2) and run the whole end-to-end list
+      on it with a real model on the wire: every item in the reviews' lists, both approval
+      outcomes and all four buttons, plus a true cold start (kill, first launch). Results in a
+      table under the D21.1 rule. The tracker README and the root README are corrected in the same
+      commit.
+   4. *User* — choose the app's name and package id (not "Hermes", not `com.nousresearch.*`);
+      create the Expo account and run `eas init`; create the Play developer account.
+   5. *Sonnet* — identity: rename, and an unaffiliated notice in About, the connect screen and the
+      README. Then M12 part one: the D18 hide switch with a test per flavour, `eas.json` with a
+      signed preview profile, a tagged build with no dev-client overlay, and the polish list
+      (composer placeholder wrap, model sheet's cut-off last row, New task's missing Model row,
+      `AppDrawer`'s zero-height backdrop).
+   6. *Opus* — the D20 check for the closed-test audience, pasted in full. Physical rows may be
+      waived by name for named testers; D20.2.6 may not be waived.
+   M16 (the six inert screens' data layers) proceeds independently and unhides screens as D18.3
+   says.
+
+**Reasoning.** The reviews are candid and they agree. The failure was not dishonesty; it was
+sentences whose scope exceeded their evidence, repeated by the next reader as fact, until a
+passing milestone gate stood in for a release gate nobody had run. The scope rule fixes the
+sentence; D20 fixes the gate; the ordered path puts the approval defect first because approvals
+are what make a remote agent client safe to hand to anyone.
