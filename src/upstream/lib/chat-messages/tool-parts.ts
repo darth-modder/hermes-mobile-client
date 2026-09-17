@@ -1,6 +1,6 @@
 import type { SessionMessage } from '../../types/hermes'
 import { firstStringField, normalize } from '../text'
-import { parseTodos } from '../todos'
+import { isTodoToolName, parseTodos } from '../todos'
 
 import type { ChatMessage, ChatMessagePart, GatewayEventPayload } from './types'
 
@@ -231,7 +231,7 @@ function carryTodos(payload: GatewayEventPayload | undefined, ...prev: unknown[]
     return next === null ? undefined : { todos: next }
   }
 
-  if (payload?.name !== 'todo') {
+  if (!isTodoToolName(payload?.name)) {
     return undefined
   }
 

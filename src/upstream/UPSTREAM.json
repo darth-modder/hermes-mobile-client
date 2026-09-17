@@ -1,5 +1,5 @@
 {
-  "commit": "b973068c60ae92c1928041cb6a8e53a80bcf9c4c",
+  "commit": "ee84ccd8bd13d0025e98bb6be8ceb93303e3bdff",
   "files": [
     "i18n/en.ts",
     "i18n/types.ts",
@@ -33,5 +33,5 @@
     "types/hermes.ts"
   ],
   "repo": "https://github.com/NousResearch/hermes-agent.git",
-  "syncedAt": "2026-09-07T17:28:31+05:00"
+  "syncedAt": "2026-09-08T04:38:47-07:00"
 }
