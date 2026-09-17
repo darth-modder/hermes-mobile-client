@@ -378,6 +378,20 @@ export const NOTIFICATIONS_PUSH_HINT =
 export const NOTIFICATIONS_IN_APP_SECTION_TITLE = 'In-app notifications'
 export const NOTIFICATIONS_IN_APP_HINT = 'Shown locally while the app is running, for events on other sessions.'
 
+// settings/notifications.tsx — the OS permission row. A concept the desktop
+// has no equivalent for (Electron notifications carry no separate OS
+// permission prompt the way Android/iOS do), added so this screen tells the
+// truth about whether the OS will actually show anything the toggles above
+// promise. checked t.settings.notifications for any permission-shaped key:
+// none exists.
+export const NOTIFICATIONS_PERMISSION_LABEL = 'System permission'
+export const NOTIFICATIONS_PERMISSION_GRANTED = 'Granted'
+export const NOTIFICATIONS_PERMISSION_NOT_GRANTED = 'Not granted'
+export const NOTIFICATIONS_PERMISSION_ENABLE_ACTION = 'Enable notifications'
+export const NOTIFICATIONS_PERMISSION_OPEN_SETTINGS_ACTION = 'Open system settings'
+export const NOTIFICATIONS_PERMISSION_BLOCKED_HINT =
+  'Android has stopped asking after a previous decline. Turn notifications on for this app in system settings.'
+
 // settings/plugins.tsx — the vendored t.settings.plugins.blurb describes
 // what agent plugins are, not that per-plugin dashboards aren't available
 // on mobile yet; that gap is this platform's own, so the caveat stays here.

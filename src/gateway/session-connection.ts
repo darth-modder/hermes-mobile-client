@@ -42,6 +42,7 @@ import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth
 import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
+import { ensureNotificationPermissionRequested } from '../push/notification-permission'
 import { setClarifyRequest } from '../store/clarify'
 import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
 import { notify } from '../store/notifications'
@@ -874,6 +875,12 @@ export async function submitPrompt(
   text: string,
   attachmentRefs: string[] = []
 ): Promise<void> {
+  // The first turn any session starts — see notification-permission.ts's
+  // header for why this is the trigger. Fire-and-forget: asking must never
+  // delay or fail a prompt submit, and after the first call this is a
+  // single cheap storage read that immediately returns.
+  void ensureNotificationPermissionRequested()
+
   const prompt = [text, ...attachmentRefs].filter(Boolean).join('\n')
   const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const now = Date.now() / 1000
