@@ -2,6 +2,13 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Only app.config.ts needs this: Expo's config loader (@expo/require-
+    // utils) transpiles app.config.ts itself on the fly, but a plain Node
+    // `require()` of a relative import from inside it can't resolve a bare
+    // `./src/lib/app-identity` to a `.ts` file, so that one import spells
+    // out the extension. `noEmit` is already true (expo/tsconfig.base), the
+    // one precondition this flag needs.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"]
     }

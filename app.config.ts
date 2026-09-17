@@ -1,6 +1,6 @@
 import type { ExpoConfig } from 'expo/config'
 
-import { APP_NAME, APP_SLUG } from './src/lib/app-identity'
+import { APP_NAME, APP_SLUG } from './src/lib/app-identity.ts'
 
 // D18's hide switch (M14 Deviation 9 / D18): a public build removes the six
 // inert screens' drawer and settings rows (src/components/drawer-rows.ts,
