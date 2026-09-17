@@ -4190,3 +4190,183 @@ point the round's own final message is composed, immediately before handing back
 Metro, gateway connection and the app's current screen are all live at that moment, not
 reconstructed from earlier evidence in this log.
 
+### Round 17 — sheet swipe-down actually fixed (real touch input), handle centred, Tasks header
+### corrected (2026-09-17)
+
+**Scope.** The reviewer ran group E's checks with real touch input — the emulator console's
+virtual touchscreen (`ctouch.sh`, `/dev/input/event2`), not `adb shell input` — and found the tab
+swipe and edge-band guard hold, but sheet swipe-down still doesn't: the sheet never followed the
+finger, and release didn't close it. This round root-causes that with real touch, fixes it,
+centres the drag handle (a second, unrelated defect the same real-touch pass surfaced), and
+corrects the Tasks header label. Same throwaway gateway (`m14-device/setup-gw.sh`, port 9128,
+reused password), same `hermes-test` AVD. Evidence: `D:\Stuff\hermes-android-field\m15-r17\`.
+
+**Task 1 (sheet swipe-down root cause and fix): done, device-verified with real touch on all 9
+`Sheet` consumers.**
+
+Instrumented both the responder-negotiation callbacks (`onStartShouldSetPanResponder(Capture)`,
+`onMoveShouldSetPanResponder(Capture)`, `onPanResponderGrant/Move/Release`) and the raw
+`onTouch{Start,Move,End,Cancel}` props on the *same* `View` (`Sheet.tsx:231`'s panHandlers wrapper)
+at the same time, `__DEV__`-gated, removed before commit. `ctouch cdown 540 1130; cmove 540 1400;
+cmove 540 1730` on the New bot sheet's title row produced, verbatim:
+
+```
+[m15r17] onStartShouldSetPanResponderCapture -> false
+[m15r17] onStartShouldSetPanResponder -> false
+[m15r17] onTouchStart (raw) pageY=430.44085693359375
+[m15r17] onTouchMove (raw) pageY=533.3147583007812
+[m15r17] onTouchMove (raw) pageY=659.0122680664062
+[m15r17] onTouchEnd (raw)
+```
+
+`onMoveShouldSetPanResponder(Capture)` — the callback `PanResponder`'s own `dy > 4` gate lives in —
+**never fired, not even once, not even to decline.** The raw `onTouchMove` events on the identical
+View, at the identical moment, fired correctly with accurate incrementing `pageY`. This settles the
+round's own (a)/(b)/(c) question decisively: **(a)**, the responder is never granted — not because
+some other view claims it, but because the *move-phase negotiation itself never runs* inside this
+`Modal`'s `Dialog` window, while raw touch dispatch to the same View works fine. (b) (a native-driven
+`Animated.add` transform not receiving JS `setValue`) is ruled out by the same evidence: `dragY` is
+never written because `onPanResponderMove` never fires, not because a write that occurred failed to
+compose. (c) — no other explanation was needed once (a) was this directly proven.
+
+*Partial explanation, from round 16's own reading, still holding*: `ReactModalHostView.kt`'s
+`DialogRootViewGroup` (`:578-592`) hand-wires `jSTouchDispatcher.handleTouchEvent` (the raw
+touch-event path this round found working) but nothing in it wires whatever native hookup drives
+the *responder negotiation* loop a normal `ReactRootView` provides for the main window. Round 17
+does not chase further why that hookup is missing; the fix routes around it.
+
+**Fix** (`src/components/ui/Sheet.tsx`): drives the drag entirely from
+`onTouchStart`/`onTouchMove`/`onTouchEnd`/`onTouchCancel` on the same View, tracking the drag's
+start `pageY` in a ref (`dragStartY`) and computing `dy` by hand — no `PanResponder`, nothing that
+depends on the responder negotiation this round proved doesn't run here. `onTouchCancel` treats an
+OS-cancelled touch stream (e.g. an interrupting system gesture) the same as a short release, so the
+sheet can't get stuck mid-drag with no way to finish the gesture — a case `PanResponder`'s
+`onPanResponderTerminate` used to handle and the new code needed an explicit equivalent for.
+
+**Device-verified with real touch on all 9 `Sheet` consumers**, each showing a mid-drag screenshot
+or `uiautomator` bounds confirming the sheet moved, plus the closed (or sprung-back) state after
+release:
+
+| consumer | mid-drag moved | after release |
+| --- | --- | --- |
+| New bot | title `[168,1102][912,1165]` → short drag `[168,1162][912,1225]` (exactly the 60px dragged), long drag closed the sheet | short drag: sprang back to `[168,1102][912,1165]` exactly (`18-shortdrag-springback.png`); long drag: closed (`14-afterrelease-correct.png`) |
+| New task | title moved to `[168,1169][912,1232]` mid-drag (`23-newtask-middrag.xml`) | closed (`24-newtask-afterrelease.png`) |
+| New project | title moved to `[168,2118][912,2181]` mid-drag | closed (`29-project-afterrelease.png`) |
+| New profile | title moved to `[168,1869][912,1932]` mid-drag | closed (`35-profile-afterrelease.png`) |
+| BotSettings | title moved to `[168,1469][912,1532]` mid-drag | closed, back to bot chat (`41-botsettings-afterrelease.png`) |
+| Capabilities (nested) | title moved to `[168,969][912,1032]` mid-drag | closed one level, back to the parent BotSettings sheet — nesting intact (`45-capabilities-afterrelease.png`) |
+| Menu (header overflow, no title — smallest target: a 16dp-tall handle-only panHandlers View, `[0,2127][1080,2169]`) | dragged nearly off-screen, visible in `49-menu-middrag.png` | closed, back to bot chat (`50-menu-afterrelease.png`) |
+| Model chip | title moved to `[168,1668][912,1731]` mid-drag | closed (`55-modelchip-afterrelease.png`) |
+| Effort chip | title moved to `[168,1719][912,1782]` mid-drag | closed (`60-effortchip-afterrelease.png`) |
+
+**Round 10's (a)–(c) and (e)–(f) re-run on BotSettings→Capabilities and New task**, as instructed
+(keyboard and nesting being the risky parts):
+
+- **(a) opens** — both, confirmed in the table above.
+- **(b) focused input clear of keyboard** — New task's NAME field: tapped, `mInputShown=true`
+  confirmed via `dumpsys input_method`, field and footer buttons both stayed above the IME
+  (`64-newtask-keyboard.png`). BotSettings' DESCRIPTION field: same check, same result
+  (`69-botsettings-kb.png`).
+- **(c) hardware back dismisses only the top sheet** — New task: one `keyevent 4` with the
+  keyboard up closed both the IME and the sheet in one press (not two, unlike round 5's
+  password-field note — recorded as observed, not chased, since the outcome that matters, the
+  sheet closing without popping the screen underneath, held either way), landed cleanly on the
+  Tasks list (`65-newtask-back1.png`). BotSettings: `keyevent 4` closed only the sheet, landed on
+  the bot chat, not popped further (`70-botsettings-back1.png`).
+- **(e) nested stacking** — Capabilities closing returns to the parent BotSettings sheet, still
+  open, not both closed together (table above, and `45-capabilities-afterrelease.png` directly).
+- **(f) every clickable node ≥ 48dp** — New task: 12 clickable nodes, 0 under 48dp. Capabilities:
+  18 clickable nodes; 3 computed under 48dp, all with the same negative/near-zero height signature
+  round 8/14 already root-caused as the `AccessibilityNodeInfoDumper`-intersects-visible-bounds
+  artifact for scroll-clipped rows at the sheet's bottom edge (`Sheet.tsx`'s own header names this
+  exact class of dump artifact) — not a new regression.
+
+Committed `7b00cde`.
+
+**Task 2 (centre the drag handle): done, device-verified.** `styles.handle` (`Sheet.tsx`) set an
+explicit `width: 32` with no `alignSelf` override; the parent View's default `alignItems: 'stretch'`
+can't stretch a fixed-width child, and falls back to `flex-start` — the handle rendered flush left
+(`x≈0–70`, matching the reviewer's report) instead of centred. Added `alignSelf: 'center'`. Visible
+in every screenshot in the table above (e.g. `10-newbot-fix.png`, `27-newproject-sheet.png`,
+`33-newprofile-sheet.png`): the small grey handle bar sits centred under each sheet's top edge.
+Same commit (`7b00cde`) as task 1 — one file, one related change.
+
+**Task 3 (Tasks header label): done, device-verified.** `app/(main)/tasks/index.tsx:136` used
+`t.cron.title` ('Scheduled jobs', the vendored string Deviation 16 chose deliberately for the
+reasons named there). With the tab strip built (round 15) and both it and the drawer row reading
+"Tasks", the header disagreeing was an inconsistency this file introduced on top of Deviation 16,
+not a reason to keep it — changed to `TASKS_TAB_LABEL` (`src/lib/strings.mobile.ts:794`), the same
+constant `TabStrip.tsx` already uses for this tab. Screenshots before (`74-tasks-header-fixed.png`
+is *after*; round 16's own `25-tasks.png` shows the prior "Scheduled jobs" state for comparison)
+and after both captured; header now reads "Tasks", matching the tab and drawer. Committed `09bca09`.
+
+**Task 4 (group E regression, real touch): all three parts re-confirmed with `ctouch`, not
+`adb shell input`.**
+
+- **Tab swipe, both directions:** `cdrag 700 340 300 340 12` (leftward) advanced Sessions → Tasks,
+  one step (`76-ctouch-tabswipe-left.png`); `cdrag 300 340 700 340 12` (rightward) returned
+  Tasks → Sessions, one step (`77-ctouch-tabswipe-right.png`).
+- **5 edge-band drags from x=12: 0/5 changed tabs.** Same `dumpsys window | grep mCurrentFocus`
+  signal as round 16's `input swipe` version, this time with `ctouch cdrag 12 340 500 340 12` —
+  Hermes focused before, the launcher focused after, all 5 trials (relaunching between each, since
+  a correctly-ceded edge drag from the tab-strip screen's stack root exits the app):
+  ```
+  trial 1: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 2: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 3: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 4: before=[...MainActivity] after=[...NexusLauncherActivity]
+  trial 5: before=[...MainActivity] after=[...NexusLauncherActivity]
+  ```
+- **Edge-swipe back, `cdrag 5 1200 700 1200 12`, 3 stack screens:** bot chat → Bots roster
+  (`82-ctouch-edgeback-botchat.png`); Settings → Appearance (2 deep) → Settings
+  (`89-ctouch-edgeback-appearance.png`); task detail → Tasks list, header now correctly reading
+  "Tasks" (`93-ctouch-edgeback-taskdetail.png`).
+
+Both the tab-strip fix (round 16) and the edge-back mechanism (native, unchanged) hold under real
+touch exactly as they held under `adb shell input` — the two injection methods agree everywhere
+except the one place round 15/16/17 all along suspected they wouldn't: the sheet drag, which real
+touch was needed to actually prove and fix.
+
+**Task 5.** `npm run check`, run after the last commit (`09bca09`):
+
+```
+Test Files  74 passed (74)
+     Tests  782 passed (782)
+...
+Ran 52 tests in 3.703s
+
+OK
+
+> hermes-android@1.0.0 lint
+> eslint .
+
+Checking formatting...
+All matched files use Prettier code style!
+EXIT=0
+```
+
+782, unchanged from round 16 — no test files added or removed this round (`Sheet.tsx` and
+`tasks/index.tsx` both edited, no new `.test.ts`). The `hermes-push` plugin's printed
+`Traceback ... RuntimeError: boom` is the same intentionally-mocked failure every prior round
+noted, inside the 52-test `OK`.
+
+**Task 6 — exit criteria, one line per part, with real touch:**
+
+| part | status |
+| --- | --- |
+| an edge swipe from the left pops every stack screen | **met, real touch** — 3 screen types this round (`82-`, `89-`, `93-*.png`), consistent with every prior round's `adb shell input` results |
+| sheets consume back before the stack does | **met, real touch** — New task and BotSettings, both confirmed this round |
+| a swipe down dismisses every sheet | **met, real touch** — all 9 `Sheet` consumers, follows the finger, springs back under `DISMISS_DRAG_PX`, closes past it (table above) |
+| a swipe moves between the three tabs | **met, real touch** — both directions one step each, 5/5 edge-band drags correctly deferred (task 4 above) |
+
+**Every group E exit-criterion part is now met with real touch input.** No manual-check items
+remain open from this group.
+
+**M15 boxes still unticked, as observed** (`grep -n "^- \[ \]"` against the doc, re-run after this
+round's edits): none matched. Group E's own task-list and exit-criteria lines were the last three
+unticked boxes as of round 16; this round's fixes address what blocked all three. Ticking is still
+the user's call, not this round's, per standing instruction — this is what was *observed*, not a
+claim that boxes have been ticked.
+
+**Task 7 — teardown.** Pasted below this line, in order, immediately before handing back.
+
