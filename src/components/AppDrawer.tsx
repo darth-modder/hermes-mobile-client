@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { getAudience } from '../lib/audience'
 import {
   Clock,
   FileImage,
@@ -20,7 +21,7 @@ import { $drawerOpen, closeDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
 
-import { DRAWER_ROW_META } from './drawer-rows'
+import { drawerRowsForAudience } from './drawer-rows'
 
 const DRAWER_WIDTH = 300
 
@@ -62,7 +63,10 @@ const DRAWER_ICONS: Record<string, IconComponent> = {
   '/(main)/webhooks': Link
 }
 
-export const DRAWER_ROWS: DrawerRow[] = DRAWER_ROW_META.map(row => ({ ...row, Icon: DRAWER_ICONS[row.route] }))
+export const DRAWER_ROWS: DrawerRow[] = drawerRowsForAudience(getAudience()).map(row => ({
+  ...row,
+  Icon: DRAWER_ICONS[row.route]
+}))
 
 /** Slide-out navigation overlay, mounted once in `app/(main)/_layout.tsx`
  *  alongside the `Stack` (see `src/store/drawer.ts` for why this isn't

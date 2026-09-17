@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest'
 import { BOTS_TAB_LABEL, TASKS_TAB_LABEL } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
-import { DRAWER_ROW_META } from './drawer-rows'
+import { DRAWER_ROW_META, drawerRowsForAudience } from './drawer-rows'
 
 describe('drawer order', () => {
   it('leads with Bots, then Sessions, then Tasks (M15 round 11)', () => {
@@ -86,5 +86,27 @@ describe('drawer order', () => {
     for (const row of DRAWER_ROW_META) {
       expect(allStrings.has(row.title), `"${row.title}" is not a value from the vendored en.ts`).toBe(true)
     }
+  })
+})
+
+// D18: two of the six inert screens are drawer rows (Agents, Command
+// center). One test per flavour, per the decision's own "a test per
+// flavour for each file" instruction.
+describe('drawer rows by audience (D18)', () => {
+  it('internal keeps every row, including Agents and Command center', () => {
+    const titles = drawerRowsForAudience('internal').map(row => row.title)
+
+    expect(titles).toEqual(DRAWER_ROW_META.map(row => row.title))
+    expect(titles).toContain(t.shell.statusbar.agents)
+    expect(titles).toContain(t.commandCenter.commandCenter)
+  })
+
+  it('public drops Agents and Command center, keeps every other row', () => {
+    const rows = drawerRowsForAudience('public')
+    const titles = rows.map(row => row.title)
+
+    expect(titles).not.toContain(t.shell.statusbar.agents)
+    expect(titles).not.toContain(t.commandCenter.commandCenter)
+    expect(rows.length).toBe(DRAWER_ROW_META.length - 2)
   })
 })
