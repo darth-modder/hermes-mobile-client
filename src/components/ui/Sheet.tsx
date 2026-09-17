@@ -34,13 +34,43 @@
 // caller's mount point. `onRequestClose` additionally gives every sheet
 // Android's hardware/gesture back dismissal, which the plain-View version
 // never had.
+// M15 round 17 — why the drag handle uses raw `onTouch*` props, not `PanResponder`:
+//
+// Rounds 10, 15 and 16 all found no adb-injected gesture reaches this drag, and round 16's best
+// guess was a `GestureHandlerRootView` gap specific to `react-native-gesture-handler`. Round 17
+// got real touch input (the emulator's virtual touchscreen, not `adb shell input`) and instrumented
+// both the responder-negotiation callbacks and the raw touch-event props on the same View at the
+// same time. Dragging the title row produced this, verbatim:
+//
+//   onStartShouldSetPanResponderCapture -> false
+//   onStartShouldSetPanResponder -> false
+//   onTouchStart (raw) pageY=430.4
+//   onTouchMove (raw) pageY=533.3
+//   onTouchMove (raw) pageY=659.0
+//   onTouchEnd (raw)
+//
+// `onMoveShouldSetPanResponder(Capture)` — the callback `PanResponder`'s `dy > 4` gate lives in —
+// never fired, not even once, not even to decline. The raw `onTouchMove` events on the exact same
+// View, at the exact same time, did fire, with correct incrementing `pageY`. So the touch stream
+// itself reaches this View's touch dispatch just fine; specifically the JS *responder negotiation*
+// (`onMoveShouldSetResponder`) never runs for it inside this `Modal`'s `Dialog` window. That
+// matches round 16's `DialogRootViewGroup` reading (`ReactModalHostView.kt:578-592`): it
+// hand-wires `jSTouchDispatcher.handleTouchEvent` (the raw touch-event path) but nothing shows it
+// wiring whatever native hookup drives the *responder* negotiation loop that a normal
+// `ReactRootView` provides for the main window — raw touch dispatch works, the responder
+// negotiation it would normally drive does not.
+//
+// The fix doesn't chase that gap: it drives the drag from the pathway just proven to work.
+// `onTouchStart`/`onTouchMove`/`onTouchEnd`/`onTouchCancel` on the same View, tracking the drag's
+// start `pageY` in a ref and computing `dy` by hand — no `PanResponder`, no negotiation, nothing
+// that depends on whatever `Dialog` windows are missing.
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import type { GestureResponderEvent } from 'react-native'
 import {
   Animated,
   Keyboard,
   Modal,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -170,23 +200,58 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
     })
   }, [backdropOpacity, rendered, translateY, visible])
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_event, gesture) => gesture.dy > 4,
-      onPanResponderMove: (_event, gesture) => {
-        if (gesture.dy > 0) {
-          dragY.setValue(gesture.dy)
-        }
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        if (gesture.dy > DISMISS_DRAG_PX) {
-          onClose()
-        } else {
-          Animated.timing(dragY, { duration: 150, toValue: 0, useNativeDriver: true }).start()
-        }
-      }
-    })
-  ).current
+  // Start `pageY` of the current drag, or `null` between drags. A ref, not state: every
+  // `onTouchMove` needs it read-and-compared synchronously, the same job `PanResponder`'s own
+  // internal gesture-state tracking did.
+  const dragStartY = useRef<number | null>(null)
+
+  const onSheetTouchStart = (event: GestureResponderEvent) => {
+    dragStartY.current = event.nativeEvent.pageY
+  }
+
+  const onSheetTouchMove = (event: GestureResponderEvent) => {
+    if (dragStartY.current === null) {
+      return
+    }
+
+    const dy = event.nativeEvent.pageY - dragStartY.current
+
+    if (dy > 0) {
+      dragY.setValue(dy)
+    }
+  }
+
+  const springBack = () => {
+    Animated.timing(dragY, { duration: 150, toValue: 0, useNativeDriver: true }).start()
+  }
+
+  const onSheetTouchEnd = (event: GestureResponderEvent) => {
+    if (dragStartY.current === null) {
+      return
+    }
+
+    const dy = event.nativeEvent.pageY - dragStartY.current
+
+    dragStartY.current = null
+
+    if (dy > DISMISS_DRAG_PX) {
+      onClose()
+    } else {
+      springBack()
+    }
+  }
+
+  // The OS can end a touch stream without an `onTouchEnd` (e.g. an incoming call, a system
+  // gesture stealing it) — treat that the same as a short release rather than leaving the sheet
+  // stuck mid-drag with no way to finish the gesture.
+  const onSheetTouchCancel = () => {
+    if (dragStartY.current === null) {
+      return
+    }
+
+    dragStartY.current = null
+    springBack()
+  }
 
   if (!rendered) {
     return null
@@ -228,7 +293,12 @@ export function Sheet({ children, footer, onClose, title, visible }: SheetProps)
             }
           ]}
         >
-          <View {...panResponder.panHandlers}>
+          <View
+            onTouchCancel={onSheetTouchCancel}
+            onTouchEnd={onSheetTouchEnd}
+            onTouchMove={onSheetTouchMove}
+            onTouchStart={onSheetTouchStart}
+          >
             <View style={[styles.handle, { backgroundColor: tokens.textQuaternary }]} />
             {title ? (
               <View style={styles.head}>
@@ -307,6 +377,13 @@ const styles = StyleSheet.create({
     paddingTop: 8
   },
   handle: {
+    // M15 round 17. The parent View (`onTouchStart`'s own View, above) has no `alignItems`
+    // override, so it defaults to `stretch` — but this handle sets an explicit `width`, which
+    // overrides the stretch and falls back to `flex-start` (the left edge) for the cross-axis
+    // position, since nothing here said otherwise. Without `alignSelf`, a fixed-width child in a
+    // `stretch` column is left-aligned, not centred — confirmed on device, the handle rendered at
+    // x≈0-70 instead of centred under the sheet's ~48dp-wide expected position.
+    alignSelf: 'center',
     borderRadius: radius.full,
     height: 4,
     marginBottom: 4,
