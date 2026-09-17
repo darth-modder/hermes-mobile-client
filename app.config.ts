@@ -75,7 +75,8 @@ const config: ExpoConfig = {
       {
         microphonePermission: 'Hermes uses the microphone to transcribe voice messages.'
       }
-    ]
+    ],
+    './plugins/withReleaseSigning.js'
   ],
   experiments: {
     typedRoutes: true
