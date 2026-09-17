@@ -102,7 +102,14 @@ export function AppDrawer() {
 
   return (
     <View pointerEvents={open ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+      {/* Round 11's zero-height backdrop: this View had only `backgroundColor`
+          — no explicit size — and its one child was `position: 'absolute'`,
+          which is removed from layout and can't establish a parent size on
+          its own. The View collapsed to 0×0, so the scrim never painted and
+          the tap-outside-to-close target didn't exist. `StyleSheet.
+          absoluteFill` on this View itself (matching its sibling `panel`'s
+          parent) is what was missing. */}
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: backdropOpacity }]}>
         <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill} />
       </Animated.View>
       <Animated.View
