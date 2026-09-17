@@ -20,6 +20,16 @@
 //
 // M15 round 15 (group E) built the tab row this file's own comment above used to say didn't
 // exist yet — see `src/components/TabStrip.tsx`'s header for the swipe/replace design.
+//
+// M15 round 17 — the header uses `TASKS_TAB_LABEL` ('Tasks', `src/lib/strings.mobile.ts:794`),
+// not the vendored `t.cron.title` ('Scheduled jobs') Deviation 16 originally chose. Correcting
+// that deviation, not re-litigating it: Deviation 16's own reasoning was about every OTHER string
+// on this screen (`cron.states.*`, `cron.emptyTitleNew`, etc., all still vendored, unchanged
+// here) — but with the tab strip built (round 15) and both it and the drawer row reading "Tasks",
+// a header that reads "Scheduled jobs" on the same screen is an inconsistency this file itself
+// introduced, not a vendored-string call worth keeping. `TASKS_TAB_LABEL` is the same constant
+// `TabStrip.tsx` already uses for this exact tab, so the three surfaces (drawer, tab, header) now
+// name the screen the same way.
 import { useStore } from '@nanostores/react'
 import { IconPlus as Plus } from '@tabler/icons-react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -42,7 +52,8 @@ import {
   TASKS_RUNNING_NOW_LABEL,
   TASKS_SCHEDULED_LABEL,
   TASKS_SECTION_LABEL,
-  TASKS_STATE_RUNNING_NOW
+  TASKS_STATE_RUNNING_NOW,
+  TASKS_TAB_LABEL
 } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
 import { formatRunTimestamp } from '../../../src/lib/task-format'
@@ -133,7 +144,7 @@ export default function TasksScreen() {
             onPress: () => setNewTaskOpen(true)
           }
         ]}
-        title={t.cron.title}
+        title={TASKS_TAB_LABEL}
       />
 
       <TabStrip active="tasks" />
