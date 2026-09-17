@@ -676,3 +676,60 @@ sentences whose scope exceeded their evidence, repeated by the next reader as fa
 passing milestone gate stood in for a release gate nobody had run. The scope rule fixes the
 sentence; D20 fixes the gate; the ordered path puts the approval defect first because approvals
 are what make a remote agent client safe to hand to anyone.
+
+## D22 — App identity and distribution: package `com.symbyotic.hermes.mobile`; the display name is not "Hermes"; signed APK on GitHub Releases, no Play Store (2026-09-17)
+
+**Decision.** Settles D21.3.4 on the user's direction: the package id, and distribution by APK on
+GitHub only. No Play listing is planned.
+
+1. **Package id and iOS bundle identifier: `com.symbyotic.hermes.mobile`.** It replaces
+   `com.nousresearch.hermes.mobile` everywhere: `app.config.ts` (`android.package`,
+   `ios.bundleIdentifier`), the native module's Kotlin package if it embeds the old id, the
+   notification channel and deep-link intent filters if they reference it, `docs/CONNECTING.md`,
+   the field kit's `adb` scripts, and every `run-as`/`pm` command in the milestone logs going
+   forward (old logs are not rewritten). "hermes" inside the id describes what the app connects
+   to; the namespace is the publisher's own.
+2. **Order matters.** The rename lands **before** the first signed build anyone installs. Android
+   treats a different package id as a different app: MMKV and SecureStore data do not carry over,
+   which costs nothing before release and would cost every user their connections after it. If
+   push is ever switched on, the Expo project and FCM registration bind to the id too.
+3. **Display name: "Hermes Mobile"** (user's choice, 2026-09-17), slug `hermes-mobile`. It lives
+   in one constant so it can change in one line. Two cautions are recorded, not blocking:
+   `CodeUpdaterBot/Hermes-Mobile-App` already ships under the same name, so the two projects
+   will be confused with each other; and the name alone does not say the app is unofficial.
+   Because of the second, the unaffiliated line is mandatory wherever the name appears without
+   context: the About screen, the connect screen footer, the README's first paragraph and every
+   release note carry *"An independent, open-source client for Hermes Agent. Not affiliated
+   with or endorsed by Nous Research."*
+4. **Owner.** Sonnet, as the first task of D21.3.5, on its own branch, with a native rebuild
+   (D13.2) and a cold-start check on the renamed build. The D5 upstream gate is unaffected.
+5. **Distribution: a signed release APK attached to a GitHub Release. This amends D3 and D16.4.**
+   - *Build.* A release APK from the WSL2 Gradle path (`assembleRelease`), which D3 kept as an
+     option; EAS Build is no longer required for distribution. Sonnet writes
+     `scripts/build-release-apk.sh`; it reads the keystore path and passwords from the
+     environment at run time and never writes them anywhere.
+   - *Signing key.* One keystore, created and held by the user (D11.2), never in the repo, backed
+     up in two places. It is the permanent thing now: Android refuses to update an installed app
+     with an APK signed by a different key, so a lost key means every user must uninstall and
+     lose their data. This replaces the Play-listing permanence concern.
+   - *Where.* This repository's GitHub Releases. The repository is private today; the user makes
+     it public before the first release (decided 2026-09-17). Before that flip, Sonnet audits the
+     history for anything that must not be public: tokens, passwords, scratch files, the user's
+     hostnames or email in logs. A secret found in history is rotated, not just deleted.
+   - *Each release.* Tag `vX.Y.Z`, APK attached, its sha256 in the notes, the known-gaps list,
+     the unaffiliated statement, and sideload instructions (allow installs from the browser or
+     file manager; Play Protect may warn about an unknown developer).
+   - *Updates.* No store means no auto-update. 0.1.x ships without an updater; an in-app check
+     against the GitHub Releases API is a later task, not a release blocker.
+   - *Push.* Stays off in APK-only releases until the user creates an Expo project (`eas init`)
+     and FCM credentials; the M11 register row stands. No Play developer account is needed.
+   - *Gates unchanged.* D20 applies to a GitHub APK exactly as to a store build: a public APK is
+     a public release. D18's hide switch applies to it.
+
+**Reasoning.** An app id in another organisation's namespace, under that organisation's product
+name, is the one announcement problem that cannot be fixed after the fact: it misleads users
+about who stands behind the app and invites a takedown of the repository. GitHub-only
+distribution removes two accounts and a review queue from the path, at the cost of sideload
+friction, no auto-update, and a signing key that the user alone must never lose. The competitor disclaims affiliation on every
+page; this project had no such statement anywhere. Doing the rename now, before anything binds to
+the old id, makes it a one-hour change instead of a migration.
