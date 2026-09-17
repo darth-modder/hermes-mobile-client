@@ -1,21 +1,39 @@
 import type { ExpoConfig } from 'expo/config'
 
+import { APP_NAME, APP_SLUG } from './src/lib/app-identity'
+
+// D18's hide switch (M14 Deviation 9 / D18): a public build removes the six
+// inert screens' drawer and settings rows (src/components/drawer-rows.ts,
+// settings-rows.ts read this the same way); an internal build (dev, Play
+// internal track equivalent, tester APKs) keeps them visible. Read in this
+// one place only, via `extra.audience`. Defaults to 'internal' so a plain
+// `expo start`/`expo run:android` keeps every screen visible; the release
+// build script sets `APP_AUDIENCE=public` explicitly (scripts/build-release-
+// apk.sh, docs/RELEASING.md).
+const audience: 'internal' | 'public' = process.env.APP_AUDIENCE === 'public' ? 'public' : 'internal'
+
 const config: ExpoConfig = {
-  name: 'Hermes',
-  slug: 'hermes-android',
+  name: APP_NAME,
+  slug: APP_SLUG,
   scheme: 'hermes-android',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   userInterfaceStyle: 'automatic',
   android: {
-    package: 'com.nousresearch.hermes.mobile',
+    package: 'com.symbyotic.hermes.mobile',
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png'
     }
+  },
+  ios: {
+    bundleIdentifier: 'com.symbyotic.hermes.mobile'
+  },
+  extra: {
+    audience
   },
   plugins: [
     'expo-router',

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
 import type { MobileConnection } from '../../src/connections/types'
+import { UNAFFILIATED_NOTICE } from '../../src/lib/app-identity'
 import {
   CONNECT_BACK_TO_STEPS,
   CONNECT_CHECKLIST_COMMANDS,
@@ -512,6 +513,8 @@ export default function ConnectScreen() {
             ) : null}
           </>
         ) : null}
+
+        <Text style={[styles.unaffiliatedNotice, { color: tokens.mutedForeground }]}>{UNAFFILIATED_NOTICE}</Text>
       </ScrollView>
     </SafeAreaView>
   )
@@ -622,5 +625,11 @@ const styles = StyleSheet.create({
     ...type.title,
     fontWeight: '600',
     marginBottom: 4
+  },
+  unaffiliatedNotice: {
+    ...type.caption,
+    marginTop: 24,
+    paddingHorizontal: 8,
+    textAlign: 'center'
   }
 })

@@ -115,7 +115,7 @@ then install and launch from Windows (or WSL2 — same `adb` daemon):
 
 ```powershell
 & "D:\Software\Android-SDK\platform-tools\adb.exe" install -r android\app\build\outputs\apk\debug\app-debug.apk
-& "D:\Software\Android-SDK\platform-tools\adb.exe" shell am start -n com.nousresearch.hermes.mobile/.MainActivity
+& "D:\Software\Android-SDK\platform-tools\adb.exe" shell am start -n com.symbyotic.hermes.mobile/.MainActivity
 npm run start       # expo start --dev-client — Metro only, once the dev-client is installed
 & "D:\Software\Android-SDK\platform-tools\adb.exe" reverse tcp:8081 tcp:8081
 ```
