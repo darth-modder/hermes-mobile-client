@@ -1,6 +1,6 @@
 # M15 — Bots tab, Tasks tab, chat affordances, pairing onboarding
 
-**Status:** todo
+**Status:** done (Opus close-out 2026-09-17: every task and exit criterion verified on device, groups A–E; see "Opus close-out, M15" at the end of the Verification log for known gaps carried to M12/M16.)
 **Depends on:** M14 (screens); the data-layer tasks marked (†) may start on their own branch during M14.
 **Goal:** The phone has the mobile-native affordances a user now expects from a Hermes phone client: bots as first-class chats with the desktop's avatars and souls, scheduled tasks as a tab, a composer with per-chat model and effort, hold-to-dictate, jump-to-latest, and a pairing flow that gets a phone onto a Tailscale-reached gateway without a wrong `127.0.0.1` step.
 
@@ -95,10 +95,10 @@ until the gateway exposes a group transport to non-desktop sources.
 
 ### E. Gestures and navigation
 
-- [ ] Edge-swipe back on every stack screen, and on sheets (swipe down to dismiss), through
+- [x] Edge-swipe back on every stack screen, and on sheets (swipe down to dismiss), through
       `react-native-screens`' native gesture; confirm Android predictive back is enabled in the
       manifest and that sheets consume the back button before the stack does.
-- [ ] Swipe between Bots, Sessions and Tasks tabs.
+- [x] Swipe between Bots, Sessions and Tasks tabs.
 
 ## Deliverables
 
@@ -127,7 +127,7 @@ banner, `docs/CONNECTING.md` host section, `docs/PARITY.md` updated.
       reason; a tailnet-shaped URL proceeds to detection.
 - [x] Banner: killing the host produces the banner with "unreachable"; a 401 produces it with
       "sign in again"; "Sync now" after the host returns clears it without an app restart.
-- [ ] Gestures: an edge swipe from the left pops every stack screen; a swipe down dismisses every
+- [x] Gestures: an edge swipe from the left pops every stack screen; a swipe down dismisses every
       sheet; a swipe between the three tabs works.
 
 ## Licensing note
@@ -4369,4 +4369,47 @@ the user's call, not this round's, per standing instruction — this is what was
 claim that boxes have been ticked.
 
 **Task 7 — teardown.** Pasted below this line, in order, immediately before handing back.
+
+### Opus close-out, M15 (2026-09-17)
+
+M15 is `done`: all 28 boxes are ticked. Opus re-ran `npm run check` at `12e3778` (exit 0, 782 tests),
+and `src/upstream/` is still byte-identical to `4363d9e`.
+
+**Group E, closed with real touch.** Rounds 15–16 drove gestures with `adb shell input`, which
+can't reach an RN responder inside a sheet's `Modal`. Opus switched to the emulator console instead:
+`event send` on the virtual touchscreen, now `m14-device/ctouch.sh` in the field kit. That confirmed
+tab swipe and the edge band, and found a real defect: sheet swipe-down never moved a sheet. Round 17
+root-caused it. `onMoveShouldSetPanResponder` never runs inside the Modal's Dialog window, while raw
+`onTouchMove` on the same View does. The drag is now driven from raw touch events (`7b00cde`).
+Real touch on all nine sheet consumers showed follow, spring-back and close, and round 10's checks
+re-passed on BotSettings → Capabilities and New task. Round 17 also fixed the off-centre grab handle
+and the Tasks header, which still read "Scheduled jobs". Regression with real touch:
+- one tab per swipe, both directions
+- 5 of 5 edge-band drags deferred to Android back
+- edge-swipe back popped 3 stack screens
+
+**Decisions made during M15:**
+- D17 (M14 close-out; per-chat model scope)
+- D18 (inert screens hidden in public builds)
+- D19 (Tasks "Running now" is conditional on the gateway reporting it)
+
+**Carried out of M15, not blocking it:**
+- **M12:**
+  - the D18 public-build switch
+  - the `[physical]` register: push delivery, real-speech dictation, cookie persistence across
+    process death, and 2,000-message scroll
+  - `predictiveBackGestureEnabled` in a release build
+  - the question of the loopback guard vs a gateway running on the phone itself (e.g. Termux)
+- **M16:** the host config editor behind Chat, Safety and Memory & Context, plus Billing, Command
+  center and Agents (D18.2).
+- **Known, not blocking:**
+  - approval card overlap (not reproduced in six attempts; `__DEV__` diagnostic in place)
+  - no approval card after a Reject
+  - `AppDrawer`'s zero-height backdrop
+  - the model sheet's fixed 320 dp list height cutting off the last row
+  - the New task sheet has no Model row (`tasks.html:311-315`)
+- **Test harness notes:**
+  - the MSIX `%LOCALAPPDATA%` overlay; the kit now lives on `D:\Stuff\hermes-android-field`
+  - `adb reverse --remove-all` wedging, recovered by killing only the adb server
+  - Metro in CI mode doesn't pick up file changes, so restart the process after every edit
 
