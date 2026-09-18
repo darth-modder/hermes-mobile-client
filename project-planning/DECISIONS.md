@@ -889,3 +889,52 @@ the two TTLs at `ee84ccd8bd`; that the app's only refresh call is OAuth's; that 
 has no dedupe by URL. **On Opus's word:** everything seen on the device, including the duplicate
 connection. **Unverified by anyone:** password-session renewal (point 5), and whether the user
 has an Android phone available now, which Part 2.3 depends on.
+
+## D25 — Blocking cards leave the transcript list and dock above the composer (2026-09-19)
+
+**Decision.** Settles how D20 item 6 (approval card can mount off-screen) is fixed. Sonnet
+proposed two options and leaned to (a); (a) is adopted with constraints.
+
+1. **The four blocking cards (secret, sudo, approval, clarify) no longer render as the
+   `FlashList`'s `ListHeaderComponent`.** They render in a dock pinned directly above the
+   composer, always visible while a request is pending, independent of scroll position. This
+   follows the intent of the desktop's `PendingApprovalFallback`
+   (`apps/desktop/src/components/assistant-ui/tool/approval.tsx` at `ee84ccd8bd`: absolutely
+   positioned above the composer, shown when the inline bar is not mounted). Mobile has no
+   per-tool-row inline bar, so the desktop's inline-or-floating pair collapses to the floating
+   form alone. That departure is recorded as an M14 Deviation and a `docs/PARITY.md` line.
+2. **The dock lives inside the composer's `KeyboardStickyView`**, above the composer row, not
+   as a plain sibling between `<Transcript>` and `<Composer>`. The sticky view moves by
+   translation when the keyboard opens; a sibling above it would be covered by the composer and
+   keyboard, and three of the four cards have text inputs.
+3. **Height is capped** at about half the window. The card body scrolls inside the cap; the
+   action row stays outside the scroll area so the answer buttons are always visible, at font
+   scale 1.3 with the keyboard open on a 360 dp wide screen.
+4. **`TodoPanel` stays in the list header**; it is not blocking. With two requests pending the
+   existing order holds inside the one dock.
+5. **No dead machinery.** The header-layout correction tracker and the `__DEV__` header layout
+   ref are removed if nothing else needs them; the `scrollToBottom` effect may stay but is no
+   longer load-bearing for visibility.
+6. **Re-proven, not assumed:** `FLAG_SECURE` on mount and release on unmount for sudo and
+   secret; the D10 restore from `session.resume`'s `pending_approval` / `pending_clarify`; the
+   local notification for a non-active session. The dock carries
+   `accessibilityLiveRegion="assertive"`.
+7. **This entry authorises the structural change.** M14's rule that components with
+   device-verified behaviour keep their structure is waived for this move, which is why the
+   re-proofs in point 6 are part of acceptance.
+8. **Acceptance**, on a release APK of merged `main`, written to D21.1: 10 of 10 approvals fully
+   on-screen with no touch in both themes, including a second approval after a Reject in the
+   same session; sudo, secret and clarify once each with the keyboard open, input and Send
+   visible above it; font scale 1.3; a 60-message history; and a request arriving while the
+   reader is scrolled up, with the dock visible and the transcript position unmoved.
+
+**Reasoning.** Opus measured the cause: `maintainVisibleContentPosition` shifts the inverted
+list's offset by the inserted header's height and cancels the animated scroll, so 3 of 6
+approvals were hidden in its device pass, one until the gateway's 300 s timeout. Option (b),
+neutralising that prop while a card is pending and scrolling after layout, keeps a safety-path
+control dependent on scroll arithmetic that has now failed three separate ways (M06's missing
+scroll effect, the unmeasured-header undershoot, this). A control that must be answered should
+not be somewhere the user can scroll away from. **Checked by me:** the session screen's layout
+(`app/(main)/sessions/[id].tsx:184-219`), that the composer uses `KeyboardStickyView`
+(`Composer.tsx:602`), the list header's contents, and which cards have text inputs. **On
+Sonnet's and Opus's word:** the desktop component's behaviour and the instrumented trace.
