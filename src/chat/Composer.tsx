@@ -69,6 +69,7 @@ import {
   showsAutoSendState,
   showsEditEscape
 } from './hold-to-dictate'
+import { InputDock } from './InputDock'
 import { ModelChip } from './ModelChip'
 import { SlashPalette } from './SlashPalette'
 
@@ -600,6 +601,14 @@ export function Composer({ storedSessionId }: ComposerProps) {
 
   return (
     <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }}>
+      {/* D25: the blocking-input dock lives INSIDE this KeyboardStickyView,
+          above the composer row — not as a sibling between <Transcript> and
+          <Composer> in the session screen. The sticky view moves by
+          translation when the keyboard opens; a plain sibling above it would
+          stay put and get covered by the composer and keyboard, and three of
+          the four cards (sudo, secret, clarify) have text inputs that need
+          to move with it. */}
+      <InputDock storedSessionId={storedSessionId} />
       <View style={[styles.container, { backgroundColor: tokens.background, borderTopColor: tokens.border }]}>
         {atItems.length > 0 ? (
           <CompletionList onSelect={selectAtCompletion} rows={atItems} />

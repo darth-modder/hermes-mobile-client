@@ -46,6 +46,7 @@ backend runs on and have no mobile equivalent:
 | Settings: Billing | Informational only. Not a missing capability: `billing.state`/`subscription.*`/`usage.bars`/`session.usage`/`billing.step_up` are a complete gateway RPC surface (the gateway's own comment calls it "complete") — this app's client wraps none of it | M14 Deviations 8 &amp; 13; same D-entry |
 | Command center (Usage) | Real screen, inert. Not a missing capability: `GET /api/analytics/usage` and `GET /api/analytics/models` are real, registered REST routes — this app's client wraps neither | M14 Deviations 8 &amp; 13; same D-entry |
 | Agents | Real screen, inert. Not a missing capability: `delegation.status` (host-wide, not per-connection) plus `delegation.pause`/`subagent.interrupt`/`subagent.steer`/`spawn_tree.*` are a real cross-session RPC surface — this app's client wraps none of it | M14 Deviations 8 &amp; 13; same D-entry |
+| Blocking-input cards: one floating dock, no inline bar | Desktop shows an approval as a compact strip inline under the pending tool row, with a floating `PendingApprovalFallback` above the composer only when that inline bar isn't mounted. Mobile has no per-tool-row inline binding (every card is already one global per-session request), so D25's dock is the floating form only — always shown, never inline | M14 Deviation 18 (D25) |
 
 ## Mobile has that desktop does not
 

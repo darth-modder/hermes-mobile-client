@@ -7,6 +7,15 @@
 // `mcp.setup.request` (desktop-GUI-only MCP consent card) is dropped — not on
 // M05's event catalog, and the tool it belongs to (`setup_mcp`) is gated to
 // the desktop surface upstream.
+//
+// D25: these handlers used to push a mobile-only `scrollToBottom` effect so
+// the ListHeaderComponent mounting the card (at the inverted FlashList's
+// visual bottom edge) would actually be on screen. The four blocking cards
+// now dock above the composer instead (src/chat/InputDock.tsx), visible
+// independent of scroll position — the same reason desktop never needed
+// this. Forcing a scroll here would now violate D25.8 ("a request arriving
+// while the reader is scrolled up... the transcript position must not
+// jump"), so it's removed, not just left unused.
 
 import { restorePendingClarifyToolCall, settlePendingClarifyToolCall } from '../../upstream/lib/chat-messages'
 
@@ -76,10 +85,6 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
           pendingClarifyRequestId: requestId
         }
       }).state
-
-      if (ctx.isActiveEvent) {
-        effects.push({ type: 'scrollToBottom', storedSessionId })
-      }
     }
 
     return handled(next, effects)
@@ -145,17 +150,6 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       ? updateSession(state, storedSessionId, current => ({ ...current, needsInput: true })).state
       : state
 
-    // Mobile-only requirement (desktop docks these cards outside the
-    // scrollable transcript, so it never needed this): the ListHeaderComponent
-    // that mounts ApprovalCard/SudoCard/SecretCard/ClarifyCard sits at the
-    // inverted FlashList's visual bottom edge, which is off-screen until the
-    // list is scrolled there. Without this, a request can arrive rendered but
-    // unreachable — the buttons aren't even in the accessibility tree until
-    // the user scrolls (found on device, M06 Opus re-verification).
-    if (storedSessionId && ctx.isActiveEvent) {
-      effects.push({ type: 'scrollToBottom', storedSessionId })
-    }
-
     return handled(next, effects)
   }
 
@@ -175,10 +169,6 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       : state
 
     const effects: Effect[] = [{ type: 'setSudo', storedSessionId, request: { requestId, storedSessionId } }]
-
-    if (storedSessionId && ctx.isActiveEvent) {
-      effects.push({ type: 'scrollToBottom', storedSessionId })
-    }
 
     return handled(next, effects)
   }
@@ -233,10 +223,6 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
     const effects: Effect[] = [
       { type: 'setSecret', storedSessionId, request: { envVar, prompt: promptText, requestId, storedSessionId } }
     ]
-
-    if (storedSessionId && ctx.isActiveEvent) {
-      effects.push({ type: 'scrollToBottom', storedSessionId })
-    }
 
     return handled(next, effects)
   }

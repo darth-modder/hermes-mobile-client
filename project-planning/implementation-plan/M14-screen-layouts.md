@@ -516,6 +516,22 @@ device-tested (there is no UI to reach):
     picking one turn's worth of copy to rotate through per session is product behavior, not a layout
     decision this milestone's pass should make unasked. A simplification, not a defect — flagging it
     here as a Deviation rather than leaving it undocumented.
+18. **Blocking cards (approval/sudo/secret/clarify) moved out of the transcript, into a dock above
+    the composer — D25 (2026-09-19), fixing D20 item 6.** They used to mount as `FlashList`'s
+    `ListHeaderComponent`, at the inverted list's visual bottom edge; Opus measured that
+    `maintainVisibleContentPosition` could shift that header off screen when it was inserted,
+    leaving a card's buttons outside the accessibility tree (3 of 6 in one device pass, one until
+    the gateway's own 300s timeout). `src/chat/InputDock.tsx` now renders them inside the
+    composer's `KeyboardStickyView`, height-capped at half the window, independent of scroll
+    position — this follows the intent of the desktop's `PendingApprovalFallback`
+    (`apps/desktop/src/components/assistant-ui/tool/approval.tsx`: absolutely positioned above the
+    composer, shown whenever its inline per-tool-row bar isn't mounted). **Departure from the
+    desktop:** mobile has no per-tool-row inline bar at all (every card is already one global
+    per-session request, not bound to a specific tool-call row), so the desktop's inline-or-
+    floating pair collapses to the floating form alone here — recorded in `docs/PARITY.md` as
+    well. `TodoPanel` (non-blocking) stays in the transcript's header; only the four blocking cards
+    moved. This is a structural change to components M14 had marked device-verified — D25
+    explicitly waives M14's "device-verified components keep their structure" rule for this move.
 
 ## Verification log
 

@@ -4,7 +4,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Clipboard,
-  type LayoutRectangle,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -17,9 +16,7 @@ import { Menu, type MenuItem } from '../components/ui/Menu'
 import { ChevronDown } from '../lib/icons'
 import { latestPillLabel } from '../lib/strings.mobile'
 import { t } from '../lib/t'
-import { $clarifyRequests } from '../store/clarify'
 import { requestComposePrefill } from '../store/compose-request'
-import { $approvalRequests, $secretRequests, $sudoRequests } from '../store/prompts'
 import { $scrollToBottomRequests } from '../store/scroll'
 import { $todosBySession } from '../store/todos'
 import { type MobileTokens, useTheme } from '../theme/provider'
@@ -28,12 +25,8 @@ import { type ChatMessage, type ChatMessagePart, chatMessageText } from '../upst
 
 import { INITIAL_LATEST_PILL_STATE, nextLatestPillState } from './latest-pill'
 import { type MessageGap, messageGap } from './message-gap'
-import { ApprovalCard } from './parts/ApprovalCard'
-import { ClarifyCard } from './parts/ClarifyCard'
 import { ReasoningDisclosure } from './parts/ReasoningDisclosure'
 import { ResponseStats } from './parts/ResponseStats'
-import { SecretCard } from './parts/SecretCard'
-import { SudoCard } from './parts/SudoCard'
 import { TextPart } from './parts/TextPart'
 import { TodoPanel } from './parts/TodoPanel'
 import { ToolCallCard } from './parts/ToolCallCard'
@@ -207,22 +200,18 @@ const AT_TAIL_OFFSET_PX = 24
 
 /**
  * The message list: inverted FlashList so new content appears at the visual
- * bottom without re-measuring the whole scroll range, plus the per-session
- * blocking-input cards and todo panel anchored just above the composer
- * (`ListHeaderComponent` — inverted, so "header" is the visual bottom edge).
+ * bottom without re-measuring the whole scroll range, plus the todo panel
+ * anchored just above the composer (`ListHeaderComponent` — inverted, so
+ * "header" is the visual bottom edge). The blocking-input cards
+ * (approval/sudo/secret/clarify) used to live in this same header — D25
+ * moved them into `InputDock`, docked above the composer instead, because
+ * `maintainVisibleContentPosition` could carry the header off screen
+ * (D20 item 6) and TodoPanel (non-blocking) has no such requirement.
  */
 export function Transcript({ storedSessionId, messages }: TranscriptProps) {
   const tokens = useTheme()
   const listRef = useRef<FlashListRef<ChatMessage>>(null)
-  // __DEV__-only, read by ApprovalCard to log the header row's own layout
-  // alongside the card's own (M14 close-out round 3, task 3) — never read
-  // in a release build, so it's fine for this to always exist.
-  const headerLayoutRef = useRef<LayoutRectangle | null>(null)
 
-  const clarify = useStore($clarifyRequests)[storedSessionId]
-  const approval = useStore($approvalRequests)[storedSessionId]
-  const sudo = useStore($sudoRequests)[storedSessionId]
-  const secret = useStore($secretRequests)[storedSessionId]
   const todos = useStore($todosBySession)[storedSessionId] ?? []
   const scrollRequestCount = useStore($scrollToBottomRequests)[storedSessionId] ?? 0
 
@@ -271,19 +260,7 @@ export function Transcript({ storedSessionId, messages }: TranscriptProps) {
         data={data}
         inverted
         keyExtractor={message => message.id}
-        ListHeaderComponent={
-          secret || sudo || approval || clarify || todos.length > 0 ? (
-            <View onLayout={__DEV__ ? event => (headerLayoutRef.current = event.nativeEvent.layout) : undefined}>
-              {secret ? <SecretCard request={secret} storedSessionId={storedSessionId} /> : null}
-              {sudo ? <SudoCard request={sudo} storedSessionId={storedSessionId} /> : null}
-              {approval ? (
-                <ApprovalCard parentLayoutRef={headerLayoutRef} request={approval} storedSessionId={storedSessionId} />
-              ) : null}
-              {clarify ? <ClarifyCard request={clarify} storedSessionId={storedSessionId} /> : null}
-              <TodoPanel todos={todos} />
-            </View>
-          ) : null
-        }
+        ListHeaderComponent={todos.length > 0 ? <TodoPanel todos={todos} /> : null}
         maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 0.2 }}
         onScroll={handleScroll}
         ref={listRef}

@@ -86,13 +86,17 @@ function OneClarifyQuestion({ storedSessionId, requestId, question, lockedAnswer
 }
 
 export interface ClarifyCardProps {
-  storedSessionId: string
   request: ClarifyRequest
 }
 
 /** A clarify question (or batch of them) blocking the agent thread until
- *  `clarify.respond` answers every one. */
-export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
+ *  `clarify.respond` answers every one. Split into Body/Actions (D25): the
+ *  title scrolls with the rest of the dock, but every question's own answer
+ *  control (text input, Send, or choice buttons) stays outside the scroll
+ *  area — reading a question and answering it are the same interaction here,
+ *  so both live in Actions rather than splitting a question from its
+ *  control. */
+export function ClarifyCardBody({ request }: ClarifyCardProps) {
   const tokens = useTheme()
   const isBatch = request.questions.length > 0
 
@@ -101,6 +105,19 @@ export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
       <Text style={[styles.title, { color: tokens.foreground }]}>
         {isBatch ? CLARIFY_CARD_BATCH_TITLE : CLARIFY_CARD_SINGLE_TITLE}
       </Text>
+    </View>
+  )
+}
+
+export interface ClarifyCardActionsProps extends ClarifyCardProps {
+  storedSessionId: string
+}
+
+export function ClarifyCardActions({ storedSessionId, request }: ClarifyCardActionsProps) {
+  const isBatch = request.questions.length > 0
+
+  return (
+    <View style={styles.actions}>
       {isBatch ? (
         request.questions.map(question => (
           <OneClarifyQuestion
@@ -123,6 +140,10 @@ export function ClarifyCard({ storedSessionId, request }: ClarifyCardProps) {
 }
 
 const styles = StyleSheet.create({
+  actions: {
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
   buttonText: {
     ...type.label,
     fontWeight: '600'
@@ -179,7 +200,6 @@ const styles = StyleSheet.create({
   },
   title: {
     ...type.label,
-    fontWeight: '700',
-    marginBottom: 6
+    fontWeight: '700'
   }
 })
