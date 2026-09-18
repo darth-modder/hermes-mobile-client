@@ -56,6 +56,16 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+### Version history
+
+`android.versionCode` (`app.config.ts`) is an integer starting at 1, raised by one for every APK
+that leaves this machine — including a re-spin of the same version string. It is never reused and
+never derived (D23 decision 2.2). Add a row here only when an APK actually leaves this machine.
+
+| versionCode | version | commit | APK sha256 | date |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 Then, on GitHub, create a Release from that tag with:
 
 - The APK attached.

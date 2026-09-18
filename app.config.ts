@@ -16,12 +16,16 @@ const config: ExpoConfig = {
   name: APP_NAME,
   slug: APP_SLUG,
   scheme: 'hermes-android',
-  version: '1.0.0',
+  version: '0.1.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   userInterfaceStyle: 'automatic',
   android: {
     package: 'com.symbyotic.hermes.mobile',
+    // D23 decision 2.2: an integer starting at 1, raised by one for every
+    // APK that leaves this machine (never reused, never derived). Table in
+    // docs/RELEASING.md.
+    versionCode: 1,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       foregroundImage: './assets/images/android-icon-foreground.png',
