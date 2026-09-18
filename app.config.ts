@@ -76,7 +76,12 @@ const config: ExpoConfig = {
         microphonePermission: 'Hermes uses the microphone to transcribe voice messages.'
       }
     ],
-    './plugins/withReleaseSigning.js'
+    './plugins/withReleaseSigning.js',
+    // Permits plain-`http://` gateways. `hermes serve` has no TLS option, and
+    // targetSdk 36 blocks cleartext by default, so without this no release
+    // APK can reach any gateway a user actually runs. See the plugin's header
+    // for the full reasoning and docs/CONNECTING.md for what it costs.
+    './plugins/withCleartextTraffic.js'
   ],
   experiments: {
     typedRoutes: true
