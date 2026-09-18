@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { Clipboard, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { setActiveConnection } from '../../src/connections/registry'
+import { findConnectionByUrl } from '../../src/connections/existing-connection'
+import { listConnections, setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
 import {
   isPrimaryStartCard,
@@ -68,6 +69,14 @@ type DetectedMode = { mode: 'password'; provider: string } | { mode: 'token' } |
 
 function newConnectionId(): string {
   return `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** D24.1.3: a URL that normalises equal to an existing connection's reuses
+ *  that connection's id — registry.ts's registerConnection upserts by id, so
+ *  this updates the existing entry in place instead of minting a duplicate
+ *  beside it. */
+function resolveConnectionId(baseUrl: string): string {
+  return findConnectionByUrl(baseUrl, listConnections())?.id ?? newConnectionId()
 }
 
 // Replicates: docs/desktop-prototypes/e-overlays/onboarding.html's
@@ -202,7 +211,7 @@ export default function ConnectScreen() {
     setConnecting(true)
     setStatus('')
 
-    const id = newConnectionId()
+    const id = resolveConnectionId(baseUrl)
 
     try {
       const connection: MobileConnection = {
@@ -258,7 +267,7 @@ export default function ConnectScreen() {
     setConnecting(true)
     setStatus(t.onboarding.startingSignIn(CONNECTION_AUTH_MODE_LABEL.oauth))
 
-    const id = newConnectionId()
+    const id = resolveConnectionId(baseUrl)
 
     try {
       const result = await nativeLogin(id, baseUrl, { provider: detected.provider })
@@ -299,7 +308,7 @@ export default function ConnectScreen() {
       return
     }
 
-    const id = newConnectionId()
+    const id = resolveConnectionId(baseUrl)
 
     router.push({
       pathname: '/connect/[id]/login',
