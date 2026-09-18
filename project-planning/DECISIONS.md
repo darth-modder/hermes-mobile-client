@@ -733,3 +733,75 @@ distribution removes two accounts and a review queue from the path, at the cost 
 friction, no auto-update, and a signing key that the user alone must never lose. The competitor disclaims affiliation on every
 page; this project had no such statement anywhere. Doing the rename now, before anything binds to
 the old id, makes it a one-hour change instead of a migration.
+
+## D23 — 0.1.0: the signed-out dead end blocks the release; version 0.1.0, explicit versionCode, tag `v0.1.0` (2026-09-19)
+
+**Decision 1 — the sign-out dead end blocks 0.1.0. Option (a), widened.**
+
+A connection in `needsLogin` must offer "Sign in" wherever that state is shown, routing to the
+existing `app/connect/[id]/login.tsx` with the connection's id kept. Scope, which is wider than
+the two surfaces Opus named:
+
+1. One shared piece (a hook or small component) derives the action from `needsLogin`, so
+   surfaces cannot disagree. It is used by: the gateway card in Settings › Gateways; the auth
+   error on Sessions; the same error on Bots and Tasks and any other list that can fail with an
+   auth error; and the existing connection banner.
+2. A confirmed 401 on a REST call marks the connection `needsLogin`, the same as an unauthorized
+   socket close does, so the list screens reach the state without a session screen being open.
+   `src/api/sessions.ts:56` already records a gap of this shape. This follows the `AGENTS.md`
+   rule: reauth only on a confirmed 401/403, never on timeouts or 5xx.
+3. "Retry" on an auth error is replaced by "Sign in"; retrying a request that failed for lack of
+   a session cannot succeed.
+4. **Acceptance, on a release APK of merged `main`, stated to D21.1:** (i) Sign out, then Sign in
+   from the gateway card, connection id unchanged, sessions load; (ii) the **expiry path
+   reproduced on device**: sign in, restart the throwaway gateway so the session is no longer
+   valid (a new signing secret, or the password changed), return to the app on the Sessions
+   list, and show that "Sign in" is offered and works without Remove; (iii) the same from Bots
+   and Tasks. A failing-first test for the shared piece and for the REST 401 marking.
+5. Remove-and-re-add is not an acceptable workaround for a release note. It discards the
+   connection id, and the per-connection secrets in SecureStore are keyed by that id
+   (`src/connections/secure.ts`: token, OAuth session, proxy headers).
+
+**Reasoning.** A tester who signs out, or whose session the gateway expires, is locked out of an
+app whose only job is to reach that gateway, and the screen in front of them offers a button
+that cannot work. The route already exists; the fix is wiring. 0.1.0 is waiting on D20 item 6
+regardless, so this costs no calendar time.
+
+**What I checked myself, and what I did not.** Checked in code at `dc2fe9d`: the login route has
+exactly two entry points (`app/(main)/sessions/[id].tsx:203`, the banner, and
+`app/connect/index.tsx:305`, the add-connection flow); the gateway card's actions are use, test,
+make primary, sign out and remove, with no sign-in; `needsLogin` is set on an unauthorized socket
+close at `session-connection.ts:368`, `:384` and `:482` and on Sign out at `logout.ts:70`; the
+SecureStore keys are keyed by connection id. Taken on Opus's word: everything observed on the
+release APK, including that the banner did not appear and that Retry fails again. **Not verified
+by anyone:** the expiry path on a device. I am not assuming it; acceptance 4(ii) exists to prove
+or disprove it, and the decision does not depend on it, because the Sign out path alone is a
+dead end a tester reaches by pressing a visible button. Also not checked by me: whether a REST
+401 already marks `needsLogin` anywhere, and what besides secrets is keyed by connection id.
+
+**Decision 2 — version, versionCode, tag.**
+
+1. **Version string `0.1.0`**, in `app.config.ts` and `package.json`. `1.0.0` was the scaffold's
+   default and says something the app is not. Semver from here: 0.1.x for fixes, 0.2.0 for the
+   next feature release.
+2. **`android.versionCode` is set explicitly in `app.config.ts`**, an integer starting at **1**,
+   raised by one for every APK that leaves this machine, including a re-spin of the same
+   version string. It is never reused and never derived. `docs/RELEASING.md` keeps a table:
+   versionCode, version, commit, APK sha256, date. `ios.buildNumber` follows the same rule when
+   an iOS build exists. The `preview/0.1.0` branch's version bump is superseded by this and can
+   be deleted once this lands on `main`.
+3. **Tag `v0.1.0`, annotated, created by the user** on the exact commit the real-key APK was
+   built from, after Opus's D20 check passes on that APK (D22.5). The GitHub Release is marked
+   **pre-release**. A published tag is never moved: a fix after tagging is `v0.1.1` with
+   versionCode 2. The release notes carry the commit, the versionCode and the APK's sha256.
+
+**Reasoning.** Nothing has been distributed, so this is free now and expensive later: Android
+refuses an update whose versionCode is not higher than the installed one, and sideloaded users
+have no store to sort that out for them. An explicit integer in one place, with a table, is the
+simplest scheme that cannot collide.
+
+**Checked / not checked.** Checked: `app.config.ts:19` and `package.json:3` both read `1.0.0`,
+and no `versionCode` is set in `app.config.ts`. Taken on Opus's word: that the built APK reports
+versionName 1.0.0 and versionCode 1, and that APK `9a4c2f64…` is the one D20 item 5 was checked
+on. This entry does not re-examine D20 items 1 and 2 (signed non-dev build; physical rows); the
+physical rows still need a waiver by name for the 0.1.0 audience before any public download.
