@@ -921,4 +921,8 @@ The M14 branch's Verification log has the per-fix history.
 Carried out of M13, not blocking it:
 - `../hermes-agent` no longer exports `CronBlueprint`/`CronBlueprintField`, which `src/api/cron.ts`
   imports, so the next `sync-upstream` will break the build.
+  *Corrected 2026-09-19 (Opus): upstream never declared these types at any commit (only
+  `AutomationBlueprint`/`AutomationBlueprintField` exist there). `src/api/cron.ts` has declared
+  them locally since M15 round 1, and the re-pin to `ee84ccd8bd` (`fix/upstream-repin`, merged in
+  `ab98e6e`) synced with no build break. See `FIX-UPSTREAM-REPIN-2026-09-18.md` §1–2.*
 - The no-approval-card-after-Reject case is recorded as open in M14's Verification log.

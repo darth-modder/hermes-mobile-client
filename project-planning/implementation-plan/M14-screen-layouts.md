@@ -622,7 +622,8 @@ now reproduces byte-for-byte (`git status` shows no diff on that file after a sy
 run surfaced an unrelated, pre-existing drift — the current `../hermes-agent` checkout's
 `apps/desktop/src/types/hermes.ts` no longer has `CronBlueprint`/`CronBlueprintField`, which
 `src/api/cron.ts` still imports — reverted before committing, out of scope for this fix, flagged for
-separate follow-up.
+separate follow-up. *(Corrected 2026-09-19: the premise was wrong — see the correction under
+"Upstream drift" in this file's later carried-items list.)*
 
 **The desktop shares the same latent data bug, but never surfaces it as a spinner (read-only check
 against `../hermes-agent`, nothing changed there).** `storedToolMessagePart`
@@ -1272,7 +1273,16 @@ Carried forward, not blocking M14:
 - **Approval card overlap:** not reproduced in six attempts. It's on the tester checklist, with a
   `__DEV__`-only layout log in `ApprovalCard.tsx`.
 - **No card after a Reject:** a second request after one Reject logged a tool turn but showed no card.
+  *Root-caused 2026-09-19 (Opus, emulator): two separate things. (a) The gateway sometimes blocks a
+  repeat after a Reject without asking — no `approval.request` is sent; legitimate server behaviour.
+  (b) When it does ask, the card mounts off-screen: `maintainVisibleContentPosition` shifts the
+  inverted list's offset as the header card inserts, overriding `scrollToOffset(0)`. Not fixed —
+  `fix/approval-path` still left 3 of 6 cards hidden.*
 - **Upstream drift:** `../hermes-agent` no longer has `CronBlueprint`/`CronBlueprintField`, so the
   next `sync-upstream` breaks the build.
+  *Corrected 2026-09-19 (Opus): upstream never declared these types at any commit (only
+  `AutomationBlueprint`/`AutomationBlueprintField` exist there). `src/api/cron.ts` has declared
+  them locally since M15 round 1, and the re-pin to `ee84ccd8bd` (`fix/upstream-repin`, merged in
+  `ab98e6e`) synced with no build break. See `FIX-UPSTREAM-REPIN-2026-09-18.md` §1–2.*
 - **Teardown gap:** the round-3 teardown left the scratch `HERMES_HOME` and `scratch-password.txt`
   on disk. Opus deleted both after confirming no gateway was running.
