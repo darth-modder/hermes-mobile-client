@@ -12,12 +12,23 @@
 // which cannot be distributed as a real release artifact.
 const { withAppBuildGradle } = require('@expo/config-plugins')
 
+// v2 kept explicit (not just relying on AGP's default) and v3 added outright:
+// Play's own guidance recommends v3 specifically so a future key rotation is
+// possible at all (https://developer.android.com/studio/publish/app-signing
+// -- v3 carries the rotation lineage v1/v2 have no field for). v4 is added
+// too since this AGP version supports the property, verified after a real
+// build with `apksigner verify --verbose` rather than assumed from the
+// version number alone -- an unsupported property here would fail the
+// Gradle build loudly, not silently no-op.
 const RELEASE_SIGNING_CONFIG = `        release {
             if (System.getenv("HERMES_KEYSTORE_PATH")) {
                 storeFile file(System.getenv("HERMES_KEYSTORE_PATH"))
                 storePassword System.getenv("HERMES_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("HERMES_KEY_ALIAS")
                 keyPassword System.getenv("HERMES_KEY_PASSWORD")
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
             }
         }
 `
