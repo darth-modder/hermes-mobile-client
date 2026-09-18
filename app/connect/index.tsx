@@ -41,7 +41,7 @@ import {
   CONNECT_THIS_COMPUTER_TITLE,
   CONNECT_UNENCRYPTED_WARNING,
   CONNECT_URL_DESC,
-  CONNECT_URL_HINT_TAILSCALE,
+  CONNECT_URL_HINT,
   CONNECT_URL_PLACEHOLDER,
   CONNECT_URL_TITLE,
   CONNECT_USE_COMPUTER_ADDRESS_DESC,
@@ -459,7 +459,7 @@ export default function ConnectScreen() {
             {guardError ? (
               <Text style={[styles.guardError, { color: tokens.destructive }]}>{guardError}</Text>
             ) : (
-              <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_URL_HINT_TAILSCALE}</Text>
+              <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_URL_HINT}</Text>
             )}
             {unencrypted ? (
               <Text style={[styles.warning, { color: tokens.semantic.orange }]}>{CONNECT_UNENCRYPTED_WARNING}</Text>

@@ -886,8 +886,16 @@ export const CONNECT_GUIDE_HINT = 'How to keep `hermes serve` running on Windows
 // `http://127.0.0.1:9119` (app/connect/index.tsx:245 before this round), which
 // the prototype calls out as the thing to stop doing (:17-19).
 export const CONNECT_URL_PLACEHOLDER = 'https://your-pc.tailnet.ts.net:9119'
-export const CONNECT_URL_HINT_TAILSCALE =
-  'Never enter 127.0.0.1, localhost or 10.0.2.2 on your phone — those point back at the phone itself, not at your computer.'
+
+// Renamed from CONNECT_URL_HINT_TAILSCALE (2026-09-18): that name and its
+// wording ("Never enter ... 10.0.2.2") described the Tailscale path's guard,
+// not this one. With `SHOW_TAILSCALE_PAIRING` off for 0.1.0 (that entry
+// point hidden), `mode` is always `'url'` here, and `checkGatewayUrl`'s own
+// `GatewayUrlMode` doc is explicit that `10.0.2.2` is accepted on this path
+// ("on an emulator it IS the computer") — the old text told every reader
+// not to do the one thing this exact screen lets them do.
+export const CONNECT_URL_HINT =
+  '127.0.0.1 and localhost are rejected here — they point at this phone, not your computer. 10.0.2.2 is accepted: it is the emulator’s own route to the machine running it, not a real address on hardware.'
 export const CONNECT_NOTHING_SENT_YET = 'Nothing is sent anywhere yet. Sign-in appears only after the gateway answers.'
 
 // connect.html `:rejected` view — "the error IS the guard sentence: rule plus
