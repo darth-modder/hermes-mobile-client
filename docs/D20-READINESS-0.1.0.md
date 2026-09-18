@@ -111,3 +111,61 @@ real, specific gaps — a tag and signing key only the user can produce, a track
 makes, a merge-to-`main` pass D21.3.3 already assigns to Opus, and a genuinely open approval-path
 question that the next live pass should target directly rather than assume closed. Nothing here was
 softened to make the count look better.
+
+## Opus update — 2026-09-19 (items 4, 5, 6)
+
+Run by Opus on emulator-5554 (Android, API 36), throwaway gateway `http://10.0.2.2:9128`, model
+`mimo-v2.5`. Evidence: `D:\Stuff\hermes-android-field\opus-approval-live\` (outside the repo).
+Nothing here is from a physical phone.
+
+**Item 4 — met.** Tracker and root README corrected on `main` in `7f9a108` (M12 in-progress; M13,
+M14, M15 done; root status paragraph rewritten).
+
+**Item 5 — met (emulator).** `release/0.1.0` and `fix/upstream-repin` merged into `main` (`ab98e6e`).
+On that tree: `npm run check` green (77 files / 822 vitest, 52 plugin tests, lint, prettier);
+`sync-upstream.mjs` re-run gave no diff. Release APK built from `main` `2eb0b36` (code identical to
+`ab98e6e`) with the throwaway verification key, sha256
+`9a4c2f645b9c322cb3613f0b3641eb9a5fa6f04cd05d781700294e5f3383e200`, installed as
+`com.symbyotic.hermes.mobile`. On that APK, each claim end to end:
+
+| Claim | Result |
+|---|---|
+| Connect by URL + password sign-in | Pass — Add connection → Enter a URL → Detect auth mode ("Gated backend — password sign-in") → Sign in → Connected |
+| Chat with a real model | Pass — mimo-v2.5 replies streamed in a new session |
+| Approval Run / Reject | Pass — Run deleted the scratch dir; Reject blocked it (dir still on disk, model reported the block). Both cards visible without scrolling this run |
+| Background notification | Pass — app backgrounded mid-turn; "Approval needed · rm -rf …" posted within seconds; tapping it opened the session with the card visible |
+
+**Item 6 — not met.** `fix/approval-path` was **not** merged. With it applied (dev client, JS from
+`release/0.1.0` + `ffa268e`), 3 of 6 approval cards stayed off-screen with no scrolling — first and
+second approvals alike; one sat pending until the gateway timed the command out at 300 s. Root cause,
+measured with temporary logging: both `scrollToOffset(0)` calls fire (the request effect, then the
+header-`onLayout` correction), but the inserted header card makes `maintainVisibleContentPosition`
+shift the inverted list's offset away from the tail (onScroll y 69 → 366), overriding them. The root
+cause is now known, but the defect is open and hits a claimed feature intermittently (the release-APK
+run above happened to show all three cards), so this is not counted as met. Sudo and secret cards
+still have no device evidence. Next step is a fix round (card outside the list, or neutralising
+`maintainVisibleContentPosition` while a blocking card is pending), then a no-scroll pass of at least
+8 approvals.
+
+**Found on the way — not D20 items, but a tester would hit them:**
+- **Sign-out dead end.** After Sign out, Registered gateways shows "needs sign-in" with no Sign in
+  button, and Sessions shows "Authentication failed — check the password." with only Retry. The only
+  way back is Remove and re-add. (The session banner's "Sign in again" did not appear.)
+- **Version string.** `app.config.ts` and `package.json` say `1.0.0`; the APK reports
+  `versionName 1.0.0`. The release is called 0.1.0.
+- **Tailscale still suggested.** The Gateway URL placeholder is `https://your-pc.tailnet.ts.net:9119`.
+- **Desktop copy on mobile.** Connect screen: "Hermes Desktop will detect whether it needs a token or
+  browser sign-in."
+- **History drops an approved tool call.** Reopening a session renders the `ls` tool card but not the
+  approved `rm -rf` one. Identical on a pre-repin build, so not from the re-pin.
+- Cosmetic: the assistant bubble shrinks to short tool cards and wraps the reply narrowly (not A/B
+  tested; the re-pin touches no layout code); the notification small icon is a plain ring.
+
+| # | Item | Verdict (2026-09-19) |
+|---|---|---|
+| 1 | Installable signed build, tagged | Partly met — real key and tag are the user's; version string wrong |
+| 2 | `[physical]` rows | Not met — waiver needs named testers first |
+| 3 | Identity | Met |
+| 4 | Tracker/README | **Met** |
+| 5 | Claimed features on merged `main` | **Met (emulator)** |
+| 6 | Approval path | Not met — root-caused, not fixed |
