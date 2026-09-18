@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { checkGatewayUrl, parseGatewayHost } from './gateway-url-guard'
+import { checkGatewayUrl, isUnencryptedGatewayUrl, parseGatewayHost } from './gateway-url-guard'
 
 describe('parseGatewayHost', () => {
   it.each([
@@ -93,5 +93,56 @@ describe('checkGatewayUrl — real addresses pass', () => {
   it('does not mistake a hostname that merely starts with the digits', () => {
     expect(checkGatewayUrl('http://127-0-0-1.example.com', 'tailscale')).toMatchObject({ ok: true })
     expect(checkGatewayUrl('http://1270.0.0.1', 'tailscale')).toMatchObject({ ok: true })
+  })
+})
+
+describe('isUnencryptedGatewayUrl', () => {
+  // http vs https, on the same remote host: the scheme is the whole question.
+  it.each([
+    'http://my-pc.tail1234.ts.net:9119',
+    'http://192.168.1.50:9119',
+    'http://100.101.102.103:9119',
+    'http://hermes.example.com',
+    // Case and surrounding whitespace come free with a typed field.
+    '  HTTP://192.168.1.50:9119  '
+  ])('warns for the remote cleartext %j', raw => {
+    expect(isUnencryptedGatewayUrl(raw)).toBe(true)
+  })
+
+  it.each(['https://my-pc.tail1234.ts.net:9119', 'https://192.168.1.50:9119', 'https://hermes.example.com'])(
+    'stays quiet for the encrypted %j',
+    raw => {
+      expect(isUnencryptedGatewayUrl(raw)).toBe(false)
+    }
+  )
+
+  // Nothing leaves the device for any of these, so there is nothing to
+  // encrypt. `10.0.2.2` is the one that can actually be reached: the
+  // "Enter a URL" path allows it on purpose.
+  it.each(['http://localhost:9119', 'http://127.0.0.1:9119', 'http://10.0.2.2:9128', 'http://LOCALHOST:9119'])(
+    'stays quiet for the local %j',
+    raw => {
+      expect(isUnencryptedGatewayUrl(raw)).toBe(false)
+    }
+  )
+
+  // Same rule as the guard's: a field that is not finished is not a claim
+  // about transport. `baseUrl` is dialled exactly as typed, so a scheme-less
+  // entry never becomes a cleartext request — it fails to parse instead.
+  it.each(['', '   ', '192.168.1.50:9119', 'my-pc.tail1234.ts.net:9119', 'http://'])(
+    'stays quiet for the schemeless or unfinished %j',
+    raw => {
+      expect(isUnencryptedGatewayUrl(raw)).toBe(false)
+    }
+  )
+
+  // 127.0.0.1 is spelled out in the brief; the rest of 127.0.0.0/8 is not,
+  // and it is unreachable from the phone anyway — but it is remote-shaped, so
+  // record which way this actually falls rather than leaving it to a reader's
+  // guess. `checkGatewayUrl` rejects it outright, so the screen never gets
+  // this far.
+  it('treats the rest of 127.0.0.0/8 as remote, which the guard rejects first', () => {
+    expect(isUnencryptedGatewayUrl('http://127.0.0.2:9119')).toBe(true)
+    expect(checkGatewayUrl('http://127.0.0.2:9119', 'url')).toMatchObject({ ok: false })
   })
 })

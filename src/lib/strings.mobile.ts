@@ -905,6 +905,20 @@ export function connectRejectedUnspecified(host: string): string {
   return `That address is this phone, not your computer. “${host}” means “every interface” when a server binds it; it is not an address you can dial.`
 }
 
+// Shown under the URL field when the address is an explicit `http://` one
+// pointing off this device (`isUnencryptedGatewayUrl`, src/net/gateway-url-
+// guard.ts). It warns; it never blocks — the app permits cleartext on purpose
+// (plugins/withCleartextTraffic.js: `hermes serve` offers no TLS, so demanding
+// HTTPS would demand a reverse proxy of every user before the app works once).
+//
+// The reason it exists: what crosses the wire in the clear is not just the
+// chat, it is the session token that authenticates every later request, and
+// nothing on screen would otherwise say so. Phrased as the one thing the user
+// can act on — the network they are on — rather than as a scolding, because
+// the recommended fix (a reverse proxy) is not something the screen can offer.
+export const CONNECT_UNENCRYPTED_WARNING =
+  'Not encrypted. http:// sends your session token and messages in the clear — use it only on a network you trust.'
+
 export const CONNECT_USE_COMPUTER_ADDRESS_TITLE = "Use the computer's address"
 export const CONNECT_USE_COMPUTER_ADDRESS_DESC = 'Its tailnet name, for example https://your-pc.tailnet.ts.net:9119.'
 export const CONNECT_BACK_TO_STEPS = 'Back to the pairing steps'

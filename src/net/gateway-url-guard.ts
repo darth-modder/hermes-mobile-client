@@ -168,3 +168,42 @@ export function checkGatewayUrl(raw: string, mode: GatewayUrlMode): GatewayUrlVe
 
   return { host, ok: true }
 }
+
+/**
+ * The three hosts that never leave the machine, so an `http://` URL naming
+ * one of them carries nothing over a network to be read.
+ *
+ * `localhost` and `127.0.0.1` are here for completeness rather than effect —
+ * `checkGatewayUrl` already rejects both outright — but `10.0.2.2` is live:
+ * the "Enter a URL" path deliberately allows it (see `GatewayUrlMode`), and
+ * it is QEMU's alias for the host's own loopback, never a wire.
+ */
+const ENCRYPTION_POINTLESS_HOSTS = new Set(['10.0.2.2', '127.0.0.1', 'localhost'])
+
+/**
+ * Should the connect screen warn that this URL is not encrypted?
+ *
+ * **Advisory, never a block.** `checkGatewayUrl` above is a guard: it stops a
+ * connection that provably cannot work. This is the opposite kind of answer —
+ * the connection will work fine, and the app permits it deliberately
+ * (`plugins/withCleartextTraffic.js`: `hermes serve` has no TLS option, so
+ * requiring HTTPS would require every user to stand up a reverse proxy
+ * first). What the user cannot see without being told is that the session
+ * token, every prompt and every reply cross the network in the clear.
+ *
+ * Only an explicit `http://` triggers it. A half-typed host with no scheme
+ * yet is not a statement about transport — and `baseUrl` is dialled exactly
+ * as typed, so a scheme-less entry never becomes a cleartext request; it
+ * fails to parse instead.
+ */
+export function isUnencryptedGatewayUrl(raw: string): boolean {
+  const trimmed = raw.trim()
+
+  if (!/^http:\/\//i.test(trimmed)) {
+    return false
+  }
+
+  const host = parseGatewayHost(trimmed)
+
+  return host !== null && !ENCRYPTION_POINTLESS_HOSTS.has(host)
+}

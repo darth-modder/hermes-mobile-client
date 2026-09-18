@@ -33,6 +33,7 @@ import {
   CONNECT_TAILSCALE_RECOMMENDED,
   CONNECT_TAILSCALE_TITLE,
   CONNECT_THIS_COMPUTER_TITLE,
+  CONNECT_UNENCRYPTED_WARNING,
   CONNECT_URL_DESC,
   CONNECT_URL_HINT_TAILSCALE,
   CONNECT_URL_PLACEHOLDER,
@@ -52,7 +53,7 @@ import {
 import { t } from '../../src/lib/t'
 import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
-import { checkGatewayUrl, type GatewayUrlMode } from '../../src/net/gateway-url-guard'
+import { checkGatewayUrl, type GatewayUrlMode, isUnencryptedGatewayUrl } from '../../src/net/gateway-url-guard'
 import { HttpError } from '../../src/net/http'
 import { useTheme } from '../../src/theme/provider'
 import { radius, type } from '../../src/theme/type'
@@ -126,6 +127,13 @@ export default function ConnectScreen() {
       : guard.rejection === 'unspecified'
         ? connectRejectedUnspecified(guard.host ?? url)
         : connectRejectedLoopback(guard.host ?? url)
+
+  // Advisory, not a gate: `detect` and `connectToken` below are deliberately
+  // not conditioned on this. Suppressed while `guardError` is showing so the
+  // field never carries two sentences at once — the rejection is the more
+  // urgent of the two, and an address that points back at the phone has no
+  // transport worth warning about anyway.
+  const unencrypted = !guardError && isUnencryptedGatewayUrl(url)
 
   const detect = async () => {
     // Belt and braces: the button is already disabled while the guard is
@@ -419,6 +427,9 @@ export default function ConnectScreen() {
             ) : (
               <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_URL_HINT_TAILSCALE}</Text>
             )}
+            {unencrypted ? (
+              <Text style={[styles.warning, { color: tokens.semantic.orange }]}>{CONNECT_UNENCRYPTED_WARNING}</Text>
+            ) : null}
 
             <View style={styles.row}>
               <TouchableOpacity
@@ -631,5 +642,10 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 8,
     textAlign: 'center'
+  },
+  warning: {
+    ...type.caption,
+    marginBottom: 8,
+    marginTop: -4
   }
 })
