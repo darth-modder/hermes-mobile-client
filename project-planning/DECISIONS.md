@@ -805,3 +805,87 @@ and no `versionCode` is set in `app.config.ts`. Taken on Opus's word: that the b
 versionName 1.0.0 and versionCode 1, and that APK `9a4c2f64…` is the one D20 item 5 was checked
 on. This entry does not re-examine D20 items 1 and 2 (signed non-dev build; physical rows); the
 physical rows still need a waiver by name for the 0.1.0 audience before any public download.
+
+## D24 — D23 amended after Opus reproduced the expiry path; who 0.1.0's audience is; physical rows are run, not waived (2026-09-19)
+
+**Part 1 — D23 Decision 1, amended.** Opus reproduced expiry on the release APK
+(`opus-approval-live/EXPIRY-PATH-2026-09-19.md`): after the gateway restarts with a new signing
+secret, Sessions fails with a Retry that cannot work, New session fails, and the gateway card
+still reads "Current · Password", not "needs sign-in". The dead end is real and `needsLogin` is
+never set.
+
+1. **Correction to D23.** I wrote that `needsLogin` is set on any unauthorized socket close and
+   listed that as checked. It is true and beside the point: for a password connection with an
+   expired session, `resolveAuth` fails at `POST /api/auth/ws-ticket`
+   (`session-connection.ts`, the `catch` after the ticket mint), which sets only the
+   screen-level `setConnectionAttention({ kind: 'needs-login' })`. The socket never opens, so
+   the close handler never runs. Opus's first reading had the same gap; its device run found it.
+2. **One state, set from every confirmed 401/403.** The registry's persisted `needsLogin` is the
+   single source for "this connection needs sign-in". It is set on a confirmed 401 or 403 from:
+   the **ws-ticket mint**, named explicitly; any REST call; and an unauthorized socket close.
+   The screen-level attention flag is derived from it or set alongside it, never instead of it.
+   It clears on a successful sign-in. D23's shared "Sign in" action keys off this state, so the
+   gateway card, Sessions, Bots, Tasks, New session and the session screen all offer it.
+3. **Add connection does not create a duplicate.** Entering a base URL that normalises equal to
+   an existing connection's routes to that connection (its sign-in if `needsLogin`, else "use
+   this gateway"), and never mints a second id. Opus saw on device that re-adding the same URL
+   leaves the old entry orphaned beside a new one. This is in the same fix round and blocks
+   0.1.0, because re-adding is what a locked-out person does first.
+4. **Expiry is the common case, so the host recipe says so.** Verified at the pinned upstream
+   commit `ee84ccd8bd`, `plugins/dashboard_auth/basic/__init__.py`: with no
+   `HERMES_DASHBOARD_BASIC_AUTH_SECRET`, `_resolve_secret` returns a fresh random key per
+   process, so every restart of a stock gateway expires every session. `docs/CONNECTING.md`'s
+   host recipe and the 0.1.0 release notes tell the host to set that secret.
+5. **The 12-hour question is answered in the fix round, not assumed.** Access tokens live 12 h
+   and refresh tokens 30 d (same file, lines 32–33). The app's only refresh call is OAuth's
+   `/auth/native/refresh`; whether the gate middleware renews a password session from the
+   refresh cookie is **unverified by anyone**. The TTL is configurable
+   (`HERMES_DASHBOARD_BASIC_AUTH_TTL_SECONDS`), so the test is cheap: set it to 120 on the
+   throwaway gateway, stay signed in past it with the app in use and again with it
+   backgrounded, and record whether the session survives. If it does not, the Sign in path from
+   point 2 is what the user meets every 12 hours, and the release notes say so.
+6. **Acceptance** is D23's 4(i)–(iii) plus: (iv) the ws-ticket path, shown by New session after
+   expiry offering Sign in; (v) re-adding an existing URL creates no second connection;
+   (vi) the TTL test in point 5, result stated either way.
+
+**Part 2 — the audience for 0.1.0.**
+
+1. **A GitHub Release on a public repository is a public download.** Marking it pre-release
+   limits nothing. D20.4 is not reinterpreted: it is an open beta at least. Opus is right.
+2. **The closed test is one named person: Ahmed Bilal**, the user, who confirms there are no
+   other testers. The closed-test APK is handed over as a file. It does not go on public
+   Releases and the repository stays private until the open-beta check passes.
+3. **Physical rows are run, not waived, wherever the user's phone can run them.** The register's
+   unblocking condition has always been "device attached". With 0.1.0 installed on the user's
+   own Android phone, Opus's batched physical pass (D9) runs: M04 cookies across app kill,
+   M06 frame rate on a seeded 2,000-message session, M07 airplane mode, doze and Wi-Fi to
+   cellular, M11 dictation with a real microphone, and the backgrounded-approval notification
+   after the phone has slept. A row that fails is a defect or a narrowed claim, not a waiver.
+4. **What may still be waived for a public audience, and how.** D20.2.2 already allows a waiver
+   "by name for a stated audience". For a public audience a waiver needs all three: the row
+   could not be run on the hardware available, stated; a release-notes line that narrows the
+   claim to what was tested; and it is never a row in the approval, sudo or secret path or one
+   that can lose data. Opus's proposed release-notes lines are adopted as that wording for any
+   row that ends up waived. Expected candidate: M08 Portal login via Custom Tabs, if the user
+   has no Portal-gated gateway to test against.
+5. **"Not applicable" is not a waiver.** A row for a feature the release does not ship is
+   recorded by name as not applicable to that release. M11's push-delivery row is not applicable
+   to 0.1.0: there is no EAS project and no push.
+6. **The notification sentence in the release notes is a claim, so it is narrowed, not waived.**
+   It becomes: *"…a system notification while the app is still running in the background. If
+   your phone has been asleep for a while you may not get one; open the app to check."* If the
+   physical pass shows it does arrive after sleep, the sentence can be widened then.
+
+**Reasoning.** Part 1: the fix D23 described would have passed its own acceptance on
+`/api/sessions` and left every session screen dead, because the state it keyed off was never
+set on the path testers actually hit. Naming the ws-ticket 401 and making one persisted state
+the source closes that. Part 2: the gate exists so that what is said about the app matches what
+was tested. A public download is public whatever it is labelled, and a phone in the user's hand
+turns waivers into tests. Running the rows costs an afternoon; waiving them would have put the
+first real-device run in strangers' hands.
+
+**Checked by me:** the `resolveAuth` catch block and what it sets; upstream `_resolve_secret` and
+the two TTLs at `ee84ccd8bd`; that the app's only refresh call is OAuth's; that Add connection
+has no dedupe by URL. **On Opus's word:** everything seen on the device, including the duplicate
+connection. **Unverified by anyone:** password-session renewal (point 5), and whether the user
+has an Android phone available now, which Part 2.3 depends on.
