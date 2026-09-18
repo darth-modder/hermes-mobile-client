@@ -4,9 +4,10 @@ import { Fragment } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { SETTINGS_GROUPS } from '../../../src/components/settings-rows'
+import { settingsGroupsForAudience } from '../../../src/components/settings-rows'
 import { ListRow, ListRowSeparator } from '../../../src/components/ui/ListRow'
 import { getActiveConnection } from '../../../src/connections/registry'
+import { getAudience } from '../../../src/lib/audience'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import { CONNECTED_TO_LABEL, NO_ACTIVE_CONNECTION, PROFILE_LABEL_PREFIX } from '../../../src/lib/strings.mobile'
 import { $activeProfile } from '../../../src/store/profile'
@@ -26,6 +27,11 @@ import { type } from '../../../src/theme/type'
 // Group/route/title data lives in ../../../src/components/settings-rows.ts
 // (pure, no react-native import — see that file's header for the grouping
 // rationale and the open D-entry question on group order).
+//
+// D18: filtered once at module scope, not per-render — the build-time
+// `extra.audience` value (app.config.ts) never changes while the app runs.
+const VISIBLE_SETTINGS_GROUPS = settingsGroupsForAudience(getAudience())
+
 export default function SettingsIndex() {
   const tokens = useTheme()
   const router = useRouter()
@@ -47,7 +53,7 @@ export default function SettingsIndex() {
         ) : null}
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        {SETTINGS_GROUPS.map(group => (
+        {VISIBLE_SETTINGS_GROUPS.map(group => (
           <Fragment key={group.label}>
             <Text style={[styles.sectionLabel, { color: tokens.textTertiary }]}>{group.label}</Text>
             {group.rows.map((row, index) => (

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { getStatus } from '../../../src/api/config'
 import { getActiveConnection } from '../../../src/connections/registry'
+import { UNAFFILIATED_NOTICE } from '../../../src/lib/app-identity'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import {
   ABOUT_HOST_SECTION_TITLE,
@@ -83,6 +84,7 @@ export default function AboutSettings() {
               ? `${t.settings.about.version(version)}${build ? aboutBuildSuffix(build) : ''}`
               : t.settings.about.versionUnavailable}
           </Text>
+          <Text style={[styles.unaffiliatedNotice, { color: tokens.mutedForeground }]}>{UNAFFILIATED_NOTICE}</Text>
         </View>
 
         <Text style={[styles.sectionTitle, { color: tokens.mutedForeground }]}>{ABOUT_HOST_SECTION_TITLE}</Text>
@@ -150,6 +152,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
     textTransform: 'uppercase'
+  },
+  unaffiliatedNotice: {
+    ...type.caption,
+    marginTop: 8,
+    paddingHorizontal: 24,
+    textAlign: 'center'
   },
   version: {
     ...type.caption,

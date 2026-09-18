@@ -41,11 +41,12 @@ export function useNotifications(): void {
         importance: Notifications.AndroidImportance.DEFAULT
       })
 
-      const { status } = await Notifications.getPermissionsAsync()
-
-      if (status !== 'granted') {
-        await Notifications.requestPermissionsAsync()
-      }
+      // The permission request itself does NOT happen here. Asking at
+      // mount fires before a gateway is even connected, on a screen the
+      // user hasn't done anything on yet — see notification-permission.ts's
+      // header for where it moved and why. Everything above/below this
+      // comment (the channel, the handler, tap-to-open, the cold-start tap
+      // check) never prompts, so it stays at mount.
 
       const openFromResponse = (response: { notification: { request: { content: { data?: unknown } } } }) => {
         const route = pushDataToRoute(response.notification.request.content.data)

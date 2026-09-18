@@ -36,6 +36,7 @@
 // screen's own Replicates comment for why — M09 dropped the config.yaml
 // read/write API they'd need), so the index says so before the tap rather
 // than after.
+import type { Audience } from '../lib/audience'
 import { HOST_MANAGED_INDEX_VALUE } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
@@ -130,3 +131,27 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
     ]
   }
 ]
+
+// D18: the remaining four of the six inert screens are settings rows (Agents
+// and Command center, the other two, are drawer-only — see drawer-rows.ts).
+// A public build removes their rows and drops any group left empty; an
+// internal build (dev, testers) keeps every row.
+const INERT_ON_PUBLIC_TITLES: ReadonlySet<string> = new Set([
+  t.settings.sections.chat,
+  t.settings.sections.safety,
+  t.settings.sections.memory,
+  t.settings.nav.billing
+])
+
+export function settingsGroupsForAudience(
+  audience: Audience,
+  groups: readonly SettingsGroup[] = SETTINGS_GROUPS
+): readonly SettingsGroup[] {
+  if (audience !== 'public') {
+    return groups
+  }
+
+  return groups
+    .map(group => ({ ...group, rows: group.rows.filter(row => !INERT_ON_PUBLIC_TITLES.has(row.title)) }))
+    .filter(group => group.rows.length > 0)
+}

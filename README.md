@@ -1,7 +1,8 @@
-# Hermes Android
+# Hermes Mobile
 
 An [Expo](https://expo.dev) / React Native **thin client** for
-[Hermes Agent](https://github.com/NousResearch/hermes-agent).
+[Hermes Agent](https://github.com/NousResearch/hermes-agent). An independent, open-source client
+for Hermes Agent. Not affiliated with or endorsed by Nous Research.
 
 The phone dials a remote `hermes serve` over WebSocket JSON-RPC (`/api/ws`) and REST (`/api/*`).
 No agent logic runs on the device — see [AGENTS.md](AGENTS.md) for the invariants that follow from

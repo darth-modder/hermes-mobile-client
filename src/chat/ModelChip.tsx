@@ -173,8 +173,12 @@ const styles = StyleSheet.create({
   list: {
     flex: 1
   },
+  // Round 9 found the last row always part-cut: 320 isn't a multiple of the
+  // measured 58 dp row pitch (320 / 58 = 5 full rows + a 30 dp remainder).
+  // 348 (6 × 58) is the next multiple at or above 320, so the sheet shows
+  // one more full row instead of a partial one.
   listOuter: {
-    height: 320
+    height: 348
   },
   row: {
     alignItems: 'center',

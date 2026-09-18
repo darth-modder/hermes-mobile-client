@@ -3,7 +3,7 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'com.nousresearch.hermes.mobile'
+group = 'com.symbyotic.hermes.mobile'
 version = '1.0.0'
 
 android {

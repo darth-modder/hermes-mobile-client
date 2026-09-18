@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { Animated, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { getAudience } from '../lib/audience'
 import {
   Clock,
   FileImage,
@@ -20,7 +21,7 @@ import { $drawerOpen, closeDrawer } from '../store/drawer'
 import { useTheme } from '../theme/provider'
 import { type } from '../theme/type'
 
-import { DRAWER_ROW_META } from './drawer-rows'
+import { drawerRowsForAudience } from './drawer-rows'
 
 const DRAWER_WIDTH = 300
 
@@ -62,7 +63,10 @@ const DRAWER_ICONS: Record<string, IconComponent> = {
   '/(main)/webhooks': Link
 }
 
-export const DRAWER_ROWS: DrawerRow[] = DRAWER_ROW_META.map(row => ({ ...row, Icon: DRAWER_ICONS[row.route] }))
+export const DRAWER_ROWS: DrawerRow[] = drawerRowsForAudience(getAudience()).map(row => ({
+  ...row,
+  Icon: DRAWER_ICONS[row.route]
+}))
 
 /** Slide-out navigation overlay, mounted once in `app/(main)/_layout.tsx`
  *  alongside the `Stack` (see `src/store/drawer.ts` for why this isn't
@@ -98,7 +102,14 @@ export function AppDrawer() {
 
   return (
     <View pointerEvents={open ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+      {/* Round 11's zero-height backdrop: this View had only `backgroundColor`
+          — no explicit size — and its one child was `position: 'absolute'`,
+          which is removed from layout and can't establish a parent size on
+          its own. The View collapsed to 0×0, so the scrim never painted and
+          the tap-outside-to-close target didn't exist. `StyleSheet.
+          absoluteFill` on this View itself (matching its sibling `panel`'s
+          parent) is what was missing. */}
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: backdropOpacity }]}>
         <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill} />
       </Animated.View>
       <Animated.View

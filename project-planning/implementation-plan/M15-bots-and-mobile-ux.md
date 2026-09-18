@@ -475,6 +475,41 @@ and the gateway contract only.
     not prove the race is gone. Manual check needed on a real device: an edge-band swipe on the
     tab row should never double-fire or skip a tab.
 
+21. **The Tailscale pairing entry point is hidden for the first release — the criterion was met,
+    the door is shut.** This is a Deviation from the *shipped surface*, not from the work: the
+    Pairing exit criterion above (`- [x] Pairing: entering 127.0.0.1 or 10.0.2.2 in the Tailscale
+    step is rejected with the reason; a tailnet-shaped URL proceeds to detection`) was met and
+    verified on device at the Opus close-out, and nothing that proved it is undone. What changed
+    is that `app/connect/index.tsx`'s `:start` view no longer *offers* the card, so release 0.1.0
+    presents one obvious path ("Enter a URL", now the primary action) plus the host-side guide.
+
+    **Why.** The pairing flow works, but the two things around it do not yet: the `:steps` view
+    hands off to a Tailscale setup the app cannot perform or check, and there is no story for a
+    user who has no tailnet at all. A first screen that offers two paths, one of which dead-ends
+    for most first-time users, is worse than a first screen that offers one. The decision is the
+    user's, taken for this release only.
+
+    **What is kept, and how it comes back.** Nothing is deleted. The `:steps` view, the Tailscale
+    card's own JSX, `CONNECT_TAILSCALE_*` in `src/lib/strings.mobile.ts`, the pasteable checklist,
+    and `src/net/gateway-url-guard.ts`'s `'tailscale'` mode and its 42 tests are all still in the
+    tree and all still pass, textually unchanged. One constant gates it:
+    `SHOW_TAILSCALE_PAIRING` in `src/connections/start-cards.ts`. Flipping it to `true` restores
+    the card, its "Recommended" badge and its primary styling with no other edit; its own comment
+    says so and says this returns when the flow around it is finished.
+
+    **What did not move.** The "Enter a URL" path's rejections are exactly as they were:
+    `127.0.0.1`, `::1`, all of `127.0.0.0/8`, `0.0.0.0`, `::` and `*.localhost` still rejected,
+    `10.0.2.2` still allowed there (Deviation 18's distinction, untouched). The screen's `mode`
+    now *initialises* to `'url'` rather than `'tailscale'` — with the card undrawn, no user can
+    reach `'tailscale'`, so the old initial value would have been a state nothing could leave,
+    and leaving it would have rejected `10.0.2.2` on the only path the release ships.
+
+    `src/connections/start-cards.test.ts` asserts the start screen draws `['url', 'guide']` and
+    not the Tailscale card while the flag is off. It tests the list the screen maps over, not a
+    rendered tree: this repo's vitest setup aliases `react-native` to a stub that throws from
+    every API by design (`src/test/react-native-stub.ts`), so there is no renderer to mount the
+    screen in, and adding one was not in this round's scope.
+
 ## Verification log
 
 ### Round 1 — data-layer tasks 1-5, throwaway gateway (2026-09-13/14)

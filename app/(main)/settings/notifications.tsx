@@ -1,12 +1,19 @@
 import { useStore } from '@nanostores/react'
 import { Stack } from 'expo-router'
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { AppState, Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import {
   NOTIFICATIONS_IN_APP_HINT,
   NOTIFICATIONS_IN_APP_SECTION_TITLE,
+  NOTIFICATIONS_PERMISSION_BLOCKED_HINT,
+  NOTIFICATIONS_PERMISSION_ENABLE_ACTION,
+  NOTIFICATIONS_PERMISSION_GRANTED,
+  NOTIFICATIONS_PERMISSION_LABEL,
+  NOTIFICATIONS_PERMISSION_NOT_GRANTED,
+  NOTIFICATIONS_PERMISSION_OPEN_SETTINGS_ACTION,
   NOTIFICATIONS_PUSH_HINT,
   NOTIFICATIONS_PUSH_SECTION_TITLE
 } from '../../../src/lib/strings.mobile'
@@ -18,6 +25,11 @@ import {
   setNativeNotifyEnabled,
   setNativeNotifyKind
 } from '../../../src/push/native-notifications'
+import {
+  getNotificationPermissionStatus,
+  type NotificationPermissionStatus,
+  requestNotificationPermission
+} from '../../../src/push/notification-permission'
 import { $pushEnabled, setPushEnabled } from '../../../src/push/settings'
 import { useTheme } from '../../../src/theme/provider'
 import { type } from '../../../src/theme/type'
@@ -60,11 +72,62 @@ export default function NotificationsSettings() {
   const tokens = useTheme()
   const pushEnabled = useStore($pushEnabled)
   const localPrefs = useStore($nativeNotifyPrefs)
+  const [permission, setPermission] = useState<NotificationPermissionStatus | null>(null)
+
+  useEffect(() => {
+    const refresh = () => void getNotificationPermissionStatus().then(setPermission)
+
+    refresh()
+
+    // The user can grant/revoke in system settings without this screen
+    // remounting — re-check whenever the app comes back to the foreground,
+    // the same way it would have to notice any other OS-level change.
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        refresh()
+      }
+    })
+
+    return () => subscription.remove()
+  }, [])
+
+  const onRequestPermission = () => {
+    if (permission && !permission.canAskAgain) {
+      void Linking.openSettings()
+
+      return
+    }
+
+    void requestNotificationPermission().then(setPermission)
+  }
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: tokens.background }]}>
       <Stack.Screen options={{ ...settingsHeaderOptions(tokens), title: t.settings.notifications.title }} />
       <ScrollView contentContainerStyle={styles.content}>
+        <Row
+          description={
+            permission?.status === 'granted'
+              ? undefined
+              : permission && !permission.canAskAgain
+                ? NOTIFICATIONS_PERMISSION_BLOCKED_HINT
+                : NOTIFICATIONS_PERMISSION_NOT_GRANTED
+          }
+          label={NOTIFICATIONS_PERMISSION_LABEL}
+        >
+          {permission?.status === 'granted' ? (
+            <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>{NOTIFICATIONS_PERMISSION_GRANTED}</Text>
+          ) : (
+            <TouchableOpacity onPress={onRequestPermission}>
+              <Text style={[styles.rowLabel, { color: tokens.primary }]}>
+                {permission && !permission.canAskAgain
+                  ? NOTIFICATIONS_PERMISSION_OPEN_SETTINGS_ACTION
+                  : NOTIFICATIONS_PERMISSION_ENABLE_ACTION}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </Row>
+
         <Text style={[styles.sectionTitle, { color: tokens.foreground }]}>{NOTIFICATIONS_PUSH_SECTION_TITLE}</Text>
         <Text style={[styles.sectionHint, { color: tokens.mutedForeground }]}>{NOTIFICATIONS_PUSH_HINT}</Text>
         <Row label={t.settings.notifications.enableAll}>

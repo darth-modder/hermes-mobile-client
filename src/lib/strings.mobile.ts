@@ -378,6 +378,20 @@ export const NOTIFICATIONS_PUSH_HINT =
 export const NOTIFICATIONS_IN_APP_SECTION_TITLE = 'In-app notifications'
 export const NOTIFICATIONS_IN_APP_HINT = 'Shown locally while the app is running, for events on other sessions.'
 
+// settings/notifications.tsx — the OS permission row. A concept the desktop
+// has no equivalent for (Electron notifications carry no separate OS
+// permission prompt the way Android/iOS do), added so this screen tells the
+// truth about whether the OS will actually show anything the toggles above
+// promise. checked t.settings.notifications for any permission-shaped key:
+// none exists.
+export const NOTIFICATIONS_PERMISSION_LABEL = 'System permission'
+export const NOTIFICATIONS_PERMISSION_GRANTED = 'Granted'
+export const NOTIFICATIONS_PERMISSION_NOT_GRANTED = 'Not granted'
+export const NOTIFICATIONS_PERMISSION_ENABLE_ACTION = 'Enable notifications'
+export const NOTIFICATIONS_PERMISSION_OPEN_SETTINGS_ACTION = 'Open system settings'
+export const NOTIFICATIONS_PERMISSION_BLOCKED_HINT =
+  'Android has stopped asking after a previous decline. Turn notifications on for this app in system settings.'
+
 // settings/plugins.tsx — the vendored t.settings.plugins.blurb describes
 // what agent plugins are, not that per-plugin dashboards aren't available
 // on mobile yet; that gap is this platform's own, so the caveat stays here.
@@ -872,8 +886,16 @@ export const CONNECT_GUIDE_HINT = 'How to keep `hermes serve` running on Windows
 // `http://127.0.0.1:9119` (app/connect/index.tsx:245 before this round), which
 // the prototype calls out as the thing to stop doing (:17-19).
 export const CONNECT_URL_PLACEHOLDER = 'https://your-pc.tailnet.ts.net:9119'
-export const CONNECT_URL_HINT_TAILSCALE =
-  'Never enter 127.0.0.1, localhost or 10.0.2.2 on your phone — those point back at the phone itself, not at your computer.'
+
+// Renamed from CONNECT_URL_HINT_TAILSCALE (2026-09-18): that name and its
+// wording ("Never enter ... 10.0.2.2") described the Tailscale path's guard,
+// not this one. With `SHOW_TAILSCALE_PAIRING` off for 0.1.0 (that entry
+// point hidden), `mode` is always `'url'` here, and `checkGatewayUrl`'s own
+// `GatewayUrlMode` doc is explicit that `10.0.2.2` is accepted on this path
+// ("on an emulator it IS the computer") — the old text told every reader
+// not to do the one thing this exact screen lets them do.
+export const CONNECT_URL_HINT =
+  '127.0.0.1 and localhost are rejected here — they point at this phone, not your computer. 10.0.2.2 is accepted: it is the emulator’s own route to the machine running it, not a real address on hardware.'
 export const CONNECT_NOTHING_SENT_YET = 'Nothing is sent anywhere yet. Sign-in appears only after the gateway answers.'
 
 // connect.html `:rejected` view — "the error IS the guard sentence: rule plus
@@ -890,6 +912,20 @@ export function connectRejectedEmulatorHost(host: string): string {
 export function connectRejectedUnspecified(host: string): string {
   return `That address is this phone, not your computer. “${host}” means “every interface” when a server binds it; it is not an address you can dial.`
 }
+
+// Shown under the URL field when the address is an explicit `http://` one
+// pointing off this device (`isUnencryptedGatewayUrl`, src/net/gateway-url-
+// guard.ts). It warns; it never blocks — the app permits cleartext on purpose
+// (plugins/withCleartextTraffic.js: `hermes serve` offers no TLS, so demanding
+// HTTPS would demand a reverse proxy of every user before the app works once).
+//
+// The reason it exists: what crosses the wire in the clear is not just the
+// chat, it is the session token that authenticates every later request, and
+// nothing on screen would otherwise say so. Phrased as the one thing the user
+// can act on — the network they are on — rather than as a scolding, because
+// the recommended fix (a reverse proxy) is not something the screen can offer.
+export const CONNECT_UNENCRYPTED_WARNING =
+  'Not encrypted. http:// sends your session token and messages in the clear — use it only on a network you trust.'
 
 export const CONNECT_USE_COMPUTER_ADDRESS_TITLE = "Use the computer's address"
 export const CONNECT_USE_COMPUTER_ADDRESS_DESC = 'Its tailnet name, for example https://your-pc.tailnet.ts.net:9119.'

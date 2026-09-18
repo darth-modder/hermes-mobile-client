@@ -9,6 +9,7 @@ import {
   instantiateCronBlueprint,
   listCronBlueprints
 } from '../api/cron'
+import { getGlobalModelOptions } from '../api/models'
 import { describeCronExpr, SCHEDULE_PRESETS, scheduleKindForExpr } from '../lib/cron-schedule'
 import {
   TASKS_ADVANCED_SCHEDULE_LABEL,
@@ -70,6 +71,11 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
   const [prompt, setPrompt] = useState('')
   const [schedule, setSchedule] = useState('0 9 * * *')
   const [deliver, setDeliver] = useState('local')
+  // tasks.html:311-315 — Optional, defaults to the host's global model
+  // (`t.cron.modelDefault`) rather than a picked one. `createCronJob`'s
+  // vendored payload (src/upstream/types/hermes.ts:894-901) already has
+  // model/provider fields; this sheet just never set them.
+  const [model, setModel] = useState<null | { model: string; provider: string }>(null)
   const [openPicker, setOpenPicker] = useState<null | string>(null)
   const [error, setError] = useState<null | string>(null)
 
@@ -81,8 +87,19 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
     queryKey: ['cron-delivery-targets', profile]
   })
 
+  const modelOptionsQuery = useQuery({
+    enabled: visible,
+    queryFn: () => getGlobalModelOptions({ includeUnconfigured: false }, profile),
+    queryKey: ['cron-model-options', profile]
+  })
+
   const blueprints = blueprintsQuery.data?.blueprints ?? []
   const targets = targetsQuery.data?.targets ?? []
+
+  const modelOptions = (modelOptionsQuery.data?.providers ?? []).flatMap(providerEntry =>
+    (providerEntry.models ?? []).map(modelName => ({ model: modelName, provider: providerEntry.slug }))
+  )
+
   const blueprint = blueprints.find(b => b.key === blueprintKey) ?? null
 
   const reset = () => {
@@ -92,6 +109,7 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
     setPrompt('')
     setSchedule('0 9 * * *')
     setDeliver('local')
+    setModel(null)
     setError(null)
   }
 
@@ -114,7 +132,14 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
       }
 
       return createCronJob(
-        { deliver, name: name.trim() || undefined, prompt: prompt.trim(), schedule: schedule.trim() },
+        {
+          deliver,
+          model: model?.model,
+          name: name.trim() || undefined,
+          prompt: prompt.trim(),
+          provider: model?.provider,
+          schedule: schedule.trim()
+        },
         profile
       )
     },
@@ -253,6 +278,17 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
 
       <ListRow onPress={() => setOpenPicker('deliver')} title={t.cron.deliverLabel} value={deliverLabel} />
 
+      {/* tasks.html:311-315 — Custom jobs only; a picked blueprint has no
+          model field of its own (its own fields render above instead). */}
+      {blueprint ? null : (
+        <ListRow
+          onPress={() => setOpenPicker('model')}
+          subtitle={t.cron.optional}
+          title={t.cron.modelLabel}
+          value={model ? model.model : t.cron.modelDefault}
+        />
+      )}
+
       {error ? <Text style={[styles.error, { color: tokens.destructive }]}>{error}</Text> : null}
 
       <Menu
@@ -283,6 +319,27 @@ export function NewTaskSheet({ onClose, onCreated, profile, visible }: NewTaskSh
         onClose={() => setOpenPicker(null)}
         title={t.cron.deliverLabel}
         visible={openPicker === 'deliver'}
+      />
+
+      <Menu
+        items={[
+          {
+            active: model === null,
+            key: 'default',
+            label: t.cron.modelDefault,
+            onPress: () => setModel(null)
+          },
+          ...modelOptions.map(option => ({
+            active: model?.model === option.model && model?.provider === option.provider,
+            key: `${option.provider}/${option.model}`,
+            label: option.model,
+            onPress: () => setModel(option),
+            subtitle: option.provider
+          }))
+        ]}
+        onClose={() => setOpenPicker(null)}
+        title={t.cron.modelLabel}
+        visible={openPicker === 'model'}
       />
 
       {blueprint?.fields

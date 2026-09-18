@@ -31,6 +31,7 @@
 // `/(main)/cron` routes are kept as redirects rather than deleted — a
 // deep link to one still lands on the Tasks equivalent instead of a blank
 // route — so there is no dead link either way.
+import type { Audience } from '../lib/audience'
 import { BOTS_TAB_LABEL, DRAWER_ON_DESKTOP_VALUE, TASKS_TAB_LABEL } from '../lib/strings.mobile'
 import { t } from '../lib/t'
 
@@ -64,3 +65,21 @@ export const DRAWER_ROW_META: readonly DrawerRowMeta[] = [
   { route: '/(main)/projects', title: t.commandCenter.projects },
   { route: '/(main)/settings', title: t.commandCenter.settings }
 ]
+
+// D18: two of the six inert screens have a drawer row of their own (Agents,
+// Command center — Chat/Safety/Memory & Context/Billing are settings-only,
+// see settings-rows.ts). A public build removes their rows; an internal
+// build (dev, testers) keeps every row. This titles-based set, not a route
+// list, so it stays correct if a route ever moves without a rename.
+const INERT_ON_PUBLIC_TITLES: ReadonlySet<string> = new Set([t.shell.statusbar.agents, t.commandCenter.commandCenter])
+
+export function drawerRowsForAudience(
+  audience: Audience,
+  rows: readonly DrawerRowMeta[] = DRAWER_ROW_META
+): readonly DrawerRowMeta[] {
+  if (audience !== 'public') {
+    return rows
+  }
+
+  return rows.filter(row => !INERT_ON_PUBLIC_TITLES.has(row.title))
+}

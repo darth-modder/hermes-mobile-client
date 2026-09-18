@@ -668,6 +668,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             accessibilityLabel={COMPOSER_ATTACH_IMAGE_LABEL}
             accessibilityRole="button"
             disabled={attaching}
+            hitSlop={12}
             onPress={() => void attachImage()}
             style={styles.iconButton}
           >
@@ -677,6 +678,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             accessibilityLabel={COMPOSER_ATTACH_DOCUMENT_LABEL}
             accessibilityRole="button"
             disabled={attaching}
+            hitSlop={12}
             onPress={() => void attachDocument()}
             style={styles.iconButton}
           >
@@ -692,6 +694,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             accessibilityLabel={isCapturing(dictation) ? COMPOSER_STOP_RECORDING_LABEL : COMPOSER_RECORD_VOICE_LABEL}
             accessibilityRole="button"
             disabled={transcribing}
+            hitSlop={12}
             onPressIn={onMicPressIn}
             onPressOut={onMicPressOut}
             style={styles.iconButton}
@@ -708,6 +711,7 @@ export function Composer({ storedSessionId }: ComposerProps) {
             accessibilityLabel={COMPOSER_READ_LAST_REPLY_LABEL}
             accessibilityRole="button"
             disabled={speaking}
+            hitSlop={12}
             onPress={() => void speakLastReply()}
             style={styles.iconButton}
           >
@@ -833,12 +837,20 @@ const styles = StyleSheet.create({
   container: {
     borderTopWidth: StyleSheet.hairlineWidth
   },
+  // Four of these sit in the same row as the input (attach image, attach
+  // document, mic, speaker — see that row's own comment on why the model/
+  // effort chips got a separate row instead of a fifth and sixth here).
+  // 48 dp minWidth each leaves too little of a narrow phone's width for the
+  // input to fit COMPOSER_PLACEHOLDER on one line, so the placeholder wraps
+  // and the idle composer grows taller than every icon around it. Shrunk to
+  // 36 dp with 12 dp of hitSlop on each of the four buttons below, so the
+  // effective touch target is unchanged (36 + 12 + 12 = 60, still over the
+  // 48 dp floor) while the input recovers 48 dp of row width.
   iconButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
-    minWidth: 48,
-    paddingHorizontal: 6,
+    minWidth: 36,
     paddingVertical: 8
   },
   input: {

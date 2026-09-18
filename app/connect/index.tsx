@@ -7,7 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { setActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
+import {
+  isPrimaryStartCard,
+  SHOW_TAILSCALE_PAIRING,
+  type StartCardId,
+  startCardIds
+} from '../../src/connections/start-cards'
 import type { MobileConnection } from '../../src/connections/types'
+import { UNAFFILIATED_NOTICE } from '../../src/lib/app-identity'
 import {
   CONNECT_BACK_TO_STEPS,
   CONNECT_CHECKLIST_COMMANDS,
@@ -32,8 +39,9 @@ import {
   CONNECT_TAILSCALE_RECOMMENDED,
   CONNECT_TAILSCALE_TITLE,
   CONNECT_THIS_COMPUTER_TITLE,
+  CONNECT_UNENCRYPTED_WARNING,
   CONNECT_URL_DESC,
-  CONNECT_URL_HINT_TAILSCALE,
+  CONNECT_URL_HINT,
   CONNECT_URL_PLACEHOLDER,
   CONNECT_URL_TITLE,
   CONNECT_USE_COMPUTER_ADDRESS_DESC,
@@ -51,7 +59,7 @@ import {
 import { t } from '../../src/lib/t'
 import { nativeLogin, NativeLoginError } from '../../src/net/auth/native-login'
 import { probeAuthProviders, probeHealth, probeStatus } from '../../src/net/auth/probe'
-import { checkGatewayUrl, type GatewayUrlMode } from '../../src/net/gateway-url-guard'
+import { checkGatewayUrl, type GatewayUrlMode, isUnencryptedGatewayUrl } from '../../src/net/gateway-url-guard'
 import { HttpError } from '../../src/net/http'
 import { useTheme } from '../../src/theme/provider'
 import { radius, type } from '../../src/theme/type'
@@ -109,7 +117,11 @@ export default function ConnectScreen() {
   // them as views of one screen and this file's header records the deliberate
   // choice to keep it a single screen.
   const [step, setStep] = useState<'steps' | 'url' | null>(null)
-  const [mode, setMode] = useState<GatewayUrlMode>('tailscale')
+  // Only the Tailscale card sets `'tailscale'`, and with SHOW_TAILSCALE_PAIRING
+  // off that card is not drawn — so the initial value follows the flag rather
+  // than being a dead `'tailscale'` the user can never be in. This is what
+  // keeps `10.0.2.2` allowed on the "Enter a URL" path.
+  const [mode, setMode] = useState<GatewayUrlMode>(SHOW_TAILSCALE_PAIRING ? 'tailscale' : 'url')
 
   const baseUrl = url.trim().replace(/\/+$/, '')
 
@@ -125,6 +137,22 @@ export default function ConnectScreen() {
       : guard.rejection === 'unspecified'
         ? connectRejectedUnspecified(guard.host ?? url)
         : connectRejectedLoopback(guard.host ?? url)
+
+  // Advisory, not a gate: `detect` and `connectToken` below are deliberately
+  // not conditioned on this. Suppressed while `guardError` is showing so the
+  // field never carries two sentences at once — the rejection is the more
+  // urgent of the two, and an address that points back at the phone has no
+  // transport worth warning about anyway.
+  const unencrypted = !guardError && isUnencryptedGatewayUrl(url)
+
+  // The first card in `startCardIds()` is the filled, primary action; the
+  // rest are outlined. With Tailscale hidden that promotes "Enter a URL".
+  const primaryCardButton = (card: StartCardId) =>
+    isPrimaryStartCard(card) ? { backgroundColor: tokens.primary } : { borderColor: tokens.border, borderWidth: 1 }
+
+  const primaryCardButtonText = (card: StartCardId) => ({
+    color: isPrimaryStartCard(card) ? tokens.primaryForeground : tokens.foreground
+  })
 
   const detect = async () => {
     // Belt and braces: the button is already disabled while the guard is
@@ -285,61 +313,76 @@ export default function ConnectScreen() {
         <Text style={[styles.title, { color: tokens.foreground }]}>{t.install.remoteSetupTitle}</Text>
         <Text style={[styles.subtitle, { color: tokens.mutedForeground }]}>{t.install.remoteSetupDesc}</Text>
 
-        {/* connect.html `:start` — two entry cards, the recommended one first
-            and carrying the reason, then the host-side guide. */}
-        {step === null ? (
-          <>
-            <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-              <View style={styles.cardHead}>
-                <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_TAILSCALE_TITLE}</Text>
-                <View style={[styles.badge, { backgroundColor: tokens.bgTertiary }]}>
-                  <Text style={[styles.badgeText, { color: tokens.textSecondary }]}>
-                    {CONNECT_TAILSCALE_RECOMMENDED}
-                  </Text>
+        {/* connect.html `:start` — the entry cards, the primary one first and
+            carrying the reason, then the host-side guide. Which cards, and in
+            what order, is `startCardIds()` (src/connections/start-cards.ts):
+            for this release `SHOW_TAILSCALE_PAIRING` is off, so the Tailscale
+            card is not drawn and "Enter a URL" is primary. The card itself is
+            kept here, unreferenced by the list, ready for the flag to flip
+            back. */}
+        {step === null
+          ? startCardIds().map(card => {
+              if (card === 'tailscale') {
+                return (
+                  <View key={card} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+                    <View style={styles.cardHead}>
+                      <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_TAILSCALE_TITLE}</Text>
+                      <View style={[styles.badge, { backgroundColor: tokens.bgTertiary }]}>
+                        <Text style={[styles.badgeText, { color: tokens.textSecondary }]}>
+                          {CONNECT_TAILSCALE_RECOMMENDED}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_TAILSCALE_DESC}</Text>
+                    <TouchableOpacity
+                      accessibilityLabel={CONNECT_TAILSCALE_TITLE}
+                      onPress={() => {
+                        setMode('tailscale')
+                        setStep('steps')
+                      }}
+                      style={[styles.blockButton, primaryCardButton(card)]}
+                    >
+                      <Text style={[styles.buttonText, primaryCardButtonText(card)]}>{CONNECT_TAILSCALE_TITLE}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )
+              }
+
+              if (card === 'url') {
+                return (
+                  <View key={card} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+                    <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_URL_TITLE}</Text>
+                    <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_URL_DESC}</Text>
+                    <TouchableOpacity
+                      accessibilityLabel={CONNECT_URL_TITLE}
+                      onPress={() => {
+                        setMode('url')
+                        setStep('url')
+                      }}
+                      style={[styles.blockButton, primaryCardButton(card)]}
+                    >
+                      <Text style={[styles.buttonText, primaryCardButtonText(card)]}>{CONNECT_URL_TITLE}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )
+              }
+
+              // Task 3's host recipe, linked from the screen that needs it.
+              return (
+                <View key={card} style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+                  <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_THIS_COMPUTER_TITLE}</Text>
+                  <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_GUIDE_HINT}</Text>
+                  <TouchableOpacity
+                    accessibilityLabel={CONNECT_GUIDE_LINK}
+                    onPress={() => void Linking.openURL(CONNECTING_DOC_URL)}
+                    style={[styles.blockButton, { borderColor: tokens.border, borderWidth: 1 }]}
+                  >
+                    <Text style={[styles.buttonText, { color: tokens.foreground }]}>{CONNECT_GUIDE_LINK}</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-              <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_TAILSCALE_DESC}</Text>
-              <TouchableOpacity
-                accessibilityLabel={CONNECT_TAILSCALE_TITLE}
-                onPress={() => {
-                  setMode('tailscale')
-                  setStep('steps')
-                }}
-                style={[styles.blockButton, { backgroundColor: tokens.primary }]}
-              >
-                <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{CONNECT_TAILSCALE_TITLE}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-              <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_URL_TITLE}</Text>
-              <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_URL_DESC}</Text>
-              <TouchableOpacity
-                accessibilityLabel={CONNECT_URL_TITLE}
-                onPress={() => {
-                  setMode('url')
-                  setStep('url')
-                }}
-                style={[styles.blockButton, { borderColor: tokens.border, borderWidth: 1 }]}
-              >
-                <Text style={[styles.buttonText, { color: tokens.foreground }]}>{CONNECT_URL_TITLE}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Task 3's host recipe, linked from the screen that needs it. */}
-            <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-              <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_THIS_COMPUTER_TITLE}</Text>
-              <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>{CONNECT_GUIDE_HINT}</Text>
-              <TouchableOpacity
-                accessibilityLabel={CONNECT_GUIDE_LINK}
-                onPress={() => void Linking.openURL(CONNECTING_DOC_URL)}
-                style={[styles.blockButton, { borderColor: tokens.border, borderWidth: 1 }]}
-              >
-                <Text style={[styles.buttonText, { color: tokens.foreground }]}>{CONNECT_GUIDE_LINK}</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        ) : null}
+              )
+            })
+          : null}
 
         {/* connect.html `:steps` — three steps, then the pasteable checklist. */}
         {step === 'steps' ? (
@@ -416,8 +459,11 @@ export default function ConnectScreen() {
             {guardError ? (
               <Text style={[styles.guardError, { color: tokens.destructive }]}>{guardError}</Text>
             ) : (
-              <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_URL_HINT_TAILSCALE}</Text>
+              <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_URL_HINT}</Text>
             )}
+            {unencrypted ? (
+              <Text style={[styles.warning, { color: tokens.semantic.orange }]}>{CONNECT_UNENCRYPTED_WARNING}</Text>
+            ) : null}
 
             <View style={styles.row}>
               <TouchableOpacity
@@ -512,6 +558,8 @@ export default function ConnectScreen() {
             ) : null}
           </>
         ) : null}
+
+        <Text style={[styles.unaffiliatedNotice, { color: tokens.mutedForeground }]}>{UNAFFILIATED_NOTICE}</Text>
       </ScrollView>
     </SafeAreaView>
   )
@@ -622,5 +670,16 @@ const styles = StyleSheet.create({
     ...type.title,
     fontWeight: '600',
     marginBottom: 4
+  },
+  unaffiliatedNotice: {
+    ...type.caption,
+    marginTop: 24,
+    paddingHorizontal: 8,
+    textAlign: 'center'
+  },
+  warning: {
+    ...type.caption,
+    marginBottom: 8,
+    marginTop: -4
   }
 })
