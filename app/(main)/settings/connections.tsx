@@ -22,6 +22,7 @@ import {
   upsertConnection
 } from '../../../src/connections/registry'
 import { deleteAllConnectionSecrets } from '../../../src/connections/secure'
+import { needsSignIn, signInRoute } from '../../../src/connections/sign-in-route'
 import type { MobileConnection } from '../../../src/connections/types'
 import { settingsHeaderOptions } from '../../../src/lib/settings-header'
 import {
@@ -258,6 +259,15 @@ export default function ConnectionsSettings() {
                 ) : null}
 
                 <View style={styles.actions}>
+                  {needsSignIn(connection) ? (
+                    <TouchableOpacity
+                      hitSlop={8}
+                      onPress={() => router.push(signInRoute(connection))}
+                      style={[styles.actionButton, { backgroundColor: tokens.primary }]}
+                    >
+                      <Text style={[styles.actionText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {!isActive ? (
                     <TouchableOpacity
                       hitSlop={8}

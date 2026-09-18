@@ -369,7 +369,7 @@ describe('handleSocketClose: AGENTS.md "Credentials and reauth" applied to WS cl
 // correct) never runs, and before this fix the ws-ticket catch only set the
 // screen-level `ConnectionAttention`, never the persisted `needsLogin` the
 // gateway card and every list screen actually read.
-describe('resolveAuth (via ensureGatewayConnection): a password connection\'s ws-ticket 401 must reach needsLogin too (D24.1.2)', () => {
+describe("resolveAuth (via ensureGatewayConnection): a password connection's ws-ticket 401 must reach needsLogin too (D24.1.2)", () => {
   const passwordConnection = {
     authMode: 'password' as const,
     baseUrl: 'http://127.0.0.1:9128',

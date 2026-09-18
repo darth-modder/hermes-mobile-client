@@ -43,6 +43,8 @@ import { NewTaskSheet } from '../../../src/components/NewTaskSheet'
 import { ScreenHeader } from '../../../src/components/ScreenHeader'
 import { TabStrip } from '../../../src/components/TabStrip'
 import { Button } from '../../../src/components/ui/Button'
+import { getActiveConnection } from '../../../src/connections/registry'
+import { needsSignIn, signInRoute } from '../../../src/connections/sign-in-route'
 import { isRunningNow, jobState, jobStateTone, jobTitle } from '../../../src/lib/cron-job-state'
 import { scheduleExpr, scheduleWords } from '../../../src/lib/cron-schedule'
 import {
@@ -166,9 +168,24 @@ export default function TasksScreen() {
             <Text style={[styles.errorText, { color: tokens.destructive }]}>
               {jobsQuery.error instanceof Error ? jobsQuery.error.message : String(jobsQuery.error)}
             </Text>
-            <Button onPress={() => void jobsQuery.refetch()} variant="secondary">
-              {t.common.retry}
-            </Button>
+            {needsSignIn(getActiveConnection()) ? (
+              <Button
+                onPress={() => {
+                  const active = getActiveConnection()
+
+                  if (active) {
+                    router.push(signInRoute(active))
+                  }
+                }}
+                variant="primary"
+              >
+                {t.install.signIn}
+              </Button>
+            ) : (
+              <Button onPress={() => void jobsQuery.refetch()} variant="secondary">
+                {t.common.retry}
+              </Button>
+            )}
           </View>
         ) : null}
 

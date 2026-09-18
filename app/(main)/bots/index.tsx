@@ -12,6 +12,8 @@ import { Button } from '../../../src/components/ui/Button'
 import { Input } from '../../../src/components/ui/Input'
 import { Menu, type MenuItem } from '../../../src/components/ui/Menu'
 import { Sheet } from '../../../src/components/ui/Sheet'
+import { getActiveConnection } from '../../../src/connections/registry'
+import { needsSignIn, signInRoute } from '../../../src/connections/sign-in-route'
 import { Plus } from '../../../src/lib/icons'
 import {
   BOTS_AVATAR_SEED_HINT,
@@ -266,12 +268,27 @@ export default function BotsScreen() {
       {error ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
-          <TouchableOpacity
-            onPress={() => void load()}
-            style={[styles.retryButton, { backgroundColor: tokens.primary }]}
-          >
-            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
-          </TouchableOpacity>
+          {needsSignIn(getActiveConnection()) ? (
+            <TouchableOpacity
+              onPress={() => {
+                const active = getActiveConnection()
+
+                if (active) {
+                  router.push(signInRoute(active))
+                }
+              }}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => void load()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.common.retry}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : bots === null ? (
         <View style={styles.center}>
