@@ -9,8 +9,11 @@ that, and `project-planning/implementation-plan/` for the milestone plan and its
 
 ## Status
 
-Work in progress. Milestones M00–M03 and M05 are complete and independently verified; M04, M06 and
-M07 are in progress. Progress is tracked in
+Work in progress, not yet released. Milestones M00–M10 and M13–M15 are done and verified on an
+Android emulator; M11 (push and voice) is in progress, open on items that need a physical phone;
+M12 (release) is in progress; M16 (host config editor) is planned. The app has not yet run on a
+physical phone, and the readiness gate for any public claim (D20 in
+[project-planning/DECISIONS.md](project-planning/DECISIONS.md)) is not yet met. Progress is tracked in
 [project-planning/implementation-plan/README.md](project-planning/implementation-plan/README.md),
 where every milestone carries its own exit criteria and a verification log.
 

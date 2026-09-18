@@ -41,10 +41,10 @@ deferred by register entry under D9's standing rule. Rule changes are logged in
 | [M09](M09-settings-and-connections.md) | Settings + connections UI | Providers, models, MCP, skills, plugins, profiles, connections | M06 | done |
 | [M10](M10-management-screens.md) | Management screens | Projects, cron, webhooks, artifacts, channels | M09 | done |
 | [M11](M11-push-and-voice.md) | Push plugin + voice | Backgrounded approvals arrive as push; voice in/out | M07 | in-progress |
-| [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11, M13, M14, M15 (store release); the internal-track build starts now (D16) | todo |
-| [M13](M13-design-parity-and-usability.md) | Design parity + usability | Same skins, icons and type roles as the desktop; comfortable one-handed | M09, M10 | in-progress |
-| [M14](M14-screen-layouts.md) | Screen layouts from the desktop prototypes | Every screen laid out from its desktop counterpart by fixed adaptation rules | M13 | todo |
-| [M15](M15-bots-and-mobile-ux.md) | Bots, Tasks, chat affordances, pairing | Bots tab with desktop avatars and souls; tasks; model/effort chips; jump-to-latest; hold-to-dictate; Tailscale pairing | M14 (data layer may start during M14) | todo |
+| [M12](M12-release-and-ios.md) | Release hardening + iOS | Signed release on Play internal track; iOS build | M08–M11, M13, M14, M15 (store release); the internal-track build starts now (D16) | in-progress |
+| [M13](M13-design-parity-and-usability.md) | Design parity + usability | Same skins, icons and type roles as the desktop; comfortable one-handed | M09, M10 | done |
+| [M14](M14-screen-layouts.md) | Screen layouts from the desktop prototypes | Every screen laid out from its desktop counterpart by fixed adaptation rules | M13 | done |
+| [M15](M15-bots-and-mobile-ux.md) | Bots, Tasks, chat affordances, pairing | Bots tab with desktop avatars and souls; tasks; model/effort chips; jump-to-latest; hold-to-dictate; Tailscale pairing | M14 (data layer may start during M14) | done |
 
 Critical path: M00 → M01/M02 → M03 → M04 → M06 → M07 → M11 → M12. M05 runs in parallel with
 M03/M04; M08, M09, M10 can run in parallel after M06. M13 (added by D14) follows M09 and M10 and

@@ -1,6 +1,6 @@
 # M12 — Release hardening + iOS
 
-**Status:** todo
+**Status:** in-progress (release/0.1.0: identity, signing pipeline, cleartext config and tester docs landed 2026-09-18; D20 readiness 1 of 6 met — see docs/D20-READINESS-0.1.0.md on that branch)
 **Depends on:** M08, M09, M10, M11
 **Goal:** Signed Android release on the Play internal track; iOS build from the same code.
 
