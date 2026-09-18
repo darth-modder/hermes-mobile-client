@@ -362,6 +362,51 @@ describe('handleSocketClose: AGENTS.md "Credentials and reauth" applied to WS cl
   })
 })
 
+// D24 part 1: Opus reproduced this on device (EXPIRY-PATH-2026-09-19.md) — a
+// password connection whose session the gateway invalidated never gets a
+// socket open at all. `resolveAuth`'s ws-ticket mint 401s first,
+// `ensureGatewayConnection()` rejects, so `handleSocketClose` above (which IS
+// correct) never runs, and before this fix the ws-ticket catch only set the
+// screen-level `ConnectionAttention`, never the persisted `needsLogin` the
+// gateway card and every list screen actually read.
+describe('resolveAuth (via ensureGatewayConnection): a password connection\'s ws-ticket 401 must reach needsLogin too (D24.1.2)', () => {
+  const passwordConnection = {
+    authMode: 'password' as const,
+    baseUrl: 'http://127.0.0.1:9128',
+    id: 'conn-password',
+    kind: 'remote' as const,
+    label: 'test-password'
+  }
+
+  function unauthorizedResponse() {
+    return { ok: false, status: 401, text: async () => JSON.stringify({ error: 'unauthorized' }) } as Response
+  }
+
+  beforeEach(() => {
+    mmkvBacking.clear()
+    setActiveConnection(passwordConnection)
+    resetSessionConnectionForTests()
+  })
+
+  it('a 401 minting the ws-ticket marks the connection needsLogin, even though no socket ever opened', async () => {
+    global.fetch = vi.fn(async () => unauthorizedResponse()) as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBe(true)
+  })
+
+  it('a 403 minting the ws-ticket also marks needsLogin (forbidden is still a credentials problem here)', async () => {
+    global.fetch = vi.fn(
+      async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ error: 'forbidden' }) }) as Response
+    ) as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBe(true)
+  })
+})
+
 describe('handleSocketClose: M08 — a 4401 on an oauth connection tries refresh before needsLogin', () => {
   const oauthConnection = {
     authMode: 'oauth' as const,

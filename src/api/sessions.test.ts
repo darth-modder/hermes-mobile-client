@@ -24,7 +24,7 @@ vi.mock('expo-secure-store', () => ({
   })
 }))
 
-const { setActiveConnection } = await import('../connections/registry')
+const { getActiveConnection, setActiveConnection } = await import('../connections/registry')
 const { setConnectionOAuth, setConnectionToken } = await import('../connections/secure')
 const { deleteSession, listSessions, updateSessionFlags } = await import('./sessions')
 
@@ -162,6 +162,44 @@ describe('src/api/sessions', () => {
 
     await expect(listSessions()).rejects.toThrow('Authentication failed — check the password.')
     await expect(listSessions()).rejects.not.toThrow(/HTTP 401/)
+  })
+
+  // D24.1.2 ("any REST call" marks needsLogin, same as a confirmed socket
+  // close or the ws-ticket mint does): before this, a REST 401 here was
+  // classified into a friendly message but never persisted — a tester
+  // reaching the Sessions list from a cold start (no socket attempt yet to
+  // trip session-connection.ts's own marking) saw the error but the gateway
+  // card still read "Current · Password", and Retry could never succeed.
+  it('a confirmed 401 on the REST list call marks the connection needsLogin', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-needslogin',
+      kind: 'remote',
+      label: 'test'
+    })
+
+    global.fetch = vi.fn(async () => jsonResponse(401, { error: 'unauthorized' })) as unknown as typeof fetch
+
+    await expect(listSessions()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBe(true)
+  })
+
+  it('a non-auth error (e.g. 500) does NOT mark needsLogin — never on a transient failure', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-transient',
+      kind: 'remote',
+      label: 'test'
+    })
+
+    global.fetch = vi.fn(async () => jsonResponse(500, { error: 'boom' })) as unknown as typeof fetch
+
+    await expect(listSessions()).rejects.toThrow()
+
+    expect(getActiveConnection()?.needsLogin).toBeUndefined()
   })
 
   it('a non-auth HTTP error (e.g. 500) is still classified rather than left raw', async () => {

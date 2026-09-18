@@ -175,6 +175,24 @@ export function setConnectionAttention(next: ConnectionAttention): void {
   }
 }
 
+/**
+ * D24.1.2: the one place "this connection needs sign-in" is set — from a
+ * confirmed 401/403 on the ws-ticket mint, any REST call, or an
+ * unauthorized socket close. Sets both the screen-level `ConnectionAttention`
+ * (read by `ConnectionBanner`, live in the current app session) and the
+ * persisted registry field (read by the gateway card and every list screen,
+ * survives a cold start) together, so the two can never disagree — before
+ * this existed, the ws-ticket catch below set only the former, which is why
+ * Opus's device repro (EXPIRY-PATH-2026-09-19.md) found the gateway card
+ * still reading "Current · Password" after a confirmed 401. A no-op if
+ * `connectionId` is no longer the active connection (a stale request from a
+ * connection the user has since switched away from).
+ */
+export function markConnectionNeedsLogin(connectionId: string): void {
+  setConnectionAttention({ kind: 'needs-login' })
+  void updateActiveConnection(current => (current.id === connectionId ? { ...current, needsLogin: true } : current))
+}
+
 function publishAll(): void {
   publishReducerState(reducerState)
   publishTodosFromReducerState(reducerState)
@@ -364,8 +382,7 @@ export function handleSocketClose(connection: MobileConnection, code: number): v
     return
   }
 
-  setConnectionAttention({ kind: 'needs-login' })
-  void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  markConnectionNeedsLogin(connection.id)
 }
 
 /** The oauth half of the 4401 branch above. A refresh that rotates the
@@ -379,9 +396,7 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
   const refreshed = await refreshConnectionOAuth(connection.id, connection.baseUrl)
 
   if (!refreshed) {
-    setConnectionAttention({ kind: 'needs-login' })
-    setConnectionAttention({ kind: 'needs-login' })
-    await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+    markConnectionNeedsLogin(connection.id)
 
     return
   }
@@ -435,9 +450,18 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
     if (error instanceof HttpError) {
       const reason = classifyConnectReason({ httpStatus: error.status })
 
-      setConnectionAttention(
-        reason === 'unauthorized' || reason === 'forbidden' ? { kind: 'needs-login' } : { kind: 'unreachable', reason }
-      )
+      // oauth's needsLogin decision is `flagOauthSessionExpiredIfConfirmed`
+      // above's alone — a 401 there can be a merely-stale access token with
+      // a still-valid refresh token, which is NOT a confirmed sign-out
+      // (AGENTS.md: a transient failure must never trigger a login prompt).
+      // Token/password have no such nuance: neither has a silent refresh, so
+      // a confirmed 401/403 minting the ticket is decisive on its own —
+      // D24.1.2, named explicitly, is exactly this branch.
+      if (connection.authMode !== 'oauth' && (reason === 'unauthorized' || reason === 'forbidden')) {
+        markConnectionNeedsLogin(connection.id)
+      } else if (reason !== 'unauthorized' && reason !== 'forbidden') {
+        setConnectionAttention({ kind: 'unreachable', reason })
+      }
 
       throw new Error(describeConnectReason(reason), { cause: error })
     }
@@ -478,8 +502,7 @@ async function flagOauthSessionExpiredIfConfirmed(connection: MobileConnection, 
     return
   }
 
-  setConnectionAttention({ kind: 'needs-login' })
-  await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  markConnectionNeedsLogin(connection.id)
 }
 
 /** Establish the one live gateway connection for the active `MobileConnection`.

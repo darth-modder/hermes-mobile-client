@@ -13,6 +13,7 @@
 
 import { getActiveConnection } from '../connections/registry'
 import { getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { markConnectionNeedsLogin } from '../gateway/session-connection'
 import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest, type HttpRequestOptions } from '../net/http'
 import type { PaginatedSessions } from '../upstream/types/hermes'
@@ -58,6 +59,14 @@ async function sessionsRequest<T>(path: string, options: HttpRequestOptions = {}
     // resolveAuth does for its own HttpError case, via the M04 reason ladder.
     if (error instanceof HttpError) {
       const reason = classifyConnectReason({ httpStatus: error.status })
+
+      // D24.1.2: "any REST call" is one of the three confirmed-401/403
+      // sources that mark needsLogin, same as the ws-ticket mint and an
+      // unauthorized socket close — this is the path a cold-started app
+      // reaching the Sessions list (no socket attempt yet) actually takes.
+      if (reason === 'unauthorized' || reason === 'forbidden') {
+        markConnectionNeedsLogin(connection.id)
+      }
 
       throw new Error(describeConnectReason(reason), { cause: error })
     }
