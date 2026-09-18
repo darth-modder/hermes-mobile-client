@@ -264,6 +264,10 @@ makes the connect screen's warning go away, because there is then nothing to war
 
 ### Find your tailnet address
 
+The app's own in-app Tailscale pairing card is not in 0.1.0 (hidden for this release, D18-adjacent);
+everything below is host-side — find the address here, then paste it into the phone's "Enter a URL"
+screen like any other gateway URL.
+
 ```bash
 tailscale ip -4          # e.g. 100.101.102.103
 tailscale status --self  # shows the MagicDNS name, e.g. your-pc.tailnet.ts.net
