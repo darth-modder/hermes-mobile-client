@@ -1,5 +1,9 @@
 # D20 readiness check — release/0.1.0, closed-test audience (2026-09-18)
 
+> **Main is UNVERIFIED from `2a5424f` onwards (D28.4, 2026-09-19).** The D23/D24/D25/D26/D27 fixes are merged
+> and unit-tested (887 tests), but their device acceptance runs in one sitting on merged main that
+> has not happened yet. Until it passes: no tag, no real-key APK, nothing leaves the machine.
+
 Run against `project-planning/DECISIONS.md`'s D20 checklist, for the "closed test" audience
 (D20.4: named people, a signed build, items 1/3/4/5/6 met, physical rows may be waived). Per D21.1,
 every verdict below names its evidence and scope. **Several items are not met** — reported as such,
