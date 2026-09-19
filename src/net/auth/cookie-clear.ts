@@ -8,13 +8,24 @@
 // Per-host clearing needs a native module this app doesn't have. The only
 // option without adding one is RN's own global clear — the underlying
 // TurboModule is `Networking` (react-native's own NativeNetworkingAndroid
-// spec, `clearCookies: (callback: (result: boolean) => void) => void`), kept
-// reachable through the PUBLIC `NativeModules` export rather than a deep
-// `react-native/Libraries/...` import: Opus's round-2 review flagged that a
-// deep import is deprecated in recent RN and may resolve differently (or
-// not at all) in a release bundle, where `NativeModules.Networking` is the
-// same module the RN-internal RCTNetworking wrapper itself ultimately calls
-// through the legacy bridge interop.
+// spec, `clearCookies: (callback: (result: boolean) => void) => void`).
+//
+// Opus's round-2 review: a deep `react-native/Libraries/...` import is
+// deprecated in recent RN and may resolve differently (or not at all) in a
+// release bundle — dropped in favor of the public API. Opus's round-3
+// review: on the New Architecture / bridgeless mode (RN 0.86+),
+// `NativeModules.Networking` (the legacy bridge proxy) is not guaranteed to
+// have the module even when it's genuinely registered — TurboModules there
+// are only reliably reachable through `TurboModuleRegistry`, which itself
+// checks the bridgeless proxy first and falls back to the legacy
+// `NativeModules` lookup internally (see node_modules/react-native/
+// Libraries/TurboModule/TurboModuleRegistry.js's `requireModule`). Resolved
+// here in that same order — `TurboModuleRegistry.get('Networking')` first,
+// `NativeModules.Networking` as an explicit second attempt in case some RN
+// version's TurboModuleRegistry doesn't itself do that fallback — and the
+// source that actually worked (or "none") is logged alongside the race
+// outcome below, so a device run shows directly which path resolved it
+// instead of only inferring it from whether cookies actually cleared.
 //
 // UNVERIFIED either way: whether this actually empties OkHttp's cookie jar
 // on this RN version. That needs a device check (a ws-ticket POST after
@@ -24,16 +35,47 @@
 // connection needsLogin in the same action, so what the app shows stays
 // true even before that device check lands.
 
-import { NativeModules } from 'react-native'
+import { NativeModules, TurboModuleRegistry } from 'react-native'
 
 interface NetworkingNativeModule {
   clearCookies: (callback: (result: boolean) => void) => void
 }
 
-function resolveNetworkingModule(): NetworkingNativeModule | null {
-  const candidate = (NativeModules as { Networking?: Partial<NetworkingNativeModule> }).Networking
+function isNetworkingModule(candidate: unknown): candidate is NetworkingNativeModule {
+  return typeof (candidate as Partial<NetworkingNativeModule> | null)?.clearCookies === 'function'
+}
 
-  return typeof candidate?.clearCookies === 'function' ? (candidate as NetworkingNativeModule) : null
+type NetworkingSource = 'NativeModules' | 'TurboModuleRegistry' | 'none'
+
+/** Never throws — a lookup that fails or throws is treated the same as one
+ *  that simply found nothing, so a defensive wrapper here doesn't have to
+ *  live at every call site. */
+function tryResolve(lookup: () => unknown): NetworkingNativeModule | null {
+  try {
+    const candidate = lookup()
+
+    return isNetworkingModule(candidate) ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+function resolveNetworkingModule(): { module: NetworkingNativeModule | null; source: NetworkingSource } {
+  const viaTurboModules = tryResolve(() =>
+    (TurboModuleRegistry as { get?: (name: string) => unknown }).get?.('Networking')
+  )
+
+  if (viaTurboModules) {
+    return { module: viaTurboModules, source: 'TurboModuleRegistry' }
+  }
+
+  const viaNativeModules = tryResolve(() => (NativeModules as { Networking?: unknown }).Networking)
+
+  if (viaNativeModules) {
+    return { module: viaNativeModules, source: 'NativeModules' }
+  }
+
+  return { module: null, source: 'none' }
 }
 
 /** Opus's round-2 review: the native callback might never fire (an
@@ -50,10 +92,10 @@ const CLEAR_COOKIES_TIMEOUT_MS = 3_000
  *  callers mark every other password-mode connection needsLogin
  *  regardless of whether this actually cleared anything. */
 export async function clearAllCookies(): Promise<void> {
-  const networking = resolveNetworkingModule()
+  const { module: networking, source } = resolveNetworkingModule()
 
   if (!networking) {
-    console.log('[cookie-clear] no reachable Networking native module — skipped')
+    console.log(`[cookie-clear] source=${source} — no reachable Networking module, skipped`)
 
     return
   }
@@ -74,7 +116,7 @@ export async function clearAllCookies(): Promise<void> {
 
   console.log(
     outcome === 'cleared'
-      ? '[cookie-clear] clearCookies completed'
-      : `[cookie-clear] clearCookies timed out after ${CLEAR_COOKIES_TIMEOUT_MS}ms — the native callback never fired`
+      ? `[cookie-clear] source=${source} — clearCookies completed`
+      : `[cookie-clear] source=${source} — clearCookies timed out after ${CLEAR_COOKIES_TIMEOUT_MS}ms, the native callback never fired`
   )
 }

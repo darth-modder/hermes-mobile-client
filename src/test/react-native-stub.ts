@@ -8,3 +8,4 @@ const fail = (name: string) => () => {
 export const Platform = { OS: 'android', select: fail('Platform.select') }
 export const NativeModules = {}
 export const AppState = { addEventListener: fail('AppState.addEventListener'), currentState: 'active' }
+export const TurboModuleRegistry = { get: () => null }

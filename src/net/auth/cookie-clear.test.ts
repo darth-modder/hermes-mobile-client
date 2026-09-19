@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const clearCookies = vi.fn()
+const clearCookiesViaTurboModules = vi.fn()
+const clearCookiesViaNativeModules = vi.fn()
+const turboModuleRegistryGet = vi.fn()
 
 vi.mock('react-native', () => ({
-  NativeModules: { Networking: { clearCookies } }
+  NativeModules: { Networking: { clearCookies: clearCookiesViaNativeModules } },
+  TurboModuleRegistry: { get: turboModuleRegistryGet }
 }))
 
 const { clearAllCookies } = await import('./cookie-clear')
 
 describe('clearAllCookies (D27 point 3)', () => {
   beforeEach(() => {
-    clearCookies.mockReset()
+    clearCookiesViaTurboModules.mockReset()
+    clearCookiesViaNativeModules.mockReset()
+    turboModuleRegistryGet.mockReset()
     vi.useRealTimers()
   })
 
@@ -18,22 +23,70 @@ describe('clearAllCookies (D27 point 3)', () => {
     vi.useRealTimers()
   })
 
-  it('calls NativeModules.Networking.clearCookies', async () => {
-    clearCookies.mockImplementation((callback: (result: boolean) => void) => callback(true))
+  // Opus's round-3 review: on the New Architecture / bridgeless mode,
+  // NativeModules.Networking is not guaranteed even when the module is
+  // genuinely registered — TurboModuleRegistry is the reliable path there,
+  // so it's tried first.
+  describe('module resolution — TurboModuleRegistry first, NativeModules as a fallback', () => {
+    it('prefers TurboModuleRegistry.get when it resolves the module', async () => {
+      turboModuleRegistryGet.mockReturnValue({ clearCookies: clearCookiesViaTurboModules })
+      clearCookiesViaTurboModules.mockImplementation((callback: (result: boolean) => void) => callback(true))
 
-    await clearAllCookies()
+      await clearAllCookies()
 
-    expect(clearCookies).toHaveBeenCalledTimes(1)
+      expect(turboModuleRegistryGet).toHaveBeenCalledWith('Networking')
+      expect(clearCookiesViaTurboModules).toHaveBeenCalledTimes(1)
+      expect(clearCookiesViaNativeModules).not.toHaveBeenCalled()
+    })
+
+    it('falls back to NativeModules.Networking when TurboModuleRegistry does not resolve it', async () => {
+      turboModuleRegistryGet.mockReturnValue(null)
+      clearCookiesViaNativeModules.mockImplementation((callback: (result: boolean) => void) => callback(true))
+
+      await clearAllCookies()
+
+      expect(clearCookiesViaNativeModules).toHaveBeenCalledTimes(1)
+      expect(clearCookiesViaTurboModules).not.toHaveBeenCalled()
+    })
+
+    it('resolves immediately, calling neither, when neither path has the module', async () => {
+      turboModuleRegistryGet.mockReturnValue(null)
+
+      const nativeModules = (await import('react-native')).NativeModules as { Networking?: unknown }
+      const original = nativeModules.Networking
+
+      nativeModules.Networking = undefined
+
+      try {
+        await expect(clearAllCookies()).resolves.toBeUndefined()
+        expect(clearCookiesViaTurboModules).not.toHaveBeenCalled()
+        expect(clearCookiesViaNativeModules).not.toHaveBeenCalled()
+      } finally {
+        nativeModules.Networking = original
+      }
+    })
+
+    it('also falls back to NativeModules when TurboModuleRegistry.get throws (an older RN with no such export shape)', async () => {
+      turboModuleRegistryGet.mockImplementation(() => {
+        throw new Error('TurboModuleRegistry unavailable')
+      })
+      clearCookiesViaNativeModules.mockImplementation((callback: (result: boolean) => void) => callback(true))
+
+      await expect(clearAllCookies()).resolves.toBeUndefined()
+      expect(clearCookiesViaNativeModules).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('resolves even when the native call reports failure — best-effort, never throws', async () => {
-    clearCookies.mockImplementation((callback: (result: boolean) => void) => callback(false))
+    turboModuleRegistryGet.mockReturnValue({ clearCookies: clearCookiesViaTurboModules })
+    clearCookiesViaTurboModules.mockImplementation((callback: (result: boolean) => void) => callback(false))
 
     await expect(clearAllCookies()).resolves.toBeUndefined()
   })
 
   it('resolves even when the native call throws synchronously — best-effort, never throws', async () => {
-    clearCookies.mockImplementation(() => {
+    turboModuleRegistryGet.mockReturnValue({ clearCookies: clearCookiesViaTurboModules })
+    clearCookiesViaTurboModules.mockImplementation(() => {
       throw new Error('native module unavailable')
     })
 
@@ -44,7 +97,8 @@ describe('clearAllCookies (D27 point 3)', () => {
   // sign-out forever.
   it('resolves within the timeout when the native callback never fires', async () => {
     vi.useFakeTimers()
-    clearCookies.mockImplementation(() => {
+    turboModuleRegistryGet.mockReturnValue({ clearCookies: clearCookiesViaTurboModules })
+    clearCookiesViaTurboModules.mockImplementation(() => {
       // Deliberately never calls its callback.
     })
 
@@ -52,21 +106,5 @@ describe('clearAllCookies (D27 point 3)', () => {
 
     await vi.advanceTimersByTimeAsync(3_000)
     await expect(promise).resolves.toBeUndefined()
-  })
-
-  it('resolves immediately (well under the timeout) when NativeModules.Networking is missing entirely', async () => {
-    clearCookies.mockReset()
-
-    const nativeModules = (await import('react-native')).NativeModules as { Networking?: unknown }
-    const original = nativeModules.Networking
-
-    nativeModules.Networking = undefined
-
-    try {
-      await expect(clearAllCookies()).resolves.toBeUndefined()
-      expect(clearCookies).not.toHaveBeenCalled()
-    } finally {
-      nativeModules.Networking = original
-    }
   })
 })

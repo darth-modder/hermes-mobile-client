@@ -34,7 +34,8 @@ vi.mock('react-native-mmkv', () => ({
 // it resolvable and quiet here.
 vi.mock('react-native', () => ({
   NativeModules: { Networking: { clearCookies: vi.fn((callback: (result: boolean) => void) => callback(true)) } },
-  Platform: { OS: 'android', select: () => undefined }
+  Platform: { OS: 'android', select: () => undefined },
+  TurboModuleRegistry: { get: () => null }
 }))
 
 // D27.1: disconnectForSignOut (session-connection.ts) now dismisses every
