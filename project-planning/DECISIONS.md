@@ -1032,3 +1032,37 @@ Opus's word:** that the open socket keeps answering after Sign out (Sonnet's own
 `1185162` says so for `profiles.list`). **Unverified by anyone:** the offline sign-out
 reconnect on a device; whether React Native's `Networking.clearCookies` exists and clears
 OkHttp's jar on RN 0.86; iOS behaviour.
+
+## D28 — D26's merge hold lifted: one verification sitting on merged `main` (2026-09-19)
+
+**Decision.** At Opus's request, to cut the user's time from two sittings to one. Every
+remaining device check needs a signed-in gateway, and only the user types credentials.
+
+1. **The D26.1 hold on merging `fix/approval-visible` is lifted as to the device check.** Cancel
+   is verified in the single merged-`main` sitting. The code is not waived: Cancel and its
+   failing-first tests are on the branch when it merges.
+2. **Everything the sitting must verify is on `main` before the user sits down:** the dock with
+   Cancel (D25, D26), D27's three parts, D24's dedupe and ws-ticket `needsLogin`, notification
+   dismissal, the version change (D23), and the build script's ABI guard. The sitting is not
+   scheduled against a `main` known to be incomplete.
+3. **The diagnostic build for the foreground-return hang (D26.3) is cut from that same merged
+   `main`** and stays unmerged.
+4. **Until the sitting passes, `main` is unverified and says so:** the top of
+   `docs/D20-READINESS-0.1.0.md` names the first unverified commit. No tag, no real-key APK,
+   nothing leaves the machine. D20 is unchanged.
+5. **The sitting is ordered to minimise typing:** signed-in checks first (D25.8, Cancel and Send
+   on sudo and secret, the instrumented hang runs), then the sign-out family (D27, D24's expiry
+   and TTL test, D23), then one final sign-in for D27's acceptance (iv). The throwaway gateway
+   runs with a fixed signing secret and a long session TTL outside the TTL test, so one sign-in
+   survives restarts and later verification of the hang fix needs no further sitting unless a
+   test signs out.
+6. **Not decided here:** restoring an emulator snapshot taken after the user's sign-in, to re-run
+   sign-out tests unattended. The no-typing rule is the user's; the question is put to them.
+
+**Reasoning.** D13.2 already makes evidence on merged `main` the standard, so verifying on a
+branch and again after merge was the weaker check done twice, at the cost of the one person
+whose time cannot be parallelised. `main` is not a release; D20 gates what leaves the machine,
+and that gate does not move. The conditions exist because "one sitting" is only true if nothing
+known to be missing forces a second. **On Opus's word:** that the dock is code-reviewed,
+unit-tested, and passed D25.8 on the branch apart from the dark-theme count. I did not re-review
+the branch for this entry.
