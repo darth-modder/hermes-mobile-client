@@ -985,3 +985,50 @@ ensure-then-ping and nothing else; nothing outside `src/upstream` reads `infligh
 device observation, Sonnet's 13-of-13 branch pass, and that the mobile cards have no Cancel.
 **Unverified by anyone:** whether a hydrate ran in the hang repro, and whether the missing
 request never reached JS or was dropped by the reducer.
+
+## D27 — Sign out must disconnect: close the socket, gate traffic on `needsLogin`, clear the cookie locally (2026-09-19)
+
+**Decision.** Opus found in review that Sign out leaves the live gateway socket serving RPCs.
+Its option (a) is adopted, with two further parts that close a sibling hole. On
+`fix/sign-in-recovery`, this round; blocks 0.1.0.
+
+1. **Sign out on the active connection invalidates the gateway client** (the same
+   `client.invalidate()` the foreground probe uses) and clears that connection's runtime state:
+   the runtime-to-stored map, the active runtime id, pending approval, clarify, sudo and secret
+   state (cards unmount, `FLAG_SECURE` releases), connection attention, and cached list data for
+   that connection. Pending-request notifications are dismissed (D26.2). Signing out a
+   non-active connection touches no socket.
+2. **`needsLogin` gates outbound authenticated traffic at the choke points.** `resolveAuth`
+   refuses to mint a ticket or dial, and the REST layer refuses, for a connection with
+   `needsLogin` set, returning the needs-login result that D23's shared Sign in piece renders.
+   Only the login route clears the flag. Per-screen guards may remain but are never the barrier.
+3. **The session cookie is cleared locally on Sign out whether or not `POST /auth/logout`
+   succeeded.** Per-host if possible. If only a global clear is available without a new native
+   module, it is used, and every other password-mode connection is marked `needsLogin` in the
+   same action so the state shown is true. A new native cookie module is acceptable only if the
+   global clear does not work. If neither works, part 2's gate holds inside the app and the
+   limitation is stated in the release notes. "Cookie cleared" is claimed only when a
+   `ws-ticket` request after sign-out is shown returning 401.
+4. **Acceptance**, on a release APK of merged `main`, to D21.1: (i) sign out online, no
+   ESTABLISHED socket on the host, nothing can be sent, every surface offers Sign in, no cached
+   list shows; (ii) sign out while the gateway is unreachable, restart it with the **same**
+   signing secret, and the app neither reconnects nor loads anything until Sign in; (iii) sign
+   out with a turn in flight, the server completes it, and after Sign in resume shows it;
+   (iv) sign in again with the connection id and its other fields unchanged.
+5. **URL normalisation for D24.1.3's dedupe is made explicit and tested:** scheme and host
+   lower-cased, the scheme's default port dropped, trailing slash dropped, path otherwise kept.
+
+**Reasoning.** The app is a remote control for an agent with a shell. Sign out is the one
+control a user has over a phone they lend, sell or lose track of, so it has to mean
+disconnected, and it has to work offline, which is exactly when a worried user presses it.
+Upstream's basic-auth tokens are stateless, so nothing server-side ends the session; the client
+is the only place this can be enforced.
+
+**Checked by me** on `origin/fix/sign-in-recovery`: `signOutConnection` is a best-effort
+`POST /auth/logout` with errors swallowed, `deleteAllConnectionSecrets`, and `needsLogin: true`,
+nothing more; no cookie clearing exists anywhere in `src/` or `app/`; in
+`session-connection.ts` `needsLogin` is only set, never read before the ticket mint. **On
+Opus's word:** that the open socket keeps answering after Sign out (Sonnet's own comment in
+`1185162` says so for `profiles.list`). **Unverified by anyone:** the offline sign-out
+reconnect on a device; whether React Native's `Networking.clearCookies` exists and clears
+OkHttp's jar on RN 0.86; iOS behaviour.
