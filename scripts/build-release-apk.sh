@@ -24,6 +24,60 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# ABI guard (Part 3 / D26): expo prebuild's generated gradle.properties lists
+# all four ABIs by default, but a build run under
+# ORG_GRADLE_PROJECT_reactNativeArchitectures=x86_64 (this project's own
+# faster-evidence-build convention for emulator-only device passes) narrows
+# the APK to that one ABI — fine for an emulator, unusable on the user's real
+# (arm64) phone. Prints the APK's actual lib/ ABI list and fails unless
+# arm64-v8a is present, so a narrowed build can never leave this script
+# silently believing it produced something installable on real hardware.
+# `ALLOW_EMULATOR_ONLY_ABI=1` opts out for a deliberate emulator-only
+# evidence build (never for anything meant to ship).
+#
+# Extracted as its own function so it can be exercised directly against a
+# fake APK zip (no Gradle build needed) — see
+# scripts/test-abi-guard.sh, which builds two throwaway zips (one with
+# lib/arm64-v8a/, one without) and asserts this function passes one and
+# fails the other, plus the ALLOW_EMULATOR_ONLY_ABI=1 override.
+check_apk_has_arm64() {
+  local apk_path="$1"
+  local abi_list
+  abi_list="$(unzip -l "$apk_path" | grep 'lib/' || true)"
+
+  echo "build-release-apk: ABI list in $apk_path:"
+  if [ -n "$abi_list" ]; then
+    echo "$abi_list"
+  else
+    echo "  (no lib/ entries at all)"
+  fi
+
+  if echo "$abi_list" | grep -q 'lib/arm64-v8a/'; then
+    return 0
+  fi
+
+  if [ "${ALLOW_EMULATOR_ONLY_ABI:-}" = "1" ]; then
+    echo "build-release-apk: lib/arm64-v8a/ missing, but ALLOW_EMULATOR_ONLY_ABI=1 — allowing." >&2
+
+    return 0
+  fi
+
+  echo "build-release-apk: lib/arm64-v8a/ missing from $apk_path." >&2
+  echo "This APK cannot install on the user's phone (arm64). If this was a deliberate" >&2
+  echo "emulator-only evidence build (e.g. ORG_GRADLE_PROJECT_reactNativeArchitectures=x86_64)," >&2
+  echo "set ALLOW_EMULATOR_ONLY_ABI=1 and re-run. Otherwise, rebuild without narrowing" >&2
+  echo "reactNativeArchitectures." >&2
+
+  return 1
+}
+
+# Sourced by the test harness to exercise check_apk_has_arm64 alone, without
+# running the rest of this script (the keystore env-var checks below would
+# otherwise fire first).
+if [ "${BUILD_RELEASE_APK_SOURCE_ONLY:-}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 for var in HERMES_KEYSTORE_PATH HERMES_KEYSTORE_PASSWORD HERMES_KEY_ALIAS HERMES_KEY_PASSWORD; do
   if [ -z "${!var:-}" ]; then
     echo "build-release-apk: \$$var is not set. All four of HERMES_KEYSTORE_PATH," >&2
@@ -62,6 +116,9 @@ if [ ! -f "$APK_PATH" ]; then
 fi
 
 SHA256="$(sha256sum "$APK_PATH" | cut -d' ' -f1)"
+
+echo ""
+check_apk_has_arm64 "$APK_PATH"
 
 echo ""
 echo "build-release-apk: done."

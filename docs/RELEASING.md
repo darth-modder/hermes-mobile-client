@@ -56,6 +56,40 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+### Signing key
+
+The real release key exists. The user holds it; nobody else has or asks for the password.
+
+- **Keystore**: kept by the user, off-repo, at `D:\Stuff\hermes-release-keys\hermes-mobile-release.jks`
+  (with a backup off this machine). Alias: `hermes-mobile`.
+- **Certificate**: `CN=Hermes Mobile, O=Symbyotic, C=US`; RSA 4096; SHA384withRSA; valid
+  2026-09-19 to 2054-02-04.
+- **SHA-256 fingerprint**:
+  `F8:FC:60:F7:5B:51:F9:22:6D:B3:D4:AD:D2:D1:6B:7B:BD:EB:CD:83:6E:DE:85:CD:F6:DE:DB:2C:B0:25:C6:CA`
+- **Checking an APK** was signed with this key:
+  ```bash
+  apksigner verify --print-certs <apk>
+  ```
+  The "Signer #1 certificate SHA-256 digest" it prints must match the fingerprint above
+  (colons and case don't matter).
+- **Building** with it:
+  ```bash
+  source /mnt/d/Stuff/hermes-release-keys/release-env.sh
+  bash scripts/build-release-apk.sh
+  ```
+  The keystore password is typed by the user at the prompt when `release-env.sh` asks for it — it
+  is never stored, pasted, or given to an agent (D11.2, D22.5).
+
+### Version history
+
+`android.versionCode` (`app.config.ts`) is an integer starting at 1, raised by one for every APK
+that leaves this machine — including a re-spin of the same version string. It is never reused and
+never derived (D23 decision 2.2). Add a row here only when an APK actually leaves this machine.
+
+| versionCode | version | commit | APK sha256 | date |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
 Then, on GitHub, create a Release from that tag with:
 
 - The APK attached.
