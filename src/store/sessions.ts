@@ -20,6 +20,13 @@ export function setSessions(sessions: SessionSummary[]): void {
   $sessions.set(sessions)
 }
 
+/** D27: sign-out's own clear (session-connection.ts) — the cached list
+ *  belongs to the connection that just signed out; nothing in it is safe to
+ *  keep showing once the socket is gone. */
+export function clearSessions(): void {
+  $sessions.set([])
+}
+
 export function upsertSessionSummary(summary: SessionSummary): void {
   const current = $sessions.get()
   const index = current.findIndex(session => session.storedSessionId === summary.storedSessionId)

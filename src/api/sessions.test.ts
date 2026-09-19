@@ -240,4 +240,25 @@ describe('src/api/sessions', () => {
     expect(url).toContain('/api/sessions/sess-1')
     expect(init.method).toBe('DELETE')
   })
+
+  // D27 point 2 (Opus's review): this file predates rest.ts and keeps its
+  // own inline REST copy — it needs the exact same upfront needsLogin gate,
+  // not just rest.ts's shared restRequest.
+  it('refuses upfront when the connection already needsLogin, without ever calling fetch', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-needslogin-upfront',
+      kind: 'remote',
+      label: 'test',
+      needsLogin: true
+    })
+
+    const fetchMock = vi.fn(async () => jsonResponse(200, { limit: 20, offset: 0, sessions: [], total: 0 }))
+
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(listSessions()).rejects.toThrow('Authentication failed — check the password.')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

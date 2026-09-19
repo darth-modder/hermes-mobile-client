@@ -407,6 +407,48 @@ describe("resolveAuth (via ensureGatewayConnection): a password connection's ws-
   })
 })
 
+// D27 point 2 (Opus's review): needsLogin must gate the WS dial at this same
+// choke point — refuse before even attempting a ws-ticket mint or reading a
+// stored token, so a signed-out connection never re-dials on its own.
+describe('resolveAuth (via ensureGatewayConnection): refuses upfront when the connection already needsLogin (D27)', () => {
+  const passwordConnection = {
+    authMode: 'password' as const,
+    baseUrl: 'http://127.0.0.1:9128',
+    id: 'conn-password-needslogin',
+    kind: 'remote' as const,
+    label: 'test-password',
+    needsLogin: true
+  }
+
+  beforeEach(() => {
+    mmkvBacking.clear()
+    setActiveConnection(passwordConnection)
+    resetSessionConnectionForTests()
+  })
+
+  it('rejects with the shared needs-login message without ever calling fetch', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }) as Response)
+
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow('Authentication failed — check the password.')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('a token connection with needsLogin set is refused too, without reading the stored token', async () => {
+    mmkvBacking.clear()
+    setActiveConnection({ ...passwordConnection, authMode: 'token', id: 'conn-token-needslogin' })
+    resetSessionConnectionForTests()
+
+    const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }) as Response)
+
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    await expect(ensureGatewayConnection()).rejects.toThrow('Authentication failed — check the password.')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
 describe('handleSocketClose: M08 — a 4401 on an oauth connection tries refresh before needsLogin', () => {
   const oauthConnection = {
     authMode: 'oauth' as const,

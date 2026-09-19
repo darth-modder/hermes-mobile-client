@@ -98,3 +98,51 @@ describe('src/api/rest: restRequest marks needsLogin on a confirmed 401/403 (D24
     expect(getActiveConnection()?.needsLogin).toBeUndefined()
   })
 })
+
+// D27 point 2 (Opus's review): needsLogin must gate at this choke point —
+// every M09-era src/api/*.ts module goes through restRequest, so this one
+// gate covers all of them without a per-screen guard anywhere else.
+describe('src/api/rest: restRequest refuses upfront when the connection already needsLogin (D27)', () => {
+  const originalFetch = global.fetch
+
+  beforeEach(() => {
+    backing.clear()
+    secureStore.clear()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
+
+  it('throws the shared needs-login message without ever calling fetch', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-rest-needslogin',
+      kind: 'remote',
+      label: 'test',
+      needsLogin: true
+    })
+
+    const fetchSpy = vi.fn(async () => jsonResponse(200, {})) as unknown as typeof fetch
+
+    global.fetch = fetchSpy
+
+    await expect(restRequest('/api/cron/jobs')).rejects.toThrow('Authentication failed — check the password.')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not refuse a connection with needsLogin unset', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://host',
+      id: 'conn-rest-ok',
+      kind: 'remote',
+      label: 'test'
+    })
+
+    global.fetch = vi.fn(async () => jsonResponse(200, { ok: true })) as unknown as typeof fetch
+
+    await expect(restRequest('/api/cron/jobs')).resolves.toEqual({ ok: true })
+  })
+})

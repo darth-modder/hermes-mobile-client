@@ -36,6 +36,7 @@
 
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { needsSignIn } from '../connections/sign-in-route'
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
@@ -43,14 +44,15 @@ import { classifyConnectReason, type ConnectReason, describeConnectReason } from
 import { HttpError, httpRequest } from '../net/http'
 import { dispatchNativeNotification } from '../push/native-notifications'
 import { ensureNotificationPermissionRequested } from '../push/notification-permission'
-import { setClarifyRequest } from '../store/clarify'
+import { clearEveryClarifyRequest, setClarifyRequest } from '../store/clarify'
+import { notifySignedOut } from '../store/connection-events'
 import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
 import { notify } from '../store/notifications'
 import { getActiveProfile } from '../store/profile'
-import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
+import { clearEveryPendingPrompt, setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
-import { requestSessionListRefresh } from '../store/sessions'
+import { clearSessions, requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
 import { ingestBackendSkin } from '../theme/backend-skin'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
@@ -405,6 +407,15 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
 }
 
 async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
+  // D27 point 2 (Opus's review): needsLogin gates outbound authenticated
+  // traffic at this choke point — refuse before minting a ticket or reading
+  // a stored token, the same needs-login result the shared Sign in piece
+  // (sign-in-route.ts) renders. Only the login route (app/connect/[id]/
+  // login.tsx, via mergeSignedInConnection) clears the flag.
+  if (needsSignIn(connection)) {
+    throw new Error(describeConnectReason('unauthorized'))
+  }
+
   if (connection.authMode === 'token') {
     const token = await getConnectionToken(connection.id)
 
@@ -672,6 +683,64 @@ export async function reconnectAndProbeGateway(): Promise<void> {
     client.invalidate()
     await ensureGatewayConnection().catch(() => undefined)
   }
+}
+
+/**
+ * D27 point 1 (Opus's review, Fable's ruling): sign out the ACTIVE
+ * connection's live socket and every piece of runtime state this module (and
+ * the stores it owns) holds for it. `signOutConnection` (net/auth/logout.ts)
+ * calls this after the best-effort `POST /auth/logout` and the SecureStore
+ * clear, right before it flips `needsLogin`.
+ *
+ * A no-op for a non-active connection — there is only ever one live socket
+ * (M04/AGENTS.md "one active connection in v1"), so a connection that isn't
+ * the active one has no socket or runtime state here to touch at all.
+ */
+export function disconnectForSignOut(connectionId: string): void {
+  const active = getActiveConnection()
+
+  if (!active || active.id !== connectionId) {
+    return
+  }
+
+  // Same mechanism reconnectAndProbeGateway uses above: invalidate stops
+  // connectionState from lying about 'open' and rejects anything still
+  // in flight, without attempting a redial (unlike the probe's own recovery
+  // path — there is nothing to reconnect to right now, the user just signed
+  // out).
+  gateway?.invalidate()
+  disposeEvents?.()
+  disposeEvents = null
+  disposeLiveSyncEvents?.()
+  disposeLiveSyncEvents = null
+  gateway = null
+
+  // Drops runtimeToStored, activeRuntimeSessionId and every session's
+  // in-memory transcript/turn state at once — there's only one connection's
+  // worth of any of this (M04), so createReducerState()'s "nothing known
+  // yet" is exactly the right end state.
+  reducerState = createReducerState()
+  publishAll()
+
+  setConnectionAttention(null)
+
+  // Pending approval/sudo/secret/clarify cards unmount (FLAG_SECURE
+  // releases for sudo/secret) the instant their store entry is gone — these
+  // are separate nanostores from reducerState (set via dispatchEffects'
+  // setApproval/setSudo/setSecret/setClarify cases), so createReducerState()
+  // above doesn't reach them on its own.
+  clearEveryPendingPrompt()
+  clearEveryClarifyRequest()
+
+  // The cached session-list summaries belong to the connection that just
+  // signed out.
+  clearSessions()
+  requestSessionListRefresh()
+
+  // react-query's QueryClient (Tasks' cache) lives in app/_layout.tsx's
+  // component state, unreachable from this plain module — see
+  // connection-events.ts's header for why this is a tick, not a direct call.
+  notifySignedOut()
 }
 
 /** The wire-level runtime id currently bound to `storedSessionId`, or the

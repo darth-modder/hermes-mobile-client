@@ -26,3 +26,9 @@ export function setClarifyRequest(storedSessionId: string, request: ClarifyReque
 
   $clarifyRequests.set({ ...current, [storedSessionId]: request })
 }
+
+/** D27: sign-out's own clear (session-connection.ts) — every pending
+ *  clarify card, across every session, at once. */
+export function clearEveryClarifyRequest(): void {
+  $clarifyRequests.set({})
+}

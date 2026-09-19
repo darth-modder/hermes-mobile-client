@@ -15,10 +15,13 @@
 // route that accepts a bearer refresh token for revocation would only need this module's
 // `resolveLogoutAuth` extended, not a rewrite.
 
-import { upsertConnection } from '../../connections/registry'
+import { listConnections, upsertConnection } from '../../connections/registry'
 import { deleteAllConnectionSecrets, getConnectionOAuth, getConnectionToken } from '../../connections/secure'
 import type { MobileConnection } from '../../connections/types'
+import { disconnectForSignOut } from '../../gateway/session-connection'
 import { httpRequest, type HttpRequestOptions } from '../http'
+
+import { clearAllCookies } from './cookie-clear'
 
 async function resolveLogoutAuth(connection: MobileConnection): Promise<Pick<HttpRequestOptions, 'token'>> {
   if (connection.authMode === 'token') {
@@ -64,8 +67,36 @@ export async function logoutConnection(connection: MobileConnection): Promise<vo
  * `session-connection.ts` sets for an unauthorized close or a dead refresh
  * token, reused here since the end state is identical (no usable
  * credentials left for this connection).
+ *
+ * D27 (Fable's ruling, via Opus's review): three gaps this used to leave
+ * open, in order —
+ *
+ * 1. The live gateway socket (if this was the active connection) kept
+ *    serving RPCs after Sign out — nothing here ever invalidated it.
+ *    `disconnectForSignOut` (session-connection.ts) does, plus clears every
+ *    piece of runtime state that connection owned (a no-op for a
+ *    non-active connection — there's only ever one live socket, M04).
+ * 2. `needsLogin` alone doesn't stop anything from being READ — that's
+ *    resolveAuth/restRequest/sessionsRequest's job now (D27 point 2,
+ *    session-connection.ts / src/api/rest.ts / src/api/sessions.ts).
+ * 3. A password-mode session cookie survives in RN's native cookie jar
+ *    independent of everything above — cleared (best-effort, global) by
+ *    `clearAllCookies` below. Because that clear is global, not per-host,
+ *    every OTHER password-mode connection's cookie is invalidated
+ *    alongside it, so they're all marked `needsLogin` in the same action —
+ *    otherwise the registry would claim a connection is still signed in
+ *    when its cookie no longer works.
  */
 export async function signOutConnection(connection: MobileConnection): Promise<void> {
   await logoutConnection(connection)
+  disconnectForSignOut(connection.id)
+  await clearAllCookies()
+
   upsertConnection({ ...connection, needsLogin: true })
+
+  for (const other of listConnections()) {
+    if (other.id !== connection.id && other.authMode === 'password' && !other.needsLogin) {
+      upsertConnection({ ...other, needsLogin: true })
+    }
+  }
 }

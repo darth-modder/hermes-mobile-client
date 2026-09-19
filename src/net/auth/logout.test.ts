@@ -28,10 +28,25 @@ vi.mock('react-native-mmkv', () => ({
   })
 }))
 
-const { getConnection, setActiveConnection } = await import('../../connections/registry')
+// D27: signOutConnection now clears the native cookie jar (cookie-clear.ts)
+// as part of sign-out — see that module's own test file for its
+// best-effort/never-throws behaviour in isolation; this just needs it
+// resolvable and quiet here.
+vi.mock('react-native/Libraries/Network/RCTNetworking', () => ({
+  default: { clearCookies: vi.fn((callback: (result: boolean) => void) => callback(true)) }
+}))
+
+const { getConnection, listConnections, setActiveConnection, upsertConnection } =
+  await import('../../connections/registry')
 
 const { getConnectionOAuth, getConnectionToken, setConnectionHeader, setConnectionOAuth, setConnectionToken } =
   await import('../../connections/secure')
+
+const { getConnectionAttention, resetSessionConnectionForTests, setGatewayForTests } =
+  await import('../../gateway/session-connection')
+
+const { $approvalRequests, $sudoRequests, setApprovalRequest } = await import('../../store/prompts')
+const { $sessions, setSessions } = await import('../../store/sessions')
 
 const { logoutConnection, signOutConnection } = await import('./logout')
 
@@ -137,6 +152,10 @@ describe('signOutConnection', () => {
   beforeEach(() => {
     secureStore.clear()
     mmkvBacking.clear()
+    resetSessionConnectionForTests()
+    $approvalRequests.set({})
+    $sudoRequests.set({})
+    $sessions.set([])
     setActiveConnection(connection)
   })
 
@@ -166,5 +185,134 @@ describe('signOutConnection', () => {
     await signOutConnection(connection)
 
     expect(getConnection('conn-1')?.needsLogin).toBe(true)
+  })
+
+  // D27 point 1 (Opus's review, Fable's ruling): sign-out on the active
+  // connection invalidates the live socket and clears every piece of
+  // runtime state this app holds for it.
+  describe("D27: clears the active connection's runtime state", () => {
+    it('invalidates the live gateway client', async () => {
+      const fakeGateway = { invalidate: vi.fn(), close: vi.fn(), request: vi.fn() }
+
+      setGatewayForTests(fakeGateway as never)
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(fakeGateway.invalidate).toHaveBeenCalledTimes(1)
+    })
+
+    it('clears connection attention (needs-login banner state)', async () => {
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(getConnectionAttention()).toBeNull()
+    })
+
+    it('clears every pending approval/sudo card, across every session, not just the active one', async () => {
+      setApprovalRequest('sess-a', {
+        allowPermanent: true,
+        choices: undefined,
+        command: 'rm -rf',
+        description: 'dangerous',
+        requestId: 'req-1',
+        smartDenied: false,
+        storedSessionId: 'sess-a'
+      })
+      $sudoRequests.set({ 'sess-b': { requestId: 'req-2', storedSessionId: 'sess-b' } })
+
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect($approvalRequests.get()).toEqual({})
+      expect($sudoRequests.get()).toEqual({})
+    })
+
+    it('clears the cached session list', async () => {
+      setSessions([{ storedSessionId: 'sess-a', title: 'Old session', updatedAt: 0 }])
+
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect($sessions.get()).toEqual([])
+    })
+
+    it('does nothing to the socket when signing out a connection that is NOT active', async () => {
+      const fakeGateway = { invalidate: vi.fn(), close: vi.fn(), request: vi.fn() }
+
+      setGatewayForTests(fakeGateway as never)
+      setActiveConnection({ ...connection, id: 'conn-other-active' })
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(fakeGateway.invalidate).not.toHaveBeenCalled()
+    })
+  })
+
+  // D27 point 3 (Fable's ruling via Opus): the cookie clear is global, not
+  // per-host, so every OTHER password-mode connection is marked needsLogin
+  // in the same action — otherwise the registry would claim a connection is
+  // still signed in when its cookie no longer works.
+  describe('D27: marks every other password-mode connection needsLogin', () => {
+    it('marks a different password-mode connection needsLogin', async () => {
+      const other = {
+        authMode: 'password' as const,
+        baseUrl: 'http://host-2',
+        id: 'conn-2',
+        kind: 'remote' as const,
+        label: 'other'
+      }
+
+      setActiveConnection(connection)
+      // Registers `other` into the list without making it active.
+      upsertConnection(other)
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(getConnection('conn-2')?.needsLogin).toBe(true)
+    })
+
+    it('does not touch a non-password connection (token/oauth have no shared cookie jar to invalidate)', async () => {
+      const other = {
+        authMode: 'token' as const,
+        baseUrl: 'http://host-2',
+        id: 'conn-token',
+        kind: 'remote' as const,
+        label: 'other'
+      }
+
+      setActiveConnection(connection)
+      upsertConnection(other)
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(getConnection('conn-token')?.needsLogin).toBeUndefined()
+    })
+
+    it('every OTHER password connection ends up in the registry list marked needsLogin', async () => {
+      const other = {
+        authMode: 'password' as const,
+        baseUrl: 'http://host-3',
+        id: 'conn-3',
+        kind: 'remote' as const,
+        label: 'third'
+      }
+
+      setActiveConnection(connection)
+      upsertConnection(other)
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      const stillFalse = listConnections().find(c => c.id === 'conn-3')
+
+      expect(stillFalse?.needsLogin).toBe(true)
+    })
   })
 })

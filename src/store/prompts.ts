@@ -85,3 +85,14 @@ export function clearAllPrompts(storedSessionId: string): void {
   setSudoRequest(storedSessionId, null)
   setSecretRequest(storedSessionId, null)
 }
+
+/** D27: every pending approval/sudo/secret card, across every session, at
+ *  once — sign-out's own clear (session-connection.ts), which unlike
+ *  `clearAllPrompts` above isn't scoped to one session: the socket the
+ *  requests arrived on is gone, so nothing left in either store can still
+ *  be answered. */
+export function clearEveryPendingPrompt(): void {
+  $approvalRequests.set({})
+  $sudoRequests.set({})
+  $secretRequests.set({})
+}

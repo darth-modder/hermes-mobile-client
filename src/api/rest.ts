@@ -19,6 +19,7 @@
 
 import { getActiveConnection } from '../connections/registry'
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { needsSignIn } from '../connections/sign-in-route'
 import type { MobileConnection } from '../connections/types'
 import { markConnectionNeedsLogin } from '../gateway/session-connection'
 import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
@@ -59,9 +60,21 @@ export async function restAuthFor(
 
 /** `httpRequest` against the active connection, with auth resolved and any
  *  configured proxy headers attached. `profile` in `options` scopes the call
- *  the same way `?profile=` already scopes `session.create` (M09 task). */
+ *  the same way `?profile=` already scopes `session.create` (M09 task).
+ *
+ *  D27 point 2 (Opus's review): `needsLogin` gates every authenticated
+ *  outbound REST call at THIS choke point, not per screen — refuses before
+ *  resolving auth or dialing anything, with the same needs-login result the
+ *  shared Sign in piece (sign-in-route.ts) renders. `bots.ts`'s own guard
+ *  (D23.1) may stay as a backstop, but this is the actual barrier now; no
+ *  other `src/api/*.ts` module needs (or should add) its own copy. */
 export async function restRequest<T>(path: string, options: HttpRequestOptions = {}): Promise<T> {
   const connection = requireActiveConnection()
+
+  if (needsSignIn(connection)) {
+    throw new Error(describeConnectReason('unauthorized'))
+  }
+
   const auth = await restAuthFor(connection)
 
   const proxyHeaders =
