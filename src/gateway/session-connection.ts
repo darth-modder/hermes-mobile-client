@@ -41,13 +41,20 @@ import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
-import { dispatchNativeNotification } from '../push/native-notifications'
+import { dismissNativeNotification, dispatchNativeNotification } from '../push/native-notifications'
 import { ensureNotificationPermissionRequested } from '../push/notification-permission'
-import { setClarifyRequest } from '../store/clarify'
+import { $clarifyRequests, setClarifyRequest } from '../store/clarify'
 import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
 import { notify } from '../store/notifications'
 import { getActiveProfile } from '../store/profile'
-import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
+import {
+  $approvalRequests,
+  $secretRequests,
+  $sudoRequests,
+  setApprovalRequest,
+  setSecretRequest,
+  setSudoRequest
+} from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
 import { requestSessionListRefresh } from '../store/sessions'
@@ -246,61 +253,94 @@ function dispatchEffects(effects: Effect[]): void {
 
       case 'setClarify':
         if (effect.storedSessionId) {
+          // D26: read the outgoing request's id BEFORE overwriting the
+          // store, so a clear (any route — answered here, answered
+          // elsewhere, expired, turn ended — the reducer normalizes all of
+          // these into the same `request: null` shape) can dismiss its OS
+          // notification. Nothing to dismiss when a NEW request is arriving.
+          const clearedClarifyId = effect.request ? null : $clarifyRequests.get()[effect.storedSessionId]?.requestId
+
           setClarifyRequest(effect.storedSessionId, effect.request)
 
           if (effect.request) {
             void dispatchNativeNotification({
               body: effect.request.question,
               kind: 'input',
+              requestId: effect.request.requestId,
               sessionId: effect.storedSessionId,
               title: 'Hermes needs input'
             })
+          } else if (clearedClarifyId) {
+            void dismissNativeNotification(clearedClarifyId)
           }
         }
 
         break
+      case 'setApproval': {
+        const clearedApprovalId = effect.request
+          ? null
+          : (effect.storedSessionId && $approvalRequests.get()[effect.storedSessionId]?.requestId) || null
 
-      case 'setApproval':
         setApprovalRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: effect.request.command || effect.request.description,
             kind: 'approval',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Approval needed'
           })
+        } else if (clearedApprovalId) {
+          void dismissNativeNotification(clearedApprovalId)
         }
 
         break
+      }
 
-      case 'setSudo':
+      case 'setSudo': {
+        const clearedSudoId = effect.request
+          ? null
+          : (effect.storedSessionId && $sudoRequests.get()[effect.storedSessionId]?.requestId) || null
+
         setSudoRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: 'A command needs your sudo password.',
             kind: 'input',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
+        } else if (clearedSudoId) {
+          void dismissNativeNotification(clearedSudoId)
         }
 
         break
+      }
 
-      case 'setSecret':
+      case 'setSecret': {
+        const clearedSecretId = effect.request
+          ? null
+          : (effect.storedSessionId && $secretRequests.get()[effect.storedSessionId]?.requestId) || null
+
         setSecretRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: effect.request.prompt || effect.request.envVar,
             kind: 'input',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
+        } else if (clearedSecretId) {
+          void dismissNativeNotification(clearedSecretId)
         }
 
         break
+      }
 
       case 'haptic':
         if (effect.kind === 'streamStart') {

@@ -166,7 +166,19 @@ export interface NativeNotificationInput {
   title: string
   body?: string
   sessionId?: null | string
+  /** D26: when present, the identifier `scheduleNotificationAsync` returns
+   *  for this dispatch is kept here, keyed by request id, so
+   *  `dismissNativeNotification` can later clear this exact OS notification
+   *  once the underlying blocking request resolves by any route (answered
+   *  here, answered elsewhere, expired, or the turn ended) — a stale
+   *  notification found live, sitting next to a since-Rejected approval. */
+  requestId?: string
 }
+
+// D26: requestId -> the OS notification identifier scheduleNotificationAsync
+// returned for it. Only ever set for a dispatch that actually scheduled
+// (passed every gate below) — nothing to dismiss for one that didn't.
+const notificationIdsByRequestId = new Map<string, string>()
 
 /**
  * Returns true when the notification passed every guard and was handed to
@@ -194,7 +206,7 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
   try {
     const Notifications = await import('expo-notifications')
 
-    await Notifications.scheduleNotificationAsync({
+    const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: input.title,
         body: input.body,
@@ -208,6 +220,10 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
       // immediately, just on the right channel.
       trigger: { channelId: ANDROID_NOTIFICATION_CHANNEL_ID }
     })
+
+    if (input.requestId) {
+      notificationIdsByRequestId.set(input.requestId, identifier)
+    }
   } catch {
     // Best-effort: a notification that fails to schedule (permission denied,
     // no native module in this environment) is not worth surfacing as an
@@ -216,4 +232,31 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
   }
 
   return true
+}
+
+/**
+ * D26: clears the OS notification for a request that just resolved, by any
+ * route — answered in this app, answered from another connected client,
+ * expired/timed out server-side, or the turn it belonged to ended. A no-op
+ * (never throws) when no notification was ever scheduled for this request
+ * id, which is the common case: most requests answered promptly never fire
+ * one at all (`shouldFire`'s own gate).
+ */
+export async function dismissNativeNotification(requestId: string): Promise<void> {
+  const identifier = notificationIdsByRequestId.get(requestId)
+
+  if (!identifier) {
+    return
+  }
+
+  notificationIdsByRequestId.delete(requestId)
+
+  try {
+    const Notifications = await import('expo-notifications')
+
+    await Notifications.dismissNotificationAsync(identifier)
+  } catch {
+    // Best-effort, same as scheduling — a stale notification the OS fails to
+    // clear is not worth surfacing as an app-level error.
+  }
 }
