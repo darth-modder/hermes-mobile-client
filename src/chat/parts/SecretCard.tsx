@@ -37,19 +37,38 @@ export interface SecretCardActionsProps extends SecretCardProps {
 export function SecretCardActions({ storedSessionId, request }: SecretCardActionsProps) {
   const tokens = useTheme()
   const [value, setValue] = useState('')
-  const [sending, setSending] = useState(false)
+  const [pending, setPending] = useState<'cancel' | 'send' | null>(null)
 
   const submit = async () => {
     hapticSubmit()
-    setSending(true)
+    setPending('send')
 
     try {
       await respondSecret(storedSessionId, request.requestId, value)
       setValue('')
     } finally {
-      setSending(false)
+      setPending(null)
     }
   }
+
+  // D26: Cancel sends the SAME secret.respond RPC with an empty value —
+  // upstream's secret_cb (tui_gateway/agent_callbacks.py) already treats an
+  // empty value as {success: true, skipped: true} and saves nothing, so
+  // there's no separate cancel RPC. The turn continues — this only resolves
+  // the one blocked prompt, it does not stop the agent (that's Stop).
+  const cancel = async () => {
+    hapticSubmit()
+    setPending('cancel')
+
+    try {
+      await respondSecret(storedSessionId, request.requestId, '')
+      setValue('')
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const sending = pending !== null
 
   return (
     <View style={styles.row}>
@@ -66,11 +85,22 @@ export function SecretCardActions({ storedSessionId, request }: SecretCardAction
         value={value}
       />
       <TouchableOpacity
+        disabled={sending}
+        onPress={() => void cancel()}
+        style={[styles.button, { backgroundColor: tokens.bgTertiary }]}
+      >
+        {pending === 'cancel' ? (
+          <ActivityIndicator color={tokens.foreground} size="small" />
+        ) : (
+          <Text style={[styles.buttonText, { color: tokens.foreground }]}>{t.common.cancel}</Text>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
         disabled={sending || !value}
         onPress={() => void submit()}
         style={[styles.button, { backgroundColor: tokens.primary }]}
       >
-        {sending ? (
+        {pending === 'send' ? (
           <ActivityIndicator color={tokens.primaryForeground} size="small" />
         ) : (
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Send</Text>

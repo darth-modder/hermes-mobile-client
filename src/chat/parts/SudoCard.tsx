@@ -32,19 +32,39 @@ export interface SudoCardActionsProps extends SudoCardProps {
 export function SudoCardActions({ storedSessionId, request }: SudoCardActionsProps) {
   const tokens = useTheme()
   const [password, setPassword] = useState('')
-  const [sending, setSending] = useState(false)
+  const [pending, setPending] = useState<'cancel' | 'send' | null>(null)
 
   const submit = async () => {
     hapticSubmit()
-    setSending(true)
+    setPending('send')
 
     try {
       await respondSudo(storedSessionId, request.requestId, password)
       setPassword('')
     } finally {
-      setSending(false)
+      setPending(null)
     }
   }
+
+  // D26: Cancel sends the SAME sudo.respond RPC with an empty password —
+  // upstream (tui_gateway/agent_callbacks.py, apps/desktop's prompt-
+  // overlays.tsx) already treats an empty response as a definite "no" (a
+  // failed sudo, no command runs), so there's no separate cancel RPC to
+  // call. The turn continues — this only resolves the one blocked prompt,
+  // it does not stop the agent (that's Stop, a different control).
+  const cancel = async () => {
+    hapticSubmit()
+    setPending('cancel')
+
+    try {
+      await respondSudo(storedSessionId, request.requestId, '')
+      setPassword('')
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const sending = pending !== null
 
   return (
     <View style={styles.row}>
@@ -61,11 +81,22 @@ export function SudoCardActions({ storedSessionId, request }: SudoCardActionsPro
         value={password}
       />
       <TouchableOpacity
+        disabled={sending}
+        onPress={() => void cancel()}
+        style={[styles.button, { backgroundColor: tokens.bgTertiary }]}
+      >
+        {pending === 'cancel' ? (
+          <ActivityIndicator color={tokens.foreground} size="small" />
+        ) : (
+          <Text style={[styles.buttonText, { color: tokens.foreground }]}>{t.common.cancel}</Text>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity
         disabled={sending || !password}
         onPress={() => void submit()}
         style={[styles.button, { backgroundColor: tokens.primary }]}
       >
-        {sending ? (
+        {pending === 'send' ? (
           <ActivityIndicator color={tokens.primaryForeground} size="small" />
         ) : (
           <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>Send</Text>
