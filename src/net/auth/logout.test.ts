@@ -30,10 +30,11 @@ vi.mock('react-native-mmkv', () => ({
 
 // D27: signOutConnection now clears the native cookie jar (cookie-clear.ts)
 // as part of sign-out — see that module's own test file for its
-// best-effort/never-throws behaviour in isolation; this just needs it
-// resolvable and quiet here.
-vi.mock('react-native/Libraries/Network/RCTNetworking', () => ({
-  default: { clearCookies: vi.fn((callback: (result: boolean) => void) => callback(true)) }
+// best-effort/never-throws/timeout behaviour in isolation; this just needs
+// it resolvable and quiet here.
+vi.mock('react-native', () => ({
+  NativeModules: { Networking: { clearCookies: vi.fn((callback: (result: boolean) => void) => callback(true)) } },
+  Platform: { OS: 'android', select: () => undefined }
 }))
 
 const { getConnection, listConnections, setActiveConnection, upsertConnection } =
@@ -200,6 +201,46 @@ describe('signOutConnection', () => {
       await signOutConnection(connection)
 
       expect(fakeGateway.invalidate).toHaveBeenCalledTimes(1)
+    })
+
+    // Opus's round-2 review: the old order awaited the best-effort POST
+    // /auth/logout FIRST — up to 15s offline. During that whole window the
+    // socket stayed live and needsLogin was unset, so an app kill mid-window
+    // left neither gate up. A fetch that never resolves (simulating
+    // genuinely offline, no timeout reached yet) must still leave both
+    // gates up immediately — proving they don't wait on the network at all.
+    it('marks needsLogin and invalidates the socket before the logout request resolves — offline must not leave the gates down', async () => {
+      const fakeGateway = { invalidate: vi.fn(), close: vi.fn(), request: vi.fn() }
+
+      setGatewayForTests(fakeGateway as never)
+
+      let releaseFetch: (() => void) | null = null
+
+      global.fetch = vi.fn(
+        () =>
+          new Promise<Response>(resolve => {
+            releaseFetch = () => resolve(jsonResponse(200, {}))
+          })
+      ) as unknown as typeof fetch
+
+      const signOutPromise = signOutConnection(connection)
+
+      // These run truly synchronously — before even the FIRST microtask
+      // (including resolveLogoutAuth's own SecureStore lookup) has had a
+      // chance to run, let alone the fetch call itself — proving the gates
+      // don't wait on anything async, not just "not the network specifically".
+      expect(getConnection('conn-1')?.needsLogin).toBe(true)
+      expect(fakeGateway.invalidate).toHaveBeenCalledTimes(1)
+
+      // The rest of the flow DOES need microtasks to reach the actual fetch
+      // call (resolveLogoutAuth awaits the mocked SecureStore) — drain them
+      // until it does, then release it so the test itself doesn't hang.
+      while (!releaseFetch) {
+        await Promise.resolve()
+      }
+
+      ;(releaseFetch as () => void)()
+      await signOutPromise
     })
 
     it('clears connection attention (needs-login banner state)', async () => {
