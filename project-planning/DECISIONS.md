@@ -1066,3 +1066,49 @@ and that gate does not move. The conditions exist because "one sitting" is only 
 known to be missing forces a second. **On Opus's word:** that the dock is code-reviewed,
 unit-tested, and passed D25.8 on the branch apart from the dark-theme count. I did not re-review
 the branch for this entry.
+
+## D29 — The verification sitting: snapshot approved, the emulator wiped of a real gateway first, the TTL test corrected (2026-09-19)
+
+**Decision.** Settles D28.6 and amends D24.1.5.
+
+1. **Snapshot approved by the user**, given directly to Opus through Opus's own prompt on
+   2026-09-19, not relayed through an agent. After the user's sign-in on the emulator, a
+   snapshot may be taken and restored between sign-out tests so they re-run without anyone
+   typing. Conditions:
+   - A restore puts back the whole device, including the installed APK. After every restore the
+     build under test is reinstalled with `adb install -r` and the running build is confirmed
+     (versionCode, `topResumedActivity`). The snapshot's APK and every later test build are
+     signed with the same throwaway key, or the reinstall fails and the sign-in is lost. The
+     real-key APK is never part of this.
+   - The snapshot is a credential artefact. Throwaway gateway only; it stays in the AVD's own
+     directory, is never copied to the field kit or the repo, and is deleted at the end of the
+     round, stated in the teardown.
+   - The emulator clock is checked after each restore. The gateway's fixed secret and long TTL
+     are in place **before** a restore.
+   - If the restored emulator does not come up signed in, the round stops. Nobody types the
+     password to continue.
+2. **The emulator is wiped of saved gateways before the sitting.** Applying the condition above,
+   Opus found the old dev client (`com.nousresearch.hermes.mobile`) still held the user's real
+   gateway, signed in. The user approved clearing that app's data; the Gateways screen is
+   confirmed empty before the user signs in. **Standing rule:** the first step of every device
+   round is to list saved gateways; if any is not a throwaway started in that round, stop and
+   ask the user.
+3. **D24.1.5's TTL test is corrected.** The basic-auth plugin stamps `exp` into each token when
+   it is issued, so restarting the gateway with `TTL=120` does not shorten a token issued under
+   a long TTL, and the test as I worded it would have reported a false "survives". The test
+   signs in **after** the restart at 120 s; that sign-in also serves D27's acceptance (iv). The
+   user's part is two sign-ins and two dummy sudo/secret values, about three minutes.
+4. **Recommended to the user, their decision:** rotate the real gateway's
+   `HERMES_DASHBOARD_BASIC_AUTH_SECRET`, since upstream's tokens cannot be revoked and a
+   signed-in session to that gateway sat on an agent-driven test emulator for days. The real
+   hostname and gateway label join the D22.5 history-audit patterns before the repository goes
+   public.
+
+**Reasoning.** The snapshot removes the last reason to spend the user's time on re-runs, and the
+conditions keep it from quietly becoming a stored credential or a way to test the wrong build.
+The real-gateway finding is what safeguards are for: nobody set out to put a live credential in
+reach of test automation, and nothing in the process would have noticed. **Checked by me:** the
+`exp`-at-issue behaviour, read in `plugins/dashboard_auth/basic/__init__.py` at `ee84ccd8bd`
+while writing D24. **On Opus's word:** the user's approvals (given to Opus directly), and that
+the dev client held the real gateway. **Unverified by anyone:** whether any field-kit artefact
+captured that session; Opus is asked to search and report.
