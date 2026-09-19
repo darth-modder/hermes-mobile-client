@@ -31,8 +31,11 @@
  * isn't in it. `clearBotModelPin` below is that same call, ported.
  */
 
+import { getActiveConnection } from '../connections/registry'
+import { needsSignIn } from '../connections/sign-in-route'
 import { gatewayRequest } from '../gateway/session-connection'
 import { blobShapeString } from '../lib/bot-avatar'
+import { describeConnectReason } from '../net/connect-reason'
 
 export interface BotSessionPreview {
   id: string
@@ -85,8 +88,21 @@ export interface BotRosterResponse {
   bot_mode_protocol: boolean
 }
 
-/** `profiles.list` — the Bots tab roster. */
+/**
+ * `profiles.list` — the Bots tab roster. Rides the already-open gateway
+ * WebSocket (a JSON-RPC call, not REST), whose transport-level auth doesn't
+ * re-check per call — unlike `sessions.ts`/`cron.ts`'s REST calls, a stale
+ * socket left open from before a sign-out keeps answering this successfully,
+ * so the Bots tab would show stale data forever with no "Sign in" prompt
+ * (D23 point 1 names Bots as a required surface for that prompt). Checking
+ * `needsLogin` here, before dialing, closes that gap without needing to
+ * force-close the socket.
+ */
 export function listBots(): Promise<BotRosterResponse> {
+  if (needsSignIn(getActiveConnection())) {
+    return Promise.reject(new Error(describeConnectReason('unauthorized')))
+  }
+
   return gatewayRequest<BotRosterResponse>('profiles.list', {})
 }
 

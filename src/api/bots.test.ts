@@ -7,11 +7,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const mmkvBacking = new Map<string, string>()
+
 vi.mock('react-native-mmkv', () => ({
   createMMKV: () => ({
-    getString: () => undefined,
-    remove: () => undefined,
-    set: () => undefined
+    getString: (key: string) => mmkvBacking.get(key),
+    remove: (key: string) => mmkvBacking.delete(key),
+    set: (key: string, value: string) => {
+      mmkvBacking.set(key, value)
+    }
   })
 }))
 
@@ -21,6 +25,7 @@ vi.mock('expo-secure-store', () => ({
   setItemAsync: vi.fn()
 }))
 
+const { setActiveConnection } = await import('../connections/registry')
 const { resetSessionConnectionForTests, setGatewayForTests } = await import('../gateway/session-connection')
 
 const {
@@ -145,6 +150,7 @@ describe('src/api/bots', () => {
 
   beforeEach(() => {
     resetSessionConnectionForTests()
+    setActiveConnection(null)
     fake = new FakeGateway()
     setGatewayForTests(fake as never)
   })
@@ -157,6 +163,44 @@ describe('src/api/bots', () => {
     expect(fake.request).toHaveBeenCalledWith('profiles.list', {}, undefined)
     expect(result).toEqual(ROSTER_FIXTURE)
     expect(result.bot_mode_protocol).toBe(true)
+  })
+
+  // D23 point 1 names Bots as one of the surfaces that must offer Sign in
+  // when the active connection needs it. Unlike Sessions/Tasks (REST calls
+  // that genuinely 401 after sign-out), profiles.list rides the already-open
+  // gateway WebSocket, whose transport-level auth doesn't re-check per RPC —
+  // a stale-but-still-open socket keeps answering successfully even after
+  // sign-out, so bots/index.tsx's load() never caught an error and never
+  // showed the shared Sign in action. Fix: check needsLogin before dialing.
+  it('listBots rejects without calling profiles.list when the active connection needs sign-in', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://10.0.2.2:9130',
+      id: 'conn-1',
+      kind: 'remote',
+      label: 'Test',
+      needsLogin: true
+    })
+
+    await expect(listBots()).rejects.toThrow(/Authentication failed/)
+    expect(fake.request).not.toHaveBeenCalled()
+  })
+
+  it('listBots calls profiles.list normally when the active connection does not need sign-in', async () => {
+    setActiveConnection({
+      authMode: 'password',
+      baseUrl: 'http://10.0.2.2:9130',
+      id: 'conn-1',
+      kind: 'remote',
+      label: 'Test',
+      needsLogin: false
+    })
+    fake.request.mockResolvedValue(ROSTER_FIXTURE)
+
+    const result = await listBots()
+
+    expect(fake.request).toHaveBeenCalledWith('profiles.list', {}, undefined)
+    expect(result).toEqual(ROSTER_FIXTURE)
   })
 
   it('describeBot addresses profiles.describe by name', async () => {
