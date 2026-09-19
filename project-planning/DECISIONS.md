@@ -938,3 +938,50 @@ not be somewhere the user can scroll away from. **Checked by me:** the session s
 (`app/(main)/sessions/[id].tsx:184-219`), that the composer uses `KeyboardStickyView`
 (`Composer.tsx:602`), the list header's contents, and which cards have text inputs. **On
 Sonnet's and Opus's word:** the desktop component's behaviour and the instrumented trace.
+
+## D26 — Sudo and secret cards get Cancel before the dock merges; stale approval notifications are dismissed; the foreground-return hang is open (2026-09-19)
+
+**Decision.** Three rulings on Opus's hand-off of 2026-09-19.
+
+1. **Cancel on `SudoCard` and `SecretCard`, matching the desktop. It holds the merge of
+   `fix/approval-visible`.** Cancel sends the existing `sudo.respond` / `secret.respond` with an
+   empty value. The label is the vendored `t.common.cancel`; the button sits in the card's fixed
+   actions footer beside Send. The card unmounts, `FLAG_SECURE` releases, and the turn continues.
+   A failing-first test per card. Device check of Cancel needs no typing; submission still waits
+   for the user's sitting.
+2. **An answered or expired approval's OS notification is dismissed.** The identifier returned
+   when scheduling is kept, keyed by request id, and dismissed when the request clears by any
+   route: answered here, answered from another client, expired, or the turn ended. In this round
+   on its own commit. It blocks neither the merge nor 0.1.0. Reason it may be carried if it
+   slips: it is stale information that cannot cause a wrong action; the tap lands on a session
+   with nothing pending.
+3. **Open, blocking 0.1.0 under D20.2.6: an approval can be unreachable after a return to the
+   foreground.** On return the app runs `reconnectAndProbeGateway` (ensure, then `ping`); when
+   the ping answers, nothing re-resumes the session, so a pending request is not restored on
+   the surviving-socket branch. D10's criterion claimed both reconnect branches; on this
+   evidence that branch was never covered. Two further symptoms (no notification while
+   backgrounded and not frozen; a blank transcript that loses the user's own message) are
+   unexplained. Two hypotheses are recorded for the instrumented run, not as findings: the
+   client ignores `session.resume`'s `inflight` and `queued` fields, so a hydrate mid-turn drops
+   the current exchange; and an `approval.request` carrying a runtime id the client no longer
+   maps, or that is not the active one, is dropped by the `isActiveEvent` gate. No fix is
+   written until Opus brings the traces and a recommendation between patching the two symptoms
+   and rebuilding the session from `session.resume` on every foreground return. This does not
+   block merging the dock fix, which is a separate, verified mechanism.
+
+**Reasoning.** Part 1: the only exit from a credential prompt today is Stop, which kills the
+turn; a user who does not want to type a password into a phone must be able to decline without
+losing the work. Part 3 is recorded as open rather than decided because deciding now would be
+the pattern this log has already paid for three times: a plausible code reading standing in for
+a trace.
+
+**Checked by me** at the pinned upstream commit `ee84ccd8bd`:
+`tui_gateway/agent_callbacks.py` `secret_cb` returns `skipped: True` on an empty value and never
+calls `save_env_value_secure`; the desktop's `prompt-overlays.tsx` has Cancel on both dialogs
+(lines 129, 230) and documents an empty sudo response as a failed sudo in which no command runs
+(line 87). In this repo: `reconnectAndProbeGateway` at `session-connection.ts:620-655` does
+ensure-then-ping and nothing else; nothing outside `src/upstream` reads `inflight` or `queued`;
+`isActiveEvent` is `runtimeSessionId === activeRuntimeSessionId`. **On Opus's word:** every
+device observation, Sonnet's 13-of-13 branch pass, and that the mobile cards have no Cancel.
+**Unverified by anyone:** whether a hydrate ran in the hang repro, and whether the missing
+request never reached JS or was dropped by the reducer.
