@@ -931,6 +931,18 @@ export const CONNECT_USE_COMPUTER_ADDRESS_TITLE = "Use the computer's address"
 export const CONNECT_USE_COMPUTER_ADDRESS_DESC = 'Its tailnet name, for example https://your-pc.tailnet.ts.net:9119.'
 export const CONNECT_BACK_TO_STEPS = 'Back to the pairing steps'
 
+// D24.1.3: a typed URL that normalises equal to an existing connection's
+// routes to that connection instead of probing and re-authing from scratch —
+// re-adding the same URL used to leave the old entry orphaned beside a new
+// one, which is what a locked-out person tries first.
+export const CONNECT_ALREADY_KNOWN_TITLE = 'This gateway is already added'
+
+export function connectAlreadyKnownDesc(label: string): string {
+  return `You've connected to this address before, as "${label}".`
+}
+
+export const CONNECT_USE_THIS_GATEWAY = 'Use this gateway'
+
 // connect.html `:steps` — the button onto the URL step.
 export const CONNECT_NEXT_URL = 'Next: enter the gateway URL'
 

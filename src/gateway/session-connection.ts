@@ -36,21 +36,35 @@
 
 import { getActiveConnection, updateActiveConnection } from '../connections/registry'
 import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { needsSignIn } from '../connections/sign-in-route'
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
-import { dispatchNativeNotification } from '../push/native-notifications'
+import {
+  dismissAllNativeNotifications,
+  dismissNativeNotification,
+  dispatchNativeNotification
+} from '../push/native-notifications'
 import { ensureNotificationPermissionRequested } from '../push/notification-permission'
-import { setClarifyRequest } from '../store/clarify'
+import { $clarifyRequests, clearEveryClarifyRequest, setClarifyRequest } from '../store/clarify'
+import { notifySignedOut } from '../store/connection-events'
 import { notifyCronChanged, notifyPairingChanged, notifyPlatformsChanged } from '../store/live-sync'
 import { notify } from '../store/notifications'
 import { getActiveProfile } from '../store/profile'
-import { setApprovalRequest, setSecretRequest, setSudoRequest } from '../store/prompts'
+import {
+  $approvalRequests,
+  $secretRequests,
+  $sudoRequests,
+  clearEveryPendingPrompt,
+  setApprovalRequest,
+  setSecretRequest,
+  setSudoRequest
+} from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
 import { publishReducerState } from '../store/session-states'
-import { requestSessionListRefresh } from '../store/sessions'
+import { clearSessions, requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
 import { ingestBackendSkin } from '../theme/backend-skin'
 import { type ChatMessage, textPart, toChatMessages } from '../upstream/lib/chat-messages'
@@ -175,6 +189,24 @@ export function setConnectionAttention(next: ConnectionAttention): void {
   }
 }
 
+/**
+ * D24.1.2: the one place "this connection needs sign-in" is set — from a
+ * confirmed 401/403 on the ws-ticket mint, any REST call, or an
+ * unauthorized socket close. Sets both the screen-level `ConnectionAttention`
+ * (read by `ConnectionBanner`, live in the current app session) and the
+ * persisted registry field (read by the gateway card and every list screen,
+ * survives a cold start) together, so the two can never disagree — before
+ * this existed, the ws-ticket catch below set only the former, which is why
+ * Opus's device repro (EXPIRY-PATH-2026-09-19.md) found the gateway card
+ * still reading "Current · Password" after a confirmed 401. A no-op if
+ * `connectionId` is no longer the active connection (a stale request from a
+ * connection the user has since switched away from).
+ */
+export function markConnectionNeedsLogin(connectionId: string): void {
+  setConnectionAttention({ kind: 'needs-login' })
+  void updateActiveConnection(current => (current.id === connectionId ? { ...current, needsLogin: true } : current))
+}
+
 function publishAll(): void {
   publishReducerState(reducerState)
   publishTodosFromReducerState(reducerState)
@@ -246,61 +278,94 @@ function dispatchEffects(effects: Effect[]): void {
 
       case 'setClarify':
         if (effect.storedSessionId) {
+          // D26: read the outgoing request's id BEFORE overwriting the
+          // store, so a clear (any route — answered here, answered
+          // elsewhere, expired, turn ended — the reducer normalizes all of
+          // these into the same `request: null` shape) can dismiss its OS
+          // notification. Nothing to dismiss when a NEW request is arriving.
+          const clearedClarifyId = effect.request ? null : $clarifyRequests.get()[effect.storedSessionId]?.requestId
+
           setClarifyRequest(effect.storedSessionId, effect.request)
 
           if (effect.request) {
             void dispatchNativeNotification({
               body: effect.request.question,
               kind: 'input',
+              requestId: effect.request.requestId,
               sessionId: effect.storedSessionId,
               title: 'Hermes needs input'
             })
+          } else if (clearedClarifyId) {
+            void dismissNativeNotification(clearedClarifyId)
           }
         }
 
         break
+      case 'setApproval': {
+        const clearedApprovalId = effect.request
+          ? null
+          : (effect.storedSessionId && $approvalRequests.get()[effect.storedSessionId]?.requestId) || null
 
-      case 'setApproval':
         setApprovalRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: effect.request.command || effect.request.description,
             kind: 'approval',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Approval needed'
           })
+        } else if (clearedApprovalId) {
+          void dismissNativeNotification(clearedApprovalId)
         }
 
         break
+      }
 
-      case 'setSudo':
+      case 'setSudo': {
+        const clearedSudoId = effect.request
+          ? null
+          : (effect.storedSessionId && $sudoRequests.get()[effect.storedSessionId]?.requestId) || null
+
         setSudoRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: 'A command needs your sudo password.',
             kind: 'input',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
+        } else if (clearedSudoId) {
+          void dismissNativeNotification(clearedSudoId)
         }
 
         break
+      }
 
-      case 'setSecret':
+      case 'setSecret': {
+        const clearedSecretId = effect.request
+          ? null
+          : (effect.storedSessionId && $secretRequests.get()[effect.storedSessionId]?.requestId) || null
+
         setSecretRequest(effect.storedSessionId, effect.request)
 
         if (effect.request) {
           void dispatchNativeNotification({
             body: effect.request.prompt || effect.request.envVar,
             kind: 'input',
+            requestId: effect.request.requestId,
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
+        } else if (clearedSecretId) {
+          void dismissNativeNotification(clearedSecretId)
         }
 
         break
+      }
 
       case 'haptic':
         if (effect.kind === 'streamStart') {
@@ -364,8 +429,7 @@ export function handleSocketClose(connection: MobileConnection, code: number): v
     return
   }
 
-  setConnectionAttention({ kind: 'needs-login' })
-  void updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  markConnectionNeedsLogin(connection.id)
 }
 
 /** The oauth half of the 4401 branch above. A refresh that rotates the
@@ -379,9 +443,7 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
   const refreshed = await refreshConnectionOAuth(connection.id, connection.baseUrl)
 
   if (!refreshed) {
-    setConnectionAttention({ kind: 'needs-login' })
-    setConnectionAttention({ kind: 'needs-login' })
-    await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+    markConnectionNeedsLogin(connection.id)
 
     return
   }
@@ -390,6 +452,15 @@ async function recoverOauthUnauthorizedClose(connection: MobileConnection): Prom
 }
 
 async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
+  // D27 point 2 (Opus's review): needsLogin gates outbound authenticated
+  // traffic at this choke point — refuse before minting a ticket or reading
+  // a stored token, the same needs-login result the shared Sign in piece
+  // (sign-in-route.ts) renders. Only the login route (app/connect/[id]/
+  // login.tsx, via mergeSignedInConnection) clears the flag.
+  if (needsSignIn(connection)) {
+    throw new Error(describeConnectReason('unauthorized'))
+  }
+
   if (connection.authMode === 'token') {
     const token = await getConnectionToken(connection.id)
 
@@ -435,9 +506,18 @@ async function resolveAuth(connection: MobileConnection): Promise<DialAuth> {
     if (error instanceof HttpError) {
       const reason = classifyConnectReason({ httpStatus: error.status })
 
-      setConnectionAttention(
-        reason === 'unauthorized' || reason === 'forbidden' ? { kind: 'needs-login' } : { kind: 'unreachable', reason }
-      )
+      // oauth's needsLogin decision is `flagOauthSessionExpiredIfConfirmed`
+      // above's alone — a 401 there can be a merely-stale access token with
+      // a still-valid refresh token, which is NOT a confirmed sign-out
+      // (AGENTS.md: a transient failure must never trigger a login prompt).
+      // Token/password have no such nuance: neither has a silent refresh, so
+      // a confirmed 401/403 minting the ticket is decisive on its own —
+      // D24.1.2, named explicitly, is exactly this branch.
+      if (connection.authMode !== 'oauth' && (reason === 'unauthorized' || reason === 'forbidden')) {
+        markConnectionNeedsLogin(connection.id)
+      } else if (reason !== 'unauthorized' && reason !== 'forbidden') {
+        setConnectionAttention({ kind: 'unreachable', reason })
+      }
 
       throw new Error(describeConnectReason(reason), { cause: error })
     }
@@ -478,8 +558,7 @@ async function flagOauthSessionExpiredIfConfirmed(connection: MobileConnection, 
     return
   }
 
-  setConnectionAttention({ kind: 'needs-login' })
-  await updateActiveConnection(current => (current.id === connection.id ? { ...current, needsLogin: true } : current))
+  markConnectionNeedsLogin(connection.id)
 }
 
 /** Establish the one live gateway connection for the active `MobileConnection`.
@@ -649,6 +728,75 @@ export async function reconnectAndProbeGateway(): Promise<void> {
     client.invalidate()
     await ensureGatewayConnection().catch(() => undefined)
   }
+}
+
+/**
+ * D27 point 1 (Opus's review, Fable's ruling): sign out the ACTIVE
+ * connection's live socket and every piece of runtime state this module (and
+ * the stores it owns) holds for it. `signOutConnection` (net/auth/logout.ts)
+ * calls this after the best-effort `POST /auth/logout` and the SecureStore
+ * clear, right before it flips `needsLogin`.
+ *
+ * A no-op for a non-active connection — there is only ever one live socket
+ * (M04/AGENTS.md "one active connection in v1"), so a connection that isn't
+ * the active one has no socket or runtime state here to touch at all.
+ */
+export function disconnectForSignOut(connectionId: string): void {
+  const active = getActiveConnection()
+
+  if (!active || active.id !== connectionId) {
+    return
+  }
+
+  // Same mechanism reconnectAndProbeGateway uses above: invalidate stops
+  // connectionState from lying about 'open' and rejects anything still
+  // in flight, without attempting a redial (unlike the probe's own recovery
+  // path — there is nothing to reconnect to right now, the user just signed
+  // out).
+  gateway?.invalidate()
+  disposeEvents?.()
+  disposeEvents = null
+  disposeLiveSyncEvents?.()
+  disposeLiveSyncEvents = null
+  gateway = null
+
+  // Drops runtimeToStored, activeRuntimeSessionId and every session's
+  // in-memory transcript/turn state at once — there's only one connection's
+  // worth of any of this (M04), so createReducerState()'s "nothing known
+  // yet" is exactly the right end state.
+  reducerState = createReducerState()
+  publishAll()
+
+  setConnectionAttention(null)
+
+  // Pending approval/sudo/secret/clarify cards unmount (FLAG_SECURE
+  // releases for sudo/secret) the instant their store entry is gone — these
+  // are separate nanostores from reducerState (set via dispatchEffects'
+  // setApproval/setSudo/setSecret/setClarify cases), so createReducerState()
+  // above doesn't reach them on its own.
+  clearEveryPendingPrompt()
+  clearEveryClarifyRequest()
+
+  // D27.1: dismiss every pending-request OS notification too — cleared
+  // directly here rather than through dispatchEffects' own per-clear
+  // dismiss (D26), since this clears every session's requests at once, not
+  // one storedSessionId's. dismissAllNativeNotifications (D27, native-
+  // notifications.ts) is itself the one that reaches beyond this process's
+  // own in-memory requestId map, so a notification from before this app
+  // process started is still cleared. Fire-and-forget, same as every other
+  // native-notification call in this module — best-effort, never blocks
+  // the synchronous local-state clear above it.
+  void dismissAllNativeNotifications()
+
+  // The cached session-list summaries belong to the connection that just
+  // signed out.
+  clearSessions()
+  requestSessionListRefresh()
+
+  // react-query's QueryClient (Tasks' cache) lives in app/_layout.tsx's
+  // component state, unreachable from this plain module — see
+  // connection-events.ts's header for why this is a tick, not a direct call.
+  notifySignedOut()
 }
 
 /** The wire-level runtime id currently bound to `storedSessionId`, or the

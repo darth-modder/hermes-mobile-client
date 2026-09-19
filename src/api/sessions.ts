@@ -13,6 +13,8 @@
 
 import { getActiveConnection } from '../connections/registry'
 import { getConnectionOAuth, getConnectionToken } from '../connections/secure'
+import { needsSignIn } from '../connections/sign-in-route'
+import { markConnectionNeedsLogin } from '../gateway/session-connection'
 import { classifyConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest, type HttpRequestOptions } from '../net/http'
 import type { PaginatedSessions } from '../upstream/types/hermes'
@@ -47,6 +49,14 @@ async function sessionsRequest<T>(path: string, options: HttpRequestOptions = {}
     throw new Error('No active connection — add one first')
   }
 
+  // D27 point 2 (Opus's review): this file predates rest.ts and keeps its
+  // own inline REST copy (see the module header), so it needs the same
+  // needsLogin choke-point gate rest.ts's restRequest got — refuse before
+  // resolving auth or dialing anything, same needs-login result.
+  if (needsSignIn(connection)) {
+    throw new Error(describeConnectReason('unauthorized'))
+  }
+
   const auth = await restAuth()
 
   try {
@@ -58,6 +68,14 @@ async function sessionsRequest<T>(path: string, options: HttpRequestOptions = {}
     // resolveAuth does for its own HttpError case, via the M04 reason ladder.
     if (error instanceof HttpError) {
       const reason = classifyConnectReason({ httpStatus: error.status })
+
+      // D24.1.2: "any REST call" is one of the three confirmed-401/403
+      // sources that mark needsLogin, same as the ws-ticket mint and an
+      // unauthorized socket close — this is the path a cold-started app
+      // reaching the Sessions list (no socket attempt yet) actually takes.
+      if (reason === 'unauthorized' || reason === 'forbidden') {
+        markConnectionNeedsLogin(connection.id)
+      }
 
       throw new Error(describeConnectReason(reason), { cause: error })
     }

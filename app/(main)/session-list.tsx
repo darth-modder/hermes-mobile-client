@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { deleteSession, listSessions, updateSessionFlags } from '../../src/api/sessions'
 import { TabStrip } from '../../src/components/TabStrip'
+import { getActiveConnection } from '../../src/connections/registry'
+import { needsSignIn, signInRoute } from '../../src/connections/sign-in-route'
 import { Plus, Settings } from '../../src/lib/icons'
 import { groupSessions } from '../../src/lib/session-groups'
 import { OPEN_MENU_ACCESSIBILITY_LABEL } from '../../src/lib/strings.mobile'
@@ -264,12 +266,29 @@ export default function SessionListScreen() {
       {error ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: tokens.destructive }]}>{error}</Text>
-          <TouchableOpacity
-            onPress={() => void load()}
-            style={[styles.retryButton, { backgroundColor: tokens.primary }]}
-          >
-            <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
-          </TouchableOpacity>
+          {needsSignIn(getActiveConnection()) ? (
+            <TouchableOpacity
+              onPress={() => {
+                const active = getActiveConnection()
+
+                if (active) {
+                  router.push(signInRoute(active))
+                }
+              }}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+            </TouchableOpacity>
+          ) : (
+            // D23 point 3: Retry never appears alongside Sign in — a request
+            // that failed for lack of a session cannot succeed by retrying it.
+            <TouchableOpacity
+              onPress={() => void load()}
+              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+            >
+              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>Retry</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : sessions === null ? (
         <View style={styles.center}>

@@ -12,6 +12,7 @@ import { SessionHeader } from '../../../src/chat/SessionHeader'
 import { Transcript } from '../../../src/chat/Transcript'
 import { BotSettingsSheet } from '../../../src/components/BotSettingsSheet'
 import { getActiveConnection } from '../../../src/connections/registry'
+import { needsSignIn, signInRoute } from '../../../src/connections/sign-in-route'
 import { createSession, resumeSession } from '../../../src/gateway/session-connection'
 import { SESSION_HEADER_REFRESH_FAILED_TITLE } from '../../../src/lib/strings.mobile'
 import { t } from '../../../src/lib/t'
@@ -148,14 +149,33 @@ export default function SessionScreen() {
             <Text style={[styles.failureErrorText, { color: tokens.destructive }]}>{error}</Text>
           </View>
           <View style={styles.failureActions}>
-            <TouchableOpacity
-              accessibilityLabel={t.desktop.resumeRetry}
-              accessibilityRole="button"
-              onPress={openSession}
-              style={[styles.retryButton, { backgroundColor: tokens.primary }]}
-            >
-              <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.desktop.resumeRetry}</Text>
-            </TouchableOpacity>
+            {needsSignIn(getActiveConnection()) ? (
+              <TouchableOpacity
+                accessibilityLabel={t.install.signIn}
+                accessibilityRole="button"
+                onPress={() => {
+                  const active = getActiveConnection()
+
+                  if (active) {
+                    router.push(signInRoute(active))
+                  }
+                }}
+                style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+              >
+                <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+              </TouchableOpacity>
+            ) : (
+              // D23 point 3: Retry never appears alongside Sign in — a request
+              // that failed for lack of a session cannot succeed by retrying it.
+              <TouchableOpacity
+                accessibilityLabel={t.desktop.resumeRetry}
+                accessibilityRole="button"
+                onPress={openSession}
+                style={[styles.retryButton, { backgroundColor: tokens.primary }]}
+              >
+                <Text style={[styles.retryText, { color: tokens.primaryForeground }]}>{t.desktop.resumeRetry}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               accessibilityLabel={t.boot.failure.gatewaySettings}
               accessibilityRole="button"
