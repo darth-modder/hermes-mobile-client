@@ -85,6 +85,8 @@ export function SecretCardActions({ storedSessionId, request }: SecretCardAction
         value={value}
       />
       <TouchableOpacity
+        accessibilityLabel={t.common.cancel}
+        accessibilityRole="button"
         disabled={sending}
         onPress={() => void cancel()}
         style={[styles.button, { backgroundColor: tokens.bgTertiary }]}
@@ -96,6 +98,8 @@ export function SecretCardActions({ storedSessionId, request }: SecretCardAction
         )}
       </TouchableOpacity>
       <TouchableOpacity
+        accessibilityLabel="Send"
+        accessibilityRole="button"
         disabled={sending || !value}
         onPress={() => void submit()}
         style={[styles.button, { backgroundColor: tokens.primary }]}

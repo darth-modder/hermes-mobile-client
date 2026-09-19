@@ -81,6 +81,8 @@ export function SudoCardActions({ storedSessionId, request }: SudoCardActionsPro
         value={password}
       />
       <TouchableOpacity
+        accessibilityLabel={t.common.cancel}
+        accessibilityRole="button"
         disabled={sending}
         onPress={() => void cancel()}
         style={[styles.button, { backgroundColor: tokens.bgTertiary }]}
@@ -92,6 +94,8 @@ export function SudoCardActions({ storedSessionId, request }: SudoCardActionsPro
         )}
       </TouchableOpacity>
       <TouchableOpacity
+        accessibilityLabel="Send"
+        accessibilityRole="button"
         disabled={sending || !password}
         onPress={() => void submit()}
         style={[styles.button, { backgroundColor: tokens.primary }]}
