@@ -52,7 +52,11 @@ describe('session-stream-reducer: clarify.request stream hydration', () => {
     })
   })
 
-  it('reveals a clarify prompt raised by the active session', () => {
+  // D25: the clarify card docks above the composer regardless of scroll
+  // position now, so this no longer force-scrolls the transcript (that
+  // would violate D25.8's "position must not jump" when the reader is
+  // scrolled up).
+  it('does not force-scroll the transcript for a clarify prompt (D25)', () => {
     const h = createStreamHarness({ activeRuntimeSessionId: SID })
 
     const effects = h.dispatch({
@@ -61,7 +65,7 @@ describe('session-stream-reducer: clarify.request stream hydration', () => {
       type: 'clarify.request'
     })
 
-    expect(effects).toContainEqual({ type: 'scrollToBottom', storedSessionId: SID })
+    expect(effects.some(e => e.type === 'scrollToBottom')).toBe(false)
   })
 
   it('does not move the active thread for a background session clarify', () => {

@@ -58,6 +58,7 @@ vi.mock('../net/auth/token-refresh', () => tokenRefresh)
 
 const { getActiveConnection, setActiveConnection } = await import('../connections/registry')
 const { deleteConnectionOAuth, setConnectionOAuth } = await import('../connections/secure')
+const { $secretRequests, $sudoRequests, setSecretRequest, setSudoRequest } = await import('../store/prompts')
 const { $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
 
@@ -67,6 +68,8 @@ const {
   reconnectAndProbeGateway,
   resetSessionConnectionForTests,
   resumeSession,
+  respondSecret,
+  respondSudo,
   setGatewayForTests,
   setReducerStateForTests,
   submitPrompt
@@ -621,5 +624,69 @@ describe('reconnectAndProbeGateway: a half-open socket must not stay wedged fore
     fake.request.mockRejectedValue(new Error('request timed out after 5s: ping'))
 
     await expect(reconnectAndProbeGateway()).resolves.toBeUndefined()
+  })
+})
+
+// D26: SudoCardActions/SecretCardActions' new Cancel button calls these same
+// functions with an empty value — the upstream contract (agent_callbacks.py's
+// secret_cb, prompt-overlays.tsx) is that an empty response is a definite
+// "no" (a failed sudo / a skipped secret), never a resend. These pin the
+// wrapper's own plumbing (RPC shape, request cleared) for that empty-value
+// call, since the .tsx components themselves aren't unit-tested in this repo.
+describe('respondSudo/respondSecret: an empty value (D26 Cancel) is sent through, not special-cased client-side', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+    seedSession('stored-1', 'runtime-1')
+  })
+
+  it('respondSudo("") sends an empty password to sudo.respond', async () => {
+    fake.request.mockResolvedValue(undefined)
+
+    await respondSudo('stored-1', 'req-1', '')
+
+    expect(fake.request).toHaveBeenCalledWith('sudo.respond', {
+      password: '',
+      request_id: 'req-1',
+      session_id: 'runtime-1'
+    })
+  })
+
+  it('respondSudo("") clears the pending sudo request the same as a real password would', async () => {
+    fake.request.mockResolvedValue(undefined)
+    setSudoRequest('stored-1', { requestId: 'req-1', storedSessionId: 'stored-1' })
+
+    await respondSudo('stored-1', 'req-1', '')
+
+    expect($sudoRequests.get()['stored-1']).toBeUndefined()
+  })
+
+  it('respondSecret("") sends an empty value to secret.respond', async () => {
+    fake.request.mockResolvedValue(undefined)
+
+    await respondSecret('stored-1', 'req-2', '')
+
+    expect(fake.request).toHaveBeenCalledWith('secret.respond', {
+      request_id: 'req-2',
+      session_id: 'runtime-1',
+      value: ''
+    })
+  })
+
+  it('respondSecret("") clears the pending secret request the same as a real value would', async () => {
+    fake.request.mockResolvedValue(undefined)
+    setSecretRequest('stored-1', {
+      envVar: 'TENOR_API_KEY',
+      prompt: '',
+      requestId: 'req-2',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondSecret('stored-1', 'req-2', '')
+
+    expect($secretRequests.get()['stored-1']).toBeUndefined()
   })
 })
