@@ -37,6 +37,18 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: () => undefined }
 }))
 
+// D27.1: disconnectForSignOut (session-connection.ts) now dismisses every
+// pending-request OS notification via dismissAllNativeNotifications
+// (native-notifications.ts, merged in from fix/notification-dismiss) — see
+// that module's own test file for the dismiss behaviour in isolation.
+const dismissAllNotificationsAsync = vi.fn(async () => undefined)
+
+vi.mock('expo-notifications', () => ({
+  dismissAllNotificationsAsync,
+  dismissNotificationAsync: vi.fn(async () => undefined),
+  scheduleNotificationAsync: vi.fn(async () => 'notification-id')
+}))
+
 const { getConnection, listConnections, setActiveConnection, upsertConnection } =
   await import('../../connections/registry')
 
@@ -157,6 +169,7 @@ describe('signOutConnection', () => {
     $approvalRequests.set({})
     $sudoRequests.set({})
     $sessions.set([])
+    dismissAllNotificationsAsync.mockClear()
     setActiveConnection(connection)
   })
 
@@ -279,6 +292,17 @@ describe('signOutConnection', () => {
       await signOutConnection(connection)
 
       expect($sessions.get()).toEqual([])
+    })
+
+    // D27.1: pending-request notifications are dismissed on sign-out —
+    // dismissAllNativeNotifications, not a loop of the per-request dismiss,
+    // since sign-out clears every session's requests at once, not one.
+    it('dismisses every pending-request OS notification', async () => {
+      global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
+
+      await signOutConnection(connection)
+
+      expect(dismissAllNotificationsAsync).toHaveBeenCalledTimes(1)
     })
 
     it('does nothing to the socket when signing out a connection that is NOT active', async () => {
