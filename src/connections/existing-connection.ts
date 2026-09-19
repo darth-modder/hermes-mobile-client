@@ -7,12 +7,31 @@
 
 import type { MobileConnection } from './types'
 
-/** Base URLs carry no path in this app, so a case-insensitive compare plus a
- *  trailing-slash strip is enough to catch the re-typed-URL case without
- *  false positives (unlike a generic URL normalizer, this never touches
- *  query strings or auth — gateway URLs have none). */
+const DEFAULT_PORT_BY_SCHEME: Record<string, string> = { 'http:': '80', 'https:': '443' }
+
+/** Fable's D27 rule, verbatim: scheme and host lower-cased, the scheme's
+ *  default port dropped, trailing slash dropped, path otherwise kept (case
+ *  preserved — a path can be case-sensitive on the server, unlike scheme and
+ *  host). Falls back to the old trim-and-lowercase behaviour if `url` isn't a
+ *  parseable URL at all, so a still-being-typed address never throws. */
 export function normalizeGatewayUrl(url: string): string {
-  return url.trim().replace(/\/+$/, '').toLowerCase()
+  const trimmed = url.trim()
+
+  let parsed: URL
+
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return trimmed.replace(/\/+$/, '').toLowerCase()
+  }
+
+  const scheme = parsed.protocol.toLowerCase()
+  const host = parsed.hostname.toLowerCase()
+  const isDefaultPort = !parsed.port || parsed.port === DEFAULT_PORT_BY_SCHEME[scheme]
+  const port = isDefaultPort ? '' : `:${parsed.port}`
+  const path = parsed.pathname.replace(/\/+$/, '')
+
+  return `${scheme}//${host}${port}${path}${parsed.search}`
 }
 
 export function findConnectionByUrl(url: string, connections: readonly MobileConnection[]): MobileConnection | null {

@@ -15,6 +15,27 @@ describe('normalizeGatewayUrl', () => {
   it('is stable for an already-normalized URL', () => {
     expect(normalizeGatewayUrl('https://gateway.example.org')).toBe('https://gateway.example.org')
   })
+
+  it('drops the scheme default port — D27: :80 for http, :443 for https', () => {
+    expect(normalizeGatewayUrl('http://hermes.example.com:80')).toBe('http://hermes.example.com')
+    expect(normalizeGatewayUrl('https://hermes.example.com:443')).toBe('https://hermes.example.com')
+  })
+
+  it('treats a default-port URL and its bare equivalent as the same address', () => {
+    expect(normalizeGatewayUrl('http://10.0.2.2:80/')).toBe(normalizeGatewayUrl('http://10.0.2.2'))
+  })
+
+  it('keeps a non-default port', () => {
+    expect(normalizeGatewayUrl('http://10.0.2.2:9128')).toBe('http://10.0.2.2:9128')
+  })
+
+  it('lowercases scheme and host but preserves a path\'s case — D27: "path otherwise kept"', () => {
+    expect(normalizeGatewayUrl('HTTP://My-Host:9128/API/Status')).toBe('http://my-host:9128/API/Status')
+  })
+
+  it('falls back to trim-and-lowercase for a string with no scheme, instead of throwing', () => {
+    expect(normalizeGatewayUrl('10.0.2.2:9128')).toBe('10.0.2.2:9128')
+  })
 })
 
 describe('findConnectionByUrl', () => {

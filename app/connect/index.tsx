@@ -6,8 +6,9 @@ import { Clipboard, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableO
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { findConnectionByUrl } from '../../src/connections/existing-connection'
-import { listConnections, setActiveConnection } from '../../src/connections/registry'
+import { listConnections, setActiveConnection, switchActiveConnection } from '../../src/connections/registry'
 import { setConnectionToken } from '../../src/connections/secure'
+import { needsSignIn, signInRoute } from '../../src/connections/sign-in-route'
 import {
   isPrimaryStartCard,
   SHOW_TAILSCALE_PAIRING,
@@ -17,6 +18,7 @@ import {
 import type { MobileConnection } from '../../src/connections/types'
 import { UNAFFILIATED_NOTICE } from '../../src/lib/app-identity'
 import {
+  CONNECT_ALREADY_KNOWN_TITLE,
   CONNECT_BACK_TO_STEPS,
   CONNECT_CHECKLIST_COMMANDS,
   CONNECT_COPY_CHECKLIST,
@@ -47,6 +49,8 @@ import {
   CONNECT_URL_TITLE,
   CONNECT_USE_COMPUTER_ADDRESS_DESC,
   CONNECT_USE_COMPUTER_ADDRESS_TITLE,
+  CONNECT_USE_THIS_GATEWAY,
+  connectAlreadyKnownDesc,
   CONNECTING_DOC_URL,
   CONNECTION_AUTH_MODE_LABEL,
   connectOauthStatus,
@@ -71,10 +75,12 @@ function newConnectionId(): string {
   return `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** D24.1.3: a URL that normalises equal to an existing connection's reuses
- *  that connection's id — registry.ts's registerConnection upserts by id, so
- *  this updates the existing entry in place instead of minting a duplicate
- *  beside it. */
+/** A safety net for the id these flows persist under, once `detect()` has
+ *  already established there is no existing match (`existingMatch` is only
+ *  set — and these flows never reached — when one exists; see the D24.1.3
+ *  routing in `detect()`/`existingMatch` below, which is the actual dedupe).
+ *  Re-checks rather than trusting `detect()`'s earlier result, in case a
+ *  connection was added in between. */
 function resolveConnectionId(baseUrl: string): string {
   return findConnectionByUrl(baseUrl, listConnections())?.id ?? newConnectionId()
 }
@@ -120,6 +126,12 @@ export default function ConnectScreen() {
   const [connecting, setConnecting] = useState(false)
   const [detected, setDetected] = useState<DetectedMode | null>(null)
   const [status, setStatus] = useState('')
+  // D24.1.3: a URL that normalises equal to an existing connection's — set
+  // by `detect()` before it probes anything, so a re-add routes to the known
+  // connection instead of running auto-detect and sign-in again and
+  // overwriting it.
+  const [existingMatch, setExistingMatch] = useState<MobileConnection | null>(null)
+  const [switching, setSwitching] = useState(false)
   // `null` is the `:start` view's two cards; the other two are the entry paths
   // (connect.html `:start` → `:steps` → `:url`, or `:start` → `:url`). Held as
   // one screen's state rather than three routes because the prototype models
@@ -173,6 +185,19 @@ export default function ConnectScreen() {
     setDetecting(true)
     setStatus('')
     setDetected(null)
+
+    // D24.1.3: route to the existing connection instead of probing and
+    // re-authing from scratch — probing/signing in again here is exactly
+    // what silently overwrote the old entry's fields (D24 Part 1.3).
+    const matched = findConnectionByUrl(baseUrl, listConnections())
+
+    setExistingMatch(matched)
+
+    if (matched) {
+      setDetecting(false)
+
+      return
+    }
 
     try {
       const health = await probeHealth(baseUrl)
@@ -300,6 +325,24 @@ export default function ConnectScreen() {
       setStatus(`${t.onboarding.signInFailed} ${message}`)
     } finally {
       setConnecting(false)
+    }
+  }
+
+  // D24.1.3's second route: the matched connection doesn't need sign-in, so
+  // just make it active — no re-probe, no re-auth, no field overwrite.
+  const useThisGateway = () => {
+    if (!existingMatch) {
+      return
+    }
+
+    setSwitching(true)
+
+    const activated = switchActiveConnection(existingMatch.id)
+
+    setSwitching(false)
+
+    if (activated) {
+      router.replace({ params: { id: 'new' }, pathname: '/(main)/sessions/[id]' })
     }
   }
 
@@ -494,8 +537,37 @@ export default function ConnectScreen() {
             </View>
 
             {status ? <Text style={[styles.status, { color: tokens.semantic.green }]}>{status}</Text> : null}
-            {guard.ok && !detected ? (
+            {guard.ok && !detected && !existingMatch ? (
               <Text style={[styles.hint, { color: tokens.textTertiary }]}>{CONNECT_NOTHING_SENT_YET}</Text>
+            ) : null}
+
+            {existingMatch ? (
+              <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+                <Text style={[styles.cardTitle, { color: tokens.foreground }]}>{CONNECT_ALREADY_KNOWN_TITLE}</Text>
+                <Text style={[styles.cardDesc, { color: tokens.textSecondary }]}>
+                  {connectAlreadyKnownDesc(existingMatch.label)}
+                </Text>
+                {needsSignIn(existingMatch) ? (
+                  <TouchableOpacity
+                    accessibilityLabel={t.install.signIn}
+                    onPress={() => router.push(signInRoute(existingMatch))}
+                    style={[styles.blockButton, { backgroundColor: tokens.primary }]}
+                  >
+                    <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>{t.install.signIn}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    accessibilityLabel={CONNECT_USE_THIS_GATEWAY}
+                    disabled={switching}
+                    onPress={useThisGateway}
+                    style={[styles.blockButton, { backgroundColor: tokens.primary, opacity: switching ? 0.5 : 1 }]}
+                  >
+                    <Text style={[styles.buttonText, { color: tokens.primaryForeground }]}>
+                      {CONNECT_USE_THIS_GATEWAY}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             ) : null}
 
             {guardError ? (

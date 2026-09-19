@@ -3,8 +3,8 @@ import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { setActiveConnection } from '../../../src/connections/registry'
-import type { MobileConnection } from '../../../src/connections/types'
+import { getConnection, setActiveConnection } from '../../../src/connections/registry'
+import { mergeSignedInConnection } from '../../../src/connections/sign-in-merge'
 import { buildGatewayWsUrl, createGatewaySocketFactory } from '../../../src/gateway/dial'
 import {
   CONNECT_MINTING_TICKET,
@@ -110,15 +110,19 @@ export default function PasswordLoginScreen() {
     try {
       await passwordLogin(baseUrl, { provider, username, password })
 
-      const connection: MobileConnection = {
+      // mergeSignedInConnection (sign-in-merge.ts): a fresh MobileConnection
+      // built here from scratch, the way this used to work, silently dropped
+      // headerNames and everything else registerConnection (registry.ts)
+      // doesn't itself carry over from the old entry — see that module's
+      // header for the regression Opus found.
+      const existing = id ? getConnection(id) : null
+
+      const connection = mergeSignedInConnection(existing, {
         id: id ?? `conn-${Date.now()}`,
-        kind: 'remote',
-        label: label || baseUrl,
         baseUrl,
-        authMode: 'password',
-        provider,
-        lastUsedAt: Date.now()
-      }
+        label,
+        provider
+      })
 
       const statusBody = await probeStatus(baseUrl)
 
