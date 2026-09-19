@@ -9,8 +9,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const scheduleNotificationAsync = vi.fn(async () => 'notification-id')
 const dismissNotificationAsync = vi.fn(async () => undefined)
+const dismissAllNotificationsAsync = vi.fn(async () => undefined)
 
-vi.mock('expo-notifications', () => ({ dismissNotificationAsync, scheduleNotificationAsync }))
+vi.mock('expo-notifications', () => ({
+  dismissAllNotificationsAsync,
+  dismissNotificationAsync,
+  scheduleNotificationAsync
+}))
 
 const mmkvBacking = new Map<string, string>()
 
@@ -27,6 +32,7 @@ vi.mock('react-native-mmkv', () => ({
 const {
   $nativeNotifyPrefs,
   ANDROID_NOTIFICATION_CHANNEL_ID,
+  dismissAllNativeNotifications,
   dismissNativeNotification,
   dispatchNativeNotification,
   setNativeNotifyEnabled,
@@ -255,5 +261,54 @@ describe('dismissNativeNotification: the request-id-keyed dismiss (D26)', () => 
     expect(fired).toBe(false)
     await dismissNativeNotification('req-blocked')
     expect(dismissNotificationAsync).not.toHaveBeenCalled()
+  })
+})
+
+// D27: sign-out's own clear needs every pending-request notification gone,
+// not just the ones this process's own map still has an identifier for — a
+// notification scheduled before the current app process started (this
+// file's own known gap, noted above dismissNativeNotification) has no entry
+// there at all, but sign-out still has to clear it.
+describe('dismissAllNativeNotifications: sign-out clears the whole tray (D27)', () => {
+  beforeEach(() => {
+    mmkvBacking.clear()
+    scheduleNotificationAsync.mockClear()
+    dismissNotificationAsync.mockClear()
+    dismissAllNotificationsAsync.mockClear()
+    setNativeNotifyEnabled(true)
+
+    for (const kind of ['approval', 'input', 'turnDone', 'turnError', 'backgroundDone', 'credits', 'plugin'] as const) {
+      setNativeNotifyKind(kind, true)
+    }
+
+    AppState.currentState = 'background'
+  })
+
+  it('calls dismissAllNotificationsAsync', async () => {
+    await dismissAllNativeNotifications()
+
+    expect(dismissAllNotificationsAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets every tracked identifier — a later per-request dismiss for one of them is a no-op', async () => {
+    scheduleNotificationAsync.mockResolvedValueOnce('os-notif-x')
+
+    await dispatchNativeNotification({
+      kind: 'approval',
+      requestId: 'req-x',
+      sessionId: 'sid-dismiss-all-1',
+      title: 'x'
+    })
+    await dismissAllNativeNotifications()
+    dismissNotificationAsync.mockClear()
+    await dismissNativeNotification('req-x')
+
+    expect(dismissNotificationAsync).not.toHaveBeenCalled()
+  })
+
+  it('never throws when dismissAllNotificationsAsync itself rejects — best-effort, same as the single-id dismiss', async () => {
+    dismissAllNotificationsAsync.mockRejectedValueOnce(new Error('native module unavailable'))
+
+    await expect(dismissAllNativeNotifications()).resolves.toBeUndefined()
   })
 })

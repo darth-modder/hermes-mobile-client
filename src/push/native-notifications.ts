@@ -260,3 +260,27 @@ export async function dismissNativeNotification(requestId: string): Promise<void
     // clear is not worth surfacing as an app-level error.
   }
 }
+
+/**
+ * D27: sign-out's own clear (session-connection.ts's `disconnectForSignOut`)
+ * — every pending-request notification this app scheduled, gone at once,
+ * not just the ones `notificationIdsByRequestId` still has an entry for.
+ * Calls `dismissAllNotificationsAsync` (expo-notifications' own "clear this
+ * app's whole notification tray") rather than looping
+ * `dismissNativeNotification` per tracked id: sign-out is exactly the case
+ * this file's own known-gap note already flags — the in-memory map can't
+ * see a notification scheduled before the current app process started — and
+ * a sign-out has no reason to leave any of this app's notifications behind
+ * regardless of which route scheduled them.
+ */
+export async function dismissAllNativeNotifications(): Promise<void> {
+  notificationIdsByRequestId.clear()
+
+  try {
+    const Notifications = await import('expo-notifications')
+
+    await Notifications.dismissAllNotificationsAsync()
+  } catch {
+    // Best-effort, same as scheduling/dismissing a single one.
+  }
+}
