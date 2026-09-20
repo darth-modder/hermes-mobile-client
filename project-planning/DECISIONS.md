@@ -1228,3 +1228,54 @@ Sonnet's word:** the trace readings, the `omit_messages` parameter and what the 
 with it, and both dead-request return shapes with their line references. **Unverified by
 anyone:** the hypothesis that the release process is frozen or killed in the background; the
 meaning of `hydrating`; the sudo card across a short trip to another app.
+
+## D32 — D31.3 withdrawn: no payload sniffing; the reconcile keys on runtime-id continuity (2026-09-20)
+
+**Decision.** D31.3 told the client to detect a cold resume by the presence of a `resumed` key.
+That was wrong: I read `_live_session_payload` and not its wrapper. `_resume_reuse_live_locked`
+adds `payload["resumed"]` on the live path too (`tui_gateway/methods_session.py:641` at
+`ee84ccd8bd`), so both payloads carry the key. Sonnet flagged it before building on it and Opus
+verified it. D31.3's detector is withdrawn, and its sudo/secret amendment is replaced by point 5
+below.
+
+Opus proposed discriminating on `turn_started_at` (live only) and an explicit `inflight: null`
+(cold only). That reading is correct, and it is not adopted: it still infers which upstream
+builder ran from incidental keys. The client does not need to know which builder ran. It needs
+to know whether the server-side session that issued a request is still the same one, and the
+server says so: live reuse returns the existing session id, and every other resume path calls
+`mint()` for a new one. M06's verification log recorded exactly this (the same runtime id after
+a short gap, a new one after a long gap).
+
+The reconcile, with no live/cold branch:
+
+1. **Validate.** `session_id` is a non-empty string and `running` is a boolean; otherwise the
+   payload is UNKNOWN: nothing destructive happens, a `__DEV__` log is written, and the payload
+   is not trusted.
+2. **Rebind** the runtime id from `session_id` before anything else is processed.
+3. **`pending_approval` / `pending_clarify`:** present sets, absent clears. True on both paths.
+4. **`running === false`** clears all four pending kinds and spinners. This covers the cold case
+   on its own, since a cold resume returns `running: false` for this client.
+5. **Sudo and secret while `running === true`** are kept only if the same socket survived since
+   the request arrived **and** the response's `session_id` equals the runtime id the request
+   arrived under; otherwise they clear. Each pending request records the runtime id it arrived
+   on.
+6. **`inflight`** is merged when it is an object and ignored when null or absent.
+
+The pinned fixtures assert: live resume keeps `session_id` and cold resume changes it; both carry
+`session_id` and a boolean `running`; pending keys appear only when pending. Nothing asserts
+`resumed` or `turn_started_at`. The discriminator is also seen on the wire, not only read: a
+resume inside the orphan grace returns the same id and one after the reap returns a different
+one, with a request pending in each case.
+
+**Reasoning.** The mistake was small and the lesson is the one this log keeps paying for: I read
+the function I expected to matter and stopped. The better design came from asking what the
+client actually needs to know rather than how to tell two builders apart. Runtime-id continuity
+is a value the server returns on purpose, it has the meaning we want, and it depends on one
+field instead of three incidental ones.
+
+**Checked by me** at `ee84ccd8bd`: line 641's unconditional `payload["resumed"]`; that
+`_resume_reuse_live` is called with the existing sid; that the other resume paths call
+`ctx.mint()` (lines 676, 701, 719, 738). **On Opus's and Sonnet's word:** the field-by-field
+comparison of the two payload literals. **Unverified by anyone:** the same-id / new-id behaviour
+with a request pending, on the wire; that this client can never receive the lazy path's
+`running: true` overlay.
