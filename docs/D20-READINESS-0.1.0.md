@@ -1,8 +1,9 @@
 # D20 readiness check — release/0.1.0, closed-test audience (2026-09-18)
 
-> **Main is UNVERIFIED from `2a5424f` onwards (D28.4, 2026-09-19).** The D23/D24/D25/D26/D27 fixes are merged
-> and unit-tested (887 tests), but their device acceptance runs in one sitting on merged main that
-> has not happened yet. Until it passes: no tag, no real-key APK, nothing leaves the machine.
+> **The D28 sitting ran on merged main `c3386f5` (2026-09-19/20). Most of it passed; THREE approval-path
+> defects are open, so item 6 still fails and nothing leaves the machine — no tag, no real-key APK.**
+> See "Sitting outcome" at the end of this file. Evidence: `D:\Stuff\hermes-android-field\d27-full-pass\`
+> (`D21.1-REPORT.md`, `phase-b.md`, `hang_runs.md`, `d258_table.md`) — outside the repo.
 
 Run against `project-planning/DECISIONS.md`'s D20 checklist, for the "closed test" audience
 (D20.4: named people, a signed build, items 1/3/4/5/6 met, physical rows may be waived). Per D21.1,
@@ -173,3 +174,63 @@ still have no device evidence. Next step is a fix round (card outside the list, 
 | 4 | Tracker/README | **Met** |
 | 5 | Claimed features on merged `main` | **Met (emulator)** |
 | 6 | Approval path | Not met — root-caused, not fixed |
+
+## Sitting outcome — 2026-09-19/20 (D28's single verification sitting)
+
+Run by Sonnet on emulator-5554 against merged `main` `c3386f5` (dev client
+`com.nousresearch.hermes.mobile`; the `[HANG-DIAG]` runs on `diag/hang-instrumentation` `8792d5b`,
+unmerged), throwaway gateway, model `mimo-v2.5`. The user typed twice (two sign-ins) plus two dummy
+card values; everything else ran unattended, restoring an emulator snapshot of their signed-in state.
+Reviewed by Opus, including corrections recorded below. Emulator only; nothing here is from a phone.
+
+**Passed.** D25.8 in full: 20 of 20 approval cards (10 light, 10 dark) fully on-screen, untouched,
+including Run-then-second and Reject-then-second in both themes; sudo, secret and clarify with the
+keyboard open; font scale 1.3; a 60-message history (exact count from the gateway's own export); a
+request arriving while scrolled up, with the transcript's top node pixel-identical across 20 samples
+over 106 s. D26.1 Cancel on sudo and secret: card gone, `FLAG_SECURE` released, turn continues.
+Sudo and secret **Send** (the previously unverified halves), each proven server-side. D24.iv and
+D24.v. D24.1.5: a password session outlives its 120 s TTL because the gateway reissues the cookie
+triplet — so no "sign in every 12 hours" line is needed. D27 (i), (ii) and (iii), and with them D23:
+after Sign out all five surfaces offer Sign in with no stale data, `netstat` settles to the gateway's
+`LISTENING` socket alone, an offline sign-out still clears the cookie jar (`count(*)` 0, read as
+`host_key`/`name` only), the restarted gateway's log is unchanged across a background/foreground
+cycle, and a turn signed out mid-flight completes server-side and appears on resume. D24's
+ws-ticket path: an invalidated session is detected without a manual trigger and New session offers
+Sign in.
+
+**Open, all in the approval path (D20 item 6 fails).** Reported to Fable; no fix written yet.
+
+1. **A resolved request can still look live.** The gateway timed an approval out at 300.02 s
+   (`agent.log`, session `20260920_040301_d8f909`; the session export carries the BLOCKED result).
+   Three minutes later the app still showed Run / Allow this session / Always allow / Reject enabled
+   and the tool call spinning. Tapping Reject answered nothing. The app does not reconcile a pending
+   request against the server's outcome when that outcome happens while it is disconnected — the same
+   gap as the foreground-return hang. A process crash, which forces a fresh `session.resume`, shows
+   the correct state, which isolates the mechanism.
+2. **Answering in the app never dismisses its notification.** `respondApproval` clears the card with
+   a direct `setApprovalRequest(…, null)` (`src/gateway/session-connection.ts:1120`), as do
+   `respondClarify`/`respondSudo`/`respondSecret` (1140/1150/1159), while every
+   `dismissNativeNotification` call sits in `dispatchEffects` (299/320/342/364). D26.2 therefore only
+   fires when the clear arrives as a gateway event. **Opus reviewed and accepted that commit and
+   missed this.**
+3. **Duplicate notifications after a JS reload.** The identifier returned by
+   `scheduleNotificationAsync` is held in an in-memory map keyed by request id. The JS root reloads
+   about 1 s after the notification fires, while still backgrounded (dispatch at ms …890476, bundle
+   about 1 s later, foreground 24 s after), so the map is lost, `session.resume` re-posts the same
+   request under a new tag, and neither copy can be dismissed. Reproduced twice from a proven-empty
+   tray. Proposed fix, not yet ruled on: route the four responders through the dismissal path, and
+   pass the request id as the notification's own `identifier` (supported on the installed
+   expo-notifications 57.0.17) so a re-post replaces rather than duplicates.
+
+**Not a defect, recorded so it isn't re-litigated.** A run where no notification appeared at all:
+the socket had closed (`client_disconnect(code=1006)`) before the approval existed. That is exactly
+what D24.2.6's narrowed wording covers, and M11 push delivery stays not applicable to 0.1.0.
+Corrections made during the sitting: an "AppState stuck in background" finding (a misread of the
+diagnostic's own log line), "no approval timeout exists on this build" (the timeout is wired through
+`tools/approval_context.py:239` and `tools/approval_gateway_wait.py:52`; `gateway/run.py`'s constant
+is dead code), "Clear all doesn't work" (a missed tap), and three New-session mix-ups (tap accuracy,
+not the app). The earliest "zero notifications" runs were void: `pm clear` had revoked
+`POST_NOTIFICATIONS`, which the user then approved re-granting.
+
+**Still not done.** The final D24 sign-in confirmation, about 30 seconds of the user's time; the
+trigger for the spontaneous JS reload; and everything a phone can only show (the physical pass).
