@@ -1112,3 +1112,70 @@ reach of test automation, and nothing in the process would have noticed. **Check
 while writing D24. **On Opus's word:** the user's approvals (given to Opus directly), and that
 the dev client held the real gateway. **Unverified by anyone:** whether any field-kit artefact
 captured that session; Opus is asked to search and report.
+
+## D30 — After the sitting: the client reconciles from `session.resume`; one clear path for pending requests; D27's evidence scope (2026-09-20)
+
+**Decision.** The D28 sitting ran on 2026-09-20. D27, D23 and D24's ws-ticket path passed on the
+dev client. Three approval-path defects are open. Rulings:
+
+1. **The client reconciles its picture of the active session from `session.resume` on every
+   foreground return, every (re)connect, and when a session is opened.** This settles D26.3's
+   open question; the direction is chosen now, and the hang traces confirm the fit rather than
+   choose between options. Absence is information.
+   1. `pending_approval` / `pending_clarify`: present sets the card; **absent clears it**.
+   2. `running === false` clears all four pending kinds and any running-tool spinner. No
+      blocking request outlives its turn; the same invariant applies on the live path when a
+      turn ends.
+   3. Sudo and secret have no resume field. If the socket was **re-dialed** since the request
+      arrived they are cleared (D10); if the **same socket survived** they are kept, because the
+      event stream was never interrupted and `sudo.expire` / `secret.expire` will arrive. This
+      protects leaving the app to copy a password and returning seconds later.
+   4. A full hydrate merges the payload's `inflight` and `queued`, so a mid-turn hydrate never
+      blanks the current exchange or drops the user's own message.
+   5. The runtime id is rebound from the resume response before further events are processed. An
+      input-request event for the active stored session with an unknown runtime id triggers a
+      reconcile instead of a silent drop.
+   6. Two weights: on a surviving socket, a light reconcile that does not touch messages (using
+      the resume builder's omit-messages path, **to be confirmed** at the pinned commit); after
+      a re-dial, a full resume and hydrate. One reconcile in flight per session.
+   7. Answering a dead request is never silent: whatever the server returns for an expired or
+      unknown request id, the client shows that the request expired and clears it.
+2. **One clear path for pending requests.** A single function clears a request's state and its
+   notification; the effect path and the four responders both call it. The notification's own
+   identifier is the request id, so a re-post replaces instead of duplicating and dismissal
+   works after a reload or cold start; the in-memory id map is deleted. The JS root reload seen
+   about a second after a notification while backgrounded is characterised on a release build
+   before this closes; if release builds reload too, that is a separate defect for this log.
+3. **Evidence scope.** D27 (i)–(iii), D23 and D24's ws-ticket path are accepted as closed for
+   JS behaviour on merged `main`. They ran on the dev client, which still carries the old
+   package id and older native code, and D27's acceptance named a release APK. The parts that
+   depend on native code, the cookie clear and the socket teardown, are re-run on the release
+   APK using the gateway-log and `netstat` proofs (a release build is not debuggable, so no
+   cookie database read). That needs one sign-in by the user on the release app, combined with
+   the D24 confirmation already owed.
+4. **The user's snapshot** may be kept until the fix round for these defects is verified, if the
+   user agrees, under D29's conditions unchanged, and is then deleted.
+5. **Status.** Three open defects in the approval path; D20.2.6 blocks 0.1.0 until each has a
+   root cause and a verified fix. Acceptance for part 1, on a release APK of merged `main`: the
+   300 s timeout repro returns to no card, no spinner and no notification; the same when a
+   second client answers Run and Reject; the original hang repro; a mid-turn background with no
+   request returns to an intact transcript; a sudo card survives a ten-second trip to another
+   app on a surviving socket.
+
+**Reasoning.** D26.3 waited for traces before choosing between patching symptoms and rebuilding
+from resume. The sitting supplied something better than a trace: a second, independent defect of
+the same shape, verified against the server three ways. A card that outlives its request and a
+request that never gets its card are one missing behaviour, the client trusting its own memory
+across a gap it cannot see into. This is the fourth time that shape has appeared (D10's pending
+approval, the hang, the stale card, the unread `inflight`), so the fix is the rule, not another
+field. The sudo and secret exception exists because a blanket "clear on return" would break the
+one moment a phone user most needs those cards to persist.
+
+**Checked by me** on `main`: the four responders clear directly at
+`session-connection.ts:1120/1140/1150/1159`; every `dismissNativeNotification` call is inside
+`dispatchEffects` or sign-out; notification ids are held in an in-memory map
+(`native-notifications.ts:181`). **On Opus's word:** everything seen on the device and in
+`agent.log`, including the 300.02 s timeout, the live card three minutes later, the duplicate
+notification, and the D27 proofs. **Unverified by anyone:** staleness when another client
+answers; why the JS root reloads in the background; the omit-messages parameter and what it
+returns; what the server replies to an answer for a dead request.
