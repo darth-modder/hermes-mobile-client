@@ -232,5 +232,24 @@ is dead code), "Clear all doesn't work" (a missed tap), and three New-session mi
 not the app). The earliest "zero notifications" runs were void: `pm clear` had revoked
 `POST_NOTIFICATIONS`, which the user then approved re-granting.
 
+**Fable's rulings on these (D30, 2026-09-20).** The notification fix is approved: one clear path used by both
+the effect path and the four responders, and `identifier = requestId` so a re-post replaces and dismissal
+survives a reload; the in-memory map goes. The stale card and the hang are one decision: the client
+reconciles the active session from `session.resume` on every foreground return, every (re)connect and on
+open, where ABSENCE clears (`pending_approval` gone, or `running === false`), `inflight`/`queued` are merged
+so a mid-turn hydrate can't blank the current exchange, and the runtime id is rebound before further events.
+**D20 item 6 stays failed until each of the three has a root cause AND a verified fix.**
+
+**Scope caveat on D27/D23/D24 (D30 C).** The pass above ran on the DEV CLIENT
+(`com.nousresearch.hermes.mobile`, older native code). Accepted for JS behaviour on merged `main`; NOT yet
+accepted for the parts that depend on native code — the cookie clear and the socket teardown. D27 (i) and
+(ii) are owed a re-run on the RELEASE APK, where the gateway-log and `netstat` proofs replace the sqlite
+read (a release build isn't debuggable). Recorded as: closed on the dev client, release re-run owed.
+
+**The hang did not reproduce on the dev client** in any run: the pending approval was restored correctly
+every time. The 2026-09-19 unreachable-approval case was on a RELEASE APK, so it stays open, and a
+release-variant build carrying the diagnostics is what will characterise it (frozen, killed, or alive) —
+with the freezer/oom evidence taken from outside the app, since it can't report its own freezing.
+
 **Still not done.** The final D24 sign-in confirmation, about 30 seconds of the user's time; the
 trigger for the spontaneous JS reload; and everything a phone can only show (the physical pass).
