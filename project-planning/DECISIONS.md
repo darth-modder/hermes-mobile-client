@@ -1179,3 +1179,52 @@ one moment a phone user most needs those cards to persist.
 notification, and the D27 proofs. **Unverified by anyone:** staleness when another client
 answers; why the JS root reloads in the background; the omit-messages parameter and what it
 returns; what the server replies to an answer for a dead request.
+
+## D31 — D30 amended: two resume payloads, two dead-request shapes, and release-build evidence for the background path (2026-09-20)
+
+**Decision.** After Opus checked the hang traces against D30 and Sonnet read D30's two
+unverified points at the pinned upstream commit `ee84ccd8bd`. D30's design stands; four
+amendments.
+
+1. **The light reconcile uses `session.resume` with `omit_messages: true`.** On the live path it
+   empties `messages` and sets `messages_omitted`, while `running`, `status`, `inflight`,
+   `queued`, `pending_approval` and `pending_clarify` are still returned.
+2. **Dead-request detection has two shapes, and neither is an RPC error.** `approval.respond`
+   returns `resolved: 0` for an unknown or expired request; `clarify.respond`, `sudo.respond`
+   and `secret.respond` return `status: "expired"`. One small function per kind, tested against
+   fixtures with the success shapes pinned beside them. The user sees "This request expired" and
+   the request clears through D30.2's one clear path.
+3. **A cold resume is a different payload, and absence on it is true information.** When the
+   session is not live in-process, upstream's `_resume_response` sets `inflight` to null,
+   `running` to false, carries no pending fields, and includes a `resumed` key that the live
+   payload lacks. The client detects it positively by `resumed`. On a cold payload all four
+   pending kinds and any spinner clear. **This amends D30.1.3:** sudo and secret clear on a cold
+   payload even when the same socket survived, because the server-side session that was waiting
+   is gone; "keep on a surviving socket" applies only to a live resume. `inflight: null` is
+   tolerated by the merge. The cold path mints a new runtime id, so D30.1.5's rebind is
+   load-bearing. Before relying on hydrate, Sonnet reports whether this client can ever receive
+   the builder's `hydrating: true` and what follows it.
+4. **The two payload shapes are pinned by fixtures.** One live and one cold `session.resume`
+   response are recorded from the throwaway gateway, and a test asserts the keys the reconcile
+   relies on, so an upstream re-pin that moves either shape fails loudly.
+5. **Background-path evidence comes from a release-variant build.** The original hang did not
+   reproduce in any dev-client run and was first seen on a release APK. The dev client holds
+   `KEEP_SCREEN_ON`, keeps a Metro connection and can reload its JS root, so Android may cache,
+   freeze or kill it differently. An instrumented release-variant APK (the diag branch on merged
+   `main`, throwaway key, never tagged or distributed, deleted at teardown) reproduces the
+   original case with the app's log **and** an outside view: `logcat` freezer and kill lines for
+   the package, process state at intervals after HOME, and the host's socket table. The result
+   decides whether anything is needed beyond D30; it does not block starting D30.
+
+**Reasoning.** D30 made absence meaningful, so what absence means had to be read at source
+rather than assumed, and it turned out to mean two different things on two paths. Pinning the
+shapes is the price of depending on them. The release-build rule follows from the one negative
+result in the traces: a defect seen only in the shipped variant cannot be cleared by evidence
+from a variant that behaves differently exactly where the defect lives.
+
+**Checked by me** at `ee84ccd8bd`: `_resume_response` (`tui_gateway/methods_session.py:654-671`)
+and its fields, and that `_live_session_payload` is the live path's builder. **On Opus's and
+Sonnet's word:** the trace readings, the `omit_messages` parameter and what the live path returns
+with it, and both dead-request return shapes with their line references. **Unverified by
+anyone:** the hypothesis that the release process is frozen or killed in the background; the
+meaning of `hydrating`; the sudo card across a short trip to another app.
