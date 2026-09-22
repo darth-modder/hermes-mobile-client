@@ -162,6 +162,51 @@ npx expo prebuild --platform android --clean
 # names its default install path on this machine.
 echo "sdk.dir=${ANDROID_HOME:-$HOME/Android/Sdk}" > android/local.properties
 
+# Gradle needs a JDK. The automation wrapper exports JAVA_HOME; a person running
+# this script by hand in a fresh WSL shell usually has not, and Gradle's own
+# error ("JAVA_HOME is not set and no 'java' command could be found") says
+# nothing about where this machine keeps its JDK. Fall back to the documented
+# install path (docs/CONNECTING.md's WSL2 section) instead of failing on a
+# solvable difference — the user hit exactly this on the first real-key build,
+# after the prebuild had already run.
+if [ -z "${JAVA_HOME:-}" ] && ! command -v java > /dev/null 2>&1; then
+  for candidate in "$HOME"/.jdks/temurin-21 "$HOME"/.jdks/*; do
+    if [ -x "$candidate/bin/java" ]; then
+      JAVA_HOME="$candidate"
+      export JAVA_HOME
+      export PATH="$JAVA_HOME/bin:$PATH"
+      echo "build-release-apk: JAVA_HOME was unset; using $JAVA_HOME"
+      break
+    fi
+  done
+fi
+
+if [ -z "${JAVA_HOME:-}" ] && ! command -v java > /dev/null 2>&1; then
+  echo "build-release-apk: no JDK found. Set JAVA_HOME to a JDK 21 install and re-run (docs/CONNECTING.md)." >&2
+  exit 1
+fi
+
+# Gradle's settings evaluation shells out to `node`. On this machine node comes
+# from nvs, which an interactive shell puts on PATH but a Gradle-forked process
+# does not inherit — so `npx expo prebuild` above can succeed and then Gradle
+# fails with "A problem occurred starting process 'command 'node''". Same
+# fallback shape as the JDK one: use the documented install path when node
+# isn't already resolvable. The user hit this on the real-key build too.
+if ! command -v node > /dev/null 2>&1; then
+  for candidate in "$HOME"/.nvs/node/*/bin "$HOME"/.nvm/versions/node/*/bin; do
+    if [ -x "$candidate/node" ]; then
+      export PATH="$candidate:$PATH"
+      echo "build-release-apk: node was not on PATH; using $candidate"
+      break
+    fi
+  done
+fi
+
+if ! command -v node > /dev/null 2>&1; then
+  echo "build-release-apk: node not found on PATH; Gradle's settings evaluation needs it (docs/CONNECTING.md)." >&2
+  exit 1
+fi
+
 echo "build-release-apk: assembleRelease (this takes ~20-32 min cold, per D3)…"
 (cd android && ./gradlew assembleRelease --no-daemon)
 
