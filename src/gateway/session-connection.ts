@@ -39,6 +39,7 @@ import { getConnectionHeaders, getConnectionOAuth, getConnectionToken } from '..
 import { needsSignIn } from '../connections/sign-in-route'
 import type { MobileConnection } from '../connections/types'
 import { hapticStreamStart, hapticSubmit } from '../lib/haptics'
+import { REQUEST_EXPIRED_MESSAGE, REQUEST_EXPIRED_TITLE } from '../lib/strings.mobile'
 import { ensureFreshOAuthAccessToken, refreshConnectionOAuth } from '../net/auth/token-refresh'
 import { classifyConnectReason, type ConnectReason, describeConnectReason } from '../net/connect-reason'
 import { HttpError, httpRequest } from '../net/http'
@@ -63,7 +64,7 @@ import {
   setSudoRequest
 } from '../store/prompts'
 import { requestScrollToBottom } from '../store/scroll'
-import { publishReducerState } from '../store/session-states'
+import { $activeRuntimeSessionId, $runtimeToStored, publishReducerState } from '../store/session-states'
 import { clearSessions, requestSessionListRefresh } from '../store/sessions'
 import { publishTodosFromReducerState } from '../store/todos'
 import { ingestBackendSkin } from '../theme/backend-skin'
@@ -88,11 +89,22 @@ import {
   createReducerState,
   type Effect,
   flushSessionDeltas,
+  reconcilePendingRequestsFromResume,
   reduceGatewayEvent,
   type ReducerState,
-  restorePendingRequestsFromResume,
   updateSession
 } from './session-stream-reducer'
+import {
+  type ApprovalRespondResult,
+  type ClarifyRespondResult,
+  isApprovalRespondDead,
+  isClarifyRespondDead,
+  isSecretRespondDead,
+  isSudoRespondDead,
+  type SecretRespondResult,
+  type SudoRespondResult
+} from './session-stream/dead-request'
+import { mergeInflightIntoMessages } from './session-stream/inflight-merge'
 import { applySessionInfoStatePatch, sessionInfoStatePatch } from './session-stream/session-info'
 
 const DELTA_EVENT_TYPES = new Set(['message.delta', 'reasoning.delta'])
@@ -253,6 +265,53 @@ async function rehydrateSession(storedSessionId: string | null, attempts: number
   }
 }
 
+type PendingRequestKind = 'approval' | 'clarify' | 'secret' | 'sudo'
+
+/** D26/D31: the one path that clears a pending request — its store entry AND
+ *  its OS notification — used from both directions a clear can come from: a
+ *  server-sent effect saying the request is gone (`dispatchEffects` below),
+ *  and the user answering it in this app (the four `respond*` functions).
+ *  Before this, each direction cleared the store on its own and only
+ *  `dispatchEffects` remembered to also dismiss the notification — the
+ *  responders cleared the card but left a stale notification behind. A
+ *  single path means that can't happen again: `requestId` is the request's
+ *  own id, which is also its OS notification identifier now (see
+ *  `dispatchNativeNotification`), so the dismiss needs no prior in-process
+ *  state to work. */
+function clearPendingRequest(
+  kind: PendingRequestKind,
+  storedSessionId: null | string,
+  requestId?: null | string
+): void {
+  switch (kind) {
+    case 'approval':
+      setApprovalRequest(storedSessionId, null)
+
+      break
+
+    case 'clarify':
+      if (storedSessionId) {
+        setClarifyRequest(storedSessionId, null)
+      }
+
+      break
+
+    case 'secret':
+      setSecretRequest(storedSessionId, null)
+
+      break
+
+    case 'sudo':
+      setSudoRequest(storedSessionId, null)
+
+      break
+  }
+
+  if (requestId) {
+    void dismissNativeNotification(requestId)
+  }
+}
+
 function dispatchEffects(effects: Effect[]): void {
   for (const effect of effects) {
     switch (effect.type) {
@@ -278,16 +337,8 @@ function dispatchEffects(effects: Effect[]): void {
 
       case 'setClarify':
         if (effect.storedSessionId) {
-          // D26: read the outgoing request's id BEFORE overwriting the
-          // store, so a clear (any route — answered here, answered
-          // elsewhere, expired, turn ended — the reducer normalizes all of
-          // these into the same `request: null` shape) can dismiss its OS
-          // notification. Nothing to dismiss when a NEW request is arriving.
-          const clearedClarifyId = effect.request ? null : $clarifyRequests.get()[effect.storedSessionId]?.requestId
-
-          setClarifyRequest(effect.storedSessionId, effect.request)
-
           if (effect.request) {
+            setClarifyRequest(effect.storedSessionId, effect.request)
             void dispatchNativeNotification({
               body: effect.request.question,
               kind: 'input',
@@ -295,20 +346,20 @@ function dispatchEffects(effects: Effect[]): void {
               sessionId: effect.storedSessionId,
               title: 'Hermes needs input'
             })
-          } else if (clearedClarifyId) {
-            void dismissNativeNotification(clearedClarifyId)
+          } else {
+            clearPendingRequest(
+              'clarify',
+              effect.storedSessionId,
+              $clarifyRequests.get()[effect.storedSessionId]?.requestId
+            )
           }
         }
 
         break
-      case 'setApproval': {
-        const clearedApprovalId = effect.request
-          ? null
-          : (effect.storedSessionId && $approvalRequests.get()[effect.storedSessionId]?.requestId) || null
 
-        setApprovalRequest(effect.storedSessionId, effect.request)
-
+      case 'setApproval':
         if (effect.request) {
+          setApprovalRequest(effect.storedSessionId, effect.request)
           void dispatchNativeNotification({
             body: effect.request.command || effect.request.description,
             kind: 'approval',
@@ -316,21 +367,19 @@ function dispatchEffects(effects: Effect[]): void {
             sessionId: effect.storedSessionId,
             title: 'Approval needed'
           })
-        } else if (clearedApprovalId) {
-          void dismissNativeNotification(clearedApprovalId)
+        } else {
+          clearPendingRequest(
+            'approval',
+            effect.storedSessionId,
+            effect.storedSessionId ? $approvalRequests.get()[effect.storedSessionId]?.requestId : undefined
+          )
         }
 
         break
-      }
 
-      case 'setSudo': {
-        const clearedSudoId = effect.request
-          ? null
-          : (effect.storedSessionId && $sudoRequests.get()[effect.storedSessionId]?.requestId) || null
-
-        setSudoRequest(effect.storedSessionId, effect.request)
-
+      case 'setSudo':
         if (effect.request) {
+          setSudoRequest(effect.storedSessionId, effect.request)
           void dispatchNativeNotification({
             body: 'A command needs your sudo password.',
             kind: 'input',
@@ -338,21 +387,19 @@ function dispatchEffects(effects: Effect[]): void {
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
-        } else if (clearedSudoId) {
-          void dismissNativeNotification(clearedSudoId)
+        } else {
+          clearPendingRequest(
+            'sudo',
+            effect.storedSessionId,
+            effect.storedSessionId ? $sudoRequests.get()[effect.storedSessionId]?.requestId : undefined
+          )
         }
 
         break
-      }
 
-      case 'setSecret': {
-        const clearedSecretId = effect.request
-          ? null
-          : (effect.storedSessionId && $secretRequests.get()[effect.storedSessionId]?.requestId) || null
-
-        setSecretRequest(effect.storedSessionId, effect.request)
-
+      case 'setSecret':
         if (effect.request) {
+          setSecretRequest(effect.storedSessionId, effect.request)
           void dispatchNativeNotification({
             body: effect.request.prompt || effect.request.envVar,
             kind: 'input',
@@ -360,12 +407,15 @@ function dispatchEffects(effects: Effect[]): void {
             sessionId: effect.storedSessionId,
             title: 'Hermes needs input'
           })
-        } else if (clearedSecretId) {
-          void dismissNativeNotification(clearedSecretId)
+        } else {
+          clearPendingRequest(
+            'secret',
+            effect.storedSessionId,
+            effect.storedSessionId ? $secretRequests.get()[effect.storedSessionId]?.requestId : undefined
+          )
         }
 
         break
-      }
 
       case 'haptic':
         if (effect.kind === 'streamStart') {
@@ -685,6 +735,89 @@ export async function gatewayRequest<T>(
   return client.request<T>(method, params, timeoutMs)
 }
 
+const reconcileInFlight = new Map<string, Promise<void>>()
+
+/** The one session this app's one-active-connection model can currently be
+ *  showing — same lookup as native-notifications.ts's activeStoredSessionId,
+ *  for the same reason (M06/M07: the active runtime session already IS the
+ *  one screen the user can be looking at). Nothing to reconcile when nothing
+ *  is open. */
+function activeStoredSessionIdForReconcile(): null | string {
+  const activeRuntimeId = $activeRuntimeSessionId.get()
+
+  if (!activeRuntimeId) {
+    return null
+  }
+
+  return $runtimeToStored.get()[activeRuntimeId] ?? activeRuntimeId
+}
+
+/**
+ * D32 (the trigger): a `session.resume` that touches no transcript state —
+ * `omit_messages: true`, and only the pending-request/spinner reconcile runs
+ * on the response, never `seedSessionMessages`/`seedSessionInfo`. Reused for
+ * the one path that previously reconciled nothing at all: the socket
+ * survived a background/foreground cycle (reconnectAndProbeGateway's ping
+ * succeeded), so no `session.reclaimed` ever fires to trigger the ordinary
+ * `hydrate` effect -> `rehydrateSession` -> full `resumeSession` chain. A
+ * stale approval/sudo/secret card left over from while the app was away
+ * (answered elsewhere, expired, the turn ended) would otherwise sit there
+ * until something else happened to trigger a full resume.
+ *
+ * One reconcile in flight per session: a repeat call for a session already
+ * reconciling reuses that same in-flight promise instead of firing a second
+ * RPC, which is what coalesces a burst of rapid AppState transitions
+ * (active/background/active in quick succession) into a single round trip.
+ */
+function reconcileSession(storedSessionId: string): Promise<void> {
+  const inflight = reconcileInFlight.get(storedSessionId)
+
+  if (inflight) {
+    return inflight
+  }
+
+  const task = doReconcileSession(storedSessionId).finally(() => {
+    reconcileInFlight.delete(storedSessionId)
+  })
+
+  reconcileInFlight.set(storedSessionId, task)
+
+  return task
+}
+
+async function doReconcileSession(storedSessionId: string): Promise<void> {
+  // Captured BEFORE the call: if the response's session_id differs, the
+  // server-side session we were bound to is gone (orphan reap, gateway
+  // restart) and got re-minted — the stored history has moved on without us,
+  // typically because the turn we were watching finished while we were away.
+  // The light path (omit_messages: true) is correct for the common case
+  // (nothing moved) but would otherwise leave the transcript stale — the
+  // approval card clears correctly, but its result never shows up.
+  const runtimeIdBefore = runtimeIdForStored(storedSessionId)
+  const resolvedProfile = storedSessionProfile.get(storedSessionId)
+
+  const response = await requireGateway().request<SessionResumeResponse>('session.resume', {
+    omit_messages: true,
+    session_id: storedSessionId,
+    ...(resolvedProfile ? { profile: resolvedProfile } : {})
+  })
+
+  reducerState = bindSession(reducerState, response.session_id, storedSessionId, { makeActive: true })
+
+  const reconciled = reconcilePendingRequestsFromResume(reducerState, storedSessionId, response, {
+    secret: $secretRequests.get()[storedSessionId],
+    sudo: $sudoRequests.get()[storedSessionId]
+  })
+
+  reducerState = reconciled.state
+  dispatchEffects(reconciled.effects)
+  publishAll()
+
+  if (typeof response.session_id === 'string' && response.session_id !== runtimeIdBefore) {
+    await resumeSession(storedSessionId, undefined, resolvedProfile)
+  }
+}
+
 /**
  * M07's `AppLifecycle` `reconnectAndProbe` callback (foreground return,
  * network restored): `ensureGatewayConnection()` is a no-op if the socket
@@ -727,6 +860,18 @@ export async function reconnectAndProbeGateway(): Promise<void> {
     // swallowed the same as a failed dial above.
     client.invalidate()
     await ensureGatewayConnection().catch(() => undefined)
+
+    return
+  }
+
+  // D32 (the trigger): ping succeeded — the socket survived, so nothing else
+  // naturally reconciles this app's pending-request/spinner state (see
+  // reconcileSession's own doc comment for why the redial branch above
+  // doesn't need this same call).
+  const storedSessionId = activeStoredSessionIdForReconcile()
+
+  if (storedSessionId) {
+    await reconcileSession(storedSessionId).catch(() => undefined)
   }
 }
 
@@ -964,11 +1109,18 @@ export async function resumeSession(storedSessionId: string, knownTitle?: string
   seedSessionMessages(storedSessionId, response.messages)
   seedSessionInfo(storedSessionId, response.info)
   seedSessionTitle(storedSessionId, knownTitle)
+  reducerState = mergeInflightIntoMessages(reducerState, storedSessionId, response.inflight)
 
-  const restored = restorePendingRequestsFromResume(reducerState, storedSessionId, response)
+  // D32: read what was already pending BEFORE this reconcile dispatches any
+  // clearing effect — sudo/secret's keep-or-clear decision is about what the
+  // store held going in, not about anything this call itself is about to do.
+  const reconciled = reconcilePendingRequestsFromResume(reducerState, storedSessionId, response, {
+    secret: $secretRequests.get()[storedSessionId],
+    sudo: $sudoRequests.get()[storedSessionId]
+  })
 
-  reducerState = restored.state
-  dispatchEffects(restored.effects)
+  reducerState = reconciled.state
+  dispatchEffects(reconciled.effects)
   publishAll()
 
   return storedSessionId
@@ -1106,57 +1258,98 @@ export async function execSlashCommand(storedSessionId: string, command: string)
   return result.output ?? ''
 }
 
+/** D31 point 7: a dead-request response means the user's answer was real but
+ *  arrived after the server had already given up on it — tell them plainly
+ *  rather than silently swallow the "success" and clear the card as if it
+ *  had gone through. */
+function notifyRequestExpired(storedSessionId: string): void {
+  notify({
+    durationMs: 5000,
+    id: `request-expired-${storedSessionId}`,
+    kind: 'info',
+    message: REQUEST_EXPIRED_MESSAGE,
+    title: REQUEST_EXPIRED_TITLE,
+    type: 'notify'
+  })
+}
+
 export async function respondApproval(
   storedSessionId: string,
   choice: string,
   options: { requestId?: string; all?: boolean } = {}
 ): Promise<void> {
-  await requireGateway().request('approval.respond', {
+  const result = await requireGateway().request<ApprovalRespondResult>('approval.respond', {
     all: options.all ?? false,
     choice,
     request_id: options.requestId,
     session_id: runtimeIdForStored(storedSessionId)
   })
-  setApprovalRequest(storedSessionId, null)
+
+  if (isApprovalRespondDead(result)) {
+    notifyRequestExpired(storedSessionId)
+  }
+
+  clearPendingRequest('approval', storedSessionId, options.requestId)
 }
 
 /** `question_id` present -> one answer in a batch clarify; the card stays
  *  open (server keeps every question editable) until the response reports no
- *  `remaining` questions. Absent -> the single-question form, cleared right away. */
+ *  `remaining` questions. Absent -> the single-question form, cleared right away.
+ *  A dead result (D31 point 7) always clears, regardless of batch state — an
+ *  "expired" response never carries `remaining` at all, so the ordinary
+ *  batch-continues condition below would otherwise leave the card stuck open
+ *  for a request the server has already given up on entirely. */
 export async function respondClarify(
   storedSessionId: string,
   requestId: string,
   answer: string,
   questionId?: string
 ): Promise<void> {
-  const result = await requireGateway().request<{ status: string; remaining?: string[] }>('clarify.respond', {
+  const result = await requireGateway().request<ClarifyRespondResult & { remaining?: string[] }>('clarify.respond', {
     answer,
     request_id: requestId,
     session_id: runtimeIdForStored(storedSessionId),
     ...(questionId ? { question_id: questionId } : {})
   })
 
+  if (isClarifyRespondDead(result)) {
+    notifyRequestExpired(storedSessionId)
+    clearPendingRequest('clarify', storedSessionId, requestId)
+
+    return
+  }
+
   if (!questionId || result.remaining?.length === 0) {
-    setClarifyRequest(storedSessionId, null)
+    clearPendingRequest('clarify', storedSessionId, requestId)
   }
 }
 
 export async function respondSudo(storedSessionId: string, requestId: string, password: string): Promise<void> {
-  await requireGateway().request('sudo.respond', {
+  const result = await requireGateway().request<SudoRespondResult>('sudo.respond', {
     password,
     request_id: requestId,
     session_id: runtimeIdForStored(storedSessionId)
   })
-  setSudoRequest(storedSessionId, null)
+
+  if (isSudoRespondDead(result)) {
+    notifyRequestExpired(storedSessionId)
+  }
+
+  clearPendingRequest('sudo', storedSessionId, requestId)
 }
 
 export async function respondSecret(storedSessionId: string, requestId: string, value: string): Promise<void> {
-  await requireGateway().request('secret.respond', {
+  const result = await requireGateway().request<SecretRespondResult>('secret.respond', {
     request_id: requestId,
     session_id: runtimeIdForStored(storedSessionId),
     value
   })
-  setSecretRequest(storedSessionId, null)
+
+  if (isSecretRespondDead(result)) {
+    notifyRequestExpired(storedSessionId)
+  }
+
+  clearPendingRequest('secret', storedSessionId, requestId)
 }
 
 export interface AttachImageResult {
@@ -1265,6 +1458,7 @@ export function resetSessionConnectionForTests(): void {
   disposeLiveSyncEvents = null
   gateway?.close()
   gateway = null
+  reconcileInFlight.clear()
   reducerState = createReducerState()
   scheduler?.dispose()
   scheduler = null

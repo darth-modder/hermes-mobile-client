@@ -622,6 +622,13 @@ export const CLARIFY_CARD_BATCH_TITLE = 'A few questions'
 export const CLARIFY_CARD_SINGLE_TITLE = 'Question'
 export const CLARIFY_CARD_ANSWER_PLACEHOLDER = 'Type an answer…'
 
+// D31 point 7: approval.respond/clarify.respond/sudo.respond/secret.respond
+// are success-shaped even when the request they're answering already died
+// server-side before the answer arrived — see gateway/session-stream/
+// dead-request.ts. The user's answer was real; it just arrived too late.
+export const REQUEST_EXPIRED_TITLE = 'Request expired'
+export const REQUEST_EXPIRED_MESSAGE = 'This request expired before your answer reached the server.'
+
 // src/chat/parts/SudoCard.tsx, src/chat/parts/SecretCard.tsx — NOT new
 // mobile-only strings. Both cards' titles are fixed here to read from the
 // vendored t.prompts.sudoTitle ('Administrator password') and

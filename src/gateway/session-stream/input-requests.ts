@@ -25,7 +25,7 @@ import { updateSession } from './session-keys'
 import type { ClarifyRequest, Effect } from './types'
 
 export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
-  const { event, payload, storedSessionId, occurredAt } = ctx
+  const { event, occurredAt, payload, runtimeSessionId, storedSessionId } = ctx
 
   if (event.type === 'clarify.request') {
     const session = storedSessionId ? state.sessions.get(storedSessionId) : undefined
@@ -168,7 +168,9 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
         })).state
       : state
 
-    const effects: Effect[] = [{ type: 'setSudo', storedSessionId, request: { requestId, storedSessionId } }]
+    const effects: Effect[] = [
+      { type: 'setSudo', storedSessionId, request: { requestId, runtimeSessionId, storedSessionId } }
+    ]
 
     return handled(next, effects)
   }
@@ -221,7 +223,11 @@ export const handleInputRequestEvent: FamilyHandler = (state, ctx) => {
       : state
 
     const effects: Effect[] = [
-      { type: 'setSecret', storedSessionId, request: { envVar, prompt: promptText, requestId, storedSessionId } }
+      {
+        type: 'setSecret',
+        storedSessionId,
+        request: { envVar, prompt: promptText, requestId, runtimeSessionId, storedSessionId }
+      }
     ]
 
     return handled(next, effects)

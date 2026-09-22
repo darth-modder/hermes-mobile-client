@@ -1924,7 +1924,7 @@ Done, device-verified at each step:
   showed only Hone (`Primary`, `Current`). A cold relaunch (force-stop + `am start`, reconnect
   to Metro's dev-launcher — required every relaunch this round, a dev-client property, not a
   bug) landed cleanly on the session list with Hone's real sessions ("Replace Hermes-ifrah with
-  DeepSeek...", "[someuser] hi i would like...", etc.) — never `/connect`.
+  DeepSeek...", "[Ahmed1089] hi i would like...", etc.) — never `/connect`.
 - (b) Metro (PID `4528`, `node.exe`) and the throwaway gateway (PID `2084`,
   `hermes-agent\.hermes-runtime\python\...\python.exe`, per `setup-gw-r8.sh`) stopped by PID —
   not `hermes serve --stop`, which is unscoped and would have hit every Hermes process on the

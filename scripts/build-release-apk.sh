@@ -35,6 +35,55 @@ cd "$REPO_ROOT"
 # `ALLOW_EMULATOR_ONLY_ABI=1` opts out for a deliberate emulator-only
 # evidence build (never for anything meant to ship).
 #
+# Every `lib/` entry in the APK zip, one per line — tries `unzip`, then
+# Python's zipfile module, then the JDK's own `jar` (guaranteed present:
+# this script already requires a JDK for the Gradle build itself). Prints
+# nothing and returns non-zero only when none of the three exist, so a
+# missing lister can never be silently read as "no lib/ entries" (which
+# check_apk_has_arm64 would otherwise treat the same as a genuinely
+# ABI-less APK and fail the build on a false premise — found live: this
+# WSL2 image has no `unzip`, which turned a real, correctly-built APK into
+# a reported build failure).
+list_apk_lib_entries() {
+  local apk_path="$1"
+
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -l "$apk_path" | grep 'lib/' || true
+
+    return 0
+  fi
+
+  # `command -v python3` alone isn't enough of a check: some environments
+  # (this repo's own git-bash on Windows, for one) put a non-functional
+  # Microsoft Store shortcut on PATH under that name, which exits without
+  # ever running Python — `import zipfile` is a real functional probe, not
+  # just a presence check. Tries `python` too (this codebase's own other
+  # scripts already do, for exactly this reason) for a plain `python3`-less
+  # interpreter.
+  local py
+  for py in python3 python; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import zipfile" >/dev/null 2>&1; then
+      "$py" -c "
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    for name in z.namelist():
+        if name.startswith('lib/'):
+            print(name)
+" "$apk_path" || true
+
+      return 0
+    fi
+  done
+
+  if command -v jar >/dev/null 2>&1; then
+    jar tf "$apk_path" | grep '^lib/' || true
+
+    return 0
+  fi
+
+  return 1
+}
+
 # Extracted as its own function so it can be exercised directly against a
 # fake APK zip (no Gradle build needed) — see
 # scripts/test-abi-guard.sh, which builds two throwaway zips (one with
@@ -43,7 +92,15 @@ cd "$REPO_ROOT"
 check_apk_has_arm64() {
   local apk_path="$1"
   local abi_list
-  abi_list="$(unzip -l "$apk_path" | grep 'lib/' || true)"
+
+  if ! abi_list="$(list_apk_lib_entries "$apk_path")"; then
+    echo "build-release-apk: no zip lister available (checked unzip, python3, jar) —" >&2
+    echo "cannot verify $apk_path's ABI contents. Install unzip (simplest:" >&2
+    echo "apt-get install unzip / apk add unzip) and re-run — this check refuses to" >&2
+    echo "silently pass an unverified APK rather than guess." >&2
+
+    return 2
+  fi
 
   echo "build-release-apk: ABI list in $apk_path:"
   if [ -n "$abi_list" ]; then

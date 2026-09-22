@@ -166,19 +166,19 @@ export interface NativeNotificationInput {
   title: string
   body?: string
   sessionId?: null | string
-  /** D26: when present, the identifier `scheduleNotificationAsync` returns
-   *  for this dispatch is kept here, keyed by request id, so
-   *  `dismissNativeNotification` can later clear this exact OS notification
-   *  once the underlying blocking request resolves by any route (answered
-   *  here, answered elsewhere, expired, or the turn ended) — a stale
-   *  notification found live, sitting next to a since-Rejected approval. */
+  /** D26/D31: when present, ALSO becomes the OS notification's own
+   *  `identifier` (passed straight through to `scheduleNotificationAsync`),
+   *  so `dismissNativeNotification` can clear this exact notification later
+   *  with no lookup of any kind — it works even across a JS reload, since
+   *  there is no in-memory state to lose. A second dispatch for the same
+   *  request id REPLACES the OS notification instead of adding a duplicate,
+   *  for the same reason (same identifier = same slot). Resolves once the
+   *  underlying blocking request resolves by any route (answered here,
+   *  answered elsewhere, expired, or the turn ended) — a stale notification
+   *  found live, sitting next to a since-Rejected approval, and a duplicate
+   *  found live after a spontaneous JS reload re-posted the same request. */
   requestId?: string
 }
-
-// D26: requestId -> the OS notification identifier scheduleNotificationAsync
-// returned for it. Only ever set for a dispatch that actually scheduled
-// (passed every gate below) — nothing to dismiss for one that didn't.
-const notificationIdsByRequestId = new Map<string, string>()
 
 /**
  * Returns true when the notification passed every guard and was handed to
@@ -206,7 +206,13 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
   try {
     const Notifications = await import('expo-notifications')
 
-    const identifier = await Notifications.scheduleNotificationAsync({
+    await Notifications.scheduleNotificationAsync({
+      // D31: the OS notification's own identifier = the request's id, when
+      // there is one. A second dispatch for the same request (e.g. after a
+      // spontaneous JS reload re-delivers the same server event) then
+      // replaces the existing OS notification instead of adding a second
+      // one, and dismissal later needs no lookup at all.
+      ...(input.requestId ? { identifier: input.requestId } : {}),
       content: {
         title: input.title,
         body: input.body,
@@ -220,10 +226,6 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
       // immediately, just on the right channel.
       trigger: { channelId: ANDROID_NOTIFICATION_CHANNEL_ID }
     })
-
-    if (input.requestId) {
-      notificationIdsByRequestId.set(input.requestId, identifier)
-    }
   } catch {
     // Best-effort: a notification that fails to schedule (permission denied,
     // no native module in this environment) is not worth surfacing as an
@@ -235,26 +237,23 @@ export async function dispatchNativeNotification(input: NativeNotificationInput)
 }
 
 /**
- * D26: clears the OS notification for a request that just resolved, by any
- * route — answered in this app, answered from another connected client,
- * expired/timed out server-side, or the turn it belonged to ended. A no-op
- * (never throws) when no notification was ever scheduled for this request
- * id, which is the common case: most requests answered promptly never fire
- * one at all (`shouldFire`'s own gate).
+ * D26/D31: clears the OS notification for a request that just resolved, by
+ * any route — answered in this app, answered from another connected client,
+ * expired/timed out server-side, or the turn it belonged to ended. The
+ * request's own id IS the OS identifier (see `dispatchNativeNotification`),
+ * so this needs no in-memory lookup — it works even for a notification
+ * scheduled before the current app process started (e.g. before a
+ * spontaneous JS reload), which a map keyed by this process's own dispatches
+ * could never see. Best-effort (never throws): dismissing an id nothing was
+ * ever scheduled for — the common case, since most requests are answered
+ * promptly and never fire a notification at all (`shouldFire`'s own gate) —
+ * is a harmless no-op at the OS level.
  */
 export async function dismissNativeNotification(requestId: string): Promise<void> {
-  const identifier = notificationIdsByRequestId.get(requestId)
-
-  if (!identifier) {
-    return
-  }
-
-  notificationIdsByRequestId.delete(requestId)
-
   try {
     const Notifications = await import('expo-notifications')
 
-    await Notifications.dismissNotificationAsync(identifier)
+    await Notifications.dismissNotificationAsync(requestId)
   } catch {
     // Best-effort, same as scheduling — a stale notification the OS fails to
     // clear is not worth surfacing as an app-level error.
@@ -263,19 +262,14 @@ export async function dismissNativeNotification(requestId: string): Promise<void
 
 /**
  * D27: sign-out's own clear (session-connection.ts's `disconnectForSignOut`)
- * — every pending-request notification this app scheduled, gone at once,
- * not just the ones `notificationIdsByRequestId` still has an entry for.
+ * — every pending-request notification this app scheduled, gone at once.
  * Calls `dismissAllNotificationsAsync` (expo-notifications' own "clear this
  * app's whole notification tray") rather than looping
- * `dismissNativeNotification` per tracked id: sign-out is exactly the case
- * this file's own known-gap note already flags — the in-memory map can't
- * see a notification scheduled before the current app process started — and
- * a sign-out has no reason to leave any of this app's notifications behind
- * regardless of which route scheduled them.
+ * `dismissNativeNotification` per known request id, since sign-out has no
+ * reason to leave any of this app's notifications behind regardless of which
+ * route scheduled them.
  */
 export async function dismissAllNativeNotifications(): Promise<void> {
-  notificationIdsByRequestId.clear()
-
   try {
     const Notifications = await import('expo-notifications')
 

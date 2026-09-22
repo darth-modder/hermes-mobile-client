@@ -216,6 +216,15 @@ export interface ApprovalRequest {
 export interface SudoRequest {
   requestId: string
   storedSessionId: string | null
+  /** D32: the RUNTIME session id this request arrived under (`ctx.runtimeSessionId`
+   *  at the time the `sudo.request` event was routed) — sudo/secret have no
+   *  resume field upstream at all (unlike approval/clarify), so a resume
+   *  reconcile's only way to tell "this card is still good" from "the
+   *  server-side session that raised it is gone" is comparing this against
+   *  the resume response's own `session_id`. A cold resume always mints a
+   *  new one, so a stale card is provably dead even though nothing told the
+   *  client so directly. */
+  runtimeSessionId: string | null
 }
 
 export interface SecretRequest {
@@ -223,6 +232,8 @@ export interface SecretRequest {
   storedSessionId: string | null
   envVar: string
   prompt: string
+  /** Same purpose as `SudoRequest.runtimeSessionId` — see its doc comment. */
+  runtimeSessionId: string | null
 }
 
 /**

@@ -55,7 +55,7 @@ what was verified this round on a signed build (connect-by-URL, chat with a real
 approvals, the background notification), what's explicitly not in this build (in-app Tailscale
 pairing, push, the six D18-hidden screens), the `http://` tradeoff, the never-tested-on-physical-
 hardware caveat, and a 5-step install/connect flow. Calibrated against
-`an internal review note (not published)` §3's standard — claims are scoped to what this round actually
+`ANNOUNCE-CLAIM-REVIEW-2026-09-17.md` §3's standard — claims are scoped to what this round actually
 saw, not what the app is supposed to do. Committed `53d9fad`.
 
 ## Item 5 — D20 readiness check

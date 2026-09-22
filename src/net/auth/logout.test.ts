@@ -275,7 +275,7 @@ describe('signOutConnection', () => {
         smartDenied: false,
         storedSessionId: 'sess-a'
       })
-      $sudoRequests.set({ 'sess-b': { requestId: 'req-2', storedSessionId: 'sess-b' } })
+      $sudoRequests.set({ 'sess-b': { requestId: 'req-2', runtimeSessionId: 'runtime-b', storedSessionId: 'sess-b' } })
 
       global.fetch = vi.fn(async () => jsonResponse(302, {})) as unknown as typeof fetch
 

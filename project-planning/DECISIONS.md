@@ -592,7 +592,7 @@ the gateway starts exposing the state, both clients already render it.
 
 ## D20 — Readiness claims are gated separately from milestone status (2026-09-17)
 
-**Decision.** Adopted from Opus's proposal in `an internal review note (not published)` §4, with the
+**Decision.** Adopted from Opus's proposal in `ANNOUNCE-CLAIM-REVIEW-2026-09-17.md` §4, with the
 scope widened in part 1.
 
 1. **Scope.** This binds whoever makes the statement (Sonnet, Opus or Fable), wherever it is made:
@@ -628,8 +628,8 @@ and makes the three audiences explicit, which is where the word "announce" slid.
 
 ## D21 — After the announce-claim reviews: a scope rule for round reports, and the ordered path to a closed test (2026-09-17)
 
-**Decision.** Folds `an internal review note (not published)` (Opus) and
-`an internal review note (not published)` (Sonnet) into rules and work. Three parts.
+**Decision.** Folds `ANNOUNCE-CLAIM-REVIEW-2026-09-17.md` (Opus) and
+`ANNOUNCE-CLAIM-REVIEW-SONNET-2026-09-17.md` (Sonnet) into rules and work. Three parts.
 
 1. **Scope rule for every round report (Sonnet's proposal, adopted).** Any sentence that says
    "verified", "fixed", "met", "confirmed" or "device-verified" names what was tested in that

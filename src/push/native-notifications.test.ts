@@ -7,7 +7,7 @@
 import { AppState } from 'react-native'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const scheduleNotificationAsync = vi.fn(async () => 'notification-id')
+const scheduleNotificationAsync = vi.fn(async (_request: Record<string, unknown>) => 'notification-id')
 const dismissNotificationAsync = vi.fn(async () => undefined)
 const dismissAllNotificationsAsync = vi.fn(async () => undefined)
 
@@ -176,14 +176,19 @@ describe('native-notifications', () => {
   })
 })
 
-// D26: an approval/sudo/secret/input notification whose underlying request
-// has since cleared — answered here, answered from another client, expired,
-// or the turn ended — must not linger in the tray with stale info (found
-// live: a stale notification sat next to a since-Rejected approval, and a
-// second approval arriving while it was still there got no notification of
-// its own). Keyed by request id, since a session can raise more than one
-// request in a row and each gets its own OS notification identifier.
-describe('dismissNativeNotification: the request-id-keyed dismiss (D26)', () => {
+// D26/D31: an approval/sudo/secret/input notification whose underlying
+// request has since cleared — answered here, answered from another client,
+// expired, or the turn ended — must not linger in the tray with stale info
+// (found live: a stale notification sat next to a since-Rejected approval,
+// and a second approval arriving while it was still there got no
+// notification of its own). D31 replaced the in-memory
+// requestId -> OS-identifier map with the request id AS the OS identifier
+// (passed to scheduleNotificationAsync), so dismissal needs no prior
+// in-process bookkeeping — the bug was exactly that bookkeeping: a JS reload
+// (M06's spontaneous-reload finding) wiped the map, orphaning any
+// notification scheduled before it, which then could never be dismissed and
+// a re-post of the same request piled up a duplicate instead of replacing it.
+describe('dismissNativeNotification: dismissal by request id, no lookup required (D26/D31)', () => {
   beforeEach(() => {
     mmkvBacking.clear()
     scheduleNotificationAsync.mockClear()
@@ -197,34 +202,55 @@ describe('dismissNativeNotification: the request-id-keyed dismiss (D26)', () => 
     AppState.currentState = 'background'
   })
 
-  it('dismisses the exact identifier scheduleNotificationAsync returned for that request id', async () => {
-    scheduleNotificationAsync.mockResolvedValueOnce('os-notif-abc')
-
+  it('schedules the notification with the request id as its own OS identifier', async () => {
     await dispatchNativeNotification({ kind: 'approval', requestId: 'req-1', sessionId: 'sid-dismiss-1', title: 'x' })
-    await dismissNativeNotification('req-1')
 
-    expect(dismissNotificationAsync).toHaveBeenCalledWith('os-notif-abc')
+    expect(scheduleNotificationAsync).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'req-1' }))
   })
 
-  it('forgets the identifier after dismissing — a second dismiss for the same request id is a no-op', async () => {
-    scheduleNotificationAsync.mockResolvedValueOnce('os-notif-abc')
-
+  it('answering in the app dismisses the notification by request id directly', async () => {
     await dispatchNativeNotification({ kind: 'approval', requestId: 'req-2', sessionId: 'sid-dismiss-2', title: 'x' })
     await dismissNativeNotification('req-2')
-    dismissNotificationAsync.mockClear()
-    await dismissNativeNotification('req-2')
 
-    expect(dismissNotificationAsync).not.toHaveBeenCalled()
+    expect(dismissNotificationAsync).toHaveBeenCalledWith('req-2')
   })
 
-  it('dismissing a request id nothing was ever scheduled for is a no-op, not a throw', async () => {
-    await expect(dismissNativeNotification('never-scheduled')).resolves.toBeUndefined()
-    expect(dismissNotificationAsync).not.toHaveBeenCalled()
+  // The core D31 fix: previously the in-memory map was the only record of
+  // "a notification exists for this request," so a dismiss with no matching
+  // map entry (map wiped by a JS reload, or called from a fresh process)
+  // silently did nothing — the real bug this pins closed.
+  it('dismissal works with no prior in-process state — no dispatch in this process, still dismissed', async () => {
+    await dismissNativeNotification('never-dispatched-this-process')
+
+    expect(dismissNotificationAsync).toHaveBeenCalledWith('never-dispatched-this-process')
   })
 
-  it('two different requests get two different identifiers, and dismissing one leaves the other alone', async () => {
-    scheduleNotificationAsync.mockResolvedValueOnce('os-notif-first').mockResolvedValueOnce('os-notif-second')
+  // Two different sessions (not the throttle-relevant repeat of the same
+  // kind+session, which "throttles a repeat" above already covers) so this
+  // pins the identifier behavior on its own: the same request id always
+  // produces the same OS identifier, which is what makes a re-post replace
+  // rather than duplicate — the exact defect a spontaneous JS reload exposed
+  // live (the same server event re-delivered after reload, twice in the tray).
+  it('the same request id always resolves to the same OS identifier, across separate dispatches', async () => {
+    await dispatchNativeNotification({
+      kind: 'approval',
+      requestId: 'req-replace',
+      sessionId: 'sid-replace-a',
+      title: 'first'
+    })
+    await dispatchNativeNotification({
+      kind: 'approval',
+      requestId: 'req-replace',
+      sessionId: 'sid-replace-b',
+      title: 'second'
+    })
 
+    expect(scheduleNotificationAsync).toHaveBeenCalledTimes(2)
+    expect(scheduleNotificationAsync.mock.calls[0][0]).toEqual(expect.objectContaining({ identifier: 'req-replace' }))
+    expect(scheduleNotificationAsync.mock.calls[1][0]).toEqual(expect.objectContaining({ identifier: 'req-replace' }))
+  })
+
+  it('dismissing one request id does not touch a different one', async () => {
     await dispatchNativeNotification({
       kind: 'approval',
       requestId: 'req-first',
@@ -240,35 +266,26 @@ describe('dismissNativeNotification: the request-id-keyed dismiss (D26)', () => 
     await dismissNativeNotification('req-first')
 
     expect(dismissNotificationAsync).toHaveBeenCalledTimes(1)
-    expect(dismissNotificationAsync).toHaveBeenCalledWith('os-notif-first')
+    expect(dismissNotificationAsync).toHaveBeenCalledWith('req-first')
   })
 
-  it('a dispatch that never actually schedules (blocked by prefs/gate/throttle) records no identifier to later dismiss', async () => {
-    AppState.currentState = 'active' // not backgrounded, active session -> shouldFire is false
+  it('never throws when the underlying dismiss rejects — best-effort, same as scheduling', async () => {
+    dismissNotificationAsync.mockRejectedValueOnce(new Error('native module unavailable'))
 
-    const { $activeRuntimeSessionId: activeRt, $runtimeToStored: rtMap } = await import('../store/session-states')
+    await expect(dismissNativeNotification('req-1')).resolves.toBeUndefined()
+  })
 
-    activeRt.set('rt-1')
-    rtMap.set({ 'rt-1': 'sid-1' })
+  it('a dispatch with no requestId schedules with no explicit identifier (OS auto-generates one)', async () => {
+    await dispatchNativeNotification({ kind: 'approval', sessionId: 'sid-no-request-id', title: 'x' })
 
-    const fired = await dispatchNativeNotification({
-      kind: 'approval',
-      requestId: 'req-blocked',
-      sessionId: 'sid-1',
-      title: 'x'
-    })
-
-    expect(fired).toBe(false)
-    await dismissNativeNotification('req-blocked')
-    expect(dismissNotificationAsync).not.toHaveBeenCalled()
+    expect('identifier' in scheduleNotificationAsync.mock.calls[0][0]).toBe(false)
   })
 })
 
-// D27: sign-out's own clear needs every pending-request notification gone,
-// not just the ones this process's own map still has an identifier for — a
-// notification scheduled before the current app process started (this
-// file's own known gap, noted above dismissNativeNotification) has no entry
-// there at all, but sign-out still has to clear it.
+// D27/D31: sign-out's own clear needs every pending-request notification
+// gone, including one scheduled before the current app process started —
+// which is exactly why this calls the platform's own dismiss-all rather than
+// looping known request ids (there's no map of "known" ones any more).
 describe('dismissAllNativeNotifications: sign-out clears the whole tray (D27)', () => {
   beforeEach(() => {
     mmkvBacking.clear()
@@ -290,9 +307,11 @@ describe('dismissAllNativeNotifications: sign-out clears the whole tray (D27)', 
     expect(dismissAllNotificationsAsync).toHaveBeenCalledTimes(1)
   })
 
-  it('forgets every tracked identifier — a later per-request dismiss for one of them is a no-op', async () => {
-    scheduleNotificationAsync.mockResolvedValueOnce('os-notif-x')
-
+  // D31: unlike the old map-backed dismiss, a per-request dismiss no longer
+  // depends on any state dismissAllNativeNotifications could clear — calling
+  // it after dismissAll is redundant (the OS notification is already gone)
+  // but still goes through, not silently suppressed.
+  it('a per-request dismiss called after dismissAll still reaches the OS, harmlessly', async () => {
     await dispatchNativeNotification({
       kind: 'approval',
       requestId: 'req-x',
@@ -303,7 +322,7 @@ describe('dismissAllNativeNotifications: sign-out clears the whole tray (D27)', 
     dismissNotificationAsync.mockClear()
     await dismissNativeNotification('req-x')
 
-    expect(dismissNotificationAsync).not.toHaveBeenCalled()
+    expect(dismissNotificationAsync).toHaveBeenCalledWith('req-x')
   })
 
   it('never throws when dismissAllNotificationsAsync itself rejects — best-effort, same as the single-id dismiss', async () => {

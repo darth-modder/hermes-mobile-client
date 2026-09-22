@@ -56,10 +56,28 @@ const tokenRefresh = {
 
 vi.mock('../net/auth/token-refresh', () => tokenRefresh)
 
+// D31: respondApproval/respondClarify/respondSudo/respondSecret now dismiss
+// the OS notification through the same clearPendingRequest path dispatchEffects
+// uses — mocked here (not expo-notifications directly) so the describe block
+// below can assert on `dismissNativeNotification` itself, the same way
+// native-notifications.test.ts mocks expo-notifications for its own module.
+const dismissNativeNotification = vi.fn(async () => undefined)
+
+vi.mock('../push/native-notifications', () => ({
+  dismissAllNativeNotifications: vi.fn(async () => undefined),
+  dismissNativeNotification,
+  dispatchNativeNotification: vi.fn(async () => false)
+}))
+
 const { getActiveConnection, setActiveConnection } = await import('../connections/registry')
 const { deleteConnectionOAuth, setConnectionOAuth } = await import('../connections/secure')
-const { $secretRequests, $sudoRequests, setSecretRequest, setSudoRequest } = await import('../store/prompts')
-const { $sessionStates } = await import('../store/session-states')
+
+const { $approvalRequests, $secretRequests, $sudoRequests, setApprovalRequest, setSecretRequest, setSudoRequest } =
+  await import('../store/prompts')
+
+const { $clarifyRequests, setClarifyRequest } = await import('../store/clarify')
+const { $notifications } = await import('../store/notifications')
+const { $activeRuntimeSessionId, $runtimeToStored, $sessionStates } = await import('../store/session-states')
 const { bindSession, createReducerState } = await import('./session-stream-reducer')
 
 const {
@@ -68,6 +86,8 @@ const {
   reconnectAndProbeGateway,
   resetSessionConnectionForTests,
   resumeSession,
+  respondApproval,
+  respondClarify,
   respondSecret,
   respondSudo,
   setGatewayForTests,
@@ -319,6 +339,69 @@ describe("resumeSession/createSession: a reopened session's model/provider/effor
 
     expect(storedId).toBe('stored-1')
     expect($sessionStates.get()['stored-1'].model).toBe('deepseek-v4-flash')
+  })
+})
+
+// D31 point 6 / D32: resumeSession wires mergeInflightIntoMessages in after
+// seedSessionMessages — a mid-turn resume must show the partial assistant
+// reply, not just the user's message with nothing after it. The pure merge
+// logic itself (same-row live delta, the excluded error/absent/not-streaming
+// shapes) is covered at the reducer level in inflight-merge.test.ts; these
+// pin that resumeSession actually reaches it with the real response field.
+describe('resumeSession: mid-turn inflight merges into the transcript (D31 point 6 / D32)', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+  })
+
+  it("shows the user's message AND the partial assistant text from a mid-turn resume", async () => {
+    fake.request.mockResolvedValue({
+      inflight: { assistant: 'Working on it, give me a', streaming: true },
+      messages: [{ content: 'are you there?', role: 'user' }],
+      session_id: 'runtime-1'
+    })
+
+    await resumeSession('stored-1')
+
+    const messages = $sessionStates.get()['stored-1'].messages
+
+    expect(messages.map(m => m.role)).toEqual(['user', 'assistant'])
+    expect(messages[1].pending).toBe(true)
+    expect(messages[1].parts).toEqual([
+      { text: 'Working on it, give me a', timestamp: expect.any(Number), type: 'text' }
+    ])
+  })
+
+  it('no inflight in the response: the transcript is exactly what messages carried, nothing extra appended', async () => {
+    fake.request.mockResolvedValue({
+      messages: [{ content: 'are you there?', role: 'user' }],
+      session_id: 'runtime-1'
+    })
+
+    await resumeSession('stored-1')
+
+    const messages = $sessionStates.get()['stored-1'].messages
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0].role).toBe('user')
+  })
+
+  it('inflight with an error is left alone — no partial-reply row, not half-rendered', async () => {
+    fake.request.mockResolvedValue({
+      inflight: { assistant: 'partial before the failure', error: 'API call failed after 3 retries', streaming: true },
+      messages: [{ content: 'are you there?', role: 'user' }],
+      session_id: 'runtime-1'
+    })
+
+    await resumeSession('stored-1')
+
+    const messages = $sessionStates.get()['stored-1'].messages
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0].role).toBe('user')
   })
 })
 
@@ -593,6 +676,12 @@ describe('reconnectAndProbeGateway: a half-open socket must not stay wedged fore
     setActiveConnection(null)
     fake = new FakeGateway()
     setGatewayForTests(fake as never)
+    // $activeRuntimeSessionId/$runtimeToStored are separate nanostores
+    // resetSessionConnectionForTests doesn't touch — reset explicitly so an
+    // earlier describe block's seedSession() (which does publish to them)
+    // can't leak an active session into these tests.
+    $activeRuntimeSessionId.set(null)
+    $runtimeToStored.set({})
   })
 
   it('invalidates the connection when the ping probe times out', async () => {
@@ -624,6 +713,155 @@ describe('reconnectAndProbeGateway: a half-open socket must not stay wedged fore
     fake.request.mockRejectedValue(new Error('request timed out after 5s: ping'))
 
     await expect(reconnectAndProbeGateway()).resolves.toBeUndefined()
+  })
+
+  it('no active session: a successful probe fires no light reconcile at all', async () => {
+    fake.request.mockResolvedValue(undefined)
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.request).toHaveBeenCalledTimes(1) // just the ping
+    expect(fake.request).not.toHaveBeenCalledWith('session.resume', expect.anything())
+  })
+})
+
+// D32 (the trigger): the socket-survived path previously reconciled
+// nothing at all — a stale approval/sudo/secret card left over from while
+// the app was away sat there until something ELSE happened to trigger a
+// full resume. Covers that path directly: ping succeeds -> a light
+// session.resume (omit_messages: true, no message/info seeding) -> the same
+// reconcilePendingRequestsFromResume resumeSession itself uses.
+describe('reconnectAndProbeGateway: the light reconcile on a survived socket (D32)', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    setActiveConnection(null)
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+    seedSession('stored-1', 'runtime-1')
+  })
+
+  it('a successful probe with an active session resumes with omit_messages: true', async () => {
+    fake.request.mockImplementation(async (method: string) => {
+      if (method === 'ping') {
+        return undefined
+      }
+
+      return { message_count: 0, messages: [], resumed: 'stored-1', running: false, session_id: 'runtime-1' }
+    })
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.request).toHaveBeenCalledWith('session.resume', { omit_messages: true, session_id: 'stored-1' })
+  })
+
+  it('a pending approval already present is cleared through the light reconcile, same as a full resume would', async () => {
+    setApprovalRequest('stored-1', {
+      allowPermanent: false,
+      command: 'rm -rf x',
+      description: '',
+      requestId: 'req-appr',
+      smartDenied: false,
+      storedSessionId: 'stored-1'
+    })
+    fake.request.mockImplementation(async (method: string) => {
+      if (method === 'ping') {
+        return undefined
+      }
+
+      return { message_count: 0, messages: [], resumed: 'stored-1', running: false, session_id: 'runtime-2' }
+    })
+
+    await reconnectAndProbeGateway()
+
+    expect($approvalRequests.get()['stored-1']).toBeUndefined()
+  })
+
+  it('a ping failure (redial path) fires no light reconcile — that path already reconciles via session.reclaimed', async () => {
+    fake.request.mockRejectedValueOnce(new Error('request timed out after 5s: ping'))
+
+    await reconnectAndProbeGateway()
+
+    expect(fake.request).not.toHaveBeenCalledWith('session.resume', expect.anything(), expect.anything())
+  })
+
+  it('two reconnectAndProbeGateway calls in quick succession coalesce into one session.resume call', async () => {
+    let resumeCalls = 0
+    let resolveResume: (value: unknown) => void = () => undefined
+
+    const resumePromise = new Promise(resolve => {
+      resolveResume = resolve
+    })
+
+    fake.request.mockImplementation(async (method: string) => {
+      if (method === 'ping') {
+        return undefined
+      }
+
+      resumeCalls += 1
+
+      return resumePromise
+    })
+
+    const first = reconnectAndProbeGateway()
+    const second = reconnectAndProbeGateway()
+
+    // Let both calls run their (already-resolved) ensureGatewayConnection +
+    // ping legs through however many microtask hops those take, so both
+    // reach the reconcile call and the second one sees the first's in-flight
+    // entry before either RPC promise settles.
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve()
+    }
+
+    resolveResume({ message_count: 0, messages: [], resumed: 'stored-1', running: false, session_id: 'runtime-1' })
+    await Promise.all([first, second])
+
+    expect(resumeCalls).toBe(1)
+  })
+
+  // Opus's follow-up on the light path: a response session_id that DIFFERS
+  // from the runtime id this session was bound to means the server-side
+  // session was re-minted underneath us (orphan reap, gateway restart) — the
+  // light (omit_messages: true) call correctly clears any now-dead pending
+  // request, but the stored transcript has moved on without us and nothing
+  // else is scheduled to fetch it. A same-id response is the common case and
+  // must stay cheap (no second RPC at all).
+  it('same session_id as before: no follow-up message fetch — exactly one session.resume call', async () => {
+    fake.request.mockImplementation(async (method: string) => {
+      if (method === 'ping') {
+        return undefined
+      }
+
+      return { message_count: 0, messages: [], resumed: 'stored-1', running: false, session_id: 'runtime-1' }
+    })
+
+    await reconnectAndProbeGateway()
+
+    const resumeCalls = fake.request.mock.calls.filter(call => call[0] === 'session.resume')
+
+    expect(resumeCalls).toHaveLength(1)
+    expect(resumeCalls[0][1]).toEqual({ omit_messages: true, session_id: 'stored-1' })
+  })
+
+  it('a DIFFERENT session_id than before triggers a full resumeSession follow-up to refresh the transcript', async () => {
+    fake.request.mockImplementation(async (method: string) => {
+      if (method === 'ping') {
+        return undefined
+      }
+
+      return { message_count: 0, messages: [], resumed: 'stored-1', running: false, session_id: 'runtime-2' }
+    })
+
+    await reconnectAndProbeGateway()
+
+    const resumeCalls = fake.request.mock.calls.filter(call => call[0] === 'session.resume')
+
+    expect(resumeCalls).toHaveLength(2)
+    expect(resumeCalls[0][1]).toEqual({ omit_messages: true, session_id: 'stored-1' })
+    // The follow-up is the ordinary full resumeSession call — no omit_messages.
+    expect(resumeCalls[1][1]).toEqual({ session_id: 'stored-1' })
   })
 })
 
@@ -657,7 +895,7 @@ describe('respondSudo/respondSecret: an empty value (D26 Cancel) is sent through
 
   it('respondSudo("") clears the pending sudo request the same as a real password would', async () => {
     fake.request.mockResolvedValue(undefined)
-    setSudoRequest('stored-1', { requestId: 'req-1', storedSessionId: 'stored-1' })
+    setSudoRequest('stored-1', { requestId: 'req-1', runtimeSessionId: 'runtime-1', storedSessionId: 'stored-1' })
 
     await respondSudo('stored-1', 'req-1', '')
 
@@ -682,11 +920,222 @@ describe('respondSudo/respondSecret: an empty value (D26 Cancel) is sent through
       envVar: 'TENOR_API_KEY',
       prompt: '',
       requestId: 'req-2',
+      runtimeSessionId: 'runtime-1',
       storedSessionId: 'stored-1'
     })
 
     await respondSecret('stored-1', 'req-2', '')
 
     expect($secretRequests.get()['stored-1']).toBeUndefined()
+  })
+})
+
+// D31: before this fix, the four respond* functions cleared their store
+// entry directly and never called dismissNativeNotification at all — only
+// dispatchEffects' server-driven clear path did. Answering a request IN this
+// app left its OS notification behind (found live: a stale notification sat
+// next to a since-answered card). These pin that every respond* function now
+// dismisses through the same clearPendingRequest path dispatchEffects uses.
+describe('respond*: answering in the app also dismisses the OS notification (D31)', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    fake.request.mockResolvedValue(undefined)
+    setGatewayForTests(fake as never)
+    seedSession('stored-1', 'runtime-1')
+    dismissNativeNotification.mockClear()
+  })
+
+  it('respondApproval dismisses the notification for the answered request id', async () => {
+    setApprovalRequest('stored-1', {
+      allowPermanent: false,
+      command: 'rm -rf x',
+      description: '',
+      requestId: 'req-appr',
+      smartDenied: false,
+      storedSessionId: 'stored-1'
+    })
+
+    await respondApproval('stored-1', 'once', { requestId: 'req-appr' })
+
+    expect($approvalRequests.get()['stored-1']).toBeUndefined()
+    expect(dismissNativeNotification).toHaveBeenCalledWith('req-appr')
+  })
+
+  it('respondClarify (single-question, no questionId) dismisses the notification', async () => {
+    setClarifyRequest('stored-1', {
+      choices: null,
+      multiSelect: false,
+      question: 'which one?',
+      questions: [],
+      receivedAt: Date.now(),
+      requestId: 'req-clar',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondClarify('stored-1', 'req-clar', 'the first one')
+
+    expect($clarifyRequests.get()['stored-1']).toBeUndefined()
+    expect(dismissNativeNotification).toHaveBeenCalledWith('req-clar')
+  })
+
+  it('respondClarify mid-batch (more questions remaining) neither clears the card nor dismisses the notification', async () => {
+    fake.request.mockResolvedValue({ remaining: ['q2'], status: 'ok' })
+    setClarifyRequest('stored-1', {
+      choices: null,
+      multiSelect: false,
+      question: 'q1?',
+      questions: [],
+      receivedAt: Date.now(),
+      requestId: 'req-batch',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondClarify('stored-1', 'req-batch', 'answer', 'q1')
+
+    expect($clarifyRequests.get()['stored-1']).toBeDefined()
+    expect(dismissNativeNotification).not.toHaveBeenCalled()
+  })
+
+  it('respondClarify finishing the last question in a batch clears the card and dismisses the notification', async () => {
+    fake.request.mockResolvedValue({ remaining: [], status: 'ok' })
+    setClarifyRequest('stored-1', {
+      choices: null,
+      multiSelect: false,
+      question: 'last?',
+      questions: [],
+      receivedAt: Date.now(),
+      requestId: 'req-batch-2',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondClarify('stored-1', 'req-batch-2', 'answer', 'qN')
+
+    expect($clarifyRequests.get()['stored-1']).toBeUndefined()
+    expect(dismissNativeNotification).toHaveBeenCalledWith('req-batch-2')
+  })
+
+  it('respondSudo dismisses the notification for the answered request id', async () => {
+    setSudoRequest('stored-1', { requestId: 'req-sudo', runtimeSessionId: 'runtime-1', storedSessionId: 'stored-1' })
+
+    await respondSudo('stored-1', 'req-sudo', 'hunter2')
+
+    expect($sudoRequests.get()['stored-1']).toBeUndefined()
+    expect(dismissNativeNotification).toHaveBeenCalledWith('req-sudo')
+  })
+
+  it('respondSecret dismisses the notification for the answered request id', async () => {
+    setSecretRequest('stored-1', {
+      envVar: 'TENOR_API_KEY',
+      prompt: '',
+      requestId: 'req-secret',
+      runtimeSessionId: 'runtime-1',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondSecret('stored-1', 'req-secret', 'value')
+
+    expect($secretRequests.get()['stored-1']).toBeUndefined()
+    expect(dismissNativeNotification).toHaveBeenCalledWith('req-secret')
+  })
+})
+
+// D31 point 7: approval.respond/clarify.respond/sudo.respond/secret.respond
+// are success-shaped even when the request already died server-side before
+// the answer arrived — dead-request.ts's isXRespondDead functions detect the
+// two upstream shapes for that (resolved: 0 / status: "expired"). These pin
+// that a dead result surfaces a "Request expired" notice AND still clears
+// the card+notification the same as a genuine success would (the user's
+// answer was real, it just arrived too late — the card must not linger).
+describe('respond*: a dead-request result notifies "expired" and still clears (D31 point 7)', () => {
+  let fake: FakeGateway
+
+  beforeEach(() => {
+    resetSessionConnectionForTests()
+    fake = new FakeGateway()
+    setGatewayForTests(fake as never)
+    seedSession('stored-1', 'runtime-1')
+    $notifications.set([])
+  })
+
+  it('respondApproval: resolved: 0 notifies expired and still clears', async () => {
+    fake.request.mockResolvedValue({ resolved: 0 })
+    setApprovalRequest('stored-1', {
+      allowPermanent: false,
+      command: 'rm -rf x',
+      description: '',
+      requestId: 'req-appr',
+      smartDenied: false,
+      storedSessionId: 'stored-1'
+    })
+
+    await respondApproval('stored-1', 'once', { requestId: 'req-appr' })
+
+    expect($approvalRequests.get()['stored-1']).toBeUndefined()
+    expect($notifications.get()).toContainEqual(
+      expect.objectContaining({ id: 'request-expired-stored-1', kind: 'info' })
+    )
+  })
+
+  it('respondApproval: resolved: 1 does not notify expired', async () => {
+    fake.request.mockResolvedValue({ resolved: 1 })
+
+    await respondApproval('stored-1', 'once', { requestId: 'req-appr' })
+
+    expect($notifications.get()).toEqual([])
+  })
+
+  it('respondClarify: status "expired" notifies and clears even mid-batch (no `remaining` in a dead response)', async () => {
+    fake.request.mockResolvedValue({ status: 'expired' })
+    setClarifyRequest('stored-1', {
+      choices: null,
+      multiSelect: false,
+      question: 'q1?',
+      questions: [],
+      receivedAt: Date.now(),
+      requestId: 'req-clar',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondClarify('stored-1', 'req-clar', 'answer', 'q1')
+
+    expect($clarifyRequests.get()['stored-1']).toBeUndefined()
+    expect($notifications.get()).toContainEqual(expect.objectContaining({ id: 'request-expired-stored-1' }))
+  })
+
+  it('respondClarify: status "ok" does not notify expired', async () => {
+    fake.request.mockResolvedValue({ status: 'ok' })
+
+    await respondClarify('stored-1', 'req-clar', 'answer')
+
+    expect($notifications.get()).toEqual([])
+  })
+
+  it('respondSudo: status "expired" notifies and still clears', async () => {
+    fake.request.mockResolvedValue({ status: 'expired' })
+    setSudoRequest('stored-1', { requestId: 'req-sudo', runtimeSessionId: 'runtime-1', storedSessionId: 'stored-1' })
+
+    await respondSudo('stored-1', 'req-sudo', 'hunter2')
+
+    expect($sudoRequests.get()['stored-1']).toBeUndefined()
+    expect($notifications.get()).toContainEqual(expect.objectContaining({ id: 'request-expired-stored-1' }))
+  })
+
+  it('respondSecret: status "expired" notifies and still clears', async () => {
+    fake.request.mockResolvedValue({ status: 'expired' })
+    setSecretRequest('stored-1', {
+      envVar: 'TENOR_API_KEY',
+      prompt: '',
+      requestId: 'req-secret',
+      runtimeSessionId: 'runtime-1',
+      storedSessionId: 'stored-1'
+    })
+
+    await respondSecret('stored-1', 'req-secret', 'value')
+
+    expect($secretRequests.get()['stored-1']).toBeUndefined()
+    expect($notifications.get()).toContainEqual(expect.objectContaining({ id: 'request-expired-stored-1' }))
   })
 })

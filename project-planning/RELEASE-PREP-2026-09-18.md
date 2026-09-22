@@ -15,7 +15,7 @@ instruction order, not a technical necessity.
 `modules/loopback-listener/android/build.gradle`'s `group`, the About screen, the connect screen
 footer, `README.md`'s opening paragraph. Old milestone verification logs were left untouched
 (D22.1 says not to rewrite them) — confirmed by grep: `com.nousresearch.hermes.mobile` still
-appears in `project-planning/implementation-plan/*.md` and the two `internal review notes (not published)`
+appears in `project-planning/implementation-plan/*.md` and the two `ANNOUNCE-CLAIM-REVIEW*.md`
 files, nowhere else.
 
 **A real bug found and fixed in the same area:** `app.config.ts`'s import of
@@ -196,7 +196,7 @@ since the before-state was only ever reasoned about from code, not screenshotted
 
 ## B5 — History audit (D22.5)
 
-**Done.** Full report: `an internal pre-publication audit note (not published)`. Searched `git log --all -p`
+**Done.** Full report: `project-planning/HISTORY-AUDIT-2026-09-18.md`. Searched `git log --all -p`
 for token-shaped strings (48-hex, `hermes_session`, `Bearer `, `password`, `HERMES_DASHBOARD_`),
 committed scratch files, the user's email, and hostnames/tailnet names/LAN addresses in docs and
 every committed screenshot (all 9 `docs/*.png` files opened and read by eye, not just
@@ -230,7 +230,7 @@ Opus's steps after verification.
 | Model sheet's last row no longer visibly cut | path (one device, qualitative only) | dev client, JS from `release/0.1.0` | session screenshot |
 | New task sheet has a working Model row | path (one device) | dev client, JS from `release/0.1.0` | session screenshot |
 | AppDrawer backdrop dims the screen and tap-outside now closes it | path (one device, screenshot) | dev client, JS from `release/0.1.0` | session screenshots (dimmed drawer, then closed after tapping outside) |
-| No real secret in git history | general (whole history) | static (`git log --all -p`) | `an internal pre-publication audit note (not published)` |
+| No real secret in git history | general (whole history) | static (`git log --all -p`) | `HISTORY-AUDIT-2026-09-18.md` |
 
 ## What was not reached (named, not rounded up)
 
