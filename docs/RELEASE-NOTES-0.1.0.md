@@ -1,6 +1,6 @@
 # Hermes Mobile 0.1.0 — release notes
 
-For testers. Plain description of what this build does and doesn't do, not a pitch.
+Plain description of what this build does and doesn't do, not a pitch.
 
 ## What this is
 
@@ -27,6 +27,11 @@ verification log for exact sha256s), unless marked otherwise:
   in the background. If your phone has been asleep for a while you may not get one; open the app
   to check. The app asks for notification permission once, the first time you send a message —
   never at launch, before it has anything to notify you about.
+- **Coming back to a correct screen.** If you leave the app while something is pending and return
+  later, the app re-checks the session against the gateway before showing you anything: an approval
+  that timed out or was answered elsewhere while you were away clears itself, its notification goes
+  with it, and a reply that finished without you leaves a whole transcript rather than a stuck
+  spinner.
 
 The rest of the app — Sessions, Bots, Tasks, and most of Settings — is implemented and covered by
 automated tests, and was exercised on-device earlier this month before this round's changes; it was
@@ -67,15 +72,23 @@ it once.
 
 ## Testing status
 
-**This build has only ever been tested on an Android emulator.** It has never been installed on a
-real physical phone. If you're one of the first people running it on real hardware, please report
-anything — install problems, layout issues, performance, battery behavior — that an emulator
-wouldn't show.
+**Almost all of the verification behind this build was done on an Android emulator**, against
+throwaway gateways: connecting and signing in, chat, approval Run and Reject, sudo, secret and
+clarify prompts, sign-out, recovery after a disconnect, and background notifications. The
+maintainer has since run a manual pass on one real phone; that is the entire hardware record for
+0.1.0.
+
+So if you are running this on real hardware, you are close to the front of the queue. Anything an
+emulator cannot show — install problems, layout on your screen size, performance, battery
+behaviour, how your phone's own power management treats a backgrounded app — is worth reporting.
 
 ## Installing and connecting
 
-1. Open the APK file you were given — this is a closed test handed to you directly, not a public
-   download — and your phone will ask permission to install from this source once; allow it.
+1. Download the APK from this release and open it. Your phone will ask permission to install from
+   this source once; allow it, and expect Play Protect to warn about a sideloaded app. Before you
+   install it, it is worth checking that the file is the one that was published:
+   `apksigner verify --print-certs hermes-mobile-0.1.0.apk`, and compare the sha256 against the
+   one on the release page.
 2. Open the app. It lands on the connect screen.
 3. Get your gateway's address (see `docs/CONNECTING.md` if you need help finding it) and type it
    into "Enter a URL."
